@@ -440,10 +440,13 @@ Shared:
 
     ListeningStats/ listening stats kept on the phone (ListeningStats.h lists its files): each music track timed while
                   it plays through PlayerState's observer and written to a text log in Application Support once it ran 30 s
-                  or half the track (ListeningStats.x), Spotify's data export read in, either shape, loose or zipped, plays
-                  already there skipped (SGPlayLog.m), and a page of the top tracks, artists and albums of a week, a month,
-                  a year and all time. Tested on the Mac against harness/listening-stats/, the page and the recorder in the
-                  simulator against its sim/
+                  or half the track (ListeningStats.x), Spotify's data export read in, either shape, loose, zipped or from a
+                  selected folder, and Vitrine's own versioned JSON history imported or exported without an account. Plays
+                  already there are skipped (SGPlayLog.m); input is bounded to 64 MiB per JSON, 256 MiB total and one million
+                  plays. Its page shows the current and best day streak, top tracks, artists and albums for a week, a month,
+                  a year and all time, and a locale-formatted hourly breakdown for each period. File parsing, traversal,
+                  aggregation and serialization stay off the main thread. Tested on the Mac against harness/listening-stats/,
+                  the page and the recorder in the simulator against its sim/
     Connect/      Connect speakers on the Wi-Fi for a build signed without the multicast entitlement (Connect.h lists
                   its files): Bonjour, which needs only NSBonjourServices (plist/, merged with Spotify's own list by
                   pipeline.sh) and the Local Network permission, finds and resolves _spotify-connect._tcp; Spotify's
@@ -757,7 +760,7 @@ one page, the mod's own rows first and Spotify's flags below them or on a sub pa
 they change. Its main page groups the rows by what they are, in cards with no headings as Settings has its own,
 under the signing and environment warnings: Redesigned UI, Appearance and Tab bar, with a restart note; Home (Home &
 Library in the native look), Player, Lyrics, Albums and Artists; Karaoke, Spatial voice (where the iPhone reads headphone
-motion), Audio effects, AutoMix, Live Activity, AirPods gestures and Listening stats; Lock screen, Vibrations and Premium, ads &
+motion), Workshop, Audio effects, AutoMix, Live Activity, AirPods gestures and Listening stats; Lock screen, Vibrations and Premium, ads &
 privacy; Labs and All flags; Mod. It is checked in the simulator
 against harness/mod-settings/. The Appearance page has, in the native look, AMOLED (the redesign is always black), then the stored look's Accent color
 preset, a pull-down of Spotify, Apple Music and Custom read off the color stored (a color set before the presets
@@ -774,7 +777,9 @@ spotifyglass.font.file) moves to spotifyglass.font.files and the family name on 
 first row, is the one switch between the two looks (see Layers): it glows (Settings/SGGlowSwitch), its ⓘ says what
 it changes, and flipping it offers to restart Spotify. The pages show only what the stored look has: a page opened
 after flipping the switch already shows what the restart will bring, and the main page swaps Home & Library for
-Albums and Artists as it is flipped. Tab bar: the tab editor of the stored look, each with
+Albums and Artists as it is flipped. Workshop collects Vitrine's existing local and open libraries without pretending
+to expose Chroma's account-backed catalog: audio presets, public AutoEq headphone corrections and on-device custom fonts
+under either look, plus visualizer styles and lyric looks when Redesigned UI is selected. Tab bar: the tab editor of the stored look, each with
 its own list of tabs. Lyrics, on the main page of its own: in the redesign a live preview of the lyrics first, with the presets of their look
 under it and their sliders in a sheet (Text size, Line spacing, Blur, Glow, Wave), applying at once; then Karaoke, then the ordered list of lyrics sources,
 lyrics for every track, naming the source in the redesign, the lock screen, and glass lyrics in the native look; in
@@ -805,7 +810,11 @@ for Animated while the player has no clip, the card looks the playing track's up
 (SGMotionClipFor, the player's sources, size and Low Data Mode, into the store the player reads), Fluid until it
 is in, then the clip over it, poster first (harness/player/ `preview`);
 under it a segmented control of the five backgrounds (Still, Colors, Fluid, Animated, Visualizer, changing the card at once)
-with a note on what the one picked does, Artwork sources and Download in Low Data Mode while Animated is chosen,
+with a note on what the one picked does; while Visualizer is chosen, its local style menu offers Hills (the default),
+mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The selection is stored under the package-compatible
+`spotifyglass.visualizer.shader` key, with invalid or absent values falling back to Hills, and the preview and player update at
+once. Visualizer motion pauses while hidden, backgrounded, in Low Power Mode, under serious heat or during player transitions,
+and is restrained by Reduce Motion. Artwork sources and Download in Low Data Mode appear while Animated is chosen,
 while Fluid is chosen its five sliders and a red Reset (Redesigned/Kit/SGRFluid.h, spotifyglass.redesign.fluid.*):
 Speed (25-300 %, how fast the four blurred copies turn, picked up from the angle each is at), Warp (0-100 %, how
 far from the middle they turn and how much the upper three show; at none one copy turns alone), Blur (2-24, the
@@ -889,15 +898,6 @@ the drag handle, a tap on a tab of the mod's own opening the Add a Tab sheet as 
 Tab; Add a tab and Use Spotify's tabs; and Split tabs. Spotify's own tabs keep their names and icons. Checked
 in the simulator against harness/addtab/ (`navbar`, `icons`, `off`, `hide`, `edit`, `remove`, `links`).
 
-## Adding a feature
-
-1. `make trees`, record the screen, read `trees/<screen>.txt` for the classes and frames.
-2. Decide the layer (see Layers), then make `tweak/Sources/<Layer>/<Feature>/` with `<Feature>.h` declaring the switch key
-   (`#define SGKey<Feature> @"spotifyglass.<feature>"`) and `UIViewController *SG<Feature>SettingsPage(void)`.
-3. Add the hooks in `<Screen>.x`: `#import "Core/SGCore.h"` and the feature header, guard on the
-   switch, use `SGGlassFor`/`SGGlassAt` + `SGShapeGlass` for glass and `SGStripBackgrounds` to clear
-   Spotify's paint, and end with `%ctor { %init; SGRequireClasses(@[...]); }`, gated first on the layer's look
-   (`SGNativeUI()` or `SGRedesignedUI()`) in Native/ and Redesigned/.
 ## Localization
 
 Mod Settings and every page, sheet and alert it opens read their words from `Vitrine.bundle`
@@ -925,6 +925,15 @@ on a settings page; a name that reads the same everywhere goes in `scripts/strin
 a page using `SGL` compiles `Core/SGLocalize.m` too; harness/mod-settings/ copies the bundle into its app, so
 `-AppleLanguages '(ko)'` on its launch line shows the Korean.
 
+## Adding a feature
+
+1. `make trees`, record the screen, read `trees/<screen>.txt` for the classes and frames.
+2. Decide the layer (see Layers), then make `tweak/Sources/<Layer>/<Feature>/` with `<Feature>.h` declaring the switch key
+   (`#define SGKey<Feature> @"spotifyglass.<feature>"`) and `UIViewController *SG<Feature>SettingsPage(void)`.
+3. Add the hooks in `<Screen>.x`: `#import "Core/SGCore.h"` and the feature header, guard on the
+   switch, use `SGGlassFor`/`SGGlassAt` + `SGShapeGlass` for glass and `SGStripBackgrounds` to clear
+   Spotify's paint, and end with `%ctor { %init; SGRequireClasses(@[...]); }`, gated first on the layer's look
+   (`SGNativeUI()` or `SGRedesignedUI()`) in Native/ and Redesigned/.
 4. Add `<Feature>Settings.m` returning an `SGModPage` of `SGSection`s of `SGSwitchRow`/`SGHideRow`/
    `SGFlagRow`/`SGChoiceRow`/`SGSliderRow` (Settings/SGModPage.h), and put it on the page of the part of
    Spotify it changes in `App/Pages.m` or `App/ModSettings.x`. Every text it shows goes through `SGL` (see Localization).

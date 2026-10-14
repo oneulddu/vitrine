@@ -134,6 +134,19 @@ CGFloat SGRPlayerClipDim(CGFloat luminance, BOOL contrast, BOOL lyrics);
 
 #pragma mark - the Visualizer (PlayerVisualiser.m)
 
+// Compatibility exception to the redesign-only prefix: 0.51.0 stores these exact string IDs here.
+#define SGRKeyVisualiserStyle @"spotifyglass.visualizer.shader"
+extern NSNotificationName const SGRVisualiserStyleDidChangeNotification;
+NSArray<NSString *> *SGRVisualiserStyleNames(void);
+NSArray<NSString *> *SGRVisualiserStyleIDs(void);
+// Invalid or missing storage reads as builtin:hills without rewriting the original value.
+NSString *SGRVisualiserStyle(void);
+void SGRSetVisualiserStyle(NSString *identifier);
+@class SGModRow;
+SGModRow *SGRVisualiserStyleRow(void);
+// Local styles only; never changes the player's background kind or creates a player visualizer.
+UIViewController *SGRVisualiserSettingsPage(void);
+
 // The background is the Visualizer.
 BOOL SGRPlayerVisualiserShowing(void);
 // Puts the hills on the field or takes them off as the background says, lays them out, and blurs them while the

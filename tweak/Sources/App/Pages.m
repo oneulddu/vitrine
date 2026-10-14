@@ -1,5 +1,6 @@
 #import "Core/SGCore.h"
 #import "Shared/AppIcon/AppIcon.h"
+#import "Shared/AudioEffects/AudioEffectsPage.h"
 #import "Shared/Fonts/Fonts.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Redesigned/Player/Player.h"
@@ -103,6 +104,40 @@ UIViewController *SGAppearancePage(void) {
 
 UIViewController *SGNavbarPage(void) {
     return SGRedesignedUIStored() ? SGRNavbarSettingsPage() : SGNavbarSettingsPage();
+}
+
+// One shelf for the libraries the mod already owns. The shipped Chroma package calls its account-backed
+// catalog Workshop too; this page deliberately stays on Vitrine's side of that boundary. AutoEq fetches its
+// public index when Headphones opens, and a font still comes from Files. Nothing here signs in to chroma.pw,
+// checks Plus or makes an unavailable paid catalog look unlocked.
+UIViewController *SGWorkshopPage(void) {
+    NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
+    if (SGRedesignedUIStored()) {
+        [sections addObject:SGSection(SGL(@"settings.workshop.look.header", @"Look"), @[
+            SGWithTile(SGPageRow(SGL(@"settings.workshop.visualizers.title", @"Visualizers"), ^UIViewController *{ return SGRVisualiserSettingsPage(); }),
+                       @"waveform.path", UIColor.systemPurpleColor),
+            SGWithTile(SGPageRow(SGL(@"settings.workshop.lyrics_looks.title", @"Lyrics looks"), ^UIViewController *{ return SGLyricsSettingsPage(); }),
+                       @"textformat.size", UIColor.systemOrangeColor),
+        ])];
+    }
+
+    [sections addObject:SGSection(SGL(@"settings.workshop.sound.header", @"Sound"), @[
+        SGWithTile(SGPageRow(SGL(@"settings.workshop.audio_presets.title", @"Audio presets"), ^UIViewController *{ return SGDSPPresetsPage(); }),
+                   @"slider.vertical.3", UIColor.systemRedColor),
+        SGWithTile(SGPageRow(SGL(@"settings.workshop.headphones.title", @"Headphones"), ^UIViewController *{ return SGDSPHeadphonesPage(); }),
+                   @"headphones", UIColor.systemBlueColor),
+    ])];
+
+    NSMutableArray<SGModRow *> *fonts = [NSMutableArray array];
+    for (SGModRow *row in SGAppFontRows()) [fonts addObject:SGWithTile(row, @"textformat.alt", UIColor.systemIndigoColor)];
+    if (fonts.count) [sections addObject:SGSection(SGL(@"settings.workshop.type.header", @"Type"), fonts)];
+
+    NSString *intro = SGRedesignedUIStored()
+        ? SGL(@"settings.workshop.intro.redesigned", @"Built-in and open libraries Vitrine can use without an account. Headphone corrections come from AutoEq; fonts you add stay on this iPhone.")
+        : SGL(@"settings.workshop.intro.native", @"Built-in and open libraries Vitrine can use without an account. Visualizers and lyrics looks appear here when Redesigned UI is selected. Headphone corrections come from AutoEq; fonts you add stay on this iPhone.");
+    SGModPage *page = [[SGModPage alloc] initWithTitle:SGL(@"settings.workshop.title", @"Workshop") intro:intro sections:sections footer:nil];
+    page.tiles = YES;
+    return page;
 }
 
 // Pronunciation, romanized lines, translation, word sweeping and line meanings exist only in the redesign's lyrics view.

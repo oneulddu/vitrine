@@ -23,10 +23,15 @@ static uint32_t sg_from[SGRSpectrumBands], sg_to[SGRSpectrumBands];   // bins, t
 // Published.
 static _Atomic(float) sg_levels[SGRSpectrumBands];
 static _Atomic(uint64_t) sg_generation;
+static _Atomic(float) sg_waveform[SGRSpectrumWaveformSamples];
+static _Atomic(uint64_t) sg_waveformSequence;
+_Static_assert(__atomic_always_lock_free(sizeof(float), 0), "Waveform samples must be lock-free");
+_Static_assert(__atomic_always_lock_free(sizeof(uint64_t), 0), "Spectrum counters must be lock-free");
 
 void SGRSpectrumPrepare(void) {
     if (atomic_load(&sg_prepared)) return;
     sg_setup = vDSP_create_fftsetup(kLog2Size, kFFTRadix2);
+    if (!sg_setup) return;
     vDSP_hann_window(sg_window, kSize, vDSP_HANN_DENORM);
     for (int band = 0; band < SGRSpectrumBands; band++) atomic_store(&sg_levels[band], SGRSpectrumFloor);
     atomic_store_explicit(&sg_prepared, true, memory_order_release);
@@ -68,11 +73,20 @@ static void analyse(void) {
         float level = sum > 0 ? 10 * log10f(sum * scale) : SGRSpectrumFloor;
         atomic_store_explicit(&sg_levels[band], fmaxf(SGRSpectrumFloor, level), memory_order_relaxed);
     }
+    // Sequentially consistent atomics make the odd/even snapshot guard safe even while the reader races
+    // the writer. There are no retries, allocations, locks or Objective-C calls on the render thread.
+    atomic_fetch_add(&sg_waveformSequence, 1);
+    for (int i = 0; i < SGRSpectrumWaveformSamples; i++) {
+        uint32_t at = (sg_at + kSize - 4 * SGRSpectrumWaveformSamples + 4 * i) & (kSize - 1);
+        float value = sg_ring[at];
+        atomic_store(&sg_waveform[i], isfinite(value) ? fmaxf(-1, fminf(1, value)) : 0);
+    }
+    atomic_fetch_add(&sg_waveformSequence, 1);
     atomic_fetch_add_explicit(&sg_generation, 1, memory_order_release);
 }
 
 void SGRSpectrumFeed(const float *samples, uint32_t count, double sampleRate) {
-    if (!samples || sampleRate <= 0 || !atomic_load_explicit(&sg_prepared, memory_order_acquire)) return;
+    if (!samples || !isfinite(sampleRate) || sampleRate <= 0 || !atomic_load_explicit(&sg_prepared, memory_order_acquire)) return;
     if (sampleRate != sg_rate) setRate(sampleRate);
     while (count) {
         uint32_t run = count;
@@ -98,4 +112,15 @@ uint64_t SGRSpectrumRead(float levels[SGRSpectrumBands]) {
         levels[band] = atomic_load_explicit(&sg_levels[band], memory_order_relaxed);
     }
     return generation;
+}
+
+uint64_t SGRSpectrumReadWaveform(float samples[SGRSpectrumWaveformSamples]) {
+    for (int attempt = 0; attempt < 3; attempt++) {
+        uint64_t before = atomic_load(&sg_waveformSequence);
+        if (!before || (before & 1)) continue;
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) samples[i] = atomic_load(&sg_waveform[i]);
+        if (before == atomic_load(&sg_waveformSequence)) return before / 2;
+    }
+    memset(samples, 0, SGRSpectrumWaveformSamples * sizeof(float));
+    return 0;
 }

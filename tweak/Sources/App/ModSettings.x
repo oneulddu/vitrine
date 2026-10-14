@@ -96,7 +96,9 @@ static UIViewController *modSettingsPage(void) {
     // AutoMix sets Spotify's own Automix and Crossfade, which its player does under either look.
     SGModRow *autoMix = pageRow(SGL(@"settings.main.automix.title", @"AutoMix"), @"arrow.triangle.merge", SGColorRGB(0xF05D6C), ^UIViewController *{ return SGAutoMixSettingsPage(); });
     autoMix.value = ^NSString *{ return SGAutoMixSummary(); };
-    NSMutableArray<SGModRow *> *features = [NSMutableArray arrayWithObjects:sing, spatial, audioEffects, autoMix, nil];
+    SGModRow *workshop = pageRow(SGL(@"settings.main.workshop.title", @"Workshop"), @"square.grid.2x2.fill", UIColor.systemIndigoColor,
+                                 ^UIViewController *{ return SGWorkshopPage(); });
+    NSMutableArray<SGModRow *> *features = [NSMutableArray arrayWithObjects:workshop, sing, spatial, audioEffects, autoMix, nil];
     // The Live Activity works under both looks, where ActivityKit's card does.
     if (@available(iOS 17.0, *)) {
         SGModRow *liveActivity = pageRow(SGL(@"settings.main.live_activity.title", @"Live Activity"), @"iphone", UIColor.systemOrangeColor, ^UIViewController *{ return SGLiveActivitySettingsPage(); });

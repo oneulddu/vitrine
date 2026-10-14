@@ -10,7 +10,7 @@
 // What it reads can mix two analyses, a band from each, which nothing drawn can show.
 #import <stdint.h>
 
-enum { SGRSpectrumBands = 24 };
+enum { SGRSpectrumBands = 24, SGRSpectrumWaveformSamples = 128 };
 // What a band reads with nothing in it, and the least SGRSpectrumRead hands out.
 #define SGRSpectrumFloor (-100.0f)
 
@@ -22,3 +22,7 @@ void SGRSpectrumFeed(const float *samples, uint32_t count, double sampleRate);
 // The last levels into `levels`, low band first; answers how many analyses there have been, so a caller can
 // tell when nothing new came (paused, or the tap never ran).
 uint64_t SGRSpectrumRead(float levels[SGRSpectrumBands]);
+// Actual PCM, every fourth sample of the latest 512 frames, oldest first, clamped to [-1, 1].
+// A coherent snapshot, published with each analysis. Returns its generation, or zero and silence before
+// publication / if a concurrent writer prevents a bounded read. All storage lives for the process.
+uint64_t SGRSpectrumReadWaveform(float samples[SGRSpectrumWaveformSamples]);

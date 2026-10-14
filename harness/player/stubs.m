@@ -132,8 +132,22 @@ void SGLyricsMeaningsFor(NSString *trackID, NSArray<SGKaraokeLine *> *lines,
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 BOOL SGGeminiKeySet(void) { return NO; }
 NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
+NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"harness.lyricsTranslationsDidChange";
+NSString *SGLyricsSongName(NSString *trackID) { return @"Harness song"; }
+void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
+void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
 void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                  void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+
+@implementation SGOnDeviceTranslation
++ (BOOL)translationAvailable { return NO; }
++ (BOOL)appleIntelligenceAvailable:(NSString *)language { return NO; }
++ (void)translate:(NSArray<NSString *> *)texts to:(NSString *)language
+             done:(void (^)(NSArray<NSString *> *, NSString *))done { done(nil, @"harness"); }
++ (void)translateWithAppleIntelligence:(NSArray<NSString *> *)texts to:(NSString *)language song:(NSString *)song
+                              progress:(void (^)(NSArray<NSString *> *))progress
+                                  done:(void (^)(NSArray<NSString *> *, NSString *))done { done(nil, @"harness"); }
+@end
 
 // Local files: no edits in the harness, so the name is all PlayerLyrics.x needs to watch for one.
 #import "Shared/LocalFiles/LocalFiles.h"
@@ -192,6 +206,7 @@ void SGAudioSetOutputReader(SGAudioOutputReader reader) {
 // Sing (the mic on the lyrics, SGRSingButton.m): never available, as on a phone that cannot run it.
 #import "Shared/Sing/Sing.h"
 NSString *const SGSingChangedNotification = @"harness.singChanged";
+NSString *const SGSingButtonDidChangeNotification = @"harness.singButtonDidChange";
 SGSingState SGSingCurrentState(void) { return SGSingStateUnavailable; }
 NSString *SGSingStatusText(void) { return @"Unavailable"; }
 NSString *SGSingStatusDetail(void) { return nil; }
@@ -230,6 +245,14 @@ BOOL SGMotionAppleMusicOn(void) { return YES; }
 // TabBar.x: the Mini player section's Apple Music style switch lays the tab bar out again; there is none here.
 void SGRSetTabBarMinimized(BOOL minimized, BOOL animated) {}
 void SGRRefreshTabBar(void) {}
+
+// PlayerVolume.m and PlayerCoverAccent.x are not part of this harness. Keep their layout call sites alive while
+// leaving out the system volume route and Spotify's paint walk, which have harnesses of their own.
+BOOL SGRPlayerVolumeOn(void) { return NO; }
+BOOL SGRPlayerPlaceVolume(UIView *stack, UIView *controls, UIView *row, CGFloat margin) { return NO; }
+BOOL SGRPlayerFollowsCover(void) { return NO; }
+void SGRPlayerSetCoverAccent(UIColor *cover) {}
+void SGRPlayerPaintCover(UIView *stack) {}
 
 // The ⋯'s system menu (PlayerMenu.m, ContextMenu.x), which this harness does not build; PlayerHeader.x hands it
 // the ⋯, and with no button of the mod's over it the ⋯'s own touches press its circle.
