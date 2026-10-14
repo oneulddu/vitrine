@@ -777,8 +777,8 @@ spotifyglass.font.file) moves to spotifyglass.font.files and the family name on 
 first row, is the one switch between the two looks (see Layers): it glows (Settings/SGGlowSwitch), its ⓘ says what
 it changes, and flipping it offers to restart Spotify. The pages show only what the stored look has: a page opened
 after flipping the switch already shows what the restart will bring, and the main page swaps Home & Library for
-Albums and Artists as it is flipped. Workshop collects Vitrine's existing local and open libraries without pretending
-to expose Chroma's account-backed catalog: audio presets, public AutoEq headphone corrections and on-device custom fonts
+Albums and Artists as it is flipped. Workshop collects Vitrine's existing local and open libraries: audio presets,
+public AutoEq headphone corrections and on-device custom fonts
 under either look, plus visualizer styles and lyric looks when Redesigned UI is selected. Tab bar: the tab editor of the stored look, each with
 its own list of tabs. Lyrics, on the main page of its own: in the redesign a live preview of the lyrics first, with the presets of their look
 under it and their sliders in a sheet (Text size, Line spacing, Blur, Glow, Wave), applying at once; then Karaoke, then the ordered list of lyrics sources,
@@ -811,7 +811,7 @@ for Animated while the player has no clip, the card looks the playing track's up
 is in, then the clip over it, poster first (harness/player/ `preview`);
 under it a segmented control of the five backgrounds (Still, Colors, Fluid, Animated, Visualizer, changing the card at once)
 with a note on what the one picked does; while Visualizer is chosen, its local style menu offers Hills (the default),
-mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The selection is stored under the package-compatible
+mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The selection is stored under the existing
 `spotifyglass.visualizer.shader` key, with invalid or absent values falling back to Hills, and the preview and player update at
 once. Visualizer motion pauses while hidden, backgrounded, in Low Power Mode, under serious heat or during player transitions,
 and is restrained by Reduce Motion. Artwork sources and Download in Low Data Mode appear while Animated is chosen,

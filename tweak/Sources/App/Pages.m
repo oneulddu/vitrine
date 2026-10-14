@@ -106,10 +106,8 @@ UIViewController *SGNavbarPage(void) {
     return SGRedesignedUIStored() ? SGRNavbarSettingsPage() : SGNavbarSettingsPage();
 }
 
-// One shelf for the libraries the mod already owns. The shipped Chroma package calls its account-backed
-// catalog Workshop too; this page deliberately stays on Vitrine's side of that boundary. AutoEq fetches its
-// public index when Headphones opens, and a font still comes from Files. Nothing here signs in to chroma.pw,
-// checks Plus or makes an unavailable paid catalog look unlocked.
+// One shelf for Vitrine's local and open libraries. AutoEq fetches its public index when Headphones opens,
+// and a font still comes from Files. Nothing here depends on a private account or paid catalog.
 UIViewController *SGWorkshopPage(void) {
     NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
     if (SGRedesignedUIStored()) {
