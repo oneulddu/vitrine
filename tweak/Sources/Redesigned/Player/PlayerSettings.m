@@ -44,7 +44,7 @@ static NSArray<NSString *> *backgroundNotes(void) {
         SGL(@"settings.player.bg_desc.colors", @"The cover's colors, drifting slowly."),
         SGL(@"settings.player.bg_desc.fluid", @"The cover itself, blurred and slowly turning. It rests while a song is paused."),
         SGL(@"settings.player.bg_desc.animated", @"The song's Canvas or the album's moving cover, else Fluid. The player's ⋯ menu switches between this, Fluid and Visualizer."),
-        @"The song's sound as gentle hills in the cover's colors, over Fluid held still. They settle while a song is paused.",
+        SGL(@"settings.player.bg_desc.visualizer", @"The song's sound in Hills, Bars, Nebula or Halo, over Fluid held still. Choose a style below; it settles on pause or silence."),
     ];
 }
 
@@ -112,6 +112,7 @@ static NSArray<NSString *> *backgroundNotes(void) {
 
     SGAddPlayerStateObserver(self);
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(artworkChanged) name:SGRNowPlayingArtworkDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updateAccessibilityValue) name:SGRVisualiserStyleDidChangeNotification object:nil];
     [self reloadTrack];
     [self reloadBackgroundAnimated:NO];
     return self;
@@ -201,7 +202,7 @@ static NSArray<NSString *> *backgroundNotes(void) {
         if (self->_visualiser) [self insertSubview:self->_visualiser aboveSubview:self->_field];
         self->_field.motionHeld = SGPlayerState().isPaused || self->_motion != nil || self->_visualiser != nil;
     };
-    self.accessibilityValue = [SGRPlayerBackgroundNames()[(NSUInteger)kind] stringByAppendingString:SGL(@"settings.player.bg_suffix", @" background")];
+    [self updateAccessibilityValue];
     if (animated && self.window) {
         // A crossfade, which Reduce Motion keeps: nothing moves.
         [UIView transitionWithView:self duration:SGRCrossfade options:UIViewAnimationOptionTransitionCrossDissolve | UIViewAnimationOptionAllowAnimatedContent
@@ -210,6 +211,14 @@ static NSArray<NSString *> *backgroundNotes(void) {
         apply();
     }
     [self setNeedsLayout];
+}
+
+- (void)updateAccessibilityValue {
+    // Describe what the showcase actually contains, even while the player's background change is pending.
+    SGRPlayerBackgroundKind kind = SGRPlayerBackground();
+    self.accessibilityValue = kind == SGRPlayerBackgroundVisualiser
+        ? [NSString stringWithFormat:SGL(@"settings.player.bg_visualizer.format", @"Visualizer background, %@"), SGRVisualiserStyleNames()[[SGRVisualiserStyleIDs() indexOfObject:SGRVisualiserStyle()]]]
+        : [SGRPlayerBackgroundNames()[(NSUInteger)kind] stringByAppendingString:SGL(@"settings.player.bg_suffix", @" background")];
 }
 
 // The clip runs from the card's top at its width, as in the player, and its blur comes in from the
@@ -325,6 +334,25 @@ static SGModRow *fluidSlider(NSString *title, SGRFluidSetting setting, NSString 
                        ^NSString *(double value) { return [NSString stringWithFormat:@"%.0f%@", value, unit]; });
 }
 
+SGModRow *SGRVisualiserStyleRow(void) {
+    return SGMenuRow(SGL(@"settings.player.visualizer_style.title", @"Visualizer style"), SGRVisualiserStyleNames(), ^NSString *{
+        return SGRVisualiserStyleNames()[[SGRVisualiserStyleIDs() indexOfObject:SGRVisualiserStyle()]];
+    }, ^(NSInteger index) {
+        NSArray<NSString *> *identifiers = SGRVisualiserStyleIDs();
+        if (index >= 0 && (NSUInteger)index < identifiers.count) SGRSetVisualiserStyle(identifiers[(NSUInteger)index]);
+    });
+}
+
+UIViewController *SGRVisualiserSettingsPage(void) {
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.player.visualizers.title", @"Visualizers") intro:SGL(@"settings.player.visualizers.intro", @"Local styles for the redesigned player's Visualizer background.")
+        sections:@[SGNotedSection(nil, @[SGRVisualiserStyleRow()],
+            SGL(@"settings.player.visualizers.note", @"Hills: soft spectrum hills. Bars: a mirrored spectrum with the actual audio waveform. "
+             @"Nebula: slow clouds in the cover's colors. Halo: a dim turning cover with a spectrum ring."))]
+        footer:SGL(@"settings.player.visualizers.footer", @"The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer "
+                @"under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence "
+                @"and stops in the background, during player transitions, in Low Power Mode or when the device is hot.")];
+}
+
 UIViewController *SGRPlayerSettingsPage(NSArray *more) {
     SGRPlayerShowcase *showcase = [[SGRPlayerShowcase alloc] initWithFrame:CGRectMake(0, 0, 320, kCardMinHeight)];
     UISegmentedControl *backgrounds = [[UISegmentedControl alloc] initWithItems:SGRPlayerBackgroundNames()];
@@ -336,6 +364,8 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
     lowData.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundAnimated; };
     SGModRow *sources = SGMotionSourcesRow();
     sources.visible = lowData.visible;
+    SGModRow *visualiserStyle = SGRVisualiserStyleRow();
+    visualiserStyle.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundVisualiser; };
 
     __block __weak UITableViewController *weakPage;
     SGModRow *reset = SGActionRow(SGL(@"common.reset", @"Reset"), nil, ^{
@@ -351,6 +381,7 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
         SGSection(nil, @[sources, lowData]),
+        SGSection(nil, @[visualiserStyle]),
         SGNotedSection(nil, fluid, SGL(@"settings.player.fluid.footer", @"Brightness above 100% can make white text harder to read. A paused song holds the "
                                    @"background still. Animated and Visualizer use these where they show Fluid.")),
         SGNotedSection(SGL(@"settings.player.controls.header", @"Controls"), @[SGSwitchRow(SGL(@"settings.player.volume.title", @"Volume"), nil, SGRKeyPlayerVolume),

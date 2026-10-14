@@ -26,6 +26,8 @@
 // so later. Music Haptics schedules for the output latency; do the same here if the beat looks early on AirPods.
 //
 // Threading: main thread only, but for the reader, which runs on the render thread.
+// Hills retains the drawing below. Bars, Nebula and Halo share its envelopes and lifecycle, using only
+// finite layer paths/transforms driven here. Silence stops drawing; a low-frequency timer watches for sound.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/AudioEffects/AudioEffects.h"
@@ -34,6 +36,30 @@
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
 #import "SGRSpectrum.h"
+
+NSNotificationName const SGRVisualiserStyleDidChangeNotification = @"spotifyglass.visualizer.styleDidChange";
+
+NSArray<NSString *> *SGRVisualiserStyleNames(void) { return @[SGL(@"settings.visualizer.style.choice.hills", @"Hills"), SGL(@"settings.visualizer.style.choice.bars", @"Bars"), SGL(@"settings.visualizer.style.choice.nebula", @"Nebula"), SGL(@"settings.visualizer.style.choice.halo", @"Halo")]; }
+NSArray<NSString *> *SGRVisualiserStyleIDs(void) { return @[@"builtin:hills", @"builtin:bars", @"builtin:nebula", @"builtin:halo"]; }
+
+NSString *SGRVisualiserStyle(void) {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:SGRKeyVisualiserStyle];
+    return [value isKindOfClass:NSString.class] && [SGRVisualiserStyleIDs() containsObject:value] ? value : @"builtin:hills";
+}
+
+void SGRSetVisualiserStyle(NSString *identifier) {
+    if (![identifier isKindOfClass:NSString.class] || ![SGRVisualiserStyleIDs() containsObject:identifier]) return;
+    NSString *value = [identifier copy];
+    void (^apply)(void) = ^{
+        [NSUserDefaults.standardUserDefaults setObject:value forKey:SGRKeyVisualiserStyle];
+        // Only views already observing this notification change; the background choice is untouched.
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRVisualiserStyleDidChangeNotification object:nil];
+    };
+    if (NSThread.isMainThread) apply();
+    else dispatch_async(dispatch_get_main_queue(), apply);
+}
+
+typedef NS_ENUM(NSUInteger, SGRVisualiserStyleKind) { SGRHills, SGRBars, SGRNebula, SGRHalo };
 
 // The two bands under 80 Hz stay out of the picture: sub-bass is quieter than the kick above it in most mixes,
 // so drawn at the middle it cut a notch into the crest right under the play button.
@@ -74,7 +100,7 @@ static const NSTimeInterval kTransitionSlack = 0.05;
 
 static NSUInteger sg_readers;
 
-// The reader on while any view is moving, so nothing is analyzed while none is.
+// The reader on while any eligible view follows a playing stream, including silence awaiting new sound.
 static void needReader(BOOL need) {
     if (need) {
         if (sg_readers++ == 0) {
@@ -114,11 +140,21 @@ static NSDictionary *noActions(void) {
     CAGradientLayer *_crestFade;   // the content's mask: clear at the tallest crest, opaque over the foot
     UIVisualEffectView *_lyricsBlur;
     CADisplayLink *_link;
-    BOOL _reading, _idle;
+    NSTimer *_wakeTimer; // no display link while silent; only checks for newly published sound
+    BOOL _reading, _idle, _inactive;
     float _front[kBands], _back[kBands], _peak, _pulse;
     uint64_t _generation;
     CFTimeInterval _fresh, _last;
     NSUInteger _palette;
+    SGRVisualiserStyleKind _style;
+    CALayer *_styleLayer, *_record;
+    CAGradientLayer *_styleFill, *_reflection;
+    CAShapeLayer *_styleShape, *_reflectionShape, *_waveShape;
+    NSArray<CAGradientLayer *> *_clouds;
+    NSArray<UIColor *> *_colors;
+    float _wave[SGRSpectrumWaveformSamples];
+    double _phase;
+    NSString *_trackURI;
 }
 
 // As PlayerMotion.x: what fades is the effect view's effect, never its alpha or an ancestor's.
@@ -160,6 +196,8 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     self.accessibilityElementsHidden = YES;
     _peak = kPeakFloor;
     _content = [[UIView alloc] initWithFrame:frame];
+    _content.userInteractionEnabled = NO;
+    _content.accessibilityElementsHidden = YES;
     _crestFade = [CAGradientLayer layer];
     _crestFade.actions = noActions();
     _crestFade.colors = @[(id)UIColor.clearColor.CGColor, (id)UIColor.whiteColor.CGColor];
@@ -173,18 +211,24 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [_content.layer addSublayer:_frontFill];
     [self addSubview:_content];
     _lyricsBlur = [[UIVisualEffectView alloc] initWithEffect:nil];
+    _lyricsBlur.userInteractionEnabled = NO;
+    _lyricsBlur.accessibilityElementsHidden = YES;
     _lyricsBlur.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     [self addSubview:_lyricsBlur];
     [self applyColors:@[UIColor.darkGrayColor, UIColor.darkGrayColor, UIColor.darkGrayColor, UIColor.darkGrayColor, UIColor.darkGrayColor]];
 
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
-    for (NSNotificationName name in @[UIApplicationDidBecomeActiveNotification, UIApplicationWillResignActiveNotification,
-                                      NSProcessInfoPowerStateDidChangeNotification, UIAccessibilityReduceMotionStatusDidChangeNotification]) {
+    for (NSNotificationName name in @[NSProcessInfoPowerStateDidChangeNotification, NSProcessInfoThermalStateDidChangeNotification,
+                                      UIAccessibilityReduceMotionStatusDidChangeNotification]) {
         [center addObserver:self selector:@selector(updateMotionSoon) name:name object:nil];
     }
+    [center addObserver:self selector:@selector(resignActive) name:UIApplicationWillResignActiveNotification object:nil];
+    [center addObserver:self selector:@selector(becomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
     [center addObserver:self selector:@selector(artworkChanged) name:SGRNowPlayingArtworkDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(styleChanged) name:SGRVisualiserStyleDidChangeNotification object:nil];
     SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; }, ^(id owner) { [owner updateMotion]; });
     SGAddPlayerStateObserver(self);
+    [self styleChanged];
     [self artworkChanged];
     [self draw];
     return self;
@@ -193,6 +237,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
     [_link invalidate];
+    [_wakeTimer invalidate];
     if (_reading) needReader(NO);
 }
 
@@ -202,14 +247,31 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 // lower half under its upper.
 - (void)applyColors:(NSArray<UIColor *> *)colors {
     if (colors.count < 5) return;
+    _colors = colors;
     _frontFill.colors = @[(id)lit(colors[2], kGlow).CGColor, (id)lit(colors[4], kGlow).CGColor, (id)lit(colors[3], kGlow).CGColor];
     _backFill.colors = @[(id)lit(colors[0], kGlow).CGColor, (id)lit(colors[1], kGlow).CGColor];
+    _styleFill.colors = _frontFill.colors;
+    _reflection.colors = _frontFill.colors;
+    _waveShape.strokeColor = lit(colors[4], kGlow).CGColor;
+    for (NSUInteger i = 0; i < _clouds.count; i++) {
+        UIColor *color = lit(colors[i], kGlow * 0.65);
+        _clouds[i].colors = @[(id)color.CGColor, (id)[color colorWithAlphaComponent:0].CGColor];
+    }
 }
 
 - (void)artworkChanged {
-    UIImage *image = SGRNowPlayingArtwork(NULL, NULL);
+    NSUInteger generation = ++_palette; // nil/new-track artwork invalidates an outstanding palette too
+    NSString *uri = nil;
+    UIImage *image = SGRNowPlayingArtwork(&uri, NULL);
+    NSString *current = SGURIString(SGPlayerState().track.URI);
+    // The bridge intentionally keeps the previous track's cover while the next arrives. Halo must not.
+    UIImage *recordImage = current.length && [current isEqualToString:uri] ? image : nil;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _record.contents = (id)recordImage.CGImage;
+    [CATransaction commit];
+    if (_style != SGRHills) image = recordImage;
     if (!image) return;
-    NSUInteger generation = ++_palette;
     SGRPaletteRequest request = {CGSizeZero, NO, YES, YES, NO};
     __weak SGRVisualiserView *weakSelf = self;
     [SGRPalette paletteForImage:image request:request completion:^(SGRPalette *palette) {
@@ -231,6 +293,75 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
         [view applyColors:palette.flowColors];
         [CATransaction commit];
     }];
+}
+
+#pragma mark - local styles
+
+- (void)styleChanged {
+    SGRVisualiserStyleKind next = (SGRVisualiserStyleKind)[SGRVisualiserStyleIDs() indexOfObject:SGRVisualiserStyle()];
+    self.accessibilityValue = SGRVisualiserStyleNames()[next];
+    if (_style == next && (next == SGRHills || _styleLayer)) return;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _style = next;
+    // Dispose the entire old style, including its artwork; Hills owns only its original two fills.
+    [_styleLayer removeFromSuperlayer];
+    _styleLayer = nil; _record = nil; _styleFill = nil; _reflection = nil;
+    _styleShape = nil; _reflectionShape = nil; _waveShape = nil; _clouds = nil;
+    _phase = 0;
+    memset(_wave, 0, sizeof _wave);
+    _backFill.hidden = _frontFill.hidden = next != SGRHills;
+    _content.layer.mask = next == SGRHills ? _crestFade : nil;
+    if (next != SGRHills) {
+        _styleLayer = [CALayer layer];
+        _styleLayer.actions = noActions();
+        _styleLayer.masksToBounds = YES;
+        [_content.layer addSublayer:_styleLayer];
+        if (next == SGRNebula) {
+            NSMutableArray *clouds = [NSMutableArray array];
+            for (int i = 0; i < 3; i++) {
+                CAGradientLayer *cloud = [CAGradientLayer layer];
+                cloud.actions = noActions();
+                cloud.type = kCAGradientLayerRadial;
+                cloud.startPoint = CGPointMake(0.5, 0.5);
+                cloud.endPoint = CGPointMake(1, 1);
+                cloud.compositingFilter = @"plusL";
+                [_styleLayer addSublayer:cloud];
+                [clouds addObject:cloud];
+            }
+            _clouds = clouds;
+        } else {
+            if (next == SGRHalo) {
+                _record = [CALayer layer];
+                _record.actions = noActions();
+                _record.contentsGravity = kCAGravityResizeAspectFill;
+                _record.masksToBounds = YES;
+                _record.opacity = 0.13; // dim even an all-white cover behind player text
+                [_styleLayer addSublayer:_record];
+            }
+            _styleShape = [CAShapeLayer layer];
+            _styleFill = fill(_styleShape);
+            _styleFill.opacity = 0.65;
+            [_styleLayer addSublayer:_styleFill];
+            if (next == SGRBars) {
+                _reflectionShape = [CAShapeLayer layer];
+                _reflection = fill(_reflectionShape);
+                _reflection.opacity = 0.20;
+                [_styleLayer addSublayer:_reflection];
+                _waveShape = [CAShapeLayer layer];
+                _waveShape.actions = noActions();
+                _waveShape.fillColor = nil;
+                _waveShape.lineWidth = 1.5;
+                _waveShape.compositingFilter = @"plusL";
+                [_styleLayer addSublayer:_waveShape];
+            }
+        }
+    }
+    if (_colors) [self applyColors:_colors];
+    [self artworkChanged];
+    [self draw];
+    [CATransaction commit];
+    [self updateMotion];
 }
 
 #pragma mark - showing
@@ -281,6 +412,12 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 #pragma mark - moving
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
+    NSString *uri = SGURIString(state.track.URI);
+    if (![_trackURI isEqualToString:uri]) {
+        _trackURI = [uri copy];
+        [self artworkChanged];
+    }
+    if (!state.isPaused) _idle = NO;
     [self updateMotion];
 }
 
@@ -289,13 +426,34 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [self updateMotion];
 }
 
+- (void)setHidden:(BOOL)hidden {
+    if (self.hidden == hidden) return;
+    [super setHidden:hidden];
+    [self updateMotion];
+}
+
 // The power state is reported off the main thread.
 - (void)updateMotionSoon {
     dispatch_async(dispatch_get_main_queue(), ^{ [self updateMotion]; });
 }
 
+- (void)resignActive {
+    // WillResignActive can arrive before UIApplication's state changes.
+    _inactive = YES;
+    [self updateMotion];
+}
+
+- (void)becomeActive {
+    _inactive = NO;
+    [self updateMotion];
+}
+
 - (BOOL)settled {
     for (int band = 0; band < kBands; band++) if (_front[band] > kSettled || _back[band] > kSettled) return NO;
+    if (_style != SGRHills && _pulse > kSettled) return NO;
+    if (_style == SGRBars) {
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) if (fabsf(_wave[i]) > kSettled) return NO;
+    }
     return YES;
 }
 
@@ -303,22 +461,59 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 // stopped. While the player animates, it comes back once the animation is expected to be over.
 - (void)updateMotion {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(updateMotion) object:nil];
-    BOOL front = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-    BOOL may = self.window && front && !NSProcessInfo.processInfo.lowPowerModeEnabled;
+    BOOL front = !_inactive && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+    BOOL may = self.window && !self.hidden && front && !NSProcessInfo.processInfo.lowPowerModeEnabled
+        && NSProcessInfo.processInfo.thermalState < NSProcessInfoThermalStateSerious;
     NSTimeInterval wait = SGPlayerTransitionEnds() - CACurrentMediaTime();
     if (may && (wait > 0 || SGRPlayerIsTransitioning())) {
         may = NO;
         // Without an expected end, the transition's ended notification brings it back.
         if (wait > 0) [self performSelector:@selector(updateMotion) withObject:nil afterDelay:wait + kTransitionSlack inModes:@[NSRunLoopCommonModes]];
     }
-    BOOL playing = !SGPlayerState().isPaused;
-    [self setMoving:may && (playing || !self.settled)];
+    SPTPlayerState *state = SGPlayerState();
+    BOOL playing = state && !state.isPaused;
     [self setReading:may && playing];
+    [self setMoving:may && ((playing && !_idle) || !self.settled)];
+    BOOL waiting = may && playing && _idle;
+    if (waiting && !_wakeTimer) {
+        __weak SGRVisualiserView *weakSelf = self;
+        _wakeTimer = [NSTimer timerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
+            SGRVisualiserView *view = weakSelf;
+            if (!view) { [timer invalidate]; return; }
+            // Recheck eligibility before touching the analysis (power/thermal notifications can be queued).
+            [view updateMotion];
+            if (!view->_reading) return;
+            float levels[kBands];
+            uint64_t generation = SGRSpectrumRead(levels);
+            if (generation == view->_generation) return;
+            view->_generation = generation;
+            for (int i = 0; i < kBands; i++) {
+                if (levels[i] > SGRSpectrumFloor + 1) {
+                    view->_fresh = CACurrentMediaTime();
+                    view->_idle = NO;
+                    [view updateMotion];
+                    break;
+                }
+            }
+        }];
+        _wakeTimer.tolerance = 0.05;
+        [NSRunLoop.mainRunLoop addTimer:_wakeTimer forMode:NSRunLoopCommonModes];
+    } else if (!waiting) {
+        [_wakeTimer invalidate];
+        _wakeTimer = nil;
+    }
 }
 
 - (void)setReading:(BOOL)reading {
     if (reading == _reading) return;
     _reading = reading;
+    if (reading) {
+        float unused[kBands];
+        _generation = SGRSpectrumRead(unused);
+        _fresh = 0;
+        _idle = NO;
+        _last = 0;
+    }
     needReader(reading);
 }
 
@@ -330,12 +525,14 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
             _last = 0;
         }
         // Calmer behind the lyrics, whose own link runs at the display's rate, and calmest with Reduce Motion.
-        // While a playing song sends nothing (a stall, or no tap at all), a few frames a second watch for it.
-        float most = _idle ? 4 : SGRReduceMotion() ? 15 : _lyricsBlur.effect ? 30 : 60;
+        // Bars and Halo may use ProMotion, a target ceiling rather than a measured throughput claim.
+        float ceiling = (_style == SGRBars || _style == SGRHalo) && self.window.screen.maximumFramesPerSecond >= 120 ? 120 : 60;
+        float most = SGRReduceMotion() ? 15 : _lyricsBlur.effect ? 30 : ceiling;
         _link.preferredFrameRateRange = CAFrameRateRangeMake(most / 2, most, most);
     } else if (_link) {
         [_link invalidate];
         _link = nil;
+        _last = 0;
     }
 }
 
@@ -345,6 +542,13 @@ static float ease(float value, float target, double dt, double up, double down) 
 }
 
 - (void)tick:(CADisplayLink *)link {
+    // Notifications normally stop us first; this also covers a power/thermal change queued behind this tick.
+    if (!self.window || self.hidden || _inactive || UIApplication.sharedApplication.applicationState != UIApplicationStateActive
+        || NSProcessInfo.processInfo.lowPowerModeEnabled || NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateSerious
+        || SGRPlayerIsTransitioning() || SGPlayerTransitionEnds() > CACurrentMediaTime()) {
+        [self updateMotion];
+        return;
+    }
     CFTimeInterval now = link.timestamp;
     double dt = _last ? MIN(now - _last, 0.1) : link.duration;
     _last = now;
@@ -356,10 +560,13 @@ static float ease(float value, float target, double dt, double up, double down) 
     }
     BOOL silent = !_reading || now - _fresh > kStale;
     float loudest = kPeakFloor;
+    BOOL hasSignal = NO;
     for (int band = 0; band < kBands; band++) {
+        if (levels[band] > SGRSpectrumFloor + 1) hasSignal = YES;
         levels[band] += kTilt * band;
         loudest = fmaxf(loudest, levels[band]);
     }
+    silent = silent || !hasSignal;
     if (!silent) _peak = fmaxf(fmaxf(loudest, _peak - kPeakFall * (float)dt), kPeakFloor);
     BOOL still = SGRReduceMotion();
     float targets[kBands], kick = kPeakFloor;
@@ -385,12 +592,28 @@ static float ease(float value, float target, double dt, double up, double down) 
     }
     float beat = silent ? 0 : fminf(1, fmaxf(0, (kick - (_peak - kPulseRange)) / kPulseRange));
     _pulse = ease(_pulse, beat, dt, still ? kStillEase : kPulseUp, still ? kStillEase : kPulseDown);
+    if (_style == SGRBars) {
+        float samples[SGRSpectrumWaveformSamples];
+        uint64_t waveGeneration = silent ? 0 : SGRSpectrumReadWaveform(samples);
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) {
+            _wave[i] = ease(_wave[i], waveGeneration ? samples[i] : 0, dt,
+                            still ? kStillEase : 0.04, still ? kStillEase : 0.12);
+        }
+    }
+    // Spatial motion slows with the audible envelope and has no independent CAAnimation clock.
+    if (!still && (_style == SGRNebula || _style == SGRHalo)) {
+        float energy = 0;
+        for (int i = 0; i < kBands; i++) energy = fmaxf(energy, _front[i]);
+        _phase = fmod(_phase + dt * (0.08 * energy + 0.07 * _pulse), 2 * M_PI);
+    }
     [self draw];
     BOOL idle = silent && self.settled;
     if (idle && !_idle) {
         // The last step down to rest, too small to see, so a settled hill is drawn exactly at rest.
         memset(_front, 0, sizeof _front);
         memset(_back, 0, sizeof _back);
+        memset(_wave, 0, sizeof _wave);
+        _pulse = 0;
         [self draw];
     }
     if (idle != _idle) {
@@ -438,12 +661,82 @@ static void shape(CAShapeLayer *layer, const float *bands, CGFloat width, CGFloa
     CGFloat foot = MAX(baseline, bounds.size.height), rest = round(screen * kRestHeight);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    if (_style != SGRHills) {
+        [self drawStyleWithBaseline:baseline screen:screen];
+        [CATransaction commit];
+        return;
+    }
     shape(_backShape, _back, bounds.size.width, baseline, foot, screen * kBackHeight, rest * 1.5);
     shape(_frontShape, _front, bounds.size.width, baseline, foot, screen * kFrontHeight, rest);
     _frontFill.opacity = kPulseFloor + (1 - kPulseFloor) * _pulse;
     _crestFade.startPoint = CGPointMake(0.5, (baseline - screen * kFadeTop) / bounds.size.height);
     _crestFade.endPoint = CGPointMake(0.5, (baseline - screen * kFadeFoot) / bounds.size.height);
     [CATransaction commit];
+}
+
+- (void)drawStyleWithBaseline:(CGFloat)baseline screen:(CGFloat)screen {
+    CGRect bounds = self.bounds;
+    CGFloat width = bounds.size.width, height = bounds.size.height;
+    _styleLayer.frame = bounds;
+    _styleFill.frame = _styleShape.frame = bounds;
+    _reflection.frame = _reflectionShape.frame = bounds;
+    _waveShape.frame = bounds;
+    if (_style == SGRNebula) {
+        for (NSUInteger i = 0; i < _clouds.count; i++) {
+            CGFloat angle = _phase + i * 2 * M_PI / 3;
+            CGFloat size = MIN(width, screen) * (1.1 + 0.10 * _back[kFirst + i]);
+            CGFloat x = width * (0.5 + 0.22 * cos(angle));
+            CGFloat y = MIN(height, baseline) * (0.58 + 0.12 * sin(angle));
+            _clouds[i].frame = CGRectMake(x - size / 2, y - size / 2, size, size);
+            _clouds[i].opacity = 0.25 + 0.25 * _back[kFirst + i] + 0.08 * _pulse;
+        }
+        return;
+    }
+    CGMutablePathRef path = CGPathCreateMutable();
+    if (_style == SGRBars) {
+        CGFloat floor = MIN(height, baseline) - MIN(screen * 0.13, height * 0.2);
+        CGFloat step = width / kBands, barWidth = MAX(1, step * 0.55);
+        CGMutablePathRef reflected = CGPathCreateMutable();
+        for (int i = 0; i < kBands; i++) {
+            CGFloat amplitude = MIN(screen * 0.20, height * 0.4) * _front[i];
+            CGFloat x = step * (i + 0.5) - barWidth / 2;
+            CGPathAddRect(path, NULL, CGRectMake(x, floor - amplitude, barWidth, MAX(1, amplitude)));
+            CGPathAddRect(reflected, NULL, CGRectMake(x, floor + 2, barWidth, MAX(1, amplitude * 0.48)));
+        }
+        _reflectionShape.path = reflected;
+        CGPathRelease(reflected);
+        CGMutablePathRef waveform = CGPathCreateMutable();
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) {
+            CGFloat x = width * i / (SGRSpectrumWaveformSamples - 1);
+            CGFloat y = floor - _wave[i] * MIN(screen * 0.065, height * 0.16);
+            if (!i) CGPathMoveToPoint(waveform, NULL, x, y);
+            else CGPathAddLineToPoint(waveform, NULL, x, y);
+        }
+        _waveShape.path = waveform;
+        CGPathRelease(waveform);
+    } else if (_style == SGRHalo) {
+        CGFloat radius = MIN(width * 0.31, MIN(screen, height) * 0.27);
+        CGPoint center = CGPointMake(width / 2, MIN(baseline, height) * 0.52);
+        // Bounds/position rather than frame: the record already has a rotation transform.
+        _record.bounds = CGRectMake(0, 0, radius * 1.8, radius * 1.8);
+        _record.position = center;
+        _record.cornerRadius = radius * 0.9;
+        _record.transform = CATransform3DMakeRotation(_phase, 0, 0, 1);
+        for (int i = 0; i < kBands * 3; i++) {
+            CGFloat angle = 2 * M_PI * i / (kBands * 3) - M_PI_2;
+            CGFloat length = 1.5 + radius * 0.24 * _front[i % kBands];
+            CGPoint inner = CGPointMake(center.x + cos(angle) * radius, center.y + sin(angle) * radius);
+            CGPoint outer = CGPointMake(center.x + cos(angle) * (radius + length), center.y + sin(angle) * (radius + length));
+            CGPathMoveToPoint(path, NULL, inner.x, inner.y);
+            CGPathAddLineToPoint(path, NULL, outer.x, outer.y);
+        }
+        _styleShape.fillColor = nil;
+        _styleShape.strokeColor = UIColor.whiteColor.CGColor;
+        _styleShape.lineWidth = MAX(1, radius * 0.018);
+        _styleShape.lineCap = kCALineCapRound;
+    }
+    _styleShape.path = path;
+    CGPathRelease(path);
 }
 
 @end

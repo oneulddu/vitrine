@@ -14,28 +14,49 @@
 @property (nonatomic) int64_t end;   // Unix seconds, when the play stopped
 @property (nonatomic) int64_t ms;    // how long it was listened to
 @property (nonatomic, copy) NSString *uri, *title, *artist, *album;   // uri and album may be empty, never nil
+// Parser-only provenance. Vitrine backups retain distinct nearby plays and deduplicate exact rows;
+// Spotify exports use the tolerant title/artist/time match described on -merge:.
+@property (nonatomic) BOOL exactImport;
 @end
+
+FOUNDATION_EXPORT NSNotificationName const SGPlayLogDidChangeNotification;
 
 // A play counts once it has run 30 s, or half of a track shorter than a minute.
 enum { SGPlayMinimumMs = 30000 };
 BOOL SGPlayCounts(double listenedSeconds, double durationSeconds);
 
-// The plays in one of the export's JSON files, either shape: StreamingHistory_music_*.json (endTime,
+// Vitrine's versioned history object, or either Spotify shape: StreamingHistory_music_*.json (endTime,
 // artistName, trackName, msPlayed) or the extended Streaming_History_Audio_*.json (ts, ms_played,
-// master_metadata_*, spotify_track_uri). Podcasts and plays under SGPlayMinimumMs are left out. Nil when
-// the data is not one of those files.
+// master_metadata_*, spotify_track_uri). For Spotify only, podcasts and plays under SGPlayMinimumMs
+// are left out. Nil when unsupported, malformed or over the file/row limits below.
 NSArray<SGPlay *> *SGPlaysFromExport(NSData *json);
+// Vitrine's version 1 history envelope (not a Spotify export). All six SGPlay fields are retained,
+// including counted short tracks. Unknown versions or malformed local rows reject the whole file.
+NSData *SGHistoryJSON(NSArray<SGPlay *> *plays, NSError **error);
 // The .json files inside a zip, such as the export as Spotify mails it. Empty when it is not a zip.
 NSArray<NSData *> *SGJSONFilesInZip(NSData *zip);
+
+@interface SGHistoryImport : NSObject
+@property (nonatomic, copy) NSArray<SGPlay *> *plays;
+@property (nonatomic) NSUInteger files, skipped;
+@end
+// File IO/parsing: call off main. Selected files or folders only; no symlinks, hidden files or packages.
+// Security-scoped access and coordinated reads are balanced here. Limits: 8 levels, 10k visited
+// entries, 1000 files, 64 MiB per JSON, 256 MiB total input/expanded data and one million plays.
+SGHistoryImport *SGReadHistoryURLs(NSArray<NSURL *> *urls);
 
 @interface SGPlayLog : NSObject
 - (instancetype)initWithPath:(NSString *)path;
 // Every play, read from the file the first time it is asked for.
 @property (nonatomic, readonly) NSArray<SGPlay *> *plays;
+@property (nonatomic, readonly) NSError *loadError;
+// Main-thread entry/completion; initial TSV parsing happens off main. Records arriving meanwhile
+// remain in the append-only log and in the completed snapshot. A page should wait before reading plays.
+- (void)loadWithCompletion:(void (^)(void))completion;
 - (void)record:(SGPlay *)play;
-// Adds the plays the log does not have yet, and answers how many that was: a play it has is the same
-// track and artist ending within 90 s of it, which covers the basic export's whole minutes and a
-// clock's drift, so importing a file twice, or both shapes of one export, adds nothing.
+// Adds the plays the log does not have yet, and answers how many that was. Spotify rows match the same
+// track and artist within 90 s, covering basic-export minute precision and clock drift. Vitrine rows
+// match all six persisted fields exactly, so a backup restores legitimate nearby repeats losslessly.
 - (NSUInteger)merge:(NSArray<SGPlay *> *)plays;
 - (void)erase;
 @end
@@ -56,3 +77,12 @@ NSArray<NSData *> *SGJSONFilesInZip(NSData *zip);
 
 // The plays that ended at or after `since` (Unix seconds; 0 for all of them), added up.
 SGStats *SGStatsSince(NSArray<SGPlay *> *plays, int64_t since, NSUInteger top);
+
+@interface SGListeningStreaks : NSObject
+@property (nonatomic) NSUInteger current, best;
+@end
+// Inputs are already-counted log records (do not apply the Spotify import threshold again).
+// Each play belongs to its ending local day/hour. Streaks ignore future days; current may end yesterday.
+SGListeningStreaks *SGStreaks(NSArray<SGPlay *> *plays, NSDate *now, NSCalendar *calendar);
+// Always 24 entries indexed 0…23, including empty hours; repeated DST hours share a bucket.
+NSArray<SGStatEntry *> *SGHourlyStats(NSArray<SGPlay *> *plays, int64_t since, NSCalendar *calendar);

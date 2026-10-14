@@ -62,6 +62,9 @@ int main(void) {
     @autoreleasepool {
         float levels[SGRSpectrumBands];
         check(feed(1000, 1, 48000, 0.5) == 0, @"nothing analyzed before SGRSpectrumPrepare");
+        float waveform[SGRSpectrumWaveformSamples];
+        check(SGRSpectrumReadWaveform(waveform) == 0 && waveform[0] == 0 && waveform[SGRSpectrumWaveformSamples - 1] == 0,
+              @"waveform is silent and unpublished before prepare");
         SGRSpectrumPrepare();
         SGRSpectrumPrepare();
         SGRSpectrumRead(levels);
@@ -100,6 +103,46 @@ int main(void) {
         uint64_t start = feed(0, 0, 48000, 0.01);
         uint64_t end = feed(0, 0, 48000, 1);
         check(end - start >= 45 && end - start <= 48, [NSString stringWithFormat:@"%llu analyses in a second at 48 kHz", end - start]);
+
+        uint64_t silentGeneration = SGRSpectrumReadWaveform(waveform);
+        BOOL silent = silentGeneration > 0;
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) silent &= waveform[i] == 0;
+        check(silent, @"silence publishes an all-zero waveform");
+
+        // A known signed ramp, not spectral data: each published sample must match the actual PCM
+        // position, including its sign and order. A rate change deliberately starts a fresh ring.
+        float ramp[4096];
+        for (int i = 0; i < 4096; i++) ramp[i] = (float)(i % 512) / 256 - 1;
+        SGRSpectrumFeed(ramp, 4096, 32000);
+        uint64_t rampGeneration = SGRSpectrumReadWaveform(waveform);
+        BOOL exact = rampGeneration > silentGeneration;
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) exact &= waveform[i] == ramp[4096 - 512 + i * 4];
+        check(exact, @"waveform publishes exact signed PCM samples in chronological order");
+
+        for (int i = 0; i < 4096; i++) ramp[i] *= 4;
+        SGRSpectrumFeed(ramp, 4096, 32000);
+        BOOL bounded = SGRSpectrumReadWaveform(waveform) > rampGeneration;
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) {
+            float expected = fmaxf(-1, fminf(1, ramp[4096 - 512 + i * 4]));
+            bounded &= isfinite(waveform[i]) && waveform[i] == expected;
+        }
+        check(bounded, @"over-range PCM is clamped to [-1, 1] without losing sample order");
+
+        for (int i = 0; i < 4096; i++) ramp[i] = (i / 4) % 2 ? INFINITY : NAN;
+        SGRSpectrumFeed(ramp, 4096, 32000);
+        SGRSpectrumReadWaveform(waveform);
+        BOOL finite = YES;
+        for (int i = 0; i < SGRSpectrumWaveformSamples; i++) finite &= isfinite(waveform[i]) && waveform[i] == 0;
+        check(finite, @"non-finite waveform input publishes silence");
+
+        // Multiple main-thread consumers do not consume or clear the snapshot. Its static storage
+        // remains valid across prepare calls, including when an audio reader is later reattached.
+        feed(1000, 0.5f, 48000, 0.5);
+        uint64_t retained = SGRSpectrumReadWaveform(waveform);
+        float second[SGRSpectrumWaveformSamples];
+        SGRSpectrumPrepare();
+        check(retained > 0 && SGRSpectrumReadWaveform(second) == retained && !memcmp(waveform, second, sizeof waveform),
+              @"two consumers and repeated prepare preserve the published waveform");
 
         printf("spectrum checks: %d of %d right -- %s\n", right, checks, right == checks ? "PASS" : "FAIL");
         return right == checks ? 0 : 1;
