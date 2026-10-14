@@ -72,7 +72,7 @@ static CGFloat height(float rms) {
     self.clipsToBounds = YES;
     _feedback = [UISelectionFeedbackGenerator new];
     self.isAccessibilityElement = YES;
-    self.accessibilityLabel = @"Vocals";
+    self.accessibilityLabel = SGL(@"settings.karaoke.card.vocals.a11y", @"Vocals");
     self.accessibilityTraits = UIAccessibilityTraitAdjustable;
     return self;
 }
@@ -227,7 +227,7 @@ static CGFloat height(float rms) {
     [_column addTarget:self action:@selector(levelMoved) forControlEvents:UIControlEventValueChanged];
     [_card addSubview:_column];
 
-    _stops = [[UISegmentedControl alloc] initWithItems:@[@"Sing along", @"Original", @"Vocals only"]];
+    _stops = [[UISegmentedControl alloc] initWithItems:@[SGL(@"settings.karaoke.card.stop.singalong", @"Sing along"), SGL(@"settings.karaoke.card.stop.original", @"Original"), SGL(@"settings.karaoke.card.stop.vocalsonly", @"Vocals only")]];
     [_stops addTarget:self action:@selector(stopPicked) forControlEvents:UIControlEventValueChanged];
     [self addSubview:_stops];
 
@@ -292,15 +292,15 @@ static CGFloat height(float rms) {
         _track = player.track;
         _shown = SGShownTrackNow();
     }
-    NSString *title = _shown.title ?: @"Not Playing";
-    NSString *artist = _shown ? _shown.artist ?: @"" : @"Play a song to hear Karaoke";
+    NSString *title = _shown.title ?: SGL(@"settings.karaoke.card.notplaying.title", @"Not Playing");
+    NSString *artist = _shown ? _shown.artist ?: @"" : SGL(@"settings.karaoke.card.notplaying.subtitle", @"Play a song to hear Karaoke");
     _title.text = title;
     _artist.text = artist;
     SGSingState state = SGSingCurrentState();
     NSString *words = SGSingStatusText();
     float stored = SGSingLevel();
     if (state == SGSingStateSinging) {
-        words = stored > 0.001 && stored < 0.999 ? [NSString stringWithFormat:@"%@ · vocals at %@", words, SGSingLevelText(stored)]
+        words = stored > 0.001 && stored < 0.999 ? [NSString stringWithFormat:SGL(@"settings.karaoke.card.status.vocalsformat", @"%@ · vocals at %@"), words, SGSingLevelText(stored)]
                                                  : [NSString stringWithFormat:@"%@ · %@", words, SGSingLevelText(stored)];
     }
     if (SGSingStatusDetail()) words = [words stringByAppendingString:@"  ⓘ"];
@@ -315,7 +315,7 @@ static CGFloat height(float rms) {
         [_play setImage:glyph forState:UIControlStateNormal];
     }
     _play.enabled = player != nil;
-    _play.accessibilityLabel = playing ? @"Pause" : @"Play";
+    _play.accessibilityLabel = playing ? SGL(@"settings.karaoke.card.pause.a11y", @"Pause") : SGL(@"settings.karaoke.card.play.a11y", @"Play");
 
     if (!_column.tracking) _column.level = SGSingLevel();
     float level = _column.level;
@@ -323,8 +323,8 @@ static CGFloat height(float rms) {
     if (_stops.selectedSegmentIndex != stop) _stops.selectedSegmentIndex = stop;
 
     _song.accessibilityLabel = _shown.artist.length ? [NSString stringWithFormat:@"%@, %@", title, artist] : title;
-    _song.accessibilityValue = [NSString stringWithFormat:@"Karaoke: %@. Vocals: %@", SGSingStatusText(), SGSingLevelText(level)];
-    _song.accessibilityHint = SGSingStatusDetail() ? @"Double-tap for more about Karaoke's state." : nil;
+    _song.accessibilityValue = [NSString stringWithFormat:SGL(@"settings.karaoke.card.song.a11y.value", @"Karaoke: %@. Vocals: %@"), SGSingStatusText(), SGSingLevelText(level)];
+    _song.accessibilityHint = SGSingStatusDetail() ? SGL(@"settings.karaoke.card.song.a11y.hint", @"Double-tap for more about Karaoke's state.") : nil;
     _song.accessibilityTraits = SGSingStatusDetail() ? UIAccessibilityTraitButton : UIAccessibilityTraitStaticText;
     _song.accessibilityFrameInContainerSpace = CGRectMake(0, 0, CGRectGetMinX(_column.frame), CGRectGetMinY(_play.frame));
 }
@@ -440,14 +440,14 @@ static CGFloat height(float rms) {
 - (void)explainState {
     NSString *detail = SGSingStatusDetail();
     if (!detail) return;
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Karaoke" message:detail preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.karaoke.state.alert.title", @"Karaoke") message:detail preferredStyle:UIAlertControllerStyleAlert];
     if (SGSingCurrentState() == SGSingStateFailed) {
-        [alert addAction:[UIAlertAction actionWithTitle:@"Try again" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.karaoke.state.action.tryagain", @"Try again") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
             SGSetSingOn(NO);
             SGSetSingOn(YES);
         }]];
     }
-    [alert addAction:[UIAlertAction actionWithTitle:SGSingCurrentState() == SGSingStateFailed ? @"Cancel" : @"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGSingCurrentState() == SGSingStateFailed ? SGL(@"common.cancel", @"Cancel") : SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 

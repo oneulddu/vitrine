@@ -19,9 +19,11 @@ SGLyricsMeaningsLevel SGLyricsMeaningsShown(void) {
 }
 
 SGModRow *SGLyricsMeaningsRow(void) {
-    SGModRow *row = SGChoiceRow(@"Line meanings", nil, SGKeyLyricsMeanings,
-                                @[@"Off", @"From the artist", @"Artist and editors", @"Everyone"], SGLyricsMeaningsOff);
-    row.choiceFooter = @"Explanations from Genius. Tap the bubble after a line, or hold the line.";
+    SGModRow *row = SGChoiceRow(SGL(@"settings.lyrics.meanings.title", @"Line meanings"), nil, SGKeyLyricsMeanings,
+                                @[SGL(@"common.off", @"Off"), SGL(@"settings.lyrics.meanings.choice.artist", @"From the artist"),
+                                  SGL(@"settings.lyrics.meanings.choice.artist_editors", @"Artist and editors"),
+                                  SGL(@"settings.lyrics.meanings.choice.everyone", @"Everyone")], SGLyricsMeaningsOff);
+    row.choiceFooter = SGL(@"settings.lyrics.meanings.footer", @"Explanations from Genius. Tap the bubble after a line, or hold the line.");
     return row;
 }
 

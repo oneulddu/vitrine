@@ -7,18 +7,18 @@
 
 NSArray<SGModRow *> *SGRNowPlayingBarRows(void) {
     // The tab bar reads the switch as each scroll goes; a bar minimized when it goes off grows back at once.
-    SGModRow *minimize = SGSwitchRow(@"Apple Music style", @"Between two tabs as a page scrolls down", SGRKeyNavbarMinimize);
+    SGModRow *minimize = SGSwitchRow(SGL(@"settings.nowplayingbar.minimize.title", @"Apple Music style"), SGL(@"settings.nowplayingbar.minimize.subtitle", @"Between two tabs as a page scrolls down"), SGRKeyNavbarMinimize);
     minimize.changed = ^(BOOL on) {
         if (!on) SGRSetTabBarMinimized(NO, NO);
         SGRRefreshTabBar();
     };
-    SGModRow *inlineConnect = SGOptionRow(@"Device button", @"Kept on the bar between the tabs", SGRKeyBarInlineConnect);
+    SGModRow *inlineConnect = SGOptionRow(SGL(@"settings.nowplayingbar.device_button.title", @"Device button"), SGL(@"settings.nowplayingbar.device_button.subtitle", @"Kept on the bar between the tabs"), SGRKeyBarInlineConnect);
     inlineConnect.waitsOn = SGRKeyNavbarMinimize;
     return @[
         minimize,
         inlineConnect,
-        SGHideRow(@"Hide the device button", @"On the full now playing bar", SGRHideBarConnect),
+        SGHideRow(SGL(@"settings.nowplayingbar.hide_device_button.title", @"Hide the device button"), SGL(@"settings.nowplayingbar.hide_device_button.subtitle", @"On the full now playing bar"), SGRHideBarConnect),
         // Spotify's own flag for the bar's save button, forced off: Spotify leaves the button out.
-        SGKillRow(@"Hide the like button", @"ios-feature-nowplayingbar.add_button"),
+        SGKillRow(SGL(@"settings.nowplayingbar.hide_like.title", @"Hide the like button"), @"ios-feature-nowplayingbar.add_button"),
     ];
 }

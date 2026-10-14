@@ -173,15 +173,15 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             return provider;
         };
         all = @[
-            make(@"binilyrics", @"BiniLyrics", @"Apple Music word timing", SGBiniLyricsAsk),
-            make(@"musixmatch", @"Musixmatch", @"Spotify's licensed catalog", SGMusixmatchAsk),
-            make(@"unison", @"Unison", @"Hand-timed, few tracks", SGUnisonAsk),
-            make(@"netease", @"NetEase", @"Word timing, censored", SGNetEaseAsk),
-            make(@"lrclib", @"LRCLIB", @"Line timing, open fallback", SGLrcLibAsk),
-            make(SGSpicyLyricsKey, @"Spicy Lyrics", @"Community word syncs, your own key", SGSpicyLyricsAsk),
-            make(@"qqmusic", @"QQ Music", @"Line timing, Chinese catalog", SGQQMusicAsk),
-            make(@"kugou", @"KuGou", @"Word timing, Chinese catalog", SGKuGouAsk),
-            make(SGImportedLRCKey, @"Imported LRC", @"Your own .lrc files", SGImportedLRCAsk),
+            make(@"binilyrics", @"BiniLyrics", SGL(@"settings.lyricssources.binilyrics.subtitle", @"Apple Music word timing"), SGBiniLyricsAsk),
+            make(@"musixmatch", @"Musixmatch", SGL(@"settings.lyricssources.musixmatch.subtitle", @"Spotify's licensed catalog"), SGMusixmatchAsk),
+            make(@"unison", @"Unison", SGL(@"settings.lyricssources.unison.subtitle", @"Hand-timed, few tracks"), SGUnisonAsk),
+            make(@"netease", @"NetEase", SGL(@"settings.lyricssources.netease.subtitle", @"Word timing, censored"), SGNetEaseAsk),
+            make(@"lrclib", @"LRCLIB", SGL(@"settings.lyricssources.lrclib.subtitle", @"Line timing, open fallback"), SGLrcLibAsk),
+            make(SGSpicyLyricsKey, @"Spicy Lyrics", SGL(@"settings.lyricssources.spicylyrics.subtitle", @"Community word syncs, your own key"), SGSpicyLyricsAsk),
+            make(@"qqmusic", @"QQ Music", SGL(@"settings.lyricssources.qqmusic.subtitle", @"Line timing, Chinese catalog"), SGQQMusicAsk),
+            make(@"kugou", @"KuGou", SGL(@"settings.lyricssources.kugou.subtitle", @"Word timing, Chinese catalog"), SGKuGouAsk),
+            make(SGImportedLRCKey, SGL(@"settings.lyricssources.importedlrc.title", @"Imported LRC"), SGL(@"settings.lyricssources.importedlrc.subtitle", @"Your own .lrc files"), SGImportedLRCAsk),
         ];
     });
     return all;
@@ -363,7 +363,7 @@ void SGLyricsOpenCreditLinks(NSArray<SGLyricsLink *> *links, UIView *from) {
             [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
         }]];
     }
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     sheet.popoverPresentationController.sourceView = from;
     sheet.popoverPresentationController.sourceRect = from.bounds;
     [SGTopController() presentViewController:sheet animated:YES completion:nil];
@@ -584,7 +584,7 @@ NSArray<NSString *> *SGLyricsTranslationLanguageNames(void) {
     NSLocale *english = [NSLocale localeWithLocaleIdentifier:@"en"];
     NSMutableArray<NSString *> *names = [NSMutableArray array];
     for (NSString *tag in SGLyricsTranslationLanguages()) {
-        [names addObject:tag.length ? [english localizedStringForLocaleIdentifier:tag] ?: tag : @"Any · iPhone's language"];
+        [names addObject:tag.length ? [english localizedStringForLocaleIdentifier:tag] ?: tag : SGL(@"settings.lyricssources.translationlanguage.choice.any", @"Any · iPhone's language")];
     }
     return names;
 }
@@ -628,6 +628,6 @@ UIViewController *SGLyricsSourcesPage(void) {
         NSString *detail = [provider.key isEqualToString:SGSpicyLyricsKey] ? SGSpicyLyricsStatus() ?: provider.detail : provider.detail;
         [all addObject:[SGSource sourceWithKey:provider.key name:provider.name detail:detail]];
     }
-    return SGSourcesPageMake(@"Lyrics sources", @"Asked top to bottom until one has word timing. Sources get only the track, never your account.",
+    return SGSourcesPageMake(SGL(@"settings.lyricssources.title", @"Lyrics sources"), SGL(@"settings.lyricssources.intro", @"Asked top to bottom until one has word timing. Sources get only the track, never your account."),
                              all, ^NSArray<NSString *> * { return SGLyricsOrder(); }, ^(NSArray<NSString *> *keys) { SGLyricsSetOrder(keys); });
 }

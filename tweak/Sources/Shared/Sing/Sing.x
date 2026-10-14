@@ -602,8 +602,8 @@ void SGSetSingIgnoresHeat(BOOL ignores) {
 }
 
 NSString *SGSingMissing(void) {
-    if (!SGSingOSSupported()) return [NSString stringWithFormat:@"Karaoke needs iOS 18, the first its voice model runs on. This iPhone has iOS %@.", UIDevice.currentDevice.systemVersion];
-    if (SGSingModelCurrentState() != SGSingModelReady) return [NSString stringWithFormat:@"Karaoke needs its voice model, which is downloaded from Mod Settings > Karaoke (%@).", SGSingModelSizeText()];
+    if (!SGSingOSSupported()) return [NSString stringWithFormat:SGL(@"settings.karaoke.error.os_unsupported", @"Karaoke needs iOS 18, the first its voice model runs on. This iPhone has iOS %@."), UIDevice.currentDevice.systemVersion];
+    if (SGSingModelCurrentState() != SGSingModelReady) return [NSString stringWithFormat:SGL(@"settings.karaoke.error.needs_model", @"Karaoke needs its voice model, which is downloaded from Mod Settings > Karaoke (%@)."), SGSingModelSizeText()];
     return nil;
 }
 
@@ -635,30 +635,30 @@ SGSingState SGSingCurrentState(void) {
 
 NSString *SGSingStatusText(void) {
     switch (SGSingCurrentState()) {
-        case SGSingStateUnavailable: return @"Unavailable";
-        case SGSingStateNoModel: return @"Needs its voice model";
+        case SGSingStateUnavailable: return SGL(@"settings.karaoke.status.unavailable", @"Unavailable");
+        case SGSingStateNoModel: return SGL(@"settings.karaoke.status.no_model", @"Needs its voice model");
         case SGSingStateDownloading:
-            if (SGSingModelChecking()) return @"Checking the download";
-            if (SGSingModelWaitingForNetwork()) return SGSingModelOverCellular() ? @"Waiting for the network" : @"Waiting for Wi-Fi";
-            return [NSString stringWithFormat:@"Downloading %.0f%%", SGSingModelProgress() * 100];
-        case SGSingStateOff: return SGSingLoaderPreparingSeconds() >= 0 ? @"Off · preparing for the Neural Engine" : @"Off";
+            if (SGSingModelChecking()) return SGL(@"settings.karaoke.status.checking_download", @"Checking the download");
+            if (SGSingModelWaitingForNetwork()) return SGSingModelOverCellular() ? SGL(@"settings.karaoke.status.waiting_network", @"Waiting for the network") : SGL(@"settings.karaoke.status.waiting_wifi", @"Waiting for Wi-Fi");
+            return [NSString stringWithFormat:SGL(@"settings.karaoke.status.downloading_format", @"Downloading %.0f%%"), SGSingModelProgress() * 100];
+        case SGSingStateOff: return SGSingLoaderPreparingSeconds() >= 0 ? SGL(@"settings.karaoke.status.off_preparing", @"Off · preparing for the Neural Engine") : SGL(@"common.off", @"Off");
         case SGSingStatePreparing: {
             NSTimeInterval seconds = SGSingLoaderSeconds();
-            return seconds >= 1 ? [NSString stringWithFormat:@"Loading the voice model, %.0f s", seconds] : @"Loading the voice model";
+            return seconds >= 1 ? [NSString stringWithFormat:SGL(@"settings.karaoke.status.loading_model_seconds", @"Loading the voice model, %.0f s"), seconds] : SGL(@"settings.karaoke.status.loading_model", @"Loading the voice model");
         }
-        case SGSingStateWaiting: return sg_resting ? @"As sung" : @"Ready";
-        case SGSingStateBuffering: return @"Listening ahead";
+        case SGSingStateWaiting: return sg_resting ? SGL(@"settings.karaoke.status.as_sung", @"As sung") : SGL(@"settings.karaoke.status.ready", @"Ready");
+        case SGSingStateBuffering: return SGL(@"settings.karaoke.status.buffering", @"Listening ahead");
         case SGSingStateSinging: {
             SGSingSeparator *separator = SGSingLoaderSeparator();
-            return separator && [separator stats].fast ? @"On, Neural Engine" : @"On, CPU";
+            return separator && [separator stats].fast ? SGL(@"settings.karaoke.status.on_neural_engine", @"On, Neural Engine") : SGL(@"settings.karaoke.status.on_cpu", @"On, CPU");
         }
         // The Neural Engine copy on its way: the budget is held (holdBudget), so this is not yet Too slow.
         case SGSingStateBehind:
-            return SGSingLoaderFastState() == SGSingFastLoading ? @"Preparing for the Neural Engine" : @"Too slow";
-        case SGSingStateHot: return @"Held, too hot";
+            return SGSingLoaderFastState() == SGSingFastLoading ? SGL(@"settings.karaoke.status.preparing_neural_engine", @"Preparing for the Neural Engine") : SGL(@"settings.karaoke.status.too_slow", @"Too slow");
+        case SGSingStateHot: return SGL(@"settings.karaoke.status.held_too_hot", @"Held, too hot");
         case SGSingStateFailed:
-            if (!sg_stopped && sg_refused) return sg_refused == kOverAirPlay ? @"Off over AirPlay" : sg_refused == kElsewhere ? @"Not on this iPhone" : @"Songs only";
-            return sg_stopped ? @"Stopped" : @"Failed";
+            if (!sg_stopped && sg_refused) return sg_refused == kOverAirPlay ? SGL(@"settings.karaoke.status.off_airplay", @"Off over AirPlay") : sg_refused == kElsewhere ? SGL(@"settings.karaoke.status.not_on_iphone", @"Not on this iPhone") : SGL(@"settings.karaoke.status.songs_only", @"Songs only");
+            return sg_stopped ? SGL(@"settings.karaoke.status.stopped", @"Stopped") : SGL(@"settings.karaoke.status.failed", @"Failed");
     }
     return @"";
 }
@@ -666,25 +666,25 @@ NSString *SGSingStatusText(void) {
 // Where the model runs now, for the details of a working Sing.
 static NSString *runsOnNote(void) {
     if (SGSingModelUpdateAvailable()) {
-        return [NSString stringWithFormat:@"Karaoke runs on the CPU with the voice model it had before. Its update (%@, on the Voice model row) runs "
-                                          @"on the Neural Engine, faster and cooler.", SGSingModelSizeText()];
+        return [NSString stringWithFormat:SGL(@"settings.karaoke.note.cpu_model_update", @"Karaoke runs on the CPU with the voice model it had before. Its update (%@, on the Voice model row) runs "
+                                          @"on the Neural Engine, faster and cooler."), SGSingModelSizeText()];
     }
-    if (runsOn() == 1) return @"Karaoke runs on the CPU alone, as Runs on says.";
-    if (!hasNeuralEngine()) return @"This iPhone has no Neural Engine Karaoke can use, so it runs on the CPU.";
+    if (runsOn() == 1) return SGL(@"settings.karaoke.note.cpu_by_setting", @"Karaoke runs on the CPU alone, as Runs on says.");
+    if (!hasNeuralEngine()) return SGL(@"settings.karaoke.note.no_neural_engine", @"This iPhone has no Neural Engine Karaoke can use, so it runs on the CPU.");
     if (sg_neuralFailed) {
-        return [NSString stringWithFormat:@"The Neural Engine copy of the voice model %@, so Karaoke runs on the CPU until Spotify is opened again.", sg_neuralFailed];
+        return [NSString stringWithFormat:SGL(@"settings.karaoke.note.neural_engine_failed", @"The Neural Engine copy of the voice model %@, so Karaoke runs on the CPU until Spotify is opened again."), sg_neuralFailed];
     }
     if (preparingNeural()) {
-        return [NSString stringWithFormat:@"Preparing for the Neural Engine, first time only (%.0f s so far). Karaoke runs on the CPU until then.",
+        return [NSString stringWithFormat:SGL(@"settings.karaoke.note.preparing_first_time", @"Preparing for the Neural Engine, first time only (%.0f s so far). Karaoke runs on the CPU until then."),
                 SGSingLoaderFastSeconds()];
     }
     switch (SGSingLoaderFastState()) {
-        case SGSingFastNone: return @"Karaoke runs on the CPU; the Neural Engine copy loads once Spotify is open.";
-        case SGSingFastLoading: return @"Karaoke runs on the CPU while the Neural Engine copy loads.";
-        case SGSingFastReady: return @"Karaoke runs on the Neural Engine.";
-        case SGSingFastSkipped: return @"Too little memory is left for the Neural Engine copy, so Karaoke runs on the CPU alone.";
-        case SGSingFastFailed: return @"The Neural Engine could not load the voice model, so Karaoke runs on the CPU alone.";
-        case SGSingFastTimedOut: return [NSString stringWithFormat:@"The Neural Engine did not load the voice model in %.0f minutes, so Karaoke runs on the CPU alone.",
+        case SGSingFastNone: return SGL(@"settings.karaoke.note.cpu_loads_on_open", @"Karaoke runs on the CPU; the Neural Engine copy loads once Spotify is open.");
+        case SGSingFastLoading: return SGL(@"settings.karaoke.note.cpu_while_loading", @"Karaoke runs on the CPU while the Neural Engine copy loads.");
+        case SGSingFastReady: return SGL(@"settings.karaoke.note.running_on_neural", @"Karaoke runs on the Neural Engine.");
+        case SGSingFastSkipped: return SGL(@"settings.karaoke.note.low_memory_cpu", @"Too little memory is left for the Neural Engine copy, so Karaoke runs on the CPU alone.");
+        case SGSingFastFailed: return SGL(@"settings.karaoke.note.neural_failed_cpu", @"The Neural Engine could not load the voice model, so Karaoke runs on the CPU alone.");
+        case SGSingFastTimedOut: return [NSString stringWithFormat:SGL(@"settings.karaoke.note.neural_timeout_cpu", @"The Neural Engine did not load the voice model in %.0f minutes, so Karaoke runs on the CPU alone."),
                                          SGSingLoaderNeuralDeadline / 60];
     }
     return nil;
@@ -698,52 +698,52 @@ NSString *SGSingStatusDetail(void) {
         case SGSingStateDownloading:
             if (SGSingModelWaitingForNetwork()) {
                 if (!SGSingModelOverCellular()) {
-                    return [NSString stringWithFormat:@"The voice model's download waits for Wi-Fi, as %@ is a lot of a cellular plan, and carries on from %.0f%% once "
-                                                      @"the iPhone is on Wi-Fi. The Voice model row on the Karaoke page can let it use cellular.",
+                    return [NSString stringWithFormat:SGL(@"settings.karaoke.note.download_waiting_wifi", @"The voice model's download waits for Wi-Fi, as %@ is a lot of a cellular plan, and carries on from %.0f%% once "
+                                                      @"the iPhone is on Wi-Fi. The Voice model row on the Karaoke page can let it use cellular."),
                             SGSingModelSizeText(), SGSingModelProgress() * 100];
                 }
-                return [NSString stringWithFormat:@"The iPhone is offline. The voice model's download carries on from %.0f%% of %@ once it is online again.",
+                return [NSString stringWithFormat:SGL(@"settings.karaoke.note.download_offline", @"The iPhone is offline. The voice model's download carries on from %.0f%% of %@ once it is online again."),
                         SGSingModelProgress() * 100, SGSingModelSizeText()];
             }
-            return [NSString stringWithFormat:@"The voice model is coming in, %.0f%% of %@. Karaoke starts once it is checked.", SGSingModelProgress() * 100, SGSingModelSizeText()];
+            return [NSString stringWithFormat:SGL(@"settings.karaoke.note.download_progress", @"The voice model is coming in, %.0f%% of %@. Karaoke starts once it is checked."), SGSingModelProgress() * 100, SGSingModelSizeText()];
         case SGSingStateOff: {
             NSTimeInterval seconds = SGSingLoaderPreparingSeconds();
             if (seconds < 0) return nil;
-            return [NSString stringWithFormat:@"After an update, the iPhone prepares the voice model for the Neural Engine once, which takes about a minute. "
-                                              @"Vitrine does it now, in the background, so Karaoke starts at full speed when it is switched on (%.0f s so far).", seconds];
+            return [NSString stringWithFormat:SGL(@"settings.karaoke.note.preparing_background", @"After an update, the iPhone prepares the voice model for the Neural Engine once, which takes about a minute. "
+                                              @"Vitrine does it now, in the background, so Karaoke starts at full speed when it is switched on (%.0f s so far)."), seconds];
         }
         case SGSingStateWaiting:
             if (sg_resting) {
-                return @"The vocals are as sung and Spatial voice is off, so the song plays as it is and the voice model rests. Karaoke starts again "
-                       @"when the level moves, Spatial voice goes on, or the Karaoke page opens.";
+                return SGL(@"settings.karaoke.note.resting", @"The vocals are as sung and Spatial voice is off, so the song plays as it is and the voice model rests. Karaoke starts again "
+                       @"when the level moves, Spatial voice goes on, or the Karaoke page opens.");
             }
-            return [NSString stringWithFormat:@"The voice model is ready, and Karaoke starts once Spotify plays a song. %@", runsOnNote()];
+            return [NSString stringWithFormat:SGL(@"settings.karaoke.note.ready_to_play", @"The voice model is ready, and Karaoke starts once Spotify plays a song. %@"), runsOnNote()];
         case SGSingStatePreparing:
-            if (SGSingLoaderCurrentState() == SGSingLoaderIdle) return @"The voice model loads once Spotify is open.";
-            return [NSString stringWithFormat:@"Core ML prepares the voice model for this iPhone's CPU, %.0f s so far, then Karaoke starts. The first time, that can take a minute.",
+            if (SGSingLoaderCurrentState() == SGSingLoaderIdle) return SGL(@"settings.karaoke.note.loads_on_open", @"The voice model loads once Spotify is open.");
+            return [NSString stringWithFormat:SGL(@"settings.karaoke.note.cpu_preparing", @"Core ML prepares the voice model for this iPhone's CPU, %.0f s so far, then Karaoke starts. The first time, that can take a minute."),
                     SGSingLoaderSeconds()];
         case SGSingStateBuffering:
-            return @"Karaoke listens a few seconds ahead of what plays, so the vocals are separated before you hear them. Until then the song plays as it is.";
+            return SGL(@"settings.karaoke.note.buffering_ahead", @"Karaoke listens a few seconds ahead of what plays, so the vocals are separated before you hear them. Until then the song plays as it is.");
         case SGSingStateSinging:
             return runsOnNote();
         case SGSingStateBehind: {
             SGSingEngine *engine = atomic_load(&sg_engine);
             double ms = engine ? SGSingEngineReadStats(engine).averageMS : 0;
-            return [NSString stringWithFormat:@"The voice model takes %.1f s for every 1.5 s of song on this iPhone, so the vocals stay in until it catches up. %@",
+            return [NSString stringWithFormat:SGL(@"settings.karaoke.note.processing_lag", @"The voice model takes %.1f s for every 1.5 s of song on this iPhone, so the vocals stay in until it catches up. %@"),
                     ms / 1000, runsOnNote()];
         }
         case SGSingStateHot:
-            return @"The iPhone is hot, so Karaoke has let go of the voice model and the song plays as it is. Karaoke loads it again once the iPhone cools. "
-                   @"Ignore heat warnings keeps Karaoke going.";
+            return SGL(@"settings.karaoke.note.thermal_throttled", @"The iPhone is hot, so Karaoke has let go of the voice model and the song plays as it is. Karaoke loads it again once the iPhone cools. "
+                   @"Ignore heat warnings keeps Karaoke going.");
         case SGSingStateFailed: {
             SGSingEngine *engine = atomic_load(&sg_engine);
             if (sg_stopped ?: sg_refused) return sg_stopped ?: sg_refused;
             NSString *error = SGSingLoaderError() ?: (engine ? SGSingEngineError(engine) : sg_setupError);
-            if (SGSingLoaderError()) return [error stringByAppendingString:@" Switch Karaoke off and on again to try again."];
+            if (SGSingLoaderError()) return [error stringByAppendingString:SGL(@"settings.karaoke.note.error_toggle_hint", @" Switch Karaoke off and on again to try again.")];
             if (error) return error;
-            if (!sg_outputReachable) return @"Spotify's output could not be reached.";
-            if (!atomic_load(&sg_staged) && !SGPlayerSpeedAllowed()) return @"Spotify's output could not be taken over, so Karaoke cannot reach its sound.";
-            return @"Spotify's output is not 44.1 kHz stereo, which the voice model needs, so the song plays as it is.";
+            if (!sg_outputReachable) return SGL(@"settings.karaoke.error.output_unreachable", @"Spotify's output could not be reached.");
+            if (!atomic_load(&sg_staged) && !SGPlayerSpeedAllowed()) return SGL(@"settings.karaoke.error.output_not_staged", @"Spotify's output could not be taken over, so Karaoke cannot reach its sound.");
+            return SGL(@"settings.karaoke.error.format_not_stereo", @"Spotify's output is not 44.1 kHz stereo, which the voice model needs, so the song plays as it is.");
         }
         default:
             return nil;
@@ -752,11 +752,11 @@ NSString *SGSingStatusDetail(void) {
 
 NSString *SGSingSummary(void) {
     switch (SGSingCurrentState()) {
-        case SGSingStateUnavailable: return @"Unavailable";
-        case SGSingStateNoModel: return @"Off";
-        case SGSingStateDownloading: return [NSString stringWithFormat:@"%.0f%%", SGSingModelProgress() * 100];
-        case SGSingStateOff: return @"Off";
-        default: return @"On";
+        case SGSingStateUnavailable: return SGL(@"settings.karaoke.status.unavailable", @"Unavailable");
+        case SGSingStateNoModel: return SGL(@"common.off", @"Off");
+        case SGSingStateDownloading: return [NSString stringWithFormat:SGL(@"settings.karaoke.status.download_percent", @"%.0f%%"), SGSingModelProgress() * 100];
+        case SGSingStateOff: return SGL(@"common.off", @"Off");
+        default: return SGL(@"common.on", @"On");
     }
 }
 

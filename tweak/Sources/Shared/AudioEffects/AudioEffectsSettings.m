@@ -147,20 +147,20 @@ void SGDSPResetAll(void) {
 #pragma mark - lists
 
 NSArray<NSString *> *SGDSPConvolverModeNames(void) {
-    return @[@"Original", @"Trimmed", @"Minimum phase"];
+    return @[SGL(@"settings.audioeffects.convolver.choice.original", @"Original"), SGL(@"settings.audioeffects.convolver.choice.trimmed", @"Trimmed"), SGL(@"settings.audioeffects.convolver.choice.minimumphase", @"Minimum phase")];
 }
 
 NSArray<NSString *> *SGDSPCrossfeedModeNames(void) {
-    return @[@"Jan Meier (650 Hz, 9.5 dB)", @"Chu Moy (700 Hz, 6 dB)", @"Default (700 Hz, 4.5 dB)"];
+    return @[SGL(@"settings.audioeffects.crossfeed.choice.janmeier", @"Jan Meier (650 Hz, 9.5 dB)"), SGL(@"settings.audioeffects.crossfeed.choice.chumoy", @"Chu Moy (700 Hz, 6 dB)"), SGL(@"settings.audioeffects.crossfeed.choice.default", @"Default (700 Hz, 4.5 dB)")];
 }
 
 NSArray<NSString *> *SGDSPReverbPresetNames(void) {
-    return @[@"Ambience", @"Small room", @"Medium room", @"Large room", @"Chamber", @"Plate", @"Small hall", @"Large hall", @"Cathedral"];
+    return @[SGL(@"settings.audioeffects.reverb.choice.ambience", @"Ambience"), SGL(@"settings.audioeffects.reverb.choice.smallroom", @"Small room"), SGL(@"settings.audioeffects.reverb.choice.mediumroom", @"Medium room"), SGL(@"settings.audioeffects.reverb.choice.largeroom", @"Large room"), SGL(@"settings.audioeffects.reverb.choice.chamber", @"Chamber"), SGL(@"settings.audioeffects.reverb.choice.plate", @"Plate"), SGL(@"settings.audioeffects.reverb.choice.smallhall", @"Small hall"), SGL(@"settings.audioeffects.reverb.choice.largehall", @"Large hall"), SGL(@"settings.audioeffects.reverb.choice.cathedral", @"Cathedral")];
 }
 
 NSArray<NSString *> *SGDSPEqualizerPresetNames(void) {
-    return @[@"Flat", @"Bass", @"Loudness", @"Treble", @"Vocal", @"Warm", @"Bright", @"Rock", @"Electronic", @"Acoustic",
-             @"Classical", @"Podcast"];
+    return @[SGL(@"settings.audioeffects.eq.choice.flat", @"Flat"), SGL(@"settings.audioeffects.eq.choice.bass", @"Bass"), SGL(@"settings.audioeffects.eq.choice.loudness", @"Loudness"), SGL(@"settings.audioeffects.eq.choice.treble", @"Treble"), SGL(@"settings.audioeffects.eq.choice.vocal", @"Vocal"), SGL(@"settings.audioeffects.eq.choice.warm", @"Warm"), SGL(@"settings.audioeffects.eq.choice.bright", @"Bright"), SGL(@"settings.audioeffects.eq.choice.rock", @"Rock"), SGL(@"settings.audioeffects.eq.choice.electronic", @"Electronic"), SGL(@"settings.audioeffects.eq.choice.acoustic", @"Acoustic"),
+             SGL(@"settings.audioeffects.eq.choice.classical", @"Classical"), SGL(@"settings.audioeffects.eq.choice.podcast", @"Podcast")];
 }
 
 NSArray<NSNumber *> *SGDSPEqualizerPreset(NSInteger index) {

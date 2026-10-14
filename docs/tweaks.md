@@ -898,9 +898,36 @@ in the simulator against harness/addtab/ (`navbar`, `icons`, `off`, `hide`, `edi
    switch, use `SGGlassFor`/`SGGlassAt` + `SGShapeGlass` for glass and `SGStripBackgrounds` to clear
    Spotify's paint, and end with `%ctor { %init; SGRequireClasses(@[...]); }`, gated first on the layer's look
    (`SGNativeUI()` or `SGRedesignedUI()`) in Native/ and Redesigned/.
+## Localization
+
+Mod Settings and every page, sheet and alert it opens read their words from `Vitrine.bundle`
+(`tweak/layout/Library/Application Support/Vitrine.bundle`): `en.lproj` and `ko.lproj`, each a `Localizable.strings`.
+Theos puts the bundle in the .deb, so a jailbreak installs it under `/Library/Application Support` (or `/var/jb`), and
+cyan copies every `.bundle` of a .deb into the app, so the IPA has it beside Spotify's own.
+`Core/SGLocalize.h` has the one way in: `SGL(@"settings.player.title", @"Player")`, a key named for what the text means
+and the English it stands for. The language is Spotify's own (the iPhone's, or the one set for Spotify in Settings);
+one without a table, a missing bundle or key, and a translation whose format specifiers read differently from the
+English all give the English, so an English iPhone sees exactly the text in the sources. `NSBundle` is left alone.
+
+What is not translated: preference keys and `spotifyglass.*` values, logs, URLs, file names, Spotify's own words,
+track and artist names, and the names Vitrine, Spotify, AutoMix, AutoEq, Gemini and the like. A text that is also
+stored or compared (a preset saved under "Before presets", the ad counters' labels, the equalizer preset a built-in
+preset reads) stays English in code and is translated only where a row shows it. A text `SGL` reads must be made at
+run time: a file-scope `static NSString *const` cannot call it, so such texts are functions or macros
+(`SGRestartNote`, `SGRedesignedUIInfo`, `SGFakePremiumWarning`).
+
+To add a text: write it as `SGL(@"settings.<page>.<what>", @"English")` (lowercase, dot-separated, `common.*` for
+Cancel, OK, On, Off and the like), run `scripts/check-strings.py --sync` to write `en.lproj`, and add the key to
+`ko.lproj` with the same `%@`/`%ld`/`%lu` specifiers (`%2$@` may reorder them). `scripts/check-strings.py` without
+`--sync` fails on a key used for two texts, a table out of step with the sources, a missing or extra key, a specifier
+mismatch, a table or Info.plist `plutil` refuses, and an untranslated text passed to a row, section, alert or label
+on a settings page; a name that reads the same everywhere goes in `scripts/strings-allow.txt`. A harness that builds
+a page using `SGL` compiles `Core/SGLocalize.m` too; harness/mod-settings/ copies the bundle into its app, so
+`-AppleLanguages '(ko)'` on its launch line shows the Korean.
+
 4. Add `<Feature>Settings.m` returning an `SGModPage` of `SGSection`s of `SGSwitchRow`/`SGHideRow`/
    `SGFlagRow`/`SGChoiceRow`/`SGSliderRow` (Settings/SGModPage.h), and put it on the page of the part of
-   Spotify it changes in `App/Pages.m` or `App/ModSettings.x`.
+   Spotify it changes in `App/Pages.m` or `App/ModSettings.x`. Every text it shows goes through `SGL` (see Localization).
 5. `make install`. Log lines are prefixed `[spotifyglass]`. A FLEX build serves the visible screen's
    tree on the phone's port 8085, which `make trees` reaches over USB through iproxy.
 

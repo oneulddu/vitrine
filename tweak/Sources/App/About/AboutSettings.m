@@ -24,11 +24,11 @@ static void resetAll(void) {
 }
 
 static void confirmReset(void) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Reset all settings?"
-                                                                  message:@"Every switch goes off, flag overrides and the tab bar layout are cleared, and Spotify restarts as it came, with the mod doing nothing until asked. Spotify's own settings are untouched."
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.mod.reset.alert.title", @"Reset all settings?")
+                                                                  message:SGL(@"settings.mod.reset.alert.message", @"Every switch goes off, flag overrides and the tab bar layout are cleared, and Spotify restarts as it came, with the mod doing nothing until asked. Spotify's own settings are untouched.")
                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Reset and restart" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { resetAll(); }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.mod.reset.action.reset_and_restart", @"Reset and restart") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { resetAll(); }]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
@@ -40,38 +40,38 @@ static SGModRow *withSymbol(SGModRow *row, NSString *symbol) {
 // Which build this is, whether GitHub has a newer release, and where to reach the mod: without these
 // rows a build that is already installed has no way of telling its user that anything moved on.
 UIViewController *SGAboutPage(void) {
-    SGModRow *reset = withSymbol(SGActionRow(@"Reset all settings", nil, ^{ confirmReset(); }), @"trash");
+    SGModRow *reset = withSymbol(SGActionRow(SGL(@"settings.mod.reset.title", @"Reset all settings"), nil, ^{ confirmReset(); }), @"trash");
     reset.color = SGRed();
     NSString *spotify = SGSpotifyVersion();
-    if ([SGSpotifyLikelyWorksVersions containsObject:spotify]) spotify = [spotify stringByAppendingString:@", likely works"];
-    else if (![SGSpotifySupportedVersions containsObject:spotify]) spotify = [NSString stringWithFormat:@"%@, made for %@", spotify, SGSpotifyMadeFor];
+    if ([SGSpotifyLikelyWorksVersions containsObject:spotify]) spotify = [spotify stringByAppendingString:SGL(@"settings.mod.spotify_version.likely_works", @", likely works")];
+    else if (![SGSpotifySupportedVersions containsObject:spotify]) spotify = [NSString stringWithFormat:SGL(@"settings.mod.spotify_version.made_for", @"%@, made for %@"), spotify, SGSpotifyMadeFor];
     // The row reads out where the build stands and opens the changelog of everything newer than it.
-    SGModRow *updates = SGPageRow(@"Updates", ^UIViewController *{ return SGUpdatePage(); });
+    SGModRow *updates = SGPageRow(SGL(@"settings.mod.updates.title", @"Updates"), ^UIViewController *{ return SGUpdatePage(); });
     updates.value = ^NSString *{ return SGUpdateStatus(); };
     // A release build can opt into betas; a beta build starts opted in. Either way a check follows at
     // once, since the stored list only holds what counted at the last one.
-    SGModRow *betas = SGSwitchRow(@"Include betas", @"Offer test builds ahead of each release", SGKeyUpdateBetas);
+    SGModRow *betas = SGSwitchRow(SGL(@"settings.mod.include_betas.title", @"Include betas"), SGL(@"settings.mod.include_betas.subtitle", @"Offer test builds ahead of each release"), SGKeyUpdateBetas);
     betas.defaultOn = SGBuildIsBeta();
     betas.changed = ^(BOOL on) { SGCheckForUpdate(YES); };
     NSMutableArray<SGModRow *> *links = [NSMutableArray array];
     if (SGRepoURL) [links addObject:withSymbol(SGLinkRow(@"GitHub", nil, SGRepoURL), @"chevron.left.forwardslash.chevron.right")];
     [links addObjectsFromArray:@[
-        withSymbol(SGPageRow(@"Licenses", ^UIViewController *{ return SGLicensesPage(); }), @"doc.text"),
-        withSymbol(SGActionRow(@"Welcome tour", nil, ^{ SGShowOnboarding(); }), @"map"),
+        withSymbol(SGPageRow(SGL(@"settings.mod.licenses.title", @"Licenses"), ^UIViewController *{ return SGLicensesPage(); }), @"doc.text"),
+        withSymbol(SGActionRow(SGL(@"settings.mod.tour.title", @"Welcome tour"), nil, ^{ SGShowOnboarding(); }), @"map"),
     ]];
-    if (SGWhatsNewChanges().count) [links insertObject:withSymbol(SGActionRow(@"What's New", nil, ^{ SGShowWhatsNew(); }), @"sparkles") atIndex:links.count - 1];
+    if (SGWhatsNewChanges().count) [links insertObject:withSymbol(SGActionRow(SGL(@"settings.mod.whats_new.title", @"What's New"), nil, ^{ SGShowWhatsNew(); }), @"sparkles") atIndex:links.count - 1];
     NSMutableArray<SGModRow *> *build = [NSMutableArray arrayWithObjects:updates, betas,
-        SGStatRow(@"Version", ^NSString *{ return @(SG_VERSION); }),
+        SGStatRow(SGL(@"settings.mod.version.title", @"Version"), ^NSString *{ return @(SG_VERSION); }),
         SGStatRow(@"Spotify", ^NSString *{ return spotify; }), nil];
     SGModRow *signedUntil = SGSigningExpiryRow();
     if (signedUntil) [build addObject:signedUntil];
-    return [[SGModPage alloc] initWithTitle:@"Mod" intro:nil sections:@[
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.mod.title", @"Mod") intro:nil sections:@[
         SGSection(nil, build),
         SGSection(nil, links),
         SGSection(nil, @[
-            withSymbol(SGActionRow(@"Export settings", nil, ^{ SGExportSettings(); }), @"square.and.arrow.up"),
-            withSymbol(SGActionRow(@"Import settings", nil, ^{ SGImportSettings(); }), @"square.and.arrow.down"),
-            withSymbol(SGActionRow(@"Share diagnostics", @"For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show.",
+            withSymbol(SGActionRow(SGL(@"settings.mod.export_settings.title", @"Export settings"), nil, ^{ SGExportSettings(); }), @"square.and.arrow.up"),
+            withSymbol(SGActionRow(SGL(@"settings.mod.import_settings.title", @"Import settings"), nil, ^{ SGImportSettings(); }), @"square.and.arrow.down"),
+            withSymbol(SGActionRow(SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), SGL(@"settings.mod.share_diagnostics.subtitle", @"For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show."),
                                    ^{ SGShareDiagnostics(); }), @"stethoscope"),
         ]),
         SGSection(nil, @[reset]),

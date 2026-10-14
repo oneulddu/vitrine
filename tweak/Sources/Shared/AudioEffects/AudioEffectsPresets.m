@@ -1,5 +1,6 @@
 // The presets: built-in ones over a reset, and the user's own as a copy of every dsp key. Everything goes back
 // in through AudioEffects.h's setters, so it is clamped and applied the way the page's own changes are.
+#import "Core/SGLocalize.h"
 #import "AudioEffects.h"
 #import "AudioEffectsApply.h"
 #import "AudioEffectsPresets.h"
@@ -37,28 +38,31 @@ static NSDictionary<NSString *, id> *currentValues(void) {
 
 #pragma mark - built in
 
-typedef struct {
-    NSString *__unsafe_unretained name, *__unsafe_unretained detail;
-} SGDSPPresetName;
+// Each built-in preset's name and what it does, in the order builtInValues reads them. Shown only, so they
+// are read in the person's language; a pick goes by its index.
+static NSArray<NSArray<NSString *> *> *builtIn(void) {
+    return @[
+        @[SGL(@"settings.audioeffects.preset.bass_boost", @"Bass boost"), SGL(@"settings.audioeffects.preset.bass_boost.subtitle", @"Bass boost at 8 dB")],
+        @[SGL(@"settings.audioeffects.preset.vocal_clarity", @"Vocal clarity"), SGL(@"settings.audioeffects.preset.vocal_clarity.subtitle", @"Equalizer on voices, a light compander")],
+        @[SGL(@"settings.audioeffects.preset.late_night", @"Late night"), SGL(@"settings.audioeffects.preset.late_night.subtitle", @"Quiet and loud evened out, less bass")],
+        @[SGL(@"settings.audioeffects.preset.concert_hall", @"Concert hall"), SGL(@"settings.audioeffects.preset.concert_hall.subtitle", @"A large hall's reverb, a wider stage")],
+        @[SGL(@"settings.audioeffects.preset.warm_analog", @"Warm analog"), SGL(@"settings.audioeffects.preset.warm_analog.subtitle", @"Tube warmth, a warm equalizer")],
+        @[SGL(@"settings.audioeffects.preset.headphone_comfort", @"Headphone comfort"), SGL(@"settings.audioeffects.preset.headphone_comfort.subtitle", @"Crossfeed, a softer top")],
+        @[SGL(@"settings.audioeffects.preset.wide_stereo", @"Wide stereo"), SGL(@"settings.audioeffects.preset.wide_stereo.subtitle", @"Stereo widening")],
+    ];
+}
 
-static const SGDSPPresetName kBuiltIn[] = {
-    {@"Bass boost", @"Bass boost at 8 dB"},
-    {@"Vocal clarity", @"Equalizer on voices, a light compander"},
-    {@"Late night", @"Quiet and loud evened out, less bass"},
-    {@"Concert hall", @"A large hall's reverb, a wider stage"},
-    {@"Warm analog", @"Tube warmth, a warm equalizer"},
-    {@"Headphone comfort", @"Crossfeed, a softer top"},
-    {@"Wide stereo", @"Stereo widening"},
-};
+// The equalizer presets by their place in SGDSPEqualizerPresetNames, whose names are translated.
+enum { kEqualizerVocal = 4, kEqualizerWarm = 5 };
 
-static NSArray<NSNumber *> *equalizer(NSString *preset) {
-    return SGDSPEqualizerPreset((NSInteger)[SGDSPEqualizerPresetNames() indexOfObject:preset]);
+static NSArray<NSNumber *> *equalizer(NSInteger preset) {
+    return SGDSPEqualizerPreset(preset);
 }
 
 static NSDictionary<NSString *, id> *builtInValues(NSInteger index) {
     switch (index) {
         case 0: return @{SGKeyDSPBass: @YES, SGKeyDSPBassGain: @8};
-        case 1: return @{SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: equalizer(@"Vocal"),
+        case 1: return @{SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: equalizer(kEqualizerVocal),
                          SGKeyDSPCompander: @YES, SGKeyDSPCompanderGains: @[@0, @0.2, @0.3, @0.3, @0.3, @0.2, @0]};
         // The compander over 0 lifts the quiet parts and holds the loud ones; the gain brings the level back.
         case 2: return @{SGKeyDSPCompander: @YES, SGKeyDSPCompanderGains: @[@0.6, @0.7, @0.8, @0.8, @0.8, @0.7, @0.6],
@@ -67,7 +71,7 @@ static NSDictionary<NSString *, id> *builtInValues(NSInteger index) {
                          SGKeyDSPPostGain: @3, SGKeyDSPLimiterThreshold: @-3};
         case 3: return @{SGKeyDSPReverb: @YES, SGKeyDSPReverbPreset: @7, SGKeyDSPReverbAmount: @40,
                          SGKeyDSPStereoWide: @YES, SGKeyDSPStereoWideLevel: @65};
-        case 4: return @{SGKeyDSPTube: @YES, SGKeyDSPTubeDrive: @6, SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: equalizer(@"Warm")};
+        case 4: return @{SGKeyDSPTube: @YES, SGKeyDSPTubeDrive: @6, SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: equalizer(kEqualizerWarm)};
         case 5: return @{SGKeyDSPCrossfeed: @YES, SGKeyDSPCrossfeedMode: @2, SGKeyDSPEqualizer: @YES,
                          SGKeyDSPEqualizerGains: @[@0, @0, @0, @0, @0, @0, @0, @0, @0, @0, @-1, @-2, @-2, @-3, @-3]};
         case 6: return @{SGKeyDSPStereoWide: @YES, SGKeyDSPStereoWideLevel: @75};
@@ -77,12 +81,13 @@ static NSDictionary<NSString *, id> *builtInValues(NSInteger index) {
 
 NSArray<NSString *> *SGDSPBuiltInPresetNames(void) {
     NSMutableArray<NSString *> *names = [NSMutableArray array];
-    for (size_t i = 0; i < sizeof kBuiltIn / sizeof *kBuiltIn; i++) [names addObject:kBuiltIn[i].name];
+    for (NSArray<NSString *> *preset in builtIn()) [names addObject:preset[0]];
     return names;
 }
 
 NSString *SGDSPBuiltInPresetDetail(NSInteger index) {
-    return index >= 0 && index < (NSInteger)(sizeof kBuiltIn / sizeof *kBuiltIn) ? kBuiltIn[index].detail : nil;
+    NSArray<NSArray<NSString *> *> *all = builtIn();
+    return index >= 0 && index < (NSInteger)all.count ? all[(NSUInteger)index][1] : nil;
 }
 
 void SGDSPLoadBuiltInPreset(NSInteger index) {

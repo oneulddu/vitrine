@@ -69,8 +69,10 @@
 @property (nonatomic) BOOL tiles;
 @end
 
-// The intro of every page whose switches the hooks read at launch.
-extern NSString *const SGRestartNote;
+// The intro of every page whose switches the hooks read at launch. It is a function so localization
+// happens after the bundle and language preference are available, not in a file-scope initializer.
+NSString *SGRestartNoteText(void);
+#define SGRestartNote SGRestartNoteText()
 
 SGModRow *SGSwitchRow(NSString *title, NSString *subtitle, NSString *key);   // on until switched off
 SGModRow *SGHideRow(NSString *title, NSString *subtitle, NSString *key);     // off until switched on

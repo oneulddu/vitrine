@@ -6,6 +6,7 @@
 // autoplay.is_autoplay (strings in the binary) tell a track queued by hand or picked by autoplay from one
 // of the album or playlist. What they read on a real queue is logged once each time the mode is set.
 #import "Core/SGLog.h"
+#import "Core/SGLocalize.h"
 #import "Core/SGPrefs.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Lyrics/Lyrics.h"
@@ -33,7 +34,8 @@ static NSTimer *sg_timer;
 static BOOL sg_fading;
 
 NSArray<NSString *> *SGSleepTimerFadeNames(void) {
-    return @[@"Off", @"10 s", @"30 s", @"1 minute", @"2 minutes"];
+    return @[SGL(@"common.off", @"Off"), SGL(@"settings.sleep_timer.fade.10s", @"10 s"), SGL(@"settings.sleep_timer.fade.30s", @"30 s"),
+             SGL(@"settings.sleep_timer.fade.1m", @"1 minute"), SGL(@"settings.sleep_timer.fade.2m", @"2 minutes")];
 }
 
 NSInteger SGSleepTimerFadeChoice(void) {

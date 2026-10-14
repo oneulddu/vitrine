@@ -7,7 +7,7 @@
 // presets existed stays in effect: Apple Music's red reads as Apple Music, any other color as Custom, none
 // as Spotify. The custom color is put aside while a preset is in place, so Custom brings it back.
 static NSArray<NSString *> *presets(void) {
-    return @[@"Spotify", @"Apple Music", @"Custom"];
+    return @[@"Spotify", @"Apple Music", SGL(@"settings.appearance.accent_preset.choice.custom", @"Custom")];
 }
 
 static NSInteger preset(void) {
@@ -26,17 +26,17 @@ static void choosePreset(NSInteger index) {
 // The native look's rows of the Appearance page (App/Pages.m): the preset from a menu, then the color in
 // effect, which opens the picker; a color stored from there is Custom.
 NSArray<SGModRow *> *SGNativeAppearanceRows(void) {
-    SGModRow *menu = SGMenuRow(@"Accent color preset", presets(), ^NSString *{ return presets()[(NSUInteger)preset()]; },
+    SGModRow *menu = SGMenuRow(SGL(@"settings.appearance.accent_preset.title", @"Accent color preset"), presets(), ^NSString *{ return presets()[(NSUInteger)preset()]; },
                                ^(NSInteger index) { choosePreset(index); });
-    SGModRow *colour = SGStatActionRow(@"Accent color", nil, ^NSString *{ return [NSString stringWithFormat:@"#%06lX", (long)SGAccentRGB()]; }, ^{
-        SGPickColor(@"Accent color", SGAccentRGB(), ^(NSInteger rgb) {
+    SGModRow *colour = SGStatActionRow(SGL(@"settings.appearance.accent_color.title", @"Accent color"), nil, ^NSString *{ return [NSString stringWithFormat:@"#%06lX", (long)SGAccentRGB()]; }, ^{
+        SGPickColor(SGL(@"settings.appearance.accent_color.title", @"Accent color"), SGAccentRGB(), ^(NSInteger rgb) {
             SGSetInt(SGKeyAccent, rgb);
             SGSetInt(SGKeyAccentCustom, rgb);
         });
     });
     colour.swatch = ^UIColor *{ return SGColorRGB(SGAccentRGB()); };
     return @[
-        SGWithSymbol(SGOptionRow(@"AMOLED background", nil, SGKeyAmoled), @"moon"),
+        SGWithSymbol(SGOptionRow(SGL(@"settings.appearance.amoled_background.title", @"AMOLED background"), nil, SGKeyAmoled), @"moon"),
         SGWithSymbol(menu, @"paintpalette"),
         SGWithSymbol(colour, @"eyedropper"),
     ];

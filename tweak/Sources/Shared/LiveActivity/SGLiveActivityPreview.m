@@ -193,7 +193,7 @@ static UIView *lyricsView(Look look, NSInteger step) {
     if (look.withoutLyrics == SGLiveActivityWithoutLyricsNote) {
         UIStackView *note = stack(@[label(kQuietTitle, font(kHeadline, UIFontWeightSemibold), UIColor.whiteColor, 1, edge),
                                     label(kArtist, font(kSubheadline, UIFontWeightMedium), dim(0.6), 1, edge),
-                                    label(@"No synced lyrics for this song", font(kCaption, UIFontWeightMedium), dim(0.6), 1, edge)],
+                                    label(SGL(@"settings.liveactivity.preview.nosyncedlyrics", @"No synced lyrics for this song"), font(kCaption, UIFontWeightMedium), dim(0.6), 1, edge)],
                                   UILayoutConstraintAxisVertical, 2);
         [note setCustomSpacing:6 afterView:note.arrangedSubviews[1]];
         return note;
@@ -212,7 +212,7 @@ static NSAttributedString *trackLine(NSString *title, NSString *artist, CGFloat 
 }
 
 static UIView *queueView(void) {
-    NSMutableArray<UIView *> *views = [NSMutableArray arrayWithObject:label(@"Up next", font(kCaption, UIFontWeightSemibold), dim(0.6), 1, NSTextAlignmentNatural)];
+    NSMutableArray<UIView *> *views = [NSMutableArray arrayWithObject:label(SGL(@"settings.liveactivity.preview.upnext", @"Up next"), font(kCaption, UIFontWeightSemibold), dim(0.6), 1, NSTextAlignmentNatural)];
     for (NSInteger i = 0; i < 3; i++) {
         UILabel *row = label(nil, nil, nil, 1, NSTextAlignmentNatural);
         row.attributedText = trackLine(kQueue[i][0], kQueue[i][1], kSubheadline);
@@ -239,7 +239,7 @@ static UIStackView *chipRow(NSArray<UIView *> *chips, CGFloat spacing) {
 
 static UIView *panelView(Look look, NSInteger tab) {
     NSArray<NSString *> *symbols = @[@"slider.horizontal.3", @"list.bullet", @"moon.zzz"];
-    NSArray<NSString *> *titles = @[@"Controls", @"Queue", @"Timer"];
+    NSArray<NSString *> *titles = @[SGL(@"settings.liveactivity.preview.tab.controls", @"Controls"), SGL(@"settings.liveactivity.preview.tab.queue", @"Queue"), SGL(@"settings.liveactivity.preview.tab.timer", @"Timer")];
     NSMutableArray<UIView *> *tabs = [NSMutableArray array];
     for (NSInteger i = 0; i < TabCount; i++) {
         BOOL on = i == tab;
@@ -254,9 +254,9 @@ static UIView *panelView(Look look, NSInteger tab) {
         case TabControls: {
             UILabel *track = label(nil, nil, nil, 1, NSTextAlignmentNatural);
             track.attributedText = trackLine(kTitle, kArtist, kSubheadline);
-            page = stack(@[track, chipRow(@[chip(@"backward.fill", @"Previous", NO, look), chip(@"pause.fill", @"Pause", NO, look),
-                                             chip(@"forward.fill", @"Next", NO, look), chip(@"shuffle", @"Shuffle", YES, look),
-                                             chip(@"repeat", @"Repeat", NO, look)], 10)],
+            page = stack(@[track, chipRow(@[chip(@"backward.fill", SGL(@"settings.liveactivity.preview.control.previous", @"Previous"), NO, look), chip(@"pause.fill", SGL(@"settings.liveactivity.preview.control.pause", @"Pause"), NO, look),
+                                             chip(@"forward.fill", SGL(@"settings.liveactivity.preview.control.next", @"Next"), NO, look), chip(@"shuffle", SGL(@"settings.liveactivity.preview.control.shuffle", @"Shuffle"), YES, look),
+                                             chip(@"repeat", SGL(@"settings.liveactivity.preview.control.repeat", @"Repeat"), NO, look)], 10)],
                          UILayoutConstraintAxisVertical, 8);
             break;
         }
@@ -274,8 +274,8 @@ static UIView *panelView(Look look, NSInteger tab) {
             break;
         }
         default:
-            page = chipRow(@[chip(@"moon", @"15m", NO, look), chip(@"moon", @"30m", NO, look), chip(@"moon", @"1h", NO, look),
-                             chip(@"music.note", @"Track", NO, look), chip(@"square.stack", @"Album", NO, look)], 8);
+            page = chipRow(@[chip(@"moon", SGL(@"settings.liveactivity.preview.timer.15m", @"15m"), NO, look), chip(@"moon", SGL(@"settings.liveactivity.preview.timer.30m", @"30m"), NO, look), chip(@"moon", SGL(@"settings.liveactivity.preview.timer.1h", @"1h"), NO, look),
+                             chip(@"music.note", SGL(@"settings.liveactivity.preview.timer.track", @"Track"), NO, look), chip(@"square.stack", SGL(@"settings.liveactivity.preview.timer.album", @"Album"), NO, look)], 8);
     }
     UIStackView *tabRow = chipRow(tabs, 6);
     return stack(@[tabRow, page], UILayoutConstraintAxisVertical, 6);
@@ -325,12 +325,12 @@ static UIView *card(Look look, NSInteger step) {
 static NSString *stepName(NSInteger view, NSInteger step) {
     switch (view) {
         case SGLiveActivityLyrics:
-            return step < kLineCount ? [NSString stringWithFormat:@"Lyrics, line %ld of %ld", (long)step + 1, (long)kLineCount]
-                                     : @"Lyrics, a track with no synced lyrics";
+            return step < kLineCount ? [NSString stringWithFormat:SGL(@"settings.liveactivity.preview.step.lyrics.format", @"Lyrics, line %ld of %ld"), (long)step + 1, (long)kLineCount]
+                                     : SGL(@"settings.liveactivity.preview.step.lyrics.nosynced", @"Lyrics, a track with no synced lyrics");
         case SGLiveActivityPanel:
-            return [@"Control menu, " stringByAppendingString:@[@"Controls tab", @"Queue tab", @"Timer tab"][step]];
+            return [SGL(@"settings.liveactivity.preview.step.controlmenu.prefix", @"Control menu, ") stringByAppendingString:@[SGL(@"settings.liveactivity.preview.step.controlmenu.controls", @"Controls tab"), SGL(@"settings.liveactivity.preview.step.controlmenu.queue", @"Queue tab"), SGL(@"settings.liveactivity.preview.step.controlmenu.timer", @"Timer tab")][step]];
         default:
-            return @"Queue, the tracks up next";
+            return SGL(@"settings.liveactivity.preview.step.queue", @"Queue, the tracks up next");
     }
 }
 
@@ -369,7 +369,7 @@ static NSString *stepName(NSInteger view, NSInteger step) {
     _view = -1;
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(advance)]];
     self.isAccessibilityElement = YES;
-    self.accessibilityLabel = @"Preview of the Live Activity on the lock screen";
+    self.accessibilityLabel = SGL(@"settings.liveactivity.preview.a11y.label", @"Preview of the Live Activity on the lock screen");
     [self reload];
     return self;
 }
@@ -451,7 +451,7 @@ static NSString *stepName(NSInteger view, NSInteger step) {
     NSInteger steps = stepsIn(_view);
     self.accessibilityValue = stepName(_view, _step);
     self.accessibilityTraits = steps > 1 ? UIAccessibilityTraitButton : UIAccessibilityTraitNone;
-    self.accessibilityHint = steps > 1 ? @"Shows the next step" : nil;
+    self.accessibilityHint = steps > 1 ? SGL(@"settings.liveactivity.preview.a11y.hint", @"Shows the next step") : nil;
     if (!old || !self.window) {
         [old removeFromSuperview];
         [_slice addSubview:_card];

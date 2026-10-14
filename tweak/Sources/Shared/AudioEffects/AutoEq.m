@@ -7,6 +7,7 @@
 // and the folder holds "<folder's last part> GraphicEQ.txt", one "GraphicEQ: 20 -0.2; 21 -0.2; ..." line.
 // The file is named after the folder, not the name in brackets: the name can carry a target the folder
 // does not.
+#import "Core/SGLocalize.h"
 #import "Core/SGLog.h"
 #import "AudioEffects.h"
 #import "AudioEffectsPresets.h"
@@ -77,7 +78,7 @@ static void fetchText(NSURL *url, void (^done)(NSString *text, NSString *error))
     [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
         NSString *text = status == 200 && data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
-        NSString *why = text ? nil : error ? error.localizedDescription : [NSString stringWithFormat:@"GitHub answered %ld", (long)status];
+        NSString *why = text ? nil : error ? error.localizedDescription : [NSString stringWithFormat:SGL(@"settings.audioeffects.autoeq.error.github_status", @"GitHub answered %ld"), (long)status];
         if (why) SGLog(@"autoeq: %@ failed (%@)", url.path, why);
         done(text, why);
     }] resume];
@@ -92,7 +93,7 @@ void SGAutoEqLoadIndex(BOOL refresh, void (^done)(NSArray<SGAutoEqHeadphone *> *
             NSArray<SGAutoEqHeadphone *> *headphones = text ? SGAutoEqParseIndex(text) : nil;
             dispatch_async(dispatch_get_main_queue(), ^{
                 // A failed refresh still says so over the saved list.
-                done(headphones.count ? headphones : nil, why ?: (headphones.count ? nil : @"The saved list could not be read"));
+                done(headphones.count ? headphones : nil, why ?: (headphones.count ? nil : SGL(@"settings.audioeffects.autoeq.error.cache_read", @"The saved list could not be read")));
             });
         });
     };
@@ -105,7 +106,7 @@ void SGAutoEqLoadIndex(BOOL refresh, void (^done)(NSArray<SGAutoEqHeadphone *> *
         // A page that answers but holds no headphones is not kept over a good copy.
         NSArray<SGAutoEqHeadphone *> *headphones = text ? SGAutoEqParseIndex(text) : nil;
         if (!headphones.count) {
-            fromCache(error ?: @"AutoEq's list has no headphones in it");
+            fromCache(error ?: SGL(@"settings.audioeffects.autoeq.error.empty_list", @"AutoEq's list has no headphones in it"));
             return;
         }
         [text writeToURL:cache atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -254,13 +255,13 @@ NSArray<NSDictionary<NSString *, NSString *> *> *SGAutoEqRememberedOutputs(void)
 void SGAutoEqApply(SGAutoEqHeadphone *headphone, void (^done)(NSString *)) {
     NSURL *url = SGAutoEqGraphicEqURL(headphone.path);
     if (!url) {
-        done(@"Its address could not be made");
+        done(SGL(@"settings.audioeffects.autoeq.error.invalid_url", @"Its address could not be made"));
         return;
     }
     fetchText(url, ^(NSString *text, NSString *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (error) done(error);
-            else done(SGAutoEqApplyText(headphone.path, text) ? nil : @"The file is not a GraphicEQ line");
+            else done(SGAutoEqApplyText(headphone.path, text) ? nil : SGL(@"settings.audioeffects.autoeq.error.invalid_format", @"The file is not a GraphicEQ line"));
         });
     });
 }

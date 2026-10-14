@@ -4,12 +4,12 @@
 #import "Flags.h"
 
 static NSString *flagState(const SGFlagDef *flag, id value) {
-    if (value) return [NSString stringWithFormat:@"forced %@", flag->type == SGFlagBool ? ([value boolValue] ? @"on" : @"off") : value];
+    if (value) return [NSString stringWithFormat:SGL(@"settings.flags.forced.format", @"forced %@"), flag->type == SGFlagBool ? ([value boolValue] ? @"on" : @"off") : value];
     switch (flag->type) {
-        case SGFlagBool: return flag->value ? @"on by default" : @"off by default";
-        case SGFlagInt: return [NSString stringWithFormat:@"%ld by default, %ld to %ld", flag->value, flag->lower, flag->upper];
-        case SGFlagEnum: return @"text value";
-        default: return @"type unknown";
+        case SGFlagBool: return flag->value ? SGL(@"settings.flags.state.default_on", @"on by default") : SGL(@"settings.flags.state.default_off", @"off by default");
+        case SGFlagInt: return [NSString stringWithFormat:SGL(@"settings.flags.state.int.format", @"%ld by default, %ld to %ld"), flag->value, flag->lower, flag->upper];
+        case SGFlagEnum: return SGL(@"settings.flags.state.text_value", @"text value");
+        default: return SGL(@"settings.flags.state.type_unknown", @"type unknown");
     }
 }
 
@@ -27,7 +27,7 @@ static NSString *flagState(const SGFlagDef *flag, id value) {
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStylePlain])) return nil;
-    self.title = @"Flags";
+    self.title = SGL(@"settings.flags.title", @"Flags");
     return self;
 }
 
@@ -37,10 +37,10 @@ static NSString *flagState(const SGFlagDef *flag, id value) {
     self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
     self.tableView.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
     _search = [UISearchBar new];
-    _search.placeholder = [NSString stringWithFormat:@"Search %lu flags", (unsigned long)SGFlagCount];
+    _search.placeholder = [NSString stringWithFormat:SGL(@"settings.flags.search.placeholder", @"Search %lu flags"), (unsigned long)SGFlagCount];
     _search.searchBarStyle = UISearchBarStyleMinimal;
     _search.delegate = self;
-    _header = SGNote(@"Auto keeps Spotify's value. Changes apply after you restart Spotify.");
+    _header = SGNote(SGL(@"settings.flags.header.note", @"Auto keeps Spotify's value. Changes apply after you restart Spotify."));
     [_header addSubview:_search];
     self.tableView.tableHeaderView = _header;
     [self reload];
@@ -106,7 +106,7 @@ static NSString *flagState(const SGFlagDef *flag, id value) {
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
 
     if (flag->type == SGFlagBool) {
-        UISegmentedControl *control = [[UISegmentedControl alloc] initWithItems:@[@"Auto", @"Off", @"On"]];
+        UISegmentedControl *control = [[UISegmentedControl alloc] initWithItems:@[SGL(@"settings.flags.segment.choice.auto", @"Auto"), SGL(@"common.off", @"Off"), SGL(@"common.on", @"On")]];
         control.selectedSegmentIndex = value ? ([value boolValue] ? 2 : 1) : 0;
         control.selectedSegmentTintColor = SGGreen();
         // Capped, so the segments leave the flag's name its room at the accessibility sizes.
@@ -142,17 +142,17 @@ static NSString *flagState(const SGFlagDef *flag, id value) {
     if (flag->type == SGFlagBool) return;
     NSString *key = @(flag->key);
     id value = _overrides[key];
-    NSString *hint = flag->type == SGFlagUnknown ? @"true or false, a number, or a text value" : flagState(flag, value);
+    NSString *hint = flag->type == SGFlagUnknown ? SGL(@"settings.flags.edit.hint.unknown", @"true or false, a number, or a text value") : flagState(flag, value);
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:[key substringFromIndex:[key rangeOfString:@"."].location + 1] message:hint preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.text = value ? [value description] : @"";
         field.keyboardType = flag->type == SGFlagInt ? UIKeyboardTypeNumbersAndPunctuation : UIKeyboardTypeDefault;
     }];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Auto" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.flags.action.auto", @"Auto") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *a) {
         [self store:nil forKey:key row:path.row];
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Force" style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.flags.action.force", @"Force") style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
         NSString *text = alert.textFields.firstObject.text;
         if (!text.length) return;
         [self store:flag->type == SGFlagInt ? @(text.integerValue) : text forKey:key row:path.row];

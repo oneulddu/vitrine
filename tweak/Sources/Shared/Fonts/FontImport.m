@@ -89,10 +89,10 @@ static void removeImported(void) {
 static void tell(NSString *title, NSString *message, BOOL restart) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     if (restart) {
-        [alert addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:nil]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"Restart now" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { SGRestartSpotify(); }]];
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.later", @"Later") style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.font.action.restart_now", @"Restart now") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) { SGRestartSpotify(); }]];
     } else {
-        [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
     }
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
@@ -135,14 +135,14 @@ static void import(NSArray<NSURL *> *picked) {
         [store setObject:family forKey:SGKeyAppFontName];
         if (SGRegisterCustomFont()) {
             SGSetInt(SGKeyAppFont, SGAppFontCustom);
-            tell(@"Font imported", [NSString stringWithFormat:@"%@ becomes the app's font when Spotify starts again.", family], YES);
+            tell(SGL(@"settings.font.imported.alert.title", @"Font imported"), [NSString stringWithFormat:SGL(@"settings.font.imported.alert.message", @"%@ becomes the app's font when Spotify starts again."), family], YES);
             return;
         }
     }
     [files removeItemAtURL:incoming error:nil];
     if (family && copied.count == picked.count) removeImported();   // copied in but Core Text took none of it
-    tell(@"Font not imported", fonts && !family ? @"These files are more than one family. Pick the files of one family together."
-                                               : @"Choose valid .ttf, .otf, .ttc or .otc font files.", NO);
+    tell(SGL(@"settings.font.failed.alert.title", @"Font not imported"), fonts && !family ? SGL(@"settings.font.failed.multiple_families.alert.message", @"These files are more than one family. Pick the files of one family together.")
+                                               : SGL(@"settings.font.failed.invalid_files.alert.message", @"Choose valid .ttf, .otf, .ttc or .otc font files."), NO);
 }
 
 @interface SGFontPicker : NSObject <UIDocumentPickerDelegate>
@@ -200,7 +200,7 @@ static UIFont *builtInFont(SGAppFont choice, CGFloat size) {
 static NSString *chosenLabel(void) {
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     SGAppFont font = SGAppFontChosen();
-    if (font == SGAppFontCustom) return importedFamily() ?: @"Your font";
+    if (font == SGAppFontCustom) return importedFamily() ?: SGL(@"settings.font.choice.custom", @"Your font");
     if (font == SGAppFontFamily) return [store stringForKey:SGKeyAppFontFamily] ?: SGAppFontNames()[0];
     return SGAppFontNames()[font];
 }
@@ -217,7 +217,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
-    self.title = @"Font";
+    self.title = SGL(@"settings.font.title", @"Font");
     _families = SGAppFontFamilies();
     SGRegisterCustomFont();   // so the imported family can be drawn here, whichever font is chosen
     return self;
@@ -226,9 +226,9 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
 // A one-face import says why bold comes out regular; otherwise the note says how to bring the bold along.
 - (void)refreshFooter {
     NSString *own = self.styleCount == 1
-        ? @"A font of your own is a .ttf or .otf file from Files. This one has a single style, so bold text comes out regular. Pick all the files of a family together to keep bold. "
-        : @"A font of your own comes from Files: a .ttf or .otf file, or all the files of one family picked together, so bold and italic stay. ";
-    _footer = SGNote([own stringByAppendingString:@"Text Spotify draws itself may keep its own font. Changes apply after you restart Spotify."]);
+        ? SGL(@"settings.font.footer.single_style", @"A font of your own is a .ttf or .otf file from Files. This one has a single style, so bold text comes out regular. Pick all the files of a family together to keep bold. ")
+        : SGL(@"settings.font.footer.family_style", @"A font of your own comes from Files: a .ttf or .otf file, or all the files of one family picked together, so bold and italic stay. ");
+    _footer = SGNote([own stringByAppendingString:SGL(@"settings.font.footer.restart_note", @"Text Spotify draws itself may keep its own font. Changes apply after you restart Spotify.")]);
     self.tableView.tableFooterView = _footer;
 }
 
@@ -274,7 +274,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
-    return section == SGFontBuiltIn ? nil : SGSectionHeader(table, section == SGFontMore ? @"More fonts" : @"Your fonts");
+    return section == SGFontBuiltIn ? nil : SGSectionHeader(table, section == SGFontMore ? SGL(@"settings.font.more.header", @"More fonts") : SGL(@"settings.font.yours.header", @"Your fonts"));
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
@@ -301,9 +301,9 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
         title = self.importedName;
         font = previewFont(title, YES, size);
         selected = chosen == SGAppFontCustom;
-        subtitle = [NSString stringWithFormat:@"%lu style%@", (unsigned long)self.styleCount, self.styleCount == 1 ? @"" : @"s"];
+        subtitle = [NSString stringWithFormat:SGL(@"settings.font.style_count.format", @"%lu style%@"), (unsigned long)self.styleCount, self.styleCount == 1 ? @"" : @"s"];
     } else {
-        SGFillCell(cell, @"Add a font file", nil, SGGreen(), nil);
+        SGFillCell(cell, SGL(@"settings.font.add_file.title", @"Add a font file"), nil, SGGreen(), nil);
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         cell.accessibilityTraits = UIAccessibilityTraitButton;
         return cell;
@@ -342,7 +342,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
 // Swiping the imported family away deletes its files; Default comes back if it was the choice.
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)table trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)path {
     if (path.section != SGFontYours || path.row != 0 || !self.importedName.length) return nil;
-    UIContextualAction *delete = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:@"Delete"
+    UIContextualAction *delete = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:SGL(@"common.delete", @"Delete")
         handler:^(UIContextualAction *action, UIView *view, void (^done)(BOOL)) {
             removeImported();
             [self refresh];
@@ -355,7 +355,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
 @end
 
 NSArray<SGModRow *> *SGAppFontRows(void) {
-    SGModRow *font = SGPageRow(@"Font", ^UIViewController *{ return [SGFontPage new]; });
+    SGModRow *font = SGPageRow(SGL(@"settings.font.row.title", @"Font"), ^UIViewController *{ return [SGFontPage new]; });
     font.value = ^NSString *{ return chosenLabel(); };
     return @[font];
 }

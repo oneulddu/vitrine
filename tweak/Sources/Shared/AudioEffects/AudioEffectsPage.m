@@ -99,55 +99,55 @@ static NSString *graphicEqSummary(void) {
         points++;
         flat &= parts[1].doubleValue == 0;
     }
-    return flat ? @"Flat" : [NSString stringWithFormat:@"%lu points", (unsigned long)points];
+    return flat ? SGL(@"settings.audioeffects.eq.flat", @"Flat") : [NSString stringWithFormat:SGL(@"settings.audioeffects.eq.points.format", @"%lu points"), (unsigned long)points];
 }
 
 // The effects' cards. The engine runs them in an order of its own (SGDSPEngine.m).
 static NSArray<SGDSPEffect *> *effects(void) {
     // Stored as 0 to 100 around 50, shown as the side's level, 100% leaving it as it is.
-    SGDSPRow *width = slider(@"Width", SGKeyDSPStereoWideLevel, @"%");
+    SGDSPRow *width = slider(SGL(@"settings.audioeffects.width.title", @"Width"), SGKeyDSPStereoWideLevel, @"%");
     width.scale = 2;
     return @[
-        effect(nil, @"Output control", @"Gain and limiter, always on", @[
-            slider(@"Post gain", SGKeyDSPPostGain, @" dB"),
-            slider(@"Limiter threshold", SGKeyDSPLimiterThreshold, @" dB"),
-            slider(@"Limiter release", SGKeyDSPLimiterRelease, @" ms"),
+        effect(nil, SGL(@"settings.audioeffects.outputcontrol.title", @"Output control"), SGL(@"settings.audioeffects.outputcontrol.subtitle", @"Gain and limiter, always on"), @[
+            slider(SGL(@"settings.audioeffects.postgain.title", @"Post gain"), SGKeyDSPPostGain, SGL(@"settings.audioeffects.unit.db", @" dB")),
+            slider(SGL(@"settings.audioeffects.limiterthreshold.title", @"Limiter threshold"), SGKeyDSPLimiterThreshold, SGL(@"settings.audioeffects.unit.db", @" dB")),
+            slider(SGL(@"settings.audioeffects.limiterrelease.title", @"Limiter release"), SGKeyDSPLimiterRelease, SGL(@"settings.audioeffects.unit.ms", @" ms")),
         ]),
-        effect(SGKeyDSPCompander, @"Multiband compander", @"Evens out or livens up the dynamics", @[
+        effect(SGKeyDSPCompander, SGL(@"settings.audioeffects.compander.title", @"Multiband compander"), SGL(@"settings.audioeffects.compander.subtitle", @"Evens out or livens up the dynamics"), @[
             row(SGDSPRowCurve, nil, SGKeyDSPCompanderGains),
-            slider(@"Release", SGKeyDSPCompanderTime, @" s"),
+            slider(SGL(@"settings.audioeffects.release.title", @"Release"), SGKeyDSPCompanderTime, SGL(@"settings.audioeffects.unit.s", @" s")),
         ]),
-        effect(SGKeyDSPBass, @"Bass boost", @"Lifts the low end", @[
-            slider(@"Maximum gain", SGKeyDSPBassGain, @" dB"),
+        effect(SGKeyDSPBass, SGL(@"settings.audioeffects.bassboost.title", @"Bass boost"), SGL(@"settings.audioeffects.bassboost.subtitle", @"Lifts the low end"), @[
+            slider(SGL(@"settings.audioeffects.maximumgain.title", @"Maximum gain"), SGKeyDSPBassGain, SGL(@"settings.audioeffects.unit.db", @" dB")),
         ]),
-        effect(SGKeyDSPEqualizer, @"Equalizer", @"15 bands, with presets", @[
+        effect(SGKeyDSPEqualizer, SGL(@"settings.audioeffects.equalizer.title", @"Equalizer"), SGL(@"settings.audioeffects.equalizer.subtitle", @"15 bands, with presets"), @[
             row(SGDSPRowCurve, nil, SGKeyDSPEqualizerGains),
         ]),
-        effect(SGKeyDSPGraphicEq, @"Graphic EQ", @"Any curve, like AutoEq's corrections", @[
-            pageRow(@"Response", ^NSString *{ return graphicEqSummary(); }, ^UIViewController *{ return SGDSPGraphicEqPage(); }),
+        effect(SGKeyDSPGraphicEq, SGL(@"settings.audioeffects.graphiceq.title", @"Graphic EQ"), SGL(@"settings.audioeffects.graphiceq.subtitle", @"Any curve, like AutoEq's corrections"), @[
+            pageRow(SGL(@"settings.audioeffects.response.title", @"Response"), ^NSString *{ return graphicEqSummary(); }, ^UIViewController *{ return SGDSPGraphicEqPage(); }),
         ]),
-        effect(SGKeyDSPConvolver, @"Convolver", @"Recorded rooms and speakers", @[
-            fileRow(@"Impulse response", SGDSPFileImpulseResponse),
-            choice(@"Optimization", SGKeyDSPConvolverMode, SGDSPConvolverModeNames()),
+        effect(SGKeyDSPConvolver, SGL(@"settings.audioeffects.convolver.title", @"Convolver"), SGL(@"settings.audioeffects.convolver.subtitle", @"Recorded rooms and speakers"), @[
+            fileRow(SGL(@"settings.audioeffects.impulseresponse.title", @"Impulse response"), SGDSPFileImpulseResponse),
+            choice(SGL(@"settings.audioeffects.optimization.title", @"Optimization"), SGKeyDSPConvolverMode, SGDSPConvolverModeNames()),
         ]),
-        effect(SGKeyDSPDDC, @"ViPER DDC", @"Headphone correction files", @[
-            fileRow(@"DDC file", SGDSPFileDDC),
+        effect(SGKeyDSPDDC, SGL(@"settings.audioeffects.viperddc.title", @"ViPER DDC"), SGL(@"settings.audioeffects.viperddc.subtitle", @"Headphone correction files"), @[
+            fileRow(SGL(@"settings.audioeffects.ddcfile.title", @"DDC file"), SGDSPFileDDC),
         ]),
-        effect(SGKeyDSPLiveprog, @"Liveprog", @"Effects written as EEL scripts", @[
-            fileRow(@"Script", SGDSPFileLiveprog),
+        effect(SGKeyDSPLiveprog, SGL(@"settings.audioeffects.liveprog.title", @"Liveprog"), SGL(@"settings.audioeffects.liveprog.subtitle", @"Effects written as EEL scripts"), @[
+            fileRow(SGL(@"settings.audioeffects.script.title", @"Script"), SGDSPFileLiveprog),
         ]),
-        effect(SGKeyDSPReverb, @"Reverb", @"A room around the music", @[
-            choice(@"Room", SGKeyDSPReverbPreset, SGDSPReverbPresetNames()),
-            slider(@"Amount", SGKeyDSPReverbAmount, @"%"),
+        effect(SGKeyDSPReverb, SGL(@"settings.audioeffects.reverb.title", @"Reverb"), SGL(@"settings.audioeffects.reverb.subtitle", @"A room around the music"), @[
+            choice(SGL(@"settings.audioeffects.room.title", @"Room"), SGKeyDSPReverbPreset, SGDSPReverbPresetNames()),
+            slider(SGL(@"settings.audioeffects.amount.title", @"Amount"), SGKeyDSPReverbAmount, @"%"),
         ]),
-        effect(SGKeyDSPStereoWide, @"Stereo widening", @"A wider or narrower stereo image", @[
+        effect(SGKeyDSPStereoWide, SGL(@"settings.audioeffects.stereowidening.title", @"Stereo widening"), SGL(@"settings.audioeffects.stereowidening.subtitle", @"A wider or narrower stereo image"), @[
             width,
         ]),
-        effect(SGKeyDSPCrossfeed, @"Crossfeed", @"Softer stereo on headphones", @[
-            choice(@"Preset", SGKeyDSPCrossfeedMode, SGDSPCrossfeedModeNames()),
+        effect(SGKeyDSPCrossfeed, SGL(@"settings.audioeffects.crossfeed.title", @"Crossfeed"), SGL(@"settings.audioeffects.crossfeed.subtitle", @"Softer stereo on headphones"), @[
+            choice(SGL(@"settings.audioeffects.preset.title", @"Preset"), SGKeyDSPCrossfeedMode, SGDSPCrossfeedModeNames()),
         ]),
-        effect(SGKeyDSPTube, @"Analog modeling", @"Tube amplifier warmth", @[
-            slider(@"Drive", SGKeyDSPTubeDrive, @" dB"),
+        effect(SGKeyDSPTube, SGL(@"settings.audioeffects.analogmodeling.title", @"Analog modeling"), SGL(@"settings.audioeffects.analogmodeling.subtitle", @"Tube amplifier warmth"), @[
+            slider(SGL(@"settings.audioeffects.drive.title", @"Drive"), SGKeyDSPTubeDrive, SGL(@"settings.audioeffects.unit.db", @" dB")),
         ]),
     ];
 }
@@ -158,11 +158,11 @@ static NSSet<NSString *> *reportingEffects(void) {
 }
 
 NSString *SGDSPSummary(void) {
-    if (!SGDSPSwitch(SGKeyDSP)) return @"Off";
+    if (!SGDSPSwitch(SGKeyDSP)) return SGL(@"common.off", @"Off");
     NSUInteger on = 0;
     for (SGDSPEffect *e in effects()) on += e.key && SGDSPSwitch(e.key);
-    if (!on) return @"On";
-    return on == 1 ? @"1 effect" : [NSString stringWithFormat:@"%lu effects", (unsigned long)on];
+    if (!on) return SGL(@"common.on", @"On");
+    return on == 1 ? SGL(@"settings.audioeffects.effects.one", @"1 effect") : [NSString stringWithFormat:SGL(@"settings.audioeffects.effects.count", @"%lu effects"), (unsigned long)on];
 }
 
 #pragma mark - numbers
@@ -394,7 +394,7 @@ static UIFont *tabular(UIFont *font) {
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
-    self.title = @"Audio effects";
+    self.title = SGL(@"settings.audioeffects.title", @"Audio effects");
     _effects = effects();
     _open = [NSMutableSet set];
     _errors = [NSMutableDictionary dictionary];
@@ -403,7 +403,7 @@ static UIFont *tabular(UIFont *font) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    _intro = SGNote(@"Changes apply straight away.");
+    _intro = SGNote(SGL(@"settings.audioeffects.intro", @"Changes apply straight away."));
     self.tableView.tableHeaderView = _intro;
     [self buildCredits];
     self.tableView.tableFooterView = _credits;
@@ -412,10 +412,10 @@ static UIFont *tabular(UIFont *font) {
 // The libraries two of the effects run on, in the gray of a note with the names as links.
 - (void)buildCredits {
     NSDictionary *grey = @{NSFontAttributeName: SGSubtitleFont(), NSForegroundColorAttributeName: SGGrey()};
-    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:@"Crossfeed is " attributes:grey];
+    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:SGL(@"settings.audioeffects.credits.crossfeedis", @"Crossfeed is ") attributes:grey];
     NSArray<NSArray<NSString *> *> *parts = @[
-        @[@"libbs2b", @"https://github.com/alexmarsev/libbs2b"], @[@" by Boris Mikhaylov. Liveprog runs on ", @""],
-        @[@"EEL2", @"https://github.com/justinfrankel/WDL"], @[@", from Cockos' WDL.", @""],
+        @[@"libbs2b", @"https://github.com/alexmarsev/libbs2b"], @[SGL(@"settings.audioeffects.credits.mikhaylov", @" by Boris Mikhaylov. Liveprog runs on "), @""],
+        @[@"EEL2", @"https://github.com/justinfrankel/WDL"], @[SGL(@"settings.audioeffects.credits.wdl", @", from Cockos' WDL."), @""],
     ];
     for (NSArray<NSString *> *part in parts) {
         NSMutableDictionary *attributes = [grey mutableCopy];
@@ -553,18 +553,18 @@ static UIFont *tabular(UIFont *font) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
-    if (path.section == 0 && path.row == 1) return [self valueCell:table title:@"Presets" value:@""];
-    if (path.section == 0 && path.row == 2) return [self valueCell:table title:@"Headphones" value:SGDSPHeadphoneSummary()];
+    if (path.section == 0 && path.row == 1) return [self valueCell:table title:SGL(@"settings.audioeffects.presets.title", @"Presets") value:@""];
+    if (path.section == 0 && path.row == 2) return [self valueCell:table title:SGL(@"settings.audioeffects.headphones.title", @"Headphones") value:SGDSPHeadphoneSummary()];
     if (path.section == 0) {
         UITableViewCell *cell = SGDequeueCell(table, @"master");
-        [self fillHead:cell title:@"Effects" subtitle:SGDSPStatus()];
+        [self fillHead:cell title:SGL(@"settings.audioeffects.effects.title", @"Effects") subtitle:SGDSPStatus()];
         cell.accessoryView = [self switchOn:SGDSPSwitch(SGKeyDSP) action:@selector(masterToggled:) tag:0];
         return cell;
     }
     SGDSPEffect *e = [self effectIn:path.section];
     if (!e) {
         UITableViewCell *cell = SGDequeueCell(table, @"reset");
-        [self fillHead:cell title:@"Reset all effects" subtitle:nil];
+        [self fillHead:cell title:SGL(@"settings.audioeffects.resetall.title", @"Reset all effects") subtitle:nil];
         UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
         content.textProperties.color = SGRed();
         cell.contentConfiguration = content;
@@ -622,7 +622,7 @@ static UIFont *tabular(UIFont *font) {
 // Red, the way Settings' warning rows are: the effect's last change did not take, and why.
 - (UITableViewCell *)errorCell:(UITableView *)table text:(NSString *)text {
     UITableViewCell *cell = SGDequeueCell(table, @"error");
-    SGFillCell(cell, @"Not applied", text, SGRed(), @"exclamationmark.triangle.fill");
+    SGFillCell(cell, SGL(@"settings.audioeffects.status.notapplied", @"Not applied"), text, SGRed(), @"exclamationmark.triangle.fill");
     UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
     content.secondaryTextProperties.color = SGRed();
     cell.contentConfiguration = content;
@@ -717,17 +717,17 @@ static UIFont *tabular(UIFont *font) {
 }
 
 - (void)confirmReset {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Reset all effects?"
-        message:@"Every effect goes off, and every value, curve and file choice back to its default. The Effects switch and your imported files stay."
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.audioeffects.reset.alert.title", @"Reset all effects?")
+        message:SGL(@"settings.audioeffects.reset.alert.message", @"Every effect goes off, and every value, curve and file choice back to its default. The Effects switch and your imported files stay.")
         preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.reset", @"Reset") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         SGDSPResetAll();
         [self readState];
         [UIView transitionWithView:self.tableView duration:0.25 options:UIViewAnimationOptionTransitionCrossDissolve animations:^{
             [self.tableView reloadData];
         } completion:nil];
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 

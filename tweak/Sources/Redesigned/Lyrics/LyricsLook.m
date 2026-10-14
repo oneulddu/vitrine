@@ -1,4 +1,5 @@
 // The lyrics' look as stored, its presets and the preview's lines. The page is LyricsLookSettings.m.
+#import "Core/SGLocalize.h"
 #import "LyricsLook.h"
 
 NSNotificationName const SGRLyricsLookDidChangeNotification = @"spotifyglass.redesign.lyricsLookDidChange";
@@ -15,7 +16,7 @@ static SGRLyricsLook presets[] = {
 };
 
 NSArray<NSString *> *SGRLyricsLookPresetNames(void) {
-    return @[@"Apple Music", @"Large", @"Compact", @"Calm", @"Vivid"];
+    return @[SGL(@"settings.lyricslook.choice.apple_music", @"Apple Music"), SGL(@"settings.lyricslook.choice.large", @"Large"), SGL(@"settings.lyricslook.choice.compact", @"Compact"), SGL(@"settings.lyricslook.choice.calm", @"Calm"), SGL(@"settings.lyricslook.choice.vivid", @"Vivid")];
 }
 
 SGRLyricsLook SGRLyricsLookPreset(NSUInteger index) {

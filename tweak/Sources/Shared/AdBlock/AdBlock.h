@@ -15,7 +15,8 @@
 #define SGKeyHideSearchVideos @"spotifyglass.adblock.searchVideos"
 
 // What a switch turning Spoof Premium on is told first.
-extern NSString *const SGFakePremiumWarning;
+NSString *SGFakePremiumWarningText(void);
+#define SGFakePremiumWarning SGFakePremiumWarningText()
 
 // The value the ads or upsells switch forces a flag to while it is on, or nil. Flags.x asks, and the row for
 // it locks.

@@ -3,12 +3,15 @@
 #import "Gestures.h"
 
 NSArray<NSString *> *SGGestureActionNames(void) {
-    return @[@"Nothing", @"Seek back", @"Seek forward", @"Play or pause", @"Next track",
-             @"Previous track", @"Shuffle", @"Repeat"];
+    return @[SGL(@"settings.gestures.action.nothing", @"Nothing"), SGL(@"settings.gestures.action.seek_back", @"Seek back"),
+             SGL(@"settings.gestures.action.seek_forward", @"Seek forward"), SGL(@"settings.gestures.action.play_pause", @"Play or pause"),
+             SGL(@"settings.gestures.action.next", @"Next track"), SGL(@"settings.gestures.action.previous", @"Previous track"),
+             SGL(@"settings.gestures.action.shuffle", @"Shuffle"), SGL(@"settings.gestures.action.repeat", @"Repeat")];
 }
 
 NSArray<NSString *> *SGGestureSplitNames(void) {
-    return @[@"Two columns", @"Three columns", @"Three by three"];
+    return @[SGL(@"settings.gestures.split.two_columns", @"Two columns"), SGL(@"settings.gestures.split.three_columns", @"Three columns"),
+             SGL(@"settings.gestures.split.three_by_three", @"Three by three")];
 }
 
 NSArray<NSNumber *> *SGGestureStepChoices(void) {

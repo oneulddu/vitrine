@@ -267,7 +267,7 @@ static NSUInteger sg_removals[2];
     [files removeItemAtURL:modelFolder(self.model) error:nil];
     NSError *error;
     BOOL moved = [files moveItemAtURL:stagingFolder(self.model) toURL:modelFolder(self.model) error:&error];
-    [self endWithError:moved ? nil : [NSString stringWithFormat:@"The model could not be put in place (%@)", error.localizedDescription]];
+    [self endWithError:moved ? nil : [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.movefailed", @"The model could not be put in place (%@)"), error.localizedDescription]];
 }
 
 - (void)endWithError:(NSString *)error {
@@ -339,8 +339,8 @@ static NSUInteger sg_removals[2];
     if (big) dispatch_async(dispatch_get_main_queue(), ^{ sg_checking = NO; announce(); });
     SGLog(@"sing: %@ came in, %ld, %lld bytes", file.path, (long)status, size);
     if (!answered || size != file.size || ![hash isEqualToString:@(file.sha256)]) {
-        self.error = !answered ? [NSString stringWithFormat:@"The server answered %ld for %@", (long)status, file.path]
-                                 : [NSString stringWithFormat:@"%@ is not the file Karaoke expects (%lld bytes%@)", file.path, size, hash ? @", another checksum" : @""];
+        self.error = !answered ? [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.serverstatus", @"The server answered %ld for %@"), (long)status, file.path]
+                                 : [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.unexpectedfile", @"%@ is not the file Karaoke expects (%lld bytes%@)"), file.path, size, hash ? SGL(@"settings.karaoke.model.error.checksummismatch", @", another checksum") : @""];
         return;
     }
     NSURL *target = [stagingFolder(self.model) URLByAppendingPathComponent:file.path];
@@ -348,7 +348,7 @@ static NSUInteger sg_removals[2];
     [NSFileManager.defaultManager removeItemAtURL:target error:nil];
     NSError *error;
     if (![NSFileManager.defaultManager moveItemAtURL:location toURL:target error:&error]) {
-        self.error = [NSString stringWithFormat:@"%@ could not be kept (%@)", file.path, error.localizedDescription];
+        self.error = [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.savefailed", @"%@ could not be kept (%@)"), file.path, error.localizedDescription];
     }
 }
 
@@ -475,7 +475,7 @@ void SGSingDownloadModel(void) {
     long long wanted = bytesToCome() + kSpareSpace;
     if (free && free.longLongValue < wanted) {
         NSByteCountFormatterCountStyle style = NSByteCountFormatterCountStyleFile;
-        sg_lastError = [NSString stringWithFormat:@"The iPhone has %@ free, and the voice model needs %@ more.",
+        sg_lastError = [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.nospace", @"The iPhone has %@ free, and the voice model needs %@ more."),
                         [NSByteCountFormatter stringFromByteCount:free.longLongValue countStyle:style],
                         [NSByteCountFormatter stringFromByteCount:wanted - free.longLongValue countStyle:style]];
         SGLog(@"sing: the download does not start: %@", sg_lastError);
@@ -634,7 +634,7 @@ NSString *SGSingModelInUseSizeText(void) {
 }
 
 NSArray<NSString *> *SGSingComputeUnitNames(void) {
-    return @[@"Automatic", @"CPU only"];
+    return @[SGL(@"settings.karaoke.computeunits.choice.automatic", @"Automatic"), SGL(@"settings.karaoke.computeunits.choice.cpuonly", @"CPU only")];
 }
 
 BOOL SGSingOSSupported(void) {

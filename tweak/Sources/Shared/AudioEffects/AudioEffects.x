@@ -583,14 +583,14 @@ void SGDSPApply(NSString *effect) {
 #pragma mark - what the page shows
 
 NSString *SGDSPStatus(void) {
-    if (!SGDSPSwitch(SGKeyDSP)) return @"Off";
-    if (atomic_load(&sg_outputState) == SGOutputUnsupported) return @"Spotify's output is in a format the engine does not take";
+    if (!SGDSPSwitch(SGKeyDSP)) return SGL(@"common.off", @"Off");
+    if (atomic_load(&sg_outputState) == SGOutputUnsupported) return SGL(@"settings.audioeffects.status.unsupported_output", @"Spotify's output is in a format the engine does not take");
     SGDSPEngine *engine = atomic_load(&sg_engine);
-    if (!sg_reachable) return @"Unavailable: Spotify's output could not be reached";
-    if (!engine || !atomic_load(&sg_running)) return @"Waiting for Spotify to play";
+    if (!sg_reachable) return SGL(@"settings.audioeffects.status.unreachable", @"Unavailable: Spotify's output could not be reached");
+    if (!engine || !atomic_load(&sg_running)) return SGL(@"settings.audioeffects.status.waiting_for_playback", @"Waiting for Spotify to play");
     double rate = SGDSPEngineSampleRate(engine);
     double load = SGDSPEngineReadStats(engine, false).load;
-    return [NSString stringWithFormat:@"Running at %@ kHz, %.1f%% load", [NSString stringWithFormat:@"%g", rate / 1000], load * 100];
+    return [NSString stringWithFormat:SGL(@"settings.audioeffects.status.running_format", @"Running at %@ kHz, %.1f%% load"), [NSString stringWithFormat:@"%g", rate / 1000], load * 100];
 }
 
 void SGDSPEqualizerResponse(NSArray<NSNumber *> *gains, NSInteger count, double *frequencies, double *decibels) {

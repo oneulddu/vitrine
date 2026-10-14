@@ -14,18 +14,22 @@ static NSDictionary *choiceDef(SGHomeChoice choice) {
             @(SGHomeChoiceTint): @{
                 @"key": @"spotifyglass.homeGradientTint",
                 @"default": @0,
-                @"names": @[@"Spotify green", @"Teal", @"Blue", @"Indigo", @"Purple", @"Pink",
-                            @"Red", @"Amber"],
+                @"names": @[SGL(@"settings.home.gradient.tint.spotify_green", @"Spotify green"), SGL(@"settings.home.gradient.tint.teal", @"Teal"),
+                            SGL(@"settings.home.gradient.tint.blue", @"Blue"), SGL(@"settings.home.gradient.tint.indigo", @"Indigo"),
+                            SGL(@"settings.home.gradient.tint.purple", @"Purple"), SGL(@"settings.home.gradient.tint.pink", @"Pink"),
+                            SGL(@"settings.home.gradient.tint.red", @"Red"), SGL(@"settings.home.gradient.tint.amber", @"Amber")],
             },
             @(SGHomeChoiceStrength): @{
                 @"key": @"spotifyglass.homeGradientStrength",
                 @"default": @1,
-                @"names": @[@"Subtle", @"Medium", @"Bold"],
+                @"names": @[SGL(@"settings.home.gradient.strength.subtle", @"Subtle"), SGL(@"settings.home.gradient.strength.medium", @"Medium"),
+                            SGL(@"settings.home.gradient.strength.bold", @"Bold")],
             },
             @(SGHomeChoiceHeight): @{
                 @"key": @"spotifyglass.homeGradientHeight",
                 @"default": @1,
-                @"names": @[@"Short", @"Medium", @"Tall", @"The whole screen"],
+                @"names": @[SGL(@"settings.home.gradient.height.short", @"Short"), SGL(@"settings.home.gradient.height.medium", @"Medium"),
+                            SGL(@"settings.home.gradient.height.tall", @"Tall"), SGL(@"settings.home.gradient.height.whole_screen", @"The whole screen")],
             },
         };
     });

@@ -12,23 +12,23 @@
 // The picker still asks the dispatcher about each one and leaves out what it has nowhere to send.
 static NSArray<NSDictionary *> *tabPresets(void) {
     return @[
-        @{SGTabTitle: @"Home", SGTabURI: @"spotify:home", SGTabIcon: @"home"},
-        @{SGTabTitle: @"Search", SGTabURI: @"spotify:search", SGTabIcon: @"search"},
-        @{SGTabTitle: @"Your Library", SGTabURI: @"spotify:collection", SGTabIcon: @"collection"},
-        @{SGTabTitle: @"Liked Songs", SGTabURI: @"spotify:collection:tracks", SGTabIcon: @"heart"},
-        @{SGTabTitle: @"Playlists", SGTabURI: @"spotify:playlists", SGTabIcon: @"playlist"},
-        @{SGTabTitle: @"Albums", SGTabURI: @"spotify:collection:albums", SGTabIcon: @"album"},
-        @{SGTabTitle: @"Artists", SGTabURI: @"spotify:collection:artists", SGTabIcon: @"artist"},
-        @{SGTabTitle: @"Podcasts", SGTabURI: @"spotify:collection:podcasts", SGTabIcon: @"podcasts"},
-        @{SGTabTitle: @"Audiobooks", SGTabURI: @"spotify:collection:audiobooks", SGTabIcon: @"audiobook"},
-        @{SGTabTitle: @"Downloads", SGTabURI: @"spotify:collection:downloads", SGTabIcon: @"downloaded"},
-        @{SGTabTitle: @"Your Episodes", SGTabURI: @"spotify:collection:your-episodes", SGTabIcon: @"bookmark"},
-        @{SGTabTitle: @"Browse", SGTabURI: @"spotify:browse", SGTabIcon: @"browse"},
-        @{SGTabTitle: @"New Releases", SGTabURI: @"spotify:new-releases", SGTabIcon: @"star"},
-        @{SGTabTitle: @"Made For You", SGTabURI: @"spotify:made-for-you", SGTabIcon: @"user"},
-        @{SGTabTitle: @"Concerts", SGTabURI: @"spotify:concerts", SGTabIcon: @"events"},
-        @{SGTabTitle: @"Queue", SGTabURI: @"spotify:now-playing:queue", SGTabIcon: @"queue"},
-        @{SGTabTitle: @"Create", SGTabURI: @"spotify:create-menu", SGTabIcon: @"plus"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.home", @"Home"), SGTabURI: @"spotify:home", SGTabIcon: @"home"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.search", @"Search"), SGTabURI: @"spotify:search", SGTabIcon: @"search"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.library", @"Your Library"), SGTabURI: @"spotify:collection", SGTabIcon: @"collection"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.liked_songs", @"Liked Songs"), SGTabURI: @"spotify:collection:tracks", SGTabIcon: @"heart"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.playlists", @"Playlists"), SGTabURI: @"spotify:playlists", SGTabIcon: @"playlist"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.albums", @"Albums"), SGTabURI: @"spotify:collection:albums", SGTabIcon: @"album"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.artists", @"Artists"), SGTabURI: @"spotify:collection:artists", SGTabIcon: @"artist"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.podcasts", @"Podcasts"), SGTabURI: @"spotify:collection:podcasts", SGTabIcon: @"podcasts"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.audiobooks", @"Audiobooks"), SGTabURI: @"spotify:collection:audiobooks", SGTabIcon: @"audiobook"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.downloads", @"Downloads"), SGTabURI: @"spotify:collection:downloads", SGTabIcon: @"downloaded"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.your_episodes", @"Your Episodes"), SGTabURI: @"spotify:collection:your-episodes", SGTabIcon: @"bookmark"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.browse", @"Browse"), SGTabURI: @"spotify:browse", SGTabIcon: @"browse"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.new_releases", @"New Releases"), SGTabURI: @"spotify:new-releases", SGTabIcon: @"star"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.made_for_you", @"Made For You"), SGTabURI: @"spotify:made-for-you", SGTabIcon: @"user"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.concerts", @"Concerts"), SGTabURI: @"spotify:concerts", SGTabIcon: @"events"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.queue", @"Queue"), SGTabURI: @"spotify:now-playing:queue", SGTabIcon: @"queue"},
+        @{SGTabTitle: SGL(@"settings.tabbar.tab.create", @"Create"), SGTabURI: @"spotify:create-menu", SGTabIcon: @"plus"},
     ];
 }
 
@@ -74,14 +74,14 @@ static void appendTab(NSDictionary *tab) {
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
-    self.title = @"Split Tabs";
+    self.title = SGL(@"settings.tabbar.split_tabs.title", @"Split Tabs");
     return self;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    _intro = SGNote(@"Tabs switched on here sit apart from the others at the right end of the bar, the way the Music "
-                    "app sets Search apart. Hidden tabs stay hidden.");
+    _intro = SGNote(SGL(@"settings.tabbar.split_tabs.intro", @"Tabs switched on here sit apart from the others at the right end of the bar, the way the Music "
+                    "app sets Search apart. Hidden tabs stay hidden."));
     self.tableView.tableHeaderView = _intro;
     _entries = navbarEntries();
     _split = [NSMutableSet setWithArray:SGRNavbarSplit()];
@@ -102,7 +102,7 @@ static void appendTab(NSDictionary *tab) {
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
-    return SGSectionHeader(table, @"Tabs");
+    return SGSectionHeader(table, SGL(@"settings.tabbar.tabs.header", @"Tabs"));
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
@@ -117,7 +117,7 @@ static void appendTab(NSDictionary *tab) {
     UITableViewCell *cell = SGDequeueCell(table, @"split");
     NSDictionary *entry = _entries[(NSUInteger)path.row];
     BOOL apart = [_split containsObject:entry[SGRNavbarID]];
-    NSString *where = [entry[SGRNavbarHidden] boolValue] ? @"Hidden" : apart ? @"Apart, on the right" : @"With the others";
+    NSString *where = [entry[SGRNavbarHidden] boolValue] ? SGL(@"settings.tabbar.placement.hidden", @"Hidden") : apart ? SGL(@"settings.tabbar.placement.apart", @"Apart, on the right") : SGL(@"settings.tabbar.placement.together", @"With the others");
     SGFillCell(cell, entry[SGRNavbarTitle], where, nil, nil);
     UISwitch *toggle = [UISwitch new];
     toggle.onTintColor = SGGreen();
@@ -183,7 +183,7 @@ static const CGFloat kPlatterInset = 21, kApartItemWidth = 62, kPlatterGap = 12;
     [self addSubview:_main];
     [self addSubview:_apart];
     self.isAccessibilityElement = YES;
-    self.accessibilityLabel = @"Tab bar preview";
+    self.accessibilityLabel = SGL(@"settings.tabbar.preview.a11y", @"Tab bar preview");
     return self;
 }
 
@@ -408,7 +408,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
-    self.title = @"Tab bar";
+    self.title = SGL(@"settings.tabbar.title", @"Tab bar");
     return self;
 }
 
@@ -420,8 +420,8 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     _header = [UIView new];
     [_header addSubview:_preview];
     self.tableView.tableHeaderView = _header;
-    _withNames = [[SGRLabelCard alloc] initWithTitle:@"Icons and names" names:YES];
-    _iconsOnly = [[SGRLabelCard alloc] initWithTitle:@"Icons only" names:NO];
+    _withNames = [[SGRLabelCard alloc] initWithTitle:SGL(@"settings.tabbar.labels.icons_and_names", @"Icons and names") names:YES];
+    _iconsOnly = [[SGRLabelCard alloc] initWithTitle:SGL(@"settings.tabbar.labels.icons_only", @"Icons only") names:NO];
     for (SGRLabelCard *card in @[_withNames, _iconsOnly]) [card addTarget:self action:@selector(labelsPicked:) forControlEvents:UIControlEventTouchUpInside];
     _entries = navbarEntries();
     [self showChoices];
@@ -488,14 +488,14 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 }
 
 - (NSString *)headerFor:(NSInteger)section {
-    return section == SGRNavbarSectionTabs ? @"Tabs" : nil;
+    return section == SGRNavbarSectionTabs ? SGL(@"settings.tabbar.tabs_section.header", @"Tabs") : nil;
 }
 
 - (NSString *)footerFor:(NSInteger)section {
     if (section == SGRNavbarSectionSwitch && !SGEnabled(SGRKeyNavbar))
-        return @"Off, the bar shows Spotify's own tabs in Spotify's order. Your list is kept for when it is on again.";
+        return SGL(@"settings.tabbar.custom_off.footer", @"Off, the bar shows Spotify's own tabs in Spotify's order. Your list is kept for when it is on again.");
     if (section == SGRNavbarSectionTabs)
-        return @"Drag a tab to move it. Tap one you added to rename it or change its icon, or one of Spotify's to hide it.";
+        return SGL(@"settings.tabbar.custom_on.footer", @"Drag a tab to move it. Tap one you added to rename it or change its icon, or one of Spotify's to hide it.");
     return nil;
 }
 
@@ -561,8 +561,8 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     cell.contentConfiguration = content;
     cell.separatorInset = UIEdgeInsetsMake(0, 52, 0, 0);
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-    cell.accessibilityValue = hidden ? @"Hidden" : @"Shown";
-    cell.accessibilityHint = entry[SGRNavbarURI] ? @"Opens the tab to edit it" : @"Shows or hides the tab";
+    cell.accessibilityValue = hidden ? SGL(@"settings.tabbar.item.hidden.a11y", @"Hidden") : SGL(@"settings.tabbar.item.shown.a11y", @"Shown");
+    cell.accessibilityHint = entry[SGRNavbarURI] ? SGL(@"settings.tabbar.item.hint_edit", @"Opens the tab to edit it") : SGL(@"settings.tabbar.item.hint_toggle", @"Shows or hides the tab");
 
     if (!cell.check) {
         cell.check = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -572,8 +572,8 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     UIImageSymbolConfiguration *size = [UIImageSymbolConfiguration configurationWithPointSize:22 weight:UIImageSymbolWeightRegular];
     [cell.check setImage:[UIImage systemImageNamed:hidden ? @"circle" : @"checkmark.circle.fill" withConfiguration:size] forState:UIControlStateNormal];
     cell.check.tintColor = hidden ? SGGrey() : SGRAccent();
-    cell.check.accessibilityLabel = [NSString stringWithFormat:@"Show %@ on the bar", entry[SGRNavbarTitle]];
-    cell.check.accessibilityValue = hidden ? @"Off" : @"On";
+    cell.check.accessibilityLabel = [NSString stringWithFormat:SGL(@"settings.tabbar.item.show_format.a11y", @"Show %@ on the bar"), entry[SGRNavbarTitle]];
+    cell.check.accessibilityValue = hidden ? SGL(@"common.off", @"Off") : SGL(@"common.on", @"On");
     return cell;
 }
 
@@ -583,7 +583,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     UITableViewCell *cell = SGDequeueCell(table, @"navbar");
     switch (path.section) {
         case SGRNavbarSectionSwitch: {
-            SGFillCell(cell, @"Custom tab bar", @"Your order, hidden tabs and tabs you add", nil, nil);
+            SGFillCell(cell, SGL(@"settings.tabbar.custom_bar.title", @"Custom tab bar"), SGL(@"settings.tabbar.custom_bar.subtitle", @"Your order, hidden tabs and tabs you add"), nil, nil);
             UISwitch *toggle = [UISwitch new];
             toggle.onTintColor = SGGreen();
             toggle.on = SGEnabled(SGRKeyNavbar);
@@ -593,12 +593,12 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
         }
         case SGRNavbarSectionLinks:
             // Links in the accent color, as the system's own actions in a list are.
-            SGFillCell(cell, path.row == 0 ? @"Add a tab" : @"Use Spotify's tabs", nil, SGRAccent(), nil);
+            SGFillCell(cell, path.row == 0 ? SGL(@"settings.tabbar.add_tab.title", @"Add a tab") : SGL(@"settings.tabbar.use_spotify_tabs.title", @"Use Spotify's tabs"), nil, SGRAccent(), nil);
             cell.selectionStyle = UITableViewCellSelectionStyleDefault;
             cell.accessibilityTraits = UIAccessibilityTraitButton;
             break;
         default:
-            SGFillCell(cell, @"Split tabs", @"Place chosen tabs apart on the right", nil, @"rectangle.split.2x1");
+            SGFillCell(cell, SGL(@"settings.tabbar.split_tabs.cell_title", @"Split tabs"), SGL(@"settings.tabbar.split_tabs.cell_subtitle", @"Place chosen tabs apart on the right"), nil, @"rectangle.split.2x1");
             cell.accessoryView = SGSymbolView(@"chevron.right", 13, UIImageSymbolWeightSemibold, 16);
             cell.selectionStyle = UITableViewCellSelectionStyleDefault;
             break;
@@ -725,11 +725,11 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 }
 
 - (void)reset {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Use Spotify's tabs"
-                                                                  message:@"Every tab of Spotify's comes back where Spotify put it, the tabs you added go, and no tab is split apart."
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.tabbar.reset_alert.title", @"Use Spotify's tabs")
+                                                                  message:SGL(@"settings.tabbar.reset_alert.message", @"Every tab of Spotify's comes back where Spotify put it, the tabs you added go, and no tab is split apart.")
                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Reset" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.reset", @"Reset") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         SGRSetNavbarLayout(@[]);
         SGRSetNavbarSplit(@[]);
         SGRRefreshTabBar();

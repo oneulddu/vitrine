@@ -28,7 +28,7 @@ static NSDictionary *storedDefaults(void) {
 static void showAlert(NSString *title, NSString *message, UIAlertAction *confirm) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     if (confirm) [alert addAction:confirm];
-    [alert addAction:[UIAlertAction actionWithTitle:confirm ? @"Cancel" : @"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:confirm ? SGL(@"common.cancel", @"Cancel") : SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
@@ -167,12 +167,12 @@ static void importSettings(NSDictionary *settings) {
     id file = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     NSDictionary *settings = [file isKindOfClass:NSDictionary.class] ? file[@"settings"] : nil;
     if (![settings isKindOfClass:NSDictionary.class]) {
-        showAlert(@"Not a settings file", @"Pick a file made by Export settings.", nil);
+        showAlert(SGL(@"settings.mod.backup.invalid_file.alert.title", @"Not a settings file"), SGL(@"settings.mod.backup.invalid_file.alert.message", @"Pick a file made by Export settings."), nil);
         return;
     }
     NSString *mod = [file[@"mod"] isKindOfClass:NSString.class] ? file[@"mod"] : @"unknown";
-    NSString *message = [NSString stringWithFormat:@"Your settings are replaced by the file's, exported from version %@. Anything it does not have goes back to its default, and Spotify restarts.", mod];
-    showAlert(@"Import settings?", message, [UIAlertAction actionWithTitle:@"Import and restart" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+    NSString *message = [NSString stringWithFormat:SGL(@"settings.mod.backup.import_confirm.alert.message", @"Your settings are replaced by the file's, exported from version %@. Anything it does not have goes back to its default, and Spotify restarts."), mod];
+    showAlert(SGL(@"settings.mod.backup.import_confirm.alert.title", @"Import settings?"), message, [UIAlertAction actionWithTitle:SGL(@"settings.mod.backup.action.import_and_restart", @"Import and restart") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         importSettings(settings);
     }]);
 }

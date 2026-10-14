@@ -71,6 +71,8 @@ Rules:
 - Look at Spotify's views through recorded trees (`make session` records clean ones into
   `trees/clean/`) before hooking anything. Prove every class and selector against the tree or the binary.
 - Device log: `make log` (`[spotifyglass]` lines).
+- Text on the mod's own screens goes through `SGL(@"settings.<page>.<what>", @"English")` (`Core/SGLocalize.h`); add the
+  Korean to `ko.lproj` and run `scripts/check-strings.py --sync` (docs/tweaks.md, Localization).
 - Releases: Release Please (`.github/workflows/release.yml`). Commit as `feat:` / `fix:` (they bump
   `version.txt` and fill `CHANGELOG.md`; `chore:`, `refactor:` and `docs:` stay out). Merging its
   release PR tags `vX.Y.Z` and builds the tweak to check it compiles; nothing is attached. Never edit `version.txt` by hand.

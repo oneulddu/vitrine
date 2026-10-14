@@ -344,7 +344,7 @@ static NSString *refusalReason(NSString *code) {
 }
 
 NSString *SGSpicyLyricsStatus(void) {
-    if (!SGSpicyLyricsKeySet()) return @"Needs a key";
+    if (!SGSpicyLyricsKeySet()) return SGL(@"settings.lyricssources.spicy.status.needs_key", @"Needs a key");
     return sg_refused ? refusalReason(sg_refused) : nil;
 }
 
@@ -421,10 +421,10 @@ SGLyricsAsk SGSpicyLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
 // ASCII, 12 characters at the least.
 NSString *SGSpicyLyricsKeyProblem(NSString *key);
 NSString *SGSpicyLyricsKeyProblem(NSString *key) {
-    if ([key hasPrefix:@"sl_sk_"]) return @"That is a secret key, which belongs on a server, not in an app.";
+    if ([key hasPrefix:@"sl_sk_"]) return SGL(@"settings.lyricssources.spicy.alert.secret_key", @"That is a secret key, which belongs on a server, not in an app.");
     NSCharacterSet *printable = [NSCharacterSet characterSetWithRange:NSMakeRange(0x21, 0x7E - 0x21 + 1)];
     if (![key hasPrefix:@"sl_pk_"] || key.length < 12 || [key rangeOfCharacterFromSet:printable.invertedSet].location != NSNotFound) {
-        return @"That is not a publishable key.";
+        return SGL(@"settings.lyricssources.spicy.alert.invalid_key", @"That is not a publishable key.");
     }
     return nil;
 }
@@ -442,11 +442,11 @@ static void setKey(NSString *key) {
 }
 
 static void askForKey(NSString *problem) {
-    NSString *how = @"Sign up at Spicy Lyrics for Developers, create an application, turn on client access with "
-                    @"No origin header allowed, and paste its publishable key (sl_pk_). The key stays on this iPhone.";
+    NSString *how = SGL(@"settings.lyricssources.spicy.alert.instructions", @"Sign up at Spicy Lyrics for Developers, create an application, turn on client access with "
+                    @"No origin header allowed, and paste its publishable key (sl_pk_). The key stays on this iPhone.");
     NSString *refused = SGSpicyLyricsKeySet() ? SGSpicyLyricsStatus() : nil;
     NSString *lead = problem ?: refused ? [refused stringByAppendingString:@"."] : nil;
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Spicy Lyrics Key"
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.lyricssources.spicy.alert.title", @"Spicy Lyrics Key")
         message:lead ? [NSString stringWithFormat:@"%@\n\n%@", lead, how] : how
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
@@ -456,7 +456,7 @@ static void askForKey(NSString *problem) {
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
         field.spellCheckingType = UITextSpellCheckingTypeNo;
     }];
-    UIAlertAction *save = [UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *key = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         if (!key.length) return;
         NSString *wrong = SGSpicyLyricsKeyProblem(key);
@@ -465,20 +465,20 @@ static void askForKey(NSString *problem) {
         else setKey(key);
     }];
     [alert addAction:save];
-    [alert addAction:[UIAlertAction actionWithTitle:@"Open Dashboard" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.lyricssources.spicy.action.open_dashboard", @"Open Dashboard") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         [UIApplication.sharedApplication openURL:[NSURL URLWithString:kDashboard] options:@{} completionHandler:nil];
     }]];
     if (SGSpicyLyricsKeySet()) {
-        [alert addAction:[UIAlertAction actionWithTitle:@"Remove" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
             setKey(nil);
         }]];
     }
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     alert.preferredAction = save;
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
 SGModRow *SGSpicyLyricsKeyRow(void) {
-    return SGStatActionRow(@"Spicy Lyrics key", @"Community word syncs, with your own key",
-                           ^NSString *{ return !SGSpicyLyricsKeySet() ? @"Off" : sg_refused ? @"Rejected" : @"Set"; }, ^{ askForKey(nil); });
+    return SGStatActionRow(SGL(@"settings.lyricssources.spicy.row.title", @"Spicy Lyrics key"), SGL(@"settings.lyricssources.spicy.row.subtitle", @"Community word syncs, with your own key"),
+                           ^NSString *{ return !SGSpicyLyricsKeySet() ? SGL(@"common.off", @"Off") : sg_refused ? SGL(@"settings.lyricssources.spicy.status.rejected", @"Rejected") : SGL(@"settings.lyricssources.spicy.status.set", @"Set"); }, ^{ askForKey(nil); });
 }

@@ -390,15 +390,15 @@ static CAGradientLayer *floorLight(CGPoint at, CGFloat size, UIColor *color, CGF
 - (void)updateCaption {
     NSString *text;
     if (_live) {
-        text = SGSingSpatial() ? @"Following your head. Turn it, and the voice keeps its place in the room while the rest of the song turns "
-                                 @"with you; stay turned, and it comes round in front again."
-                               : @"Following your head. Turn Spatial voice on to hear the voice keep its place as you turn.";
+        text = SGSingSpatial() ? SGL(@"settings.spatial.preview.live", @"Following your head. Turn it, and the voice keeps its place in the room while the rest of the song turns "
+                                 @"with you; stay turned, and it comes round in front again.")
+                               : SGL(@"settings.spatial.preview.off", @"Following your head. Turn Spatial voice on to hear the voice keep its place as you turn.");
     } else if (_allowed == CMAuthorizationStatusDenied || _allowed == CMAuthorizationStatusRestricted) {
-        text = @"Motion & Fitness is off for Spotify, so the voice stays ahead. Settings > Privacy & Security > Motion & Fitness "
-               @"turns it on.";
+        text = SGL(@"settings.spatial.preview.nopermission", @"Motion & Fitness is off for Spotify, so the voice stays ahead. Settings > Privacy & Security > Motion & Fitness "
+               @"turns it on.");
     } else {
-        text = @"Preview. With AirPods that track your head, it follows yours: turn, and the voice keeps its place in the room "
-               @"while the rest of the song turns with you.";
+        text = SGL(@"settings.spatial.preview.static", @"Preview. With AirPods that track your head, it follows yours: turn, and the voice keeps its place in the room "
+               @"while the rest of the song turns with you.");
     }
     if ([text isEqualToString:_caption.text]) return;
     if (_caption.text) {
@@ -412,13 +412,13 @@ static CAGradientLayer *floorLight(CGPoint at, CGFloat size, UIColor *color, CGF
 }
 
 - (NSString *)accessibilityLabel {
-    return @"Spatial voice preview: you in the middle of a field of dots, the voice a point in front of you";
+    return SGL(@"settings.spatial.preview.a11y.label", @"Spatial voice preview: you in the middle of a field of dots, the voice a point in front of you");
 }
 
 - (NSString *)accessibilityValue {
     if (!_live) return _caption.text;
     long degrees = lround(fabs(remainder(_angle, 2 * M_PI)) * 180 / M_PI);
-    NSString *where = degrees < 3 ? @"The voice is in front of you" : [NSString stringWithFormat:@"The voice is %ld degrees to your %@",
+    NSString *where = degrees < 3 ? SGL(@"settings.spatial.preview.a11y.infront", @"The voice is in front of you") : [NSString stringWithFormat:SGL(@"settings.spatial.preview.a11y.degrees", @"The voice is %ld degrees to your %@"),
                                                                        degrees, remainder(_angle, 2 * M_PI) > 0 ? @"right" : @"left"];
     return [NSString stringWithFormat:@"%@. %@", where, _caption.text];
 }

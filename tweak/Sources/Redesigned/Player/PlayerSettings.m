@@ -40,10 +40,10 @@ static const CGFloat kCardPadding = 16, kCoverSide = 64;
 // What each background does, in SGRPlayerBackgroundKind's order.
 static NSArray<NSString *> *backgroundNotes(void) {
     return @[
-        @"The cover, blurred and held still.",
-        @"The cover's colors, drifting slowly.",
-        @"The cover itself, blurred and slowly turning. It rests while a song is paused.",
-        @"The song's Canvas or the album's moving cover, else Fluid. The player's ⋯ menu switches between this, Fluid and Visualizer.",
+        SGL(@"settings.player.bg_desc.still", @"The cover, blurred and held still."),
+        SGL(@"settings.player.bg_desc.colors", @"The cover's colors, drifting slowly."),
+        SGL(@"settings.player.bg_desc.fluid", @"The cover itself, blurred and slowly turning. It rests while a song is paused."),
+        SGL(@"settings.player.bg_desc.animated", @"The song's Canvas or the album's moving cover, else Fluid. The player's ⋯ menu switches between this, Fluid and Visualizer."),
         @"The song's sound as gentle hills in the cover's colors, over Fluid held still. They settle while a song is paused.",
     ];
 }
@@ -73,7 +73,7 @@ static NSArray<NSString *> *backgroundNotes(void) {
     self.userInteractionEnabled = NO;
     self.isAccessibilityElement = YES;
     self.accessibilityTraits = UIAccessibilityTraitImage;
-    self.accessibilityLabel = @"Player preview";
+    self.accessibilityLabel = SGL(@"settings.player.preview.a11y", @"Player preview");
 
     _field = [[SGRArtworkField alloc] initWithFrame:frame];
     _field.showsBackdrop = YES;
@@ -148,7 +148,7 @@ static NSArray<NSString *> *backgroundNotes(void) {
 - (void)reloadTrack {
     SPTPlayerState *state = SGPlayerState();
     SGShownTrack *shown = SGShownTrackNow();
-    _title.text = shown.title ?: @"Not Playing";
+    _title.text = shown.title ?: SGL(@"settings.player.not_playing", @"Not Playing");
     _artist.text = shown.artist ?: @"";
     _position = shown.current && state.duration > 0 ? MIN(1, MAX(0, state.position / state.duration)) : 0;
     // The clip covers the field, and the hills move over it, which then holds still, as in the player.
@@ -201,7 +201,7 @@ static NSArray<NSString *> *backgroundNotes(void) {
         if (self->_visualiser) [self insertSubview:self->_visualiser aboveSubview:self->_field];
         self->_field.motionHeld = SGPlayerState().isPaused || self->_motion != nil || self->_visualiser != nil;
     };
-    self.accessibilityValue = [SGRPlayerBackgroundNames()[(NSUInteger)kind] stringByAppendingString:@" background"];
+    self.accessibilityValue = [SGRPlayerBackgroundNames()[(NSUInteger)kind] stringByAppendingString:SGL(@"settings.player.bg_suffix", @" background")];
     if (animated && self.window) {
         // A crossfade, which Reduce Motion keeps: nothing moves.
         [UIView transitionWithView:self duration:SGRCrossfade options:UIViewAnimationOptionTransitionCrossDissolve | UIViewAnimationOptionAllowAnimatedContent
@@ -329,41 +329,41 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
     SGRPlayerShowcase *showcase = [[SGRPlayerShowcase alloc] initWithFrame:CGRectMake(0, 0, 320, kCardMinHeight)];
     UISegmentedControl *backgrounds = [[UISegmentedControl alloc] initWithItems:SGRPlayerBackgroundNames()];
     backgrounds.selectedSegmentIndex = SGRPlayerBackground();
-    backgrounds.accessibilityLabel = @"Background";
+    backgrounds.accessibilityLabel = SGL(@"settings.player.background.a11y", @"Background");
     backgrounds.apportionsSegmentWidthsByContent = YES;
 
-    SGModRow *lowData = SGOptionRow(@"Download in Low Data Mode", @"Up to about 7 MB a song", SGKeyMotionLowData);
+    SGModRow *lowData = SGOptionRow(SGL(@"settings.player.motion_low_data.title", @"Download in Low Data Mode"), SGL(@"settings.player.motion_low_data.subtitle", @"Up to about 7 MB a song"), SGKeyMotionLowData);
     lowData.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundAnimated; };
     SGModRow *sources = SGMotionSourcesRow();
     sources.visible = lowData.visible;
 
     __block __weak UITableViewController *weakPage;
-    SGModRow *reset = SGActionRow(@"Reset", nil, ^{
+    SGModRow *reset = SGActionRow(SGL(@"common.reset", @"Reset"), nil, ^{
         SGRResetFluidSettings();
         [weakPage.tableView reloadData];   // the sliders at once, rather than at the page's next tick
     });
     reset.color = SGRed();
     NSArray<SGModRow *> *fluid = @[
-        fluidSlider(@"Speed", SGRFluidSpeed, @"%"), fluidSlider(@"Warp", SGRFluidWarp, @"%"), fluidSlider(@"Blur", SGRFluidBlur, @""),
-        fluidSlider(@"Saturation", SGRFluidSaturation, @"%"), fluidSlider(@"Brightness", SGRFluidBrightness, @"%"), reset,
+        fluidSlider(SGL(@"settings.player.fluid.speed", @"Speed"), SGRFluidSpeed, @"%"), fluidSlider(SGL(@"settings.player.fluid.warp", @"Warp"), SGRFluidWarp, @"%"), fluidSlider(SGL(@"settings.player.fluid.blur", @"Blur"), SGRFluidBlur, @""),
+        fluidSlider(SGL(@"settings.player.fluid.saturation", @"Saturation"), SGRFluidSaturation, @"%"), fluidSlider(SGL(@"settings.player.fluid.brightness", @"Brightness"), SGRFluidBrightness, @"%"), reset,
     ];
     for (SGModRow *row in fluid) row.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundFluid; };
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
         SGSection(nil, @[sources, lowData]),
-        SGNotedSection(nil, fluid, @"Brightness above 100% can make white text harder to read. A paused song holds the "
-                                   @"background still. Animated and Visualizer use these where they show Fluid."),
-        SGNotedSection(@"Controls", @[SGSwitchRow(@"Volume", nil, SGRKeyPlayerVolume),
-                                      SGOptionRow(@"Follow the cover", nil, SGRKeyPlayerFollowsCover)],
-                       @"Volume puts a slider under the controls for this iPhone, or the speaker's while Spotify plays on another device. "
-                       @"Follow the cover paints the like, shuffle and repeat in the color of the song playing."),
-        SGNotedSection(@"Mini player", SGRNowPlayingBarRows(),
-                       @"Apple Music style moves the now playing bar in between two tabs as you scroll down."), nil];
+        SGNotedSection(nil, fluid, SGL(@"settings.player.fluid.footer", @"Brightness above 100% can make white text harder to read. A paused song holds the "
+                                   @"background still. Animated and Visualizer use these where they show Fluid.")),
+        SGNotedSection(SGL(@"settings.player.controls.header", @"Controls"), @[SGSwitchRow(SGL(@"settings.player.volume.title", @"Volume"), nil, SGRKeyPlayerVolume),
+                                      SGOptionRow(SGL(@"settings.player.follows_cover.title", @"Follow the cover"), nil, SGRKeyPlayerFollowsCover)],
+                       SGL(@"settings.player.controls.footer", @"Volume puts a slider under the controls for this iPhone, or the speaker's while Spotify plays on another device. "
+                       @"Follow the cover paints the like, shuffle and repeat in the color of the song playing.")),
+        SGNotedSection(SGL(@"settings.player.mini_player.header", @"Mini player"), SGRNowPlayingBarRows(),
+                       SGL(@"settings.player.mini_player.footer", @"Apple Music style moves the now playing bar in between two tabs as you scroll down.")), nil];
     [sections addObjectsFromArray:more];
     // Fluid, Animated and Visualizer share the field (PlayerMotion.x reads the choice on every track, PlayerVisualiser.m
     // on the field's layout); Still and Colors are a field of another kind, made once a launch (PlayerField.x).
-    NSString *footer = @"Fluid, Animated and Visualizer change with the next song. Still, Colors and Hide on the player apply after you restart Spotify.";
-    SGRPlayerPage *page = [[SGRPlayerPage alloc] initWithTitle:@"Player" intro:nil sections:sections footer:footer];
+    NSString *footer = SGL(@"settings.player.footer", @"Fluid, Animated and Visualizer change with the next song. Still, Colors and Hide on the player apply after you restart Spotify.");
+    SGRPlayerPage *page = [[SGRPlayerPage alloc] initWithTitle:SGL(@"settings.player.title", @"Player") intro:nil sections:sections footer:footer];
     weakPage = page;
     page.showcase = showcase;
     page.backgrounds = backgrounds;

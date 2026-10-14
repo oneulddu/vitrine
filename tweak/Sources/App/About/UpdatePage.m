@@ -85,7 +85,7 @@ static NSString *longDate(NSString *published) {    // 18 September 2026
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
-    self.title = @"Updates";
+    self.title = SGL(@"settings.mod.update.title", @"Updates");
     _groups = [self build];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(checkLanded)
                                                name:SGUpdateCheckedNotification object:nil];
@@ -113,14 +113,14 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 - (NSString *)introText {
     SGUpdateRelease *newest = SGUpdateNewestRelease();
     if (!newest) return SGUpdateChecked()
-        ? [NSString stringWithFormat:@"This build is %s. GitHub has no newer release.", SG_VERSION]
-        : [NSString stringWithFormat:@"This build is %s. Nothing has been asked of GitHub yet.", SG_VERSION];
+        ? [NSString stringWithFormat:SGL(@"settings.mod.update.intro.up_to_date", @"This build is %s. GitHub has no newer release."), SG_VERSION]
+        : [NSString stringWithFormat:SGL(@"settings.mod.update.intro.not_checked", @"This build is %s. Nothing has been asked of GitHub yet."), SG_VERSION];
     NSString *date = longDate(newest.date);
-    NSString *when = date.length ? [@" came out on " stringByAppendingString:date] : @" is out";
+    NSString *when = date.length ? [SGL(@"settings.mod.update.came_out_on", @" came out on ") stringByAppendingString:date] : SGL(@"settings.mod.update.status.is_out", @" is out");
     if (SGUpdateVersion())
-        return [NSString stringWithFormat:@"%@%@, and this build is %s. Everything in between is below.",
+        return [NSString stringWithFormat:SGL(@"settings.mod.update.intro.newer_available", @"%@%@, and this build is %s. Everything in between is below."),
                 newest.version, when, SG_VERSION];
-    return [NSString stringWithFormat:@"This build, %s, is GitHub's newest release; it%@. What went into it is below.",
+    return [NSString stringWithFormat:SGL(@"settings.mod.update.intro.is_newest", @"This build, %s, is GitHub's newest release; it%@. What went into it is below."),
             SG_VERSION, when];
 }
 
@@ -128,22 +128,22 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 - (NSArray<SGUpdateGroup *> *)build {
     NSMutableArray<SGUpdateGroup *> *groups = [NSMutableArray array];
     SGUpdateRow *check = [SGUpdateRow new];
-    check.title = @"Check now";
+    check.title = SGL(@"settings.mod.update.check_now.title", @"Check now");
     check.symbol = @"arrow.clockwise";
     check.value = ^NSString *{ return SGUpdateStatus(); };
     check.action = ^{ SGCheckForUpdate(YES); };
     NSMutableArray<SGUpdateRow *> *top = [NSMutableArray arrayWithObject:check];
     SGUpdateRelease *newest = SGUpdateNewestRelease();
     if (SGUpdateVersion() && newest.url.length)
-        [top addObject:linkRow([@"Get " stringByAppendingString:newest.version],
-                               newest.prerelease ? @"A beta, on GitHub with its .deb" : @"The release on GitHub, where its .deb is",
+        [top addObject:linkRow([SGL(@"settings.mod.update.get_version.title_prefix", @"Get ") stringByAppendingString:newest.version],
+                               newest.prerelease ? SGL(@"settings.mod.update.beta.subtitle", @"A beta, on GitHub with its .deb") : SGL(@"settings.mod.update.release.subtitle", @"The release on GitHub, where its .deb is"),
                                @"arrow.down.circle", newest.url)];
-    if (SGRepoURL) [top addObject:linkRow(@"All releases", @"Every version, this one and the ones before it",
+    if (SGRepoURL) [top addObject:linkRow(SGL(@"settings.mod.update.all_releases.title", @"All releases"), SGL(@"settings.mod.update.all_releases.subtitle", @"Every version, this one and the ones before it"),
                            @"clock.arrow.circlepath", [SGRepoURL stringByAppendingString:@"/releases"])];
     [groups addObject:group(nil, top)];
 
     SGUpdateRow *notice = [SGUpdateRow new];
-    notice.title = @"Auto check updates";
+    notice.title = SGL(@"settings.mod.update.auto_check.title", @"Auto check updates");
     notice.symbol = @"bell";
     notice.key = SGKeyUpdateNotice;
     [groups addObject:group(nil, @[notice])];
@@ -166,8 +166,8 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
         NSString *date = shortDate(release.date);
         if (!kinds.count) {
             SGUpdateRow *empty = [SGUpdateRow new];
-            empty.title = @"Nothing written down";
-            empty.subtitle = release.url.length ? @"Tap to read the release on GitHub" : nil;
+            empty.title = SGL(@"settings.mod.update.empty.title", @"Nothing written down");
+            empty.subtitle = release.url.length ? SGL(@"settings.mod.update.empty.subtitle", @"Tap to read the release on GitHub") : nil;
             if (release.url.length) empty.action = ^{ SGOpenURL(release.url); };
             [groups addObject:group([NSString stringWithFormat:@"%@%@", release.version,
                                      date.length ? [@" · " stringByAppendingString:date] : @""], @[empty])];

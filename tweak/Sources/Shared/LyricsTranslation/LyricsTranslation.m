@@ -60,10 +60,10 @@ NSString *SGLyricsGeminiLanguage(void) {
 
 // Why Gemini stopped short, as finishReason or promptFeedback.blockReason name it.
 static NSString *blockedBecause(NSString *reason) {
-    if ([reason isEqualToString:@"RECITATION"]) return @"Gemini stopped because its answer repeated published lyrics.";
-    if ([@[@"SAFETY", @"PROHIBITED_CONTENT", @"BLOCKLIST", @"SPII"] containsObject:reason]) return @"Gemini's filters blocked this song's lyrics.";
-    if ([reason isEqualToString:@"MAX_TOKENS"]) return @"The song is too long for one answer from Gemini.";
-    return [NSString stringWithFormat:@"Gemini stopped before translating the song (%@).", reason];
+    if ([reason isEqualToString:@"RECITATION"]) return SGL(@"settings.translation.error.recitation", @"Gemini stopped because its answer repeated published lyrics.");
+    if ([@[@"SAFETY", @"PROHIBITED_CONTENT", @"BLOCKLIST", @"SPII"] containsObject:reason]) return SGL(@"settings.translation.error.safety", @"Gemini's filters blocked this song's lyrics.");
+    if ([reason isEqualToString:@"MAX_TOKENS"]) return SGL(@"settings.translation.error.toolong", @"The song is too long for one answer from Gemini.");
+    return [NSString stringWithFormat:SGL(@"settings.translation.error.stopped", @"Gemini stopped before translating the song (%@)."), reason];
 }
 
 NSArray<NSString *> *SGGeminiTranslationsIn(id root, NSInteger status, NSError *error, NSUInteger count, NSString **problem) {
@@ -84,27 +84,27 @@ NSArray<NSString *> *SGGeminiTranslationsIn(id root, NSInteger status, NSError *
     id failed = [reply[@"error"] isKindOfClass:NSDictionary.class] ? reply[@"error"][@"message"] : nil;
     NSString *googleSays = [failed isKindOfClass:NSString.class] ? failed : nil;
     if (error) {
-        *problem = @"Gemini could not be reached.";
+        *problem = SGL(@"settings.translation.error.unreachable", @"Gemini could not be reached.");
     } else if (status == 401 || status == 403 || (status == 400 && [googleSays localizedCaseInsensitiveContainsString:@"API key"])) {
-        *problem = @"Gemini turned the key down. Check it on the Lyrics page.";
+        *problem = SGL(@"settings.translation.error.keyinvalid", @"Gemini turned the key down. Check it on the Lyrics page.");
     } else if (status == 400) {
-        *problem = googleSays.length ? [NSString stringWithFormat:@"Gemini did not take the request: %@", googleSays]
-                                     : @"Gemini did not take the request (400).";
+        *problem = googleSays.length ? [NSString stringWithFormat:SGL(@"settings.translation.error.badrequestformat", @"Gemini did not take the request: %@"), googleSays]
+                                     : SGL(@"settings.translation.error.badrequest", @"Gemini did not take the request (400).");
     } else if (status == 429) {
-        *problem = @"Gemini's limit for this key is reached for now.";
+        *problem = SGL(@"settings.translation.error.ratelimit", @"Gemini's limit for this key is reached for now.");
     } else if (status == 503 || status == 500) {
-        *problem = @"Gemini is busy right now. Try again in a minute.";
+        *problem = SGL(@"settings.translation.error.busy", @"Gemini is busy right now. Try again in a minute.");
     } else if (status != 200) {
-        *problem = [NSString stringWithFormat:@"Gemini did not translate the song (%ld).", (long)status];
+        *problem = [NSString stringWithFormat:SGL(@"settings.translation.error.status", @"Gemini did not translate the song (%ld)."), (long)status];
     } else if ([blocked isKindOfClass:NSString.class]) {
         *problem = blockedBecause(blocked);
     } else if ([finished isKindOfClass:NSString.class] && ![finished isEqualToString:@"STOP"]) {
         *problem = blockedBecause(finished);
     } else if ([parsed isKindOfClass:NSArray.class]) {
-        *problem = [NSString stringWithFormat:@"Gemini answered %lu lines for the song's %lu. Try again.",
+        *problem = [NSString stringWithFormat:SGL(@"settings.translation.error.linecount", @"Gemini answered %lu lines for the song's %lu. Try again."),
                     (unsigned long)[parsed count], (unsigned long)count];
     } else {
-        *problem = @"Gemini's answer could not be read. Try again.";
+        *problem = SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.");
     }
     return nil;
 }
@@ -142,7 +142,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
                                  void (^done)(NSArray<NSString *> *translations, NSString *error)) {
     NSString *key = storedKey();
     if (!key) {
-        done(nil, @"Add a Gemini API key on the Lyrics page first.");
+        done(nil, SGL(@"settings.translation.error.nokey", @"Add a Gemini API key on the Lyrics page first."));
         return;
     }
     if (!sg_done) sg_done = [NSMutableDictionary dictionary];
@@ -206,12 +206,12 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 
 static void askForKey(void) {
     // Says what leaves the phone, not only where the key stays: each song translated goes to Google whole.
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Gemini API key"
-        message:@"Translate with Gemini sends the song's lyrics to Google, on your own key from Google AI Studio. The key stays on this iPhone."
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.geminikey.alert.title", @"Gemini API key")
+        message:SGL(@"settings.translation.geminikey.alert.message", @"Translate with Gemini sends the song's lyrics to Google, on your own key from Google AI Studio. The key stays on this iPhone.")
         preferredStyle:UIAlertControllerStyleAlert];
     // An empty field would store nothing and take the key away, which only Remove is for: Save waits for text.
     __weak UIAlertController *weakAlert = alert;
-    UIAlertAction *save = [UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         // A key copied with the quotes around it, as from a code sample, is turned down by Google as it stands.
         NSMutableCharacterSet *around = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
         [around addCharactersInString:@"\"'“”‘’"];
@@ -221,7 +221,7 @@ static void askForKey(void) {
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = @"API key";
+        field.placeholder = SGL(@"settings.translation.geminikey.placeholder", @"API key");
         field.secureTextEntry = YES;
         field.autocorrectionType = UITextAutocorrectionTypeNo;
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
@@ -232,18 +232,18 @@ static void askForKey(void) {
     }];
     [alert addAction:save];
     if (SGGeminiKeySet()) {
-        [alert addAction:[UIAlertAction actionWithTitle:@"Remove" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
             storeKey(nil);
         }]];
     }
-    [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
 NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";
 
 SGModRow *SGTranslateEverySongRow(void) {
-    SGModRow *row = SGOptionRow(@"Translate any song", @"The lyrics' translate menu for songs that already read as your language",
+    SGModRow *row = SGOptionRow(SGL(@"settings.translation.translateanysong.title", @"Translate any song"), SGL(@"settings.translation.translateanysong.subtitle", @"The lyrics' translate menu for songs that already read as your language"),
                                 SGKeyLyricsTranslateEverySong);
     row.changed = ^(BOOL on) {
         [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
@@ -252,6 +252,6 @@ SGModRow *SGTranslateEverySongRow(void) {
 }
 
 SGModRow *SGGeminiKeyRow(void) {
-    return SGStatActionRow(@"Gemini API key", @"Translate any song from the lyrics' corner menu",
-                           ^NSString *{ return SGGeminiKeySet() ? @"Set" : @"Off"; }, ^{ askForKey(); });
+    return SGStatActionRow(SGL(@"settings.translation.geminikey.title", @"Gemini API key"), SGL(@"settings.translation.geminikey.subtitle", @"Translate any song from the lyrics' corner menu"),
+                           ^NSString *{ return SGGeminiKeySet() ? SGL(@"settings.translation.geminikey.status.set", @"Set") : SGL(@"common.off", @"Off"); }, ^{ askForKey(); });
 }

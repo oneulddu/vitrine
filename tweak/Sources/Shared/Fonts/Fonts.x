@@ -149,7 +149,7 @@ SGAppFont SGAppFontChosen(void) {
 }
 
 NSArray<NSString *> *SGAppFontNames(void) {
-    return @[@"Default", @"San Francisco", @"SF Rounded", @"New York", @"SF Mono"];
+    return @[SGL(@"settings.font.choice.default", @"Default"), @"San Francisco", @"SF Rounded", @"New York", @"SF Mono"];
 }
 
 NSArray<NSString *> *SGAppFontFamilies(void) {

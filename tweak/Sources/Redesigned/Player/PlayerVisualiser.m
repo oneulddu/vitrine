@@ -505,7 +505,8 @@ void SGRPlayerMenuSetBackground(SGRPlayerBackgroundKind kind) {
     // Animated's own switch lets the clip go or looks it up, and calls back here.
     if (kind == SGRPlayerBackgroundAnimated || current == SGRPlayerBackgroundAnimated) SGPlayerMenuSetAnimatedArtwork(kind == SGRPlayerBackgroundAnimated);
     if (kind != SGRPlayerBackgroundAnimated) SGSetInt(SGRKeyPlayerBackground, kind);
-    SGLog(@"redesign player: background switched to %@ from the menu", SGRPlayerBackgroundNames()[(NSUInteger)kind]);
+    // The log keeps the English names; SGRPlayerBackgroundNames is translated for the page.
+    SGLog(@"redesign player: background switched to %@ from the menu", @[@"Still", @"Colors", @"Fluid", @"Animated", @"Visualizer"][(NSUInteger)kind]);
     SGRPlayerHoldField();
     SGRPlayerVisualiserUpdate();
 }

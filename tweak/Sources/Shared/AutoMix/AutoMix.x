@@ -118,7 +118,7 @@ BOOL SGAutoMixAccountAllows(void) {
 }
 
 NSString *SGAutoMixSummary(void) {
-    return SGFlag(SGKeyAutoMix, NO) ? @"On" : @"Off";
+    return SGFlag(SGKeyAutoMix, NO) ? SGL(@"common.on", @"On") : SGL(@"common.off", @"Off");
 }
 
 #pragma mark - the probe

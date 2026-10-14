@@ -15,8 +15,8 @@ static NSString *const kCanvas = @"canvas", *const kAppleMusic = @"applemusic";
 
 static NSArray<SGSource *> *allSources(void) {
     return @[
-        [SGSource sourceWithKey:kCanvas name:@"Spotify Canvas" detail:@"The track's own looping video"],
-        [SGSource sourceWithKey:kAppleMusic name:@"Apple Music" detail:@"The album's animated cover"],
+        [SGSource sourceWithKey:kCanvas name:SGL(@"settings.artwork.source.canvas.name", @"Spotify Canvas") detail:SGL(@"settings.artwork.source.canvas.detail", @"The track's own looping video")],
+        [SGSource sourceWithKey:kAppleMusic name:@"Apple Music" detail:SGL(@"settings.artwork.source.applemusic.detail", @"The album's animated cover")],
     ];
 }
 
@@ -128,17 +128,17 @@ void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *a
 }
 
 SGModRow *SGMotionSourcesRow(void) {
-    SGModRow *row = SGPageRow(@"Artwork sources", ^UIViewController *{
-        return SGSourcesPageMake(@"Artwork sources", @"Asked top to bottom until one has a clip for the track. Apple Music is "
-                                                     @"asked for the album by its name; it never sees your account.",
+    SGModRow *row = SGPageRow(SGL(@"settings.artwork.sources.row.title", @"Artwork sources"), ^UIViewController *{
+        return SGSourcesPageMake(SGL(@"settings.artwork.sources.title", @"Artwork sources"), SGL(@"settings.artwork.sources.intro", @"Asked top to bottom until one has a clip for the track. Apple Music is "
+                                                     @"asked for the album by its name; it never sees your account."),
                                  allSources(), ^NSArray<NSString *> * { return SGMotionSourceOrder(); },
                                  ^(NSArray<NSString *> *keys) { [NSUserDefaults.standardUserDefaults setObject:keys forKey:SGKeyMotionSources]; });
     });
     row.value = ^NSString * {
         NSArray<NSString *> *order = SGMotionSourceOrder();
-        if (!order.count) return @"Off";
-        NSString *first = [order.firstObject isEqualToString:kCanvas] ? @"Canvas" : @"Apple Music";
-        return order.count == 1 ? first : [NSString stringWithFormat:@"%@ +%lu", first, (unsigned long)order.count - 1];
+        if (!order.count) return SGL(@"common.off", @"Off");
+        NSString *first = [order.firstObject isEqualToString:kCanvas] ? SGL(@"settings.artwork.sources.first.canvas", @"Canvas") : @"Apple Music";
+        return order.count == 1 ? first : [NSString stringWithFormat:SGL(@"settings.artwork.sources.summary.format", @"%@ +%lu"), first, (unsigned long)order.count - 1];
     };
     return SGWithSymbol(row, @"square.stack.3d.down.right");
 }

@@ -116,7 +116,7 @@ static NSString *takeCommitURL(NSString **line) {
 // heading release-please leads with, blank lines -- is dropped, the version being known already.
 NSArray<SGUpdateChange *> *SGUpdateChangesIn(NSString *body) {
     NSMutableArray<SGUpdateChange *> *changes = [NSMutableArray array];
-    NSString *kind = @"Changes";
+    NSString *kind = SGL(@"settings.mod.update.changes.header", @"Changes");
     SGUpdateChange *open = nil;
     for (NSString *raw in [body componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
         NSString *line = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
@@ -194,12 +194,12 @@ NSString *SGUpdateVersion(void) {
 // so the async check lands in the cell without anything having to be told about it.
 NSString *SGUpdateStatus(void) {
     if (!SGUpdateURL) return @"off";
-    if (sg_running) return @"checking…";
+    if (sg_running) return SGL(@"settings.mod.update.status.checking", @"checking…");
     if (sg_failure) return sg_failure;
     NSString *latest = SGUpdateVersion();
-    if (latest) return [latest stringByAppendingString:@" is out"];
-    if (SGUpdateChecked()) return @"up to date";
-    return @"not checked";
+    if (latest) return [latest stringByAppendingString:SGL(@"settings.mod.update.status.is_out", @" is out")];
+    if (SGUpdateChecked()) return SGL(@"settings.mod.update.status.up_to_date", @"up to date");
+    return SGL(@"settings.mod.update.status.not_checked", @"not checked");
 }
 
 #pragma mark - the check
@@ -270,7 +270,7 @@ void SGCheckForUpdate(BOOL force) {
             if (!releases) {
                 // Unauthenticated GitHub allows sixty requests an hour per address; a phone behind a
                 // carrier NAT can be told to wait, and that is worth reading apart from a dead network.
-                sg_failure = status == 403 || status == 429 ? @"asked too often" : @"check failed";
+                sg_failure = status == 403 || status == 429 ? SGL(@"settings.mod.update.status.rate_limited", @"asked too often") : SGL(@"settings.mod.update.status.failed", @"check failed");
                 SGLog(@"update check failed: HTTP %ld, %@", (long)status,
                       error.localizedDescription ?: @"no release in the reply");
             } else {

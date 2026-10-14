@@ -4,7 +4,9 @@
 #import "SGGlowSwitch.h"
 #import "Core/SGCore.h"
 
-NSString *const SGRestartNote = @"Changes apply after you restart Spotify.";
+NSString *SGRestartNoteText(void) {
+    return SGL(@"settings.page.restart_note", @"Changes apply after you restart Spotify.");
+}
 
 @implementation SGModRow
 @end
@@ -256,7 +258,7 @@ void SGPickColor(NSString *title, NSInteger initial, void (^picked)(NSInteger rg
     sheet.picker = picker;
     sheet.picked = picked;
     UIBarButtonItem *done = [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:@"checkmark"] style:UIBarButtonItemStyleDone target:sheet action:@selector(confirm)];
-    done.accessibilityLabel = @"Done";
+    done.accessibilityLabel = SGL(@"common.done", @"Done");
     picker.navigationItem.rightBarButtonItem = done;
     // Inside a navigation controller the picker drops its own close button, so the bar carries one.
     picker.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:sheet action:@selector(cancel)];
@@ -548,7 +550,7 @@ static NSArray<UIView *> *controlsIn(UITableViewCell *cell) {
 static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTitle) {
     cell.contentView.alpha = waiting ? kWaitingAlpha : 1;
     cell.accessoryView.alpha = waiting ? kWaitingAlpha : 1;
-    cell.accessibilityHint = waiting ? [NSString stringWithFormat:@"Turn on %@ first.", switchTitle] : nil;
+    cell.accessibilityHint = waiting ? [NSString stringWithFormat:SGL(@"settings.page.waiting.a11y", @"Turn on %@ first."), switchTitle] : nil;
     if (!waiting) return;
     for (UIControl *control in controlsIn(cell)) {
         control.enabled = NO;
@@ -997,7 +999,7 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     UIImageSymbolConfiguration *symbol = [UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightRegular];
     [info setImage:[UIImage systemImageNamed:@"info.circle" withConfiguration:symbol] forState:UIControlStateNormal];
     info.tintColor = SGGrey();
-    info.accessibilityLabel = @"About this setting";
+    info.accessibilityLabel = SGL(@"settings.page.info.a11y", @"About this setting");
     [info addTarget:self action:@selector(infoTapped:) forControlEvents:UIControlEventTouchUpInside];
     [toggle sizeToFit];
     CGFloat side = 30, gap = 8, height = MAX(side, toggle.bounds.size.height);
@@ -1014,7 +1016,7 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     if (!path) return;
     SGModRow *row = [self rowAt:path];
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:row.title message:row.info preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
@@ -1047,21 +1049,21 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
 // A locked row will not move, and nothing on it says why.
 - (void)explainLock {
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"Overridden by another setting"
-                         message:@"Another switch is forcing this flag, so the row shows what it forces instead of taking a value of its own."
+        alertControllerWithTitle:SGL(@"settings.page.locked.alert.title", @"Overridden by another setting")
+                         message:SGL(@"settings.page.locked.alert.message", @"Another switch is forcing this flag, so the row shows what it forces instead of taking a value of its own.")
                   preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)warn:(SGModRow *)row {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[row.title stringByAppendingString:@" is unstable"]
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[row.title stringByAppendingString:SGL(@"settings.page.unstable.alert.title", @" is unstable")]
                                                                   message:row.warning
                                                            preferredStyle:UIAlertControllerStyleAlert];
-    if (SGRepoURL) [alert addAction:[UIAlertAction actionWithTitle:@"Open GitHub" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    if (SGRepoURL) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.page.unstable.action.open_github", @"Open GitHub") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         SGOpenURL(SGRepoURL);
     }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
