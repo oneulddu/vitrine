@@ -1274,6 +1274,8 @@
 "settings.stats.days.plural" = "%lu days";
 "settings.stats.days.singular" = "%lu day";
 "settings.stats.empty" = "Nothing yet";
+"settings.stats.error.export_play_limit" = "History exceeds the one-million-play export limit. Your history on this phone is unchanged.";
+"settings.stats.error.export_size_limit" = "History exceeds the 64 MiB JSON export limit. Your history on this phone is unchanged.";
 "settings.stats.error.load" = "Could not load history";
 "settings.stats.error.try_again" = "Please try again.";
 "settings.stats.hours.intro" = "Each play and its listening time count in the local hour when it ended. Repeated daylight-saving hours are combined.";

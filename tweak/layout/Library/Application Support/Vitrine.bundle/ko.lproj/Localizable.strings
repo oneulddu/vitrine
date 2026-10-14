@@ -1274,6 +1274,8 @@
 "settings.stats.days.plural" = "%lu일";
 "settings.stats.days.singular" = "%lu일";
 "settings.stats.empty" = "아직 없음";
+"settings.stats.error.export_play_limit" = "청취 기록이 내보내기 한도인 100만 회를 초과했습니다. 이 기기의 청취 기록은 그대로 유지됩니다.";
+"settings.stats.error.export_size_limit" = "청취 기록이 JSON 내보내기 용량 한도인 64 MiB를 초과했습니다. 이 기기의 청취 기록은 그대로 유지됩니다.";
 "settings.stats.error.load" = "기록을 로드할 수 없음";
 "settings.stats.error.try_again" = "다시 시도해 주십시오.";
 "settings.stats.hours.intro" = "각 재생 및 감상 시간은 재생이 종료된 현지 시간을 기준으로 집계됩니다. 서머타임으로 중복된 시간대는 하나로 합쳐집니다.";

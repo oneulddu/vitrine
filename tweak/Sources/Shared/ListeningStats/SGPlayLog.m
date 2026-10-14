@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <compression.h>
 #include <dlfcn.h>
+#import "Core/SGLocalize.h"
 #import "SGPlayLog.h"
 
 NSNotificationName const SGPlayLogDidChangeNotification = @"SGPlayLogDidChange";
@@ -59,7 +60,7 @@ static NSArray<SGPlay *> *localHistory(NSDictionary *root) {
 NSData *SGHistoryJSON(NSArray<SGPlay *> *plays, NSError **error) {
     if (plays.count > SGHistoryPlayLimit) {
         if (error) *error = [NSError errorWithDomain:@"VitrineHistory" code:1 userInfo:@{NSLocalizedDescriptionKey:
-            @"History exceeds the one-million-play export limit. Your history on this phone is unchanged."}];
+            SGL(@"settings.stats.error.export_play_limit", @"History exceeds the one-million-play export limit. Your history on this phone is unchanged.")}];
         return nil;
     }
     NSMutableArray *rows = [NSMutableArray arrayWithCapacity:plays.count];
@@ -69,7 +70,7 @@ NSData *SGHistoryJSON(NSArray<SGPlay *> *plays, NSError **error) {
                                                  options:0 error:error];
     if (data.length > SGHistoryFileLimit) {
         if (error) *error = [NSError errorWithDomain:@"VitrineHistory" code:2 userInfo:@{NSLocalizedDescriptionKey:
-            @"History exceeds the 64 MiB JSON export limit. Your history on this phone is unchanged."}];
+            SGL(@"settings.stats.error.export_size_limit", @"History exceeds the 64 MiB JSON export limit. Your history on this phone is unchanged.")}];
         return nil;
     }
     return data;
