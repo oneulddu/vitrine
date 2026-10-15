@@ -6,7 +6,7 @@
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/LocalFiles/LocalFiles.h"
 #import "Headers/SPTPlayer.h"
-#import "LyricsTranslation.h"
+#import "AIServicesInternal.h"
 
 // gemini-flash-latest follows each Flash release; Google gives two weeks' notice of a breaking change.
 static NSString *const kEndpoint = @"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
@@ -254,4 +254,25 @@ SGModRow *SGTranslateEverySongRow(void) {
 SGModRow *SGGeminiKeyRow(void) {
     return SGStatActionRow(SGL(@"settings.translation.geminikey.title", @"Gemini API key"), SGL(@"settings.translation.geminikey.subtitle", @"Translate any song from the lyrics' corner menu"),
                            ^NSString *{ return SGGeminiKeySet() ? SGL(@"settings.translation.geminikey.status.set", @"Set") : SGL(@"common.off", @"Off"); }, ^{ askForKey(); });
+}
+
+// Other AI jobs use the same model and filters, with the bounded transport used by the other services.
+NSURLRequest *SGGeminiAIRequest(NSString *system, NSString *prompt, NSString **problem) {
+    NSString *key = storedKey();
+    if (!key) { *problem = SGL(@"settings.translation.error.nokey", @"Add a Gemini API key on the Lyrics page first."); return nil; }
+    NSMutableArray *safety = [NSMutableArray array];
+    for (NSString *category in @[@"HARM_CATEGORY_HARASSMENT", @"HARM_CATEGORY_HATE_SPEECH", @"HARM_CATEGORY_SEXUALLY_EXPLICIT", @"HARM_CATEGORY_DANGEROUS_CONTENT"]) {
+        [safety addObject:@{@"category": category, @"threshold": @"BLOCK_NONE"}];
+    }
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEndpoint]];
+    request.HTTPMethod = @"POST";
+    request.timeoutInterval = 60;
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
+    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
+        @"systemInstruction": @{@"parts": @[@{@"text": system}]},
+        @"contents": @[@{@"parts": @[@{@"text": prompt}]}], @"safetySettings": safety,
+        @"generationConfig": @{@"responseMimeType": @"application/json", @"responseSchema": @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}}}
+    } options:0 error:nil];
+    return request;
 }

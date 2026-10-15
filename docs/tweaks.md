@@ -112,7 +112,15 @@ Shared:
                   offset per song (SGLyricsTrackOffsetMs, the newest 500) and one per output (SGLyricsRouteOffsetMs, by the
                   port's UID, none for the iPhone's own speaker), each -5000 to 5000 ms and set from the redesign's Sync
                   sheet, both cached in memory and the route read again on a route change. With Japanese reading set to
-                  Hiragana, a Japanese song's kanji are read in hiragana instead of romaji (Romanise.m). The new
+                  Hiragana, a Japanese song's kanji are read in hiragana instead of romaji, and Furigana
+                  (SGKeyLyricsFurigana, off) gives each run of kanji its reading in hiragana with the okurigana left out
+                  (SGLyricsFurigana, read from the whole line, so a kanji a source hands over alone is read in its
+                  word). LyricsLanguage.m tells a song's language from its lines (NaturalLanguage, kana meaning
+                  Japanese), keeps one the user picks per track (the newest 500), and keeps rules per language: whether
+                  its songs show the translation and the pronunciation, set from the lyrics' menu and applied as each
+                  song in it comes in. SGLyricsReload drops everything kept for a track and asks again, a pin kept.
+                  SGLyricsSimplifiedTitle takes trailing extras off a title ((feat. …), [Remastered], - Live Version,
+                  fullwidth brackets and Korean ones too). A line can carry a cultural note (SGKaraokeLine.note). The
                   sync and state features are checked on the Mac by harness/lyrics-sources/state-build.sh
     LyricsSources/ the sources lyrics come from, asked in the order the Lyrics page puts them in and merged into the
                   best answer (LyricsSources.m, the list to drag in LyricsSourcesPage.m): Apple Music's TTML from
@@ -135,7 +143,11 @@ Shared:
                   renewed once on a refusal; their requests go through SGLyricsSourceRequest, which caps a reply at
                   2 MiB, follows no redirect and keeps no cookie. A track can be pinned to one LRCLIB record picked by
                   hand (SGLrcLibSearch, SGLyricsPin), asked by its id before the walk; Automatic (SGLyricsUnpin) drops
-                  the pin and everything kept for the track. color-lyrics is answered with whichever won
+                  the pin and everything kept for the track. Each source can be held to the lyric types it gives
+                  (SGKeyLyricsSourceTypes: any, synced only, word synced only), an answer it should not give being dropped
+                  before the merge, and Type first (SGKeyLyricsTypeFirst, off) asks every source until one times words,
+                  the finest timing winning and ties going to the order, instead of stopping at the first synced
+                  answer. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
                   its request sent to a donor track that does, so the reply is a real 200 (a 404 answered as a 200 in the
                   delegate alone never showed the card on 9.1.78); a 404 for a track not seen yet is held until the chain
@@ -159,7 +171,16 @@ Shared:
                   model in the settings, the key in the Keychain), GoogleTranslate.m (Google Translate's keyless web
                   endpoint, off until switched on) and BingTranslate.m (Bing Translator's web page, keyless, off until
                   switched on: its IG, IID and abuse token read from the page, kept until 30 s before they expire and read
-                  again when Bing answers a request with a statusCode) add their items to the same menu; their replies are checked on the
+                  again when Bing answers a request with a statusCode) add their items to the same menu, with
+                  ClaudeTranslate.m (Anthropic's Messages API, the user's own key and model) and presets for the
+                  OpenAI-compatible service (OpenAI, OpenRouter, Groq, Perplexity, Pollinations or Custom). AIServices.m
+                  asks Gemini, Claude or that service for two other jobs, on the user's own key: how each line sounds,
+                  in the translation language's letters, Latin letters or IPA (SGKeyLyricsPronunciationNotation), and a
+                  one-sentence cultural note for the few lines a listener would miss (SGKeyLyricsCulturalNotes, off);
+                  both are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
+                  translations row counts and deletes with them. TranslatedTitles.m shows the playing song's title
+                  and artist in the user's language (SGKeyLyricsTranslateTitles, off), asked once a track of the first
+                  translator that is on, an artist in Latin letters left as it is. Their replies are checked on the
                   Mac against the same harness
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
@@ -600,10 +621,19 @@ Redesigned:
                   the lyrics' corner (its translate glyph an ellipsis for a song with neither), whose menu also has Sync
                   and Search LRCLIB (LyricsTools.m: the song's and the output's offsets in steps of 10 and 100 ms, and
                   LRCLIB searched by title and artist, the pick pinned to the song; the player's ⋯ menu has Search Lyrics
-                  too, for a song with no lines to open the lyrics on), in the order of sizes the Lyrics page sets
+                  too, for a song with no lines to open the lyrics on; Reload Lyrics; the song's language, picked by hand
+                  or left automatic, with Keep for its songs, which keeps the translation and pronunciation switches as
+                  they are for every song in it, SongLanguage.m; and Write Pronunciation and Explain References, which ask
+                  the AI service picked from a submenu and keep its answer for the song), in the order of sizes the Lyrics page sets
                   (LyricsText.h). With the Lyrics page's Romanized lyrics on, a line in another alphabet has the same
                   again in Latin letters right under its words (the source's own pronunciation where it is hidden, none
                   where it shows), before the translation, at the pronunciation's size, lit with its line but never swept.
+                  Furigana sit in room the row makes above its words, centered on the kanji they read, and light with the
+                  line; a cultural note goes last under its line, smaller and dimmer than a translation. Name the
+                  breaks (SGRKeyLyricsBreakLabels, off) sets Intro, Interlude or Outro beside the dots, in their group
+                  so it breathes and fades with them. Simplify song titles and Translate song titles change what the
+                  player's own title and artist labels draw (Player/PlayerTitle.x, which gives those two labels a
+                  subclass of their own class), and the landscape lyrics' title, never Spotify's text underneath.
                   Keep screen on (SGRKeyLyricsKeepAwake, off) holds the idle timer off while lines show and the song moves,
                   and lets it go 5 s into a pause, when the view leaves its window or the app leaves the front.
                   A word held 0.9 s or more glows and its letters rise in a wave as the sweep reaches

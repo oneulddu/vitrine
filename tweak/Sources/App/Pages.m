@@ -157,12 +157,16 @@ static UIViewController *lyricsPage(void) {
     if (redesigned) {
         [sections addObjectsFromArray:@[
             SGSection(SGL(@"settings.lyrics.display.header", @"Display"), @[SGRLyricsTextSizesRow(), SGLyricsWordTimingRow(), SGLyricsRomanisedRow(),
-                SGLyricsJapaneseReadingRow(), SGRLyricsKeepAwakeRow(),
+                SGLyricsJapaneseReadingRow(), SGLyricsFuriganaRow(), SGRLyricsKeepAwakeRow(),
+                SGOptionRow(SGL(@"settings.lyrics.break_labels.title", @"Name the breaks"), SGL(@"settings.lyrics.break_labels.subtitle", @"Intro, Interlude or Outro beside the dots"), SGRKeyLyricsBreakLabels),
+                SGSimplifyTitlesRow(),
                 SGSwitchRow(SGL(@"settings.lyrics.hide_controls.title", @"Hide the controls"), SGL(@"settings.lyrics.hide_controls.subtitle", @"A few seconds after the last touch, the lyrics take the whole player"), SGRKeyLyricsAutoHide),
                 SGSwitchRow(SGL(@"settings.lyrics.landscape.title", @"Landscape lyrics"), SGL(@"settings.lyrics.landscape.subtitle", @"Turn the phone with the lyrics open"), SGRKeyLyricsLandscape)]),
             timing,
-            SGSection(SGL(@"settings.lyrics.translation.header", @"Translation"), @[SGLyricsTranslationLanguageRow(), SGTranslateEverySongRow(), SGGeminiKeyRow(),
-                SGDeepLKeyRow(), SGOpenAIKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
+            SGSection(SGL(@"settings.lyrics.translation.header", @"Translation"), @[SGLyricsTranslationLanguageRow(), SGTranslateEverySongRow(), SGLyricsLanguageRulesRow(), SGTranslateTitlesRow(), SGGeminiKeyRow(),
+                SGClaudeKeyRow(), SGDeepLKeyRow(), SGOpenAIPresetRow(), SGOpenAIKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
+            SGNotedSection(SGL(@"settings.lyrics.ai.header", @"AI"), @[SGLyricsPronunciationNotationRow(), SGLyricsCulturalNotesRow()],
+                SGL(@"settings.lyrics.ai.footer", @"Write Pronunciation and Explain References in the lyrics' menu use Gemini, Claude or your AI service, on your own key. What they write is kept for the song.")),
             SGSection(nil, @[SGLyricsMeaningsRow()]),
         ]];
     } else {

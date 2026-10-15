@@ -16,7 +16,9 @@
     copy.backing = _backing;
     copy.pronunciation = _pronunciation;
     copy.translation = _translation;
+    copy.note = _note;
     copy.translationMade = _translationMade;
+    copy.pronunciationMade = _pronunciationMade;
     return copy;
 }
 @end

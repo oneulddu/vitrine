@@ -13,6 +13,8 @@ typedef NS_ENUM(NSInteger, SGRLyricsText) {
 
 #define SGRKeyLyricsPronunciation @"spotifyglass.redesign.lyricsPronunciation"   // off until switched on
 #define SGRKeyLyricsTranslation @"spotifyglass.redesign.lyricsTranslation"       // off until switched on
+// The dots holding an instrumental break are named beside them: Intro, Interlude, Outro. Off until switched on.
+#define SGRKeyLyricsBreakLabels @"spotifyglass.redesign.lyrics.breakLabels"
 // The three as the words "lyrics", "pronunciation" and "translation", largest first.
 #define SGRKeyLyricsTextOrder @"spotifyglass.redesign.lyricsTextOrder"
 

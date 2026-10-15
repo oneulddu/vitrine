@@ -1,6 +1,5 @@
-// A song's lines translated into any language by Gemini, on the user's own API key, at a tap in the
-// lyrics' corner menu. The key lives in the Keychain, not in the settings, so a settings export never
-// carries it. Only the lyrics' text and the language go out, to Google's Gemini API.
+// Lyrics translated on this iPhone or by the selected service. API keys stay in the Keychain so a
+// settings export never carries them. AI pronunciation and cultural notes use the same services.
 #import <UIKit/UIKit.h>
 
 @class SGKaraokeLine, SGModRow;
@@ -66,6 +65,7 @@ void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *li
 
 #define SGKeyLyricsOpenAIBaseURL @"spotifyglass.lyrics.openai.baseURL"
 #define SGKeyLyricsOpenAIModel @"spotifyglass.lyrics.openai.model"
+// Only the currently stored base URL's host is checked; keys never follow a preset to another host.
 BOOL SGOpenAIKeySet(void);
 SGModRow *SGOpenAIKeyRow(void);
 void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
@@ -96,3 +96,37 @@ NSString *SGBingTargetLanguage(NSString *tag);
 NSDictionary *SGBingConfigurationIn(NSString *html);
 NSString *SGBingTranslationTextIn(id root);
 BOOL SGBingTokenRefused(id root);
+
+// Claude sends lyrics to Anthropic with the user's own key. The model can be changed on the Lyrics page.
+#define SGKeyLyricsClaudeModel @"spotifyglass.lyrics.claude.model"
+BOOL SGClaudeKeySet(void);
+SGModRow *SGClaudeKeyRow(void);
+void SGLyricsTranslateWithClaude(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                 void (^done)(NSArray<NSString *> *translations, NSString *error));
+SGModRow *SGOpenAIPresetRow(void);
+
+typedef NS_ENUM(NSInteger, SGLyricsAI) { SGLyricsAIGemini = 0, SGLyricsAIClaude, SGLyricsAIOpenAI };
+NSArray<NSNumber *> *SGLyricsAIAvailable(void);
+NSString *SGLyricsAIName(SGLyricsAI service);
+
+// Pronunciation writes the sound in the translation language's script, Latin letters, or IPA.
+#define SGKeyLyricsPronunciationNotation @"spotifyglass.lyrics.pronunciationNotation"
+SGModRow *SGLyricsPronunciationNotationRow(void);
+void SGLyricsAIPronounce(SGLyricsAI service, NSString *trackID, NSArray<SGKaraokeLine *> *lines,
+                        void (^done)(NSArray<NSString *> *spoken, NSString *error));
+void SGLyricsAINotes(SGLyricsAI service, NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                    void (^done)(NSArray<NSString *> *notes, NSString *error));
+#define SGKeyLyricsCulturalNotes @"spotifyglass.lyrics.culturalNotes"
+SGModRow *SGLyricsCulturalNotesRow(void);
+
+// AI answers are kept by their original line text. Pronunciation uses the notation number as its variant;
+// notes use the language tag. Reads and writes are ordered, so an immediate read sees the last save.
+NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant);
+void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine);
+
+#define SGKeyLyricsTranslateTitles @"spotifyglass.lyrics.translateTitles"
+SGModRow *SGTranslateTitlesRow(void);
+// Posted on main with the track ID when a translated title arrives.
+extern NSNotificationName const SGTranslatedTitleDidChangeNotification;
+// Main queue. Returns a cached title or starts one request for this track this launch. Latin artist names stay.
+NSString *SGLyricsTranslatedTitle(NSString *trackID, NSString *title, NSString *artist, NSString **artistOut);

@@ -375,6 +375,61 @@ static void checkNewSources(void) {
     printf("Bugs, Genie, LyricsPlus, Deezer: parser, matching, fallback, auth and main-queue checks passed\n");
 }
 
+static void checkLanguagesAndTitles(void) {
+    NSDictionary *titles = @{
+        @"Song (feat. Singer)": @"Song", @"Song [Live]": @"Song", @"노래 【라이브】": @"노래",
+        @"노래 （리마스터）": @"노래", @"Song - 2020 Remastered": @"Song", @"노래 - 리마스터": @"노래",
+        @"노래 - 라이브": @"노래", @"Song (Live) [Deluxe] - Radio Edit": @"Song",
+        @"Song - Acoustic ver.": @"Song", @"Song - with Singer": @"Song", @"Song - ft. Singer": @"Song",
+        @"Song (Live (London))": @"Song", @"Love (Is All) Around": @"Love (Is All) Around",
+        @"Love (Is All)": @"Love", @"(Live)": @"(Live)", @"Song - Forever": @"Song - Forever", @"  Song  ": @"  Song  ",
+        @"Song - Lively": @"Song - Lively", @"Song (Live]": @"Song (Live]", @"": @""
+    };
+    for (NSString *title in titles) CHECK([SGLyricsSimplifiedTitle(title) isEqual:titles[title]]);
+    CHECK(!SGLyricsSimplifiedTitle(nil));
+    NSArray *rubyCases = @[
+        @[@"東京の空", @[@[@"東京", @"とうきょう"], @[@"空", @"そら"]]],
+        @[@"君の名前を呼ぶ", @[@[@"君", @"きみ"], @[@"名前", @"なまえ"], @[@"呼", @"よ"]]],
+        @[@"食べる", @[@[@"食", @"た"]]], @[@"ひらがなだけ", @[]], @[@"Only Latin", @[]],
+        @[@"🌙東京の空", @[@[@"東京", @"とうきょう"], @[@"空", @"そら"]]]
+    ];
+    for (NSArray *test in rubyCases) {
+        NSString *text = test[0]; NSArray *expected = test[1];
+        NSArray<SGLyricsRuby *> *runs = SGLyricsFurigana(text);
+        CHECK(runs.count == expected.count);
+        for (NSUInteger i = 0; i < runs.count; i++) {
+            CHECK([[text substringWithRange:runs[i].range] isEqual:expected[i][0]]);
+            CHECK([runs[i].reading isEqual:expected[i][1]]);
+        }
+        CHECK(SGLyricsFurigana(text) == runs);
+    }
+    dispatch_apply(100, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^(size_t i) {
+        CHECK([SGLyricsFurigana(@"東京の空").firstObject.reading isEqual:@"とうきょう"]);
+    });
+    NSDictionary *songs = @{
+        @"ja": @[@"明日の空を見上げて歩く", @"夜が明けるまで歌おう"],
+        @"ko": @[@"오늘도 너의 마음을 바라보며 조용히 걸어간다", @"내일의 햇살이 우리에게 다시 찾아올 거야"],
+        @"en": @[@"I walk beside the river while the morning light is shining", @"We will find our way together through the quiet streets tonight"],
+        @"es": @[@"Quiero caminar contigo por las calles de nuestra ciudad", @"Esta noche las estrellas brillan sobre nuestros corazones"]
+    };
+    for (NSString *language in songs) {
+        NSArray *lines = SGKaraokeStaticLines(songs[language]);
+        CHECK([SGLyricsDetectedLanguage(lines) isEqual:language]);
+        CHECK([SGLyricsDetectedLanguage(lines) isEqual:language]);
+    }
+    CHECK(!SGLyricsDetectedLanguage(SGKaraokeStaticLines(@[@"123", @"♪"])));
+    CHECK(!SGLyricsDetectedLanguage(SGKaraokeStaticLines(@[@"a"])));
+    NSMutableArray *mixed = [songs[@"es"] mutableCopy];
+    for (NSUInteger i = 0; i < 20; i++) [mixed addObject:@"I love you"];
+    CHECK([SGLyricsDetectedLanguage(SGKaraokeStaticLines(mixed)) isEqual:@"es"]);
+    CHECK([SGLyricsDetectedLanguage(SGKaraokeStaticLines(@[@"The morning light", @"かな"])) isEqual:@"ja"]);
+    SGKaraokeLine *line = SGKaraokeStaticLines(@[@"A line"]).firstObject;
+    line.note = @"A reference to the first day of spring";
+    SGKaraokeLine *copy = [line copy];
+    CHECK([copy.note isEqual:line.note]); copy.note = @"Changed"; CHECK(![copy.note isEqual:line.note]);
+    printf("language: ja/ko/en/es, repeated lines, kana override and uncertainty passed; titles: %lu cases; furigana: 6 cases, UTF-16 and concurrent cache passed; note copy passed\n", (unsigned long)titles.count);
+}
+
 int main(int argc, char **argv) {
     @autoreleasepool {
         // Thai, Lao, Khmer and Burmese, long lines with no space, and Thai among Latin and brackets.
@@ -486,6 +541,7 @@ int main(int argc, char **argv) {
 
         checkNewSources();
         checkReadingAndSearch();
+        checkLanguagesAndTitles();
 
         for (int i = 1; i < argc; i++) checkLive(@(argv[i]));
         printf("lyrics-sources: all checks passed\n");

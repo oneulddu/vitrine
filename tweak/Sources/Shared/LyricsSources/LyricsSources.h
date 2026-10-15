@@ -20,6 +20,16 @@
 // unset or 0 takes whatever translation the source has.
 #define SGKeyLyricsTranslationLanguage @"spotifyglass.lyricsTranslationLanguage"
 
+// Each source may answer with any lyrics, timed lines or only timed words. Imported files are
+// always accepted. Type first keeps asking past line timing until a source times the words.
+#define SGKeyLyricsSourceTypes @"spotifyglass.lyrics.sourceTypes"
+typedef NS_ENUM(NSInteger, SGLyricsTypes) { SGLyricsTypesAny = 0, SGLyricsTypesSynced, SGLyricsTypesWords };
+SGLyricsTypes SGLyricsSourceTypes(NSString *key);
+void SGLyricsSetSourceTypes(NSString *key, SGLyricsTypes types);
+#define SGKeyLyricsTypeFirst @"spotifyglass.lyrics.typeFirst"
+UIViewController *SGLyricsTypesPage(void);
+SGModRow *SGLyricsTypesRow(void);
+
 @class SGLyricsResult;
 
 // A manual LRCLIB choice, kept by track id across launches. At most 500 pins.

@@ -178,6 +178,248 @@ static NSUInteger sg_defaultsReads;
 static id fakeDefaults(id self, SEL selector) { sg_defaultsReads++; return sg_testDefaults; }
 static void removeTestDefaults(void) { [sg_testDefaults removePersistentDomainForName:sg_testSuite]; }
 
+static void checkLanguageStore(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    BOOL translation = YES, pronunciation = YES;
+    CHECK(!SGLyricsLanguageRule(@"ja", &translation, &pronunciation) && translation && pronunciation);
+    SGLyricsSetLanguageRule(@"ja-JP", YES, NO);
+    CHECK(SGLyricsLanguageRule(@"ja", &translation, &pronunciation) && translation && !pronunciation);
+    CHECK(SGLyricsLanguageRule(@"ja", NULL, NULL));
+    SGLyricsSetLanguageRule(@"ja", NO, YES);
+    CHECK(SGLyricsLanguageRule(@"ja", &translation, &pronunciation) && !translation && pronunciation);
+    CHECK([defaults dictionaryForKey:SGKeyLyricsLanguageRules].count == 1);
+    SGLyricsSetLanguageRule(@"invalid tag", YES, YES);
+    CHECK([defaults dictionaryForKey:SGKeyLyricsLanguageRules].count == 1);
+    [defaults setObject:@{@"ko": @"invalid"} forKey:SGKeyLyricsLanguageRules];
+    CHECK(!SGLyricsLanguageRule(@"ko", NULL, NULL));
+    [defaults removeObjectForKey:SGKeyLyricsLanguageRules];
+    CHECK(!SGLyricsLanguageRule(@"ja", NULL, NULL));
+    __block NSUInteger notes = 0;
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsLanguageDidChangeNotification object:@"language-song" queue:nil usingBlock:^(NSNotification *note) {
+        CHECK(NSThread.isMainThread); notes++;
+    }];
+    NSArray *japanese = SGKaraokeStaticLines(@[@"明日の空を見上げて歩く"]);
+    SGLyricsSetTrackLanguage(@"language-song", @"EN_us");
+    CHECK([SGLyricsSongLanguage(@"language-song", japanese) isEqual:@"en-us"] && notes == 1);
+    SGLyricsSetTrackLanguage(@"language-song", nil);
+    CHECK(!SGLyricsTrackLanguage(@"language-song") && notes == 2);
+    CHECK([SGLyricsSongLanguage(@"language-song", japanese) isEqual:@"ja"]);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ SGLyricsSetTrackLanguage(@"language-song", @"ko"); });
+    pumpUntil(^BOOL { return notes == 3; });
+    CHECK([SGLyricsTrackLanguage(@"language-song") isEqual:@"ko"]);
+    for (NSUInteger i = 0; i < 501; i++) SGLyricsSetTrackLanguage(@(i).stringValue, @"es");
+    CHECK([defaults dictionaryForKey:SGKeyLyricsTrackLanguages].count == 500 && [SGLyricsTrackLanguage(@"500") isEqual:@"es"]);
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    printf("language store: rules, nullable outputs, malformed entries, overrides, removal, main notification and 500 tracks passed\n");
+}
+
+static SGLyricsResult *madeUpLyrics(NSString *name, SGKaraokeTiming timing) {
+    NSArray *lines = timing == SGKaraokeTimingNone ? SGKaraokeStaticLines(@[name]) : SGKaraokeEstimatedLines(@[@1000], @[name]);
+    for (SGKaraokeLine *line in lines) line.timing = timing;
+    return SGLyricsResultWithLines(lines, name);
+}
+
+static void checkWalkTypes(void) {
+    NSArray *keys = @[@"musixmatch", @"netease", @"unison"];
+    NSMutableArray *saved = [NSMutableArray array], *asked = [NSMutableArray array];
+    NSMutableDictionary *replies = [NSMutableDictionary dictionary];
+    for (NSString *key in [keys arrayByAddingObject:SGImportedLRCKey]) {
+        SGLyricsProvider *provider = SGLyricsProviderFor(key);
+        [saved addObject:(id)provider.ask ?: NSNull.null];
+        provider.ask = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *)) {
+            [asked addObject:key]; done(replies[key]);
+        };
+    }
+    void (^run)(BOOL, SGLyricsTypes, SGKaraokeTiming, SGKaraokeTiming, NSArray *, NSString *) =
+    ^(BOOL typeFirst, SGLyricsTypes allowed, SGKaraokeTiming first, SGKaraokeTiming second, NSArray *expected, NSString *winner) {
+        [asked removeAllObjects];
+        SGLyricsSetOrder(keys);
+        SGSetEnabled(SGKeyLyricsTypeFirst, typeFirst);
+        SGLyricsSetSourceTypes(keys[0], allowed);
+        replies[keys[0]] = madeUpLyrics(keys[0], first);
+        replies[keys[1]] = madeUpLyrics(keys[1], second);
+        replies[keys[2]] = madeUpLyrics(keys[2], SGKaraokeTimingLine);
+        __block SGLyricsResult *answer;
+        SGLyricsFetch(NSUUID.UUID.UUIDString, ^(SGLyricsResult *result) { answer = result; });
+        pumpUntil(^BOOL { return answer != nil; });
+        CHECK([asked isEqual:expected]);
+        CHECK([answer.provider isEqual:winner] && [answer.pageProvider isEqual:winner]);
+    };
+    run(NO, SGLyricsTypesAny, SGKaraokeTimingLine, SGKaraokeTimingWords, @[keys[0]], keys[0]);
+    run(YES, SGLyricsTypesAny, SGKaraokeTimingLine, SGKaraokeTimingWords, @[keys[0], keys[1]], keys[1]);
+    run(YES, SGLyricsTypesAny, SGKaraokeTimingLine, SGKaraokeTimingLine, keys, keys[0]);
+    run(YES, SGLyricsTypesAny, SGKaraokeTimingWords, SGKaraokeTimingWords, @[keys[0]], keys[0]);
+    run(NO, SGLyricsTypesSynced, SGKaraokeTimingNone, SGKaraokeTimingLine, @[keys[0], keys[1]], keys[1]);
+    run(NO, SGLyricsTypesWords, SGKaraokeTimingLine, SGKaraokeTimingWords, @[keys[0], keys[1]], keys[1]);
+    run(NO, SGLyricsTypesSynced, SGKaraokeTimingLine, SGKaraokeTimingWords, @[keys[0]], keys[0]);
+    run(NO, SGLyricsTypesWords, SGKaraokeTimingWords, SGKaraokeTimingWords, @[keys[0]], keys[0]);
+    run(YES, SGLyricsTypesAny, SGKaraokeTimingNone, SGKaraokeTimingLine, keys, keys[1]);
+    [asked removeAllObjects];
+    SGLyricsSetOrder(@[SGImportedLRCKey]);
+    [NSUserDefaults.standardUserDefaults setObject:@{SGImportedLRCKey: @(SGLyricsTypesWords)} forKey:SGKeyLyricsSourceTypes];
+    replies[SGImportedLRCKey] = madeUpLyrics(@"Imported", SGKaraokeTimingNone);
+    __block SGLyricsResult *answer;
+    SGLyricsFetch(NSUUID.UUID.UUIDString, ^(SGLyricsResult *result) { answer = result; });
+    pumpUntil(^BOOL { return answer != nil; });
+    CHECK([answer.provider isEqual:@"Imported"] && SGLyricsSourceTypes(SGImportedLRCKey) == SGLyricsTypesAny);
+    // The first source needed the name that the second source discovers. It still wins a tie.
+    [asked removeAllObjects];
+    SGLyricsSetOrder(@[keys[1], keys[0], keys[2]]);
+    replies[keys[0]] = madeUpLyrics(keys[0], SGKaraokeTimingWords);
+    replies[keys[1]] = madeUpLyrics(keys[1], SGKaraokeTimingWords);
+    ((SGLyricsResult *)replies[keys[0]]).title = @"Named later";
+    ((SGLyricsResult *)replies[keys[0]]).artist = @"Singer";
+    SGLyricsQuery *unnamed = [SGLyricsQuery new]; unnamed.trackID = NSUUID.UUID.UUIDString;
+    answer = nil;
+    sg_waiting[unnamed.trackID] = [NSMutableArray arrayWithObject:[^(SGLyricsResult *result) { answer = result; } copy]];
+    startWalk(unnamed.trackID, unnamed);
+    CHECK([asked isEqual:(@[keys[0], keys[1]])] && [answer.provider isEqual:keys[1]] && [answer.pageProvider isEqual:keys[1]]);
+    NSUInteger index = 0;
+    for (NSString *key in [keys arrayByAddingObject:SGImportedLRCKey]) {
+        id original = saved[index++]; SGLyricsProviderFor(key).ask = original == NSNull.null ? nil : original;
+    }
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLyricsSourceTypes];
+    SGSetEnabled(SGKeyLyricsTypeFirst, NO);
+    SGLyricsSetOrder(@[@"musixmatch"]);
+    printf("walk types: default early stop, type-first upgrade and ties including late naming, any/synced/words filtering and imported bypass passed\n");
+}
+
+static void checkWalkEarlyAnswer(void) {
+    NSArray *keys = @[@"musixmatch", @"netease", @"unison"];
+    NSMutableArray *saved = [NSMutableArray array], *asked = [NSMutableArray array];
+    NSMutableDictionary *pending = [NSMutableDictionary dictionary];
+    for (NSString *key in keys) {
+        SGLyricsProvider *provider = SGLyricsProviderFor(key);
+        [saved addObject:(id)provider.ask ?: NSNull.null];
+        provider.ask = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *)) {
+            [asked addObject:key]; pending[key] = [done copy];
+        };
+    }
+    SGSetEnabled(SGKeyLyricsTypeFirst, YES);
+    SGLyricsSetOrder(keys);
+    for (NSString *action in @[@"upgrade", @"pin", @"reload", @"filter"]) {
+        NSString *track = [@"early-" stringByAppendingString:action];
+        [asked removeAllObjects]; [pending removeAllObjects];
+        SGLyricsResult *line = madeUpLyrics(@"First lines", SGKaraokeTimingLine);
+        SGLyricsResult *words = madeUpLyrics(@"Later words", SGKaraokeTimingWords);
+        __block NSUInteger deliveries = 0, hookEnds = 0;
+        for (NSUInteger i = 0; i < 2; i++) SGLyricsFetch(track, ^(SGLyricsResult *result) {
+            CHECK(SGKaraokeLinesTiming(result.karaokeLines) == SGKaraokeTimingLine);
+            CHECK([result.provider isEqual:line.provider]);
+            deliveries++;
+        });
+        SGKaraokeRequestLyrics(track);
+        // The color-lyrics completion is a waiter too; it must deliver before the second source.
+        HarnessDelegate *delegate = [HarnessDelegate new];
+        SGLyricsTaskState *state = [SGLyricsTaskState new];
+        state.track = track; state.pinGeneration = SGLyricsPinGeneration(track);
+        finishSpotify(delegate, nil, nil, state, pageBody(line, nil), nil, ^(NSError *error) {
+            CHECK(!error); hookEnds++;
+        });
+        pumpUntil(^BOOL { return pending[keys[0]] && sg_waiting[track].count == 4; });
+        CHECK(!deliveries && !hookEnds && !pending[keys[1]]);
+        void (^first)(SGLyricsResult *) = pending[keys[0]];
+        first(line);
+        CHECK(deliveries == 2 && hookEnds == 1 && delegate.deliveries == 1);
+        CHECK(sg_waiting[track] && !sg_waiting[track].count && pending[keys[1]]);
+        CHECK(SGKaraokeLinesTiming(SGKaraokeLinesForTrack(track)) == SGKaraokeTimingLine);
+        CHECK([SGLyricsCreditFor(track) isEqual:line.provider]);
+        __block SGLyricsResult *cached;
+        SGLyricsFetch(track, ^(SGLyricsResult *result) { cached = result; });
+        pumpUntil(^BOOL { return cached != nil; });
+        CHECK(cached == sg_kept[track] && [cached.provider isEqual:line.provider]);
+        CHECK([asked isEqual:(@[keys[0], keys[1]])]);
+        void (^late)(SGLyricsResult *) = pending[keys[1]];
+
+        if ([action isEqual:@"pin"]) {
+            CHECK(SGLyricsPin(track, @{@"id": @901, @"syncedLyrics": @"[00:01]Pinned lines"}));
+            SGLyricsResult *pinned = sg_kept[track];
+            NSArray *pinnedLines = SGKaraokeLinesForTrack(track);
+            late(words);
+            CHECK(sg_kept[track] == pinned && SGKaraokeLinesForTrack(track) == pinnedLines);
+            CHECK([SGLyricsCreditFor(track) isEqual:@"LRCLIB"] && !sg_waiting[track]);
+            // Even after cache eviction, a successful pinned answer never continues the order.
+            [sg_kept removeObjectForKey:track]; sg_pinnedReply = nil;
+            __block SGLyricsResult *pinAnswer;
+            SGLyricsFetch(track, ^(SGLyricsResult *result) { pinAnswer = result; });
+            pumpUntil(^BOOL { return sg_pinnedReply != nil; });
+            sg_pinnedReply(pinned);
+            CHECK(pinAnswer == pinned && !sg_waiting[track] && asked.count == 2);
+        } else if ([action isEqual:@"reload"]) {
+            NSUInteger generation = SGLyricsPinGeneration(track);
+            SGLyricsReload(track);
+            CHECK(SGLyricsPinGeneration(track) == generation + 1);
+            CHECK(!sg_kept[track] && !SGKaraokeLinesForTrack(track) && !SGLyricsCreditFor(track));
+            late(words);
+            CHECK(!sg_kept[track] && !SGKaraokeLinesForTrack(track) && !SGLyricsCreditFor(track));
+            pumpUntil(^BOOL { return sg_waiting[track].count == 1; });
+            CHECK(asked.count == 3 && [asked.lastObject isEqual:keys[0]]);
+            void (^reloaded)(SGLyricsResult *) = pending[keys[0]];
+            reloaded(madeUpLyrics(@"Reloaded words", SGKaraokeTimingWords));
+            SGLyricsResult *kept = sg_kept[track];
+            NSArray *keptLines = SGKaraokeLinesForTrack(track);
+            late(words);
+            CHECK(sg_kept[track] == kept && SGKaraokeLinesForTrack(track) == keptLines);
+            CHECK([SGLyricsCreditFor(track) isEqual:@"Reloaded words"] && !sg_waiting[track]);
+        } else {
+            if ([action isEqual:@"filter"]) {
+                SGLyricsSetSourceTypes(keys[1], SGLyricsTypesWords);
+                NSArray *before = SGKaraokeLinesForTrack(track);
+                late(madeUpLyrics(@"Rejected lines", SGKaraokeTimingLine));
+                CHECK(SGKaraokeLinesForTrack(track) == before && [SGLyricsCreditFor(track) isEqual:line.provider]);
+                CHECK(pending[keys[2]] && sg_waiting[track]);
+                late = pending[keys[2]];
+            }
+            late(words);
+            SGLyricsResult *kept = sg_kept[track];
+            CHECK(SGKaraokeLinesTiming(kept.karaokeLines) == SGKaraokeTimingWords);
+            CHECK([kept.provider isEqual:words.provider] && [kept.pageProvider isEqual:words.provider]);
+            CHECK(SGKaraokeLinesTiming(SGKaraokeLinesForTrack(track)) == SGKaraokeTimingWords);
+            CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(track).firstObject) isEqual:words.provider]);
+            CHECK([SGLyricsCreditFor(track) isEqual:words.provider] && !sg_waiting[track]);
+        }
+        CHECK(deliveries == 2 && hookEnds == 1 && delegate.deliveries == 1);
+        SGLyricsSetSourceTypes(keys[1], SGLyricsTypesAny);
+    }
+    NSUInteger index = 0;
+    for (NSString *key in keys) {
+        id original = saved[index++]; SGLyricsProviderFor(key).ask = original == NSNull.null ? nil : original;
+    }
+    SGSetEnabled(SGKeyLyricsTypeFirst, NO);
+    SGLyricsSetOrder(@[@"musixmatch"]);
+    printf("type-first early answer: waiters and color-lyrics released before later source; cached answer, word upgrade, credit, filters, pin and reload rejection passed\n");
+}
+
+static void checkReload(void) {
+    NSString *track = @"reload-song";
+    NSDictionary *record = @{@"id": @456, @"syncedLyrics": @"[00:01]Before reload"};
+    CHECK(SGLyricsPin(track, record));
+    NSUInteger generation = SGLyricsPinGeneration(track);
+    __block NSUInteger notes = 0;
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsDidReloadNotification object:track queue:nil usingBlock:^(NSNotification *note) {
+        CHECK(NSThread.isMainThread && !sg_kept[track] && !SGKaraokeLinesForTrack(track) && !SGLyricsCreditFor(track));
+        CHECK(![sg_requested containsObject:track] && ![sg_asking containsObject:track] && !sg_losses[track] && !sg_requests[track]);
+        CHECK(SGLyricsMayHave(track)); notes++;
+    }];
+    [sg_missing addObject:track]; sg_losses[track] = @3;
+    sg_pinnedReply = nil;
+    SGLyricsReload(track);
+    CHECK(notes == 1 && [SGLyricsPinnedID(track) isEqual:@456] && SGLyricsPinGeneration(track) == generation + 1);
+    pumpUntil(^BOOL { return sg_pinnedReply != nil; });
+    void (^old)(SGLyricsResult *) = sg_pinnedReply;
+    sg_pinnedReply = nil;
+    SGLyricsReload(track);
+    old(SGLrcLibRecordResult(record));
+    CHECK(!SGKaraokeLinesForTrack(track) && !sg_kept[track]);
+    pumpUntil(^BOOL { return sg_pinnedReply != nil; });
+    sg_pinnedReply(SGLrcLibRecordResult(@{@"syncedLyrics": @"[00:02]After reload"}));
+    pumpUntil(^BOOL { return SGKaraokeLinesForTrack(track) != nil; });
+    CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(track).firstObject) isEqual:@"After reload"]);
+    CHECK([sg_askedPin isEqual:@456] && [SGLyricsCreditFor(track) isEqual:@"LRCLIB"]);
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    printf("reload: cleared caches, request generations, notification order, kept pin and stale reply rejection passed\n");
+}
+
 int main(void) {
     @autoreleasepool {
         // A separate suite makes the default writes real without touching the app's or the user's.
@@ -187,6 +429,7 @@ int main(void) {
         Method defaultsMethod = class_getClassMethod(NSUserDefaults.class, @selector(standardUserDefaults));
         method_setImplementation(defaultsMethod, (IMP)fakeDefaults);
         NSUserDefaults *defaults = sg_testDefaults;
+        checkLanguageStore();
         [defaults setObject:@[@"musixmatch"] forKey:SGKeyLyricsProviders];
         [defaults setInteger:250 forKey:SGKeyLyricsDelay];
         sg_seenTracks = [NSMutableDictionary dictionary];
@@ -285,6 +528,9 @@ int main(void) {
         CHECK(SGLyricsPin(@"instrumental", @{@"id": @9, @"instrumental": @YES}));
         CHECK(SGKaraokeLinesForTrack(@"instrumental") && !SGKaraokeLinesForTrack(@"instrumental").count);
         checkHookPins();
+        checkWalkTypes();
+        checkWalkEarlyAnswer();
+        checkReload();
         for (NSUInteger i = 0; i < 501; i++) CHECK(SGLyricsPin([@(i) stringValue], record));
         CHECK([defaults dictionaryForKey:SGKeyLyricsPins].count == 500 && [SGLyricsPinnedID(@"500") isEqual:@123]);
         [NSNotificationCenter.defaultCenter removeObserver:observer];

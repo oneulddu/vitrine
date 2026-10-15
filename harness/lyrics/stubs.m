@@ -178,3 +178,48 @@ void SGRShowLyricsSearch(NSString *trackID) { NSLog(@"harness: Search LRCLIB for
 NSString *SGRLyricsSyncSummary(NSString *trackID) { return nil; }
 BOOL SGRLyricsKeepAwakeOn(void) { return NO; }
 void SGRLyricsHoldAwake(id holder, BOOL hold) {}
+
+// The AI services, Claude and a reload are off in the harness; the song's language is the real one (LyricsLanguage.m).
+BOOL SGClaudeKeySet(void) { return NO; }
+void SGLyricsTranslateWithClaude(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                 void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+NSArray<NSNumber *> *SGLyricsAIAvailable(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"ai"] ? @[@0] : @[]; }
+NSString *SGLyricsAIName(NSInteger service) { return @"Gemini"; }
+// -ai 1 offers the AI items, and answers them at once: a sound for each line, a note for every third. Each answer
+// is kept for the song as AIServices.m keeps it, so the view reads it back the way it does on the phone.
+void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine);
+static void keepAnswer(NSString *kind, NSString *track, NSString *variant, NSArray<SGKaraokeLine *> *lines, NSArray<NSString *> *answer) {
+    NSMutableDictionary *byLine = [NSMutableDictionary dictionary];
+    [lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
+        NSString *text = SGKaraokeLineText(line);
+        if (text.length) byLine[text] = answer[i];
+    }];
+    SGLyricsSaveAI(kind, track, variant, byLine);
+}
+void SGLyricsAIPronounce(NSInteger service, NSString *trackID, NSArray<SGKaraokeLine *> *lines,
+                        void (^done)(NSArray<NSString *> *spoken, NSString *error)) {
+    NSMutableArray *out = [NSMutableArray array];
+    // A sound unlike the line, as a service's would be: a pronunciation that reads the same as its line is dropped.
+    for (SGKaraokeLine *line in lines) [out addObject:SGLyricsRomanised(SGKaraokeLineText(line), YES) ?: @""];
+    keepAnswer(@"pronunciation", trackID, [NSString stringWithFormat:@"%ld", (long)[NSUserDefaults.standardUserDefaults integerForKey:@"spotifyglass.lyrics.pronunciationNotation"]], lines, out);
+    done(out, nil);
+}
+void SGLyricsAINotes(NSInteger service, NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                    void (^done)(NSArray<NSString *> *notes, NSString *error)) {
+    NSMutableArray *out = [NSMutableArray array];
+    [lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
+        [out addObject:i % 3 == 1 && SGKaraokeLineText(line).length ? @"A made-up note on what this line refers to, for the harness." : @""];
+    }];
+    keepAnswer(@"notes", trackID, languageTag, lines, out);
+    done(out, nil);
+}
+static NSMutableDictionary *sg_savedAI;
+NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant) {
+    return sg_savedAI[[NSString stringWithFormat:@"%@|%@|%@", kind, track, variant]];
+}
+void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine) {
+    if (!sg_savedAI) sg_savedAI = [NSMutableDictionary dictionary];
+    sg_savedAI[[NSString stringWithFormat:@"%@|%@|%@", kind, track, variant]] = byLine;
+}
+NSNotificationName const SGLyricsDidReloadNotification = @"spotifyglass.lyricsDidReload";
+void SGLyricsReload(NSString *trackID) { NSLog(@"harness: Reload for %@", trackID); }

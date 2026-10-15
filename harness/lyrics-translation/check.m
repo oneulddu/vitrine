@@ -2,26 +2,97 @@
 // matched onto a song's lines as copies, and each translator's replies, language tags and batches.
 // Replies below are made up, with no real lyrics. Exits non-zero on the first wrong answer.
 #import <UIKit/UIKit.h>
+#import <Security/Security.h>
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
-#import "Shared/LyricsTranslation/LyricsTranslation.h"
+#import "Shared/LyricsTranslation/AIServicesInternal.h"
+#import "Settings/SGModPage.h"
 
+NSURL *SGLyricsTestCacheRoot(void) {
+    static NSURL *root;
+    if (!root) root = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:[@"vitrine-lyrics-check-" stringByAppendingString:NSUUID.UUID.UUIDString] isDirectory:YES];
+    return root;
+}
+static BOOL deviceAvailable;
+static NSArray *deviceAnswer;
+static NSUInteger deviceCalls;
+@implementation SGOnDeviceTranslation
++ (BOOL)translationAvailable { return deviceAvailable; }
++ (BOOL)appleIntelligenceAvailable:(NSString *)languageTag { return NO; }
++ (void)translate:(NSArray<NSString *> *)lines to:(NSString *)tag done:(void (^)(NSArray<NSString *> *, NSString *))done {
+    deviceCalls++;
+    dispatch_async(dispatch_get_main_queue(), ^{ done(deviceAnswer, deviceAnswer ? nil : @"Languages not installed"); });
+}
++ (void)translateWithAppleIntelligence:(NSArray<NSString *> *)lines to:(NSString *)tag song:(NSString *)song progress:(void (^)(NSArray<NSString *> *))progress done:(void (^)(NSArray<NSString *> *, NSString *))done { done(nil, @"Not exercised"); }
+@end
+@implementation SGModRow
+@end
+static NSSet *testKeys;
+static NSMutableDictionary<NSString *, NSData *> *openAIKeys;
+static OSStatus keyReadFailure, keyWriteFailure, keyDeleteFailure;
+OSStatus SGLyricsTestKey(CFDictionaryRef query, CFTypeRef *result) {
+    NSDictionary *item = (__bridge NSDictionary *)query;
+    NSString *service = item[(__bridge id)kSecAttrService];
+    if (![testKeys containsObject:service]) return errSecItemNotFound;
+    NSData *data = [@"offline-test-key" dataUsingEncoding:NSUTF8StringEncoding];
+    if ([service isEqual:@"Vitrine.OpenAI"]) {
+        if (keyReadFailure) return keyReadFailure;
+        data = openAIKeys[item[(__bridge id)kSecAttrAccount]];
+        if (!data) return errSecItemNotFound;
+    }
+    if (result) *result = CFBridgingRetain(data);
+    return errSecSuccess;
+}
+static NSString *testKeyAccount(CFDictionaryRef query) {
+    NSDictionary *item = (__bridge NSDictionary *)query;
+    NSCAssert([item[(__bridge id)kSecAttrService] isEqual:@"Vitrine.OpenAI"], @"Unexpected Keychain write");
+    return item[(__bridge id)kSecAttrAccount];
+}
+OSStatus SGLyricsTestKeyAdd(CFDictionaryRef query, CFTypeRef *result) {
+    NSString *account = testKeyAccount(query);
+    if (keyWriteFailure) return keyWriteFailure;
+    if (openAIKeys[account]) return errSecDuplicateItem;
+    openAIKeys[account] = ((__bridge NSDictionary *)query)[(__bridge id)kSecValueData];
+    return errSecSuccess;
+}
+OSStatus SGLyricsTestKeyUpdate(CFDictionaryRef query, CFDictionaryRef attributes) {
+    NSString *account = testKeyAccount(query);
+    if (keyWriteFailure) return keyWriteFailure;
+    if (!openAIKeys[account]) return errSecItemNotFound;
+    openAIKeys[account] = ((__bridge NSDictionary *)attributes)[(__bridge id)kSecValueData];
+    return errSecSuccess;
+}
+OSStatus SGLyricsTestKeyDelete(CFDictionaryRef query) {
+    NSString *account = testKeyAccount(query);
+    if (keyDeleteFailure) return keyDeleteFailure;
+    if (!openAIKeys[account]) return errSecItemNotFound;
+    [openAIKeys removeObjectForKey:account];
+    return errSecSuccess;
+}
+SGModRow *SGMenuRow(NSString *t, NSArray *c, NSString *(^v)(void), void (^chosen)(NSInteger)) { SGModRow *r = [SGModRow new]; r.title = t; r.menu = c; r.value = v; r.chosen = chosen; return r; }
+SGModRow *SGChoiceRow(NSString *t, NSString *s, NSString *k, NSArray *c, NSInteger f) { return nil; }
 // What the files reach outside what is checked here; none of it is called.
 @implementation SGLyricsResult
 @end
 void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {}
-NSString *SGLyricsTranslationLanguage(void) { return nil; }
-SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { return nil; }
+static NSString *testLanguage;
+NSString *SGLyricsTranslationLanguage(void) { return testLanguage; }
+SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { SGModRow *r = [SGModRow new]; r.title = t; r.subtitle = s; r.value = v; r.action = a; return r; }
 SGModRow *SGOptionRow(NSString *t, NSString *s, NSString *k) { return nil; }
 id SGKaraokeTrackFor(NSString *trackID) { return nil; }
-static BOOL bingEnabled;
-BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : fallback; }
+static BOOL bingEnabled, titlesEnabled;
+BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
 UIViewController *SGTopController(void) { return nil; }
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
 
 // Offline jobs use scripted replies; only --bing-live permits a network request.
 static BOOL bingLive;
+static NSMutableArray *aiReplies;
+static NSUInteger aiRequests;
+static NSURLRequest *lastAIRequest;
+static BOOL duplicateAIReply;
+static void (^beforeAIReply)(void);
 static NSUInteger bingGets, bingPosts;
 static NSMutableArray *bingReplies;
 static BOOL disableOnReply;
@@ -76,6 +147,20 @@ void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *hea
 // stays available for the explicit live run, while offline Bing jobs can receive scripted replies.
 void SGLyricsTranslationRealSendRequest(NSURLRequest *, BOOL, BOOL (^)(void), void (^)(NSData *, NSInteger, NSError *));
 void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retry, BOOL (^allowed)(void), void (^done)(NSData *, NSInteger, NSError *)) {
+    if (![request.URL.host isEqual:@"www.bing.com"]) {
+        CHECK(NSThread.isMainThread && retry && !allowed && aiReplies.count);
+        CHECK([request.HTTPMethod isEqual:@"POST"] && request.HTTPBody.length <= 1024 * 1024);
+        lastAIRequest = request; aiRequests++;
+        id reply = aiReplies.firstObject;
+        [aiReplies removeObjectAtIndex:0];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSData *data = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
+            if (beforeAIReply) beforeAIReply();
+            done(data, 200, nil);
+            if (duplicateAIReply) done(data, 200, nil);
+        });
+        return;
+    }
     CHECK(NSThread.isMainThread && allowed && allowed() && retry);
     CHECK([request.HTTPMethod isEqual:@"POST"]);
     CHECK([request.URL.host isEqual:@"www.bing.com"]);
@@ -280,6 +365,8 @@ static void checkProviders(void) {
     puts("DeepL / Google / OpenAI: mapping, malformed replies, line counts, bounds, form encoding and URL checks passed");
 }
 
+#include "check-ai.m"
+
 int main(int argc, const char **argv) {
     @autoreleasepool {
         if (argc > 1 && strcmp(argv[1], "--bing-live") == 0) {
@@ -330,6 +417,7 @@ int main(int argc, const char **argv) {
         CHECK(!readReply(@"{}", 200, 2, &problem) && [problem containsString:@"could not be read"]);
         checkProviders();
         checkBing();
+        checkNewAI();
         puts("lyrics translation: all checks passed");
     }
     return 0;

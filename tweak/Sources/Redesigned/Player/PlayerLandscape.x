@@ -253,8 +253,11 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     if (!state) return;
     [self updateBare:NO];
-    _title.text = state.track.trackTitle;
-    _artist.text = state.track.artistName;
+    // The title and artist as the player shows them, simplified or translated (PlayerTitle.x).
+    NSString *artist = nil, *uri = SGURIString(state.track.URI);
+    NSString *track = [uri hasPrefix:@"spotify:track:"] ? [uri substringFromIndex:@"spotify:track:".length] : nil;
+    _title.text = SGRShownTitle(track, state.track.trackTitle, state.track.artistName, &artist);
+    _artist.text = artist;
     [_play setImage:[UIImage systemImageNamed:state.isPaused ? @"play.fill" : @"pause.fill" withConfiguration:
         [UIImageSymbolConfiguration configurationWithPointSize:30 weight:UIImageSymbolWeightBold]] forState:UIControlStateNormal];
     _play.accessibilityLabel = state.isPaused ? @"Play" : @"Pause";

@@ -19,6 +19,8 @@
 //                  lines and quits with the number of failures
 //   -openMenu S    opens the pronunciation and translation menu S seconds in, as a tap on its button would
 //   -toggleAt S    switches the pronunciation and the translation over S seconds in, as the menu would
+//   -askAI S       asks the AI service for the pronunciation and the cultural notes S seconds in, as the menu would
+//                  (with -ai 1, stubs.m answers both at once)
 //   -translateIn S keeps copies of the lines S seconds in with every other one translated, as
 //                  Musixmatch's community translations come in after the lines on the phone
 //   -gemini 1      a Gemini key is set, so the menu offers Translate with Gemini (stubs.m answers it)
@@ -591,6 +593,14 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
                 SEL present = NSSelectorFromString(@"_presentMenuAtLocation:");
                 if ([menu respondsToSelector:present]) ((void (*)(id, SEL, CGPoint))objc_msgSend)(menu, present, CGPointMake(22, 22));
             }
+        });
+    }
+    if ([args objectForKey:@"askAI"]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([args doubleForKey:@"askAI"] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SEL ask = NSSelectorFromString(@"askAI:notes:");
+            if (![karaoke respondsToSelector:ask]) return;
+            ((void (*)(id, SEL, NSInteger, BOOL))objc_msgSend)(karaoke, ask, 0, NO);
+            ((void (*)(id, SEL, NSInteger, BOOL))objc_msgSend)(karaoke, ask, 0, YES);
         });
     }
     if ([args objectForKey:@"translateIn"]) {

@@ -35,6 +35,40 @@ NSString *SGLyricsRomanised(NSString *text, BOOL japanese);
 @class SGKaraokeLine;
 BOOL SGLyricsLooksJapanese(NSArray<SGKaraokeLine *> *lines);
 
+// Readings sit over the kanji, leaving shared kana at either end outside the run. Ranges use
+// UTF-16 offsets into the original text. Safe off the main thread, and kept per text.
+@interface SGLyricsRuby : NSObject
+@property (nonatomic) NSRange range;
+@property (nonatomic, copy) NSString *reading;
+@end
+NSArray<SGLyricsRuby *> *SGLyricsFurigana(NSString *text);
+#define SGKeyLyricsFurigana @"spotifyglass.lyricsFurigana"
+SGModRow *SGLyricsFuriganaRow(void);
+
+// The song's main language, as a base code, or nil when the distinct lines give no clear answer.
+// Main thread; kept by the array's identity. Kana anywhere makes the song Japanese.
+NSString *SGLyricsDetectedLanguage(NSArray<SGKaraokeLine *> *lines);
+#define SGKeyLyricsTrackLanguages @"spotifyglass.lyrics.trackLanguages"
+NSString *SGLyricsTrackLanguage(NSString *trackID);
+// A nil tag removes the choice. At most 500 tracks; announces the track on the main queue.
+void SGLyricsSetTrackLanguage(NSString *trackID, NSString *tag);
+extern NSNotificationName const SGLyricsLanguageDidChangeNotification;
+NSString *SGLyricsSongLanguage(NSString *trackID, NSArray<SGKaraokeLine *> *lines);
+// A language's translation and pronunciation choices, applied together when the song changes.
+#define SGKeyLyricsLanguageRules @"spotifyglass.lyrics.languageRules"
+BOOL SGLyricsLanguageRule(NSString *language, BOOL *translation, BOOL *pronunciation);
+void SGLyricsSetLanguageRule(NSString *language, BOOL translation, BOOL pronunciation);
+SGModRow *SGLyricsLanguageRulesRow(void);
+
+// Removes trailing bracketed extras and named versions, keeping the input if nothing remains.
+NSString *SGLyricsSimplifiedTitle(NSString *title);
+#define SGKeyLyricsSimplifyTitles @"spotifyglass.simplifyTitles"
+SGModRow *SGSimplifyTitlesRow(void);
+extern NSNotificationName const SGSimplifyTitlesDidChangeNotification;
+// Main queue: drops kept lyrics and requests, announces the track, then asks again, keeping its pin.
+void SGLyricsReload(NSString *trackID);
+extern NSNotificationName const SGLyricsDidReloadNotification;
+
 // Sweeps a line timed only by the line word by word, on the estimate of when each word is sung, as if
 // the source had timed them. Off, such a line lights up whole as it starts. Off by default: the
 // estimate is a guess dressed up as timing.
@@ -85,8 +119,12 @@ typedef NS_ENUM(NSUInteger, SGKaraokeAlign) {
 @property (nonatomic, strong) SGKaraokeLine *pronunciation;
 // The line in another language, the backing's words with it; nil where the source has none.
 @property (nonatomic, copy) NSString *translation;
+// A short explanation of a cultural reference, nil for nearly every line.
+@property (nonatomic, copy) NSString *note;
 // The translation came from a translator of the lyrics' menu (LyricsTranslation), not from the lyrics' source.
 @property (nonatomic) BOOL translationMade;
+// The pronunciation was written by an AI service asked from the lyrics' menu, not given by the lyrics' source.
+@property (nonatomic) BOOL pronunciationMade;
 @end
 
 // The line as one string, a space between the words that are not joined.

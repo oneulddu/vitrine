@@ -729,6 +729,7 @@ static void informationUnitLaidOut(UIViewController *unit) {
     for (UIView *v = label; v && v != host; v = v.superview) {
         if ([v.superview isKindOfClass:UIStackView.class]) { element = v; break; }
     }
+    SGRShownTitleWatch(host);
     if (element && sg_titleElement != element) {
         sg_titleElement = element;
         static dispatch_once_t once;

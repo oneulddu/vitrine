@@ -1,7 +1,9 @@
 // The Lyrics page's parts; App/Pages.m assembles the page.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
+#import "Settings/SGPageStyle.h"
 #import "Lyrics.h"
+#import "Core/SGGlass.h"
 #import "Shared/LocalFiles/LocalLyrics.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
@@ -20,7 +22,7 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
         NSUInteger count = SGImportedLRCFiles().count;
         return count ? @(count).stringValue : SGL(@"settings.lyrics.imported_lrc.value.none", @"None");
     };
-    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources, imported,
+    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources, SGLyricsTypesRow(), imported,
         SGSwitchRow(SGL(@"settings.lyrics.all_tracks.title", @"Lyrics for every track"), SGL(@"settings.lyrics.all_tracks.subtitle", @"Even where Spotify has none"), SGKeyLyricsAllTracks), SGSpicyLyricsKeyRow(), SGDeezerARLRow(), nil];
     // Spicy Lyrics' terms ask for its credit wherever its lines show (Shared/LyricsSources/SpicyLyrics.m), so the switch
     // says so, or its credit under the lyrics reads as the switch not working (issue #20).
@@ -78,4 +80,65 @@ SGModRow *SGLyricsDelayRow(void) {
     return SGSliderRow(SGL(@"settings.lyrics.delay.title", @"Delay"), nil, 0, 1000, 25, ^double { return SGInt(SGKeyLyricsDelay, 0); },
                        ^(double value) { SGSetInt(SGKeyLyricsDelay, lround(value)); },
                        ^NSString *(double value) { return [NSString stringWithFormat:SGL(@"settings.lyrics.delay.format", @"%ld ms"), lround(value)]; });
+}
+
+SGModRow *SGLyricsFuriganaRow(void) {
+    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.furigana.title", @"Furigana"),
+                               SGL(@"settings.lyrics.furigana.subtitle", @"Readings over the kanji of Japanese songs"), SGKeyLyricsFurigana);
+    row.changed = ^(BOOL on) {
+        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsRomanisedDidChangeNotification object:nil];
+    };
+    return row;
+}
+
+SGModRow *SGSimplifyTitlesRow(void) {
+    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.simplify_titles.title", @"Simplify song titles"),
+                               SGL(@"settings.lyrics.simplify_titles.subtitle", @"Without (feat. …), Remastered and the like"), SGKeyLyricsSimplifyTitles);
+    row.changed = ^(BOOL on) {
+        [NSNotificationCenter.defaultCenter postNotificationName:SGSimplifyTitlesDidChangeNotification object:nil];
+    };
+    return row;
+}
+
+SGModRow *SGLyricsLanguageRulesRow(void) {
+    return SGStatActionRow(SGL(@"settings.lyrics.language_rules.title", @"Rules by song language"), nil, ^NSString *{
+        NSUInteger count = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyLyricsLanguageRules].count;
+        return count ? @(count).stringValue : SGL(@"common.off", @"Off");
+    }, ^{
+        if (![NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyLyricsLanguageRules].count) return;
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.lyrics.language_rules.clear.title", @"Clear language rules?")
+            message:SGL(@"settings.lyrics.language_rules.clear.message", @"Translation and pronunciation will use your usual settings for every song.") preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.delete", @"Delete") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLyricsLanguageRules];
+            [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsLanguageDidChangeNotification object:nil];
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+        SGPresentDark(alert);
+        [SGTopController() presentViewController:alert animated:YES completion:nil];
+    });
+}
+
+UIViewController *SGLyricsTypesPage(void) {
+    NSArray *choices = @[SGL(@"settings.lyrics.types.any", @"Any"), SGL(@"settings.lyrics.types.synced", @"Synced only"),
+                         SGL(@"settings.lyrics.types.words", @"Word synced only")];
+    NSMutableArray *rows = [NSMutableArray array];
+    for (SGLyricsProvider *provider in SGLyricsAllProviders()) {
+        // Imported LRC is accepted in every format, so it has no restriction to set.
+        if ([provider.key isEqualToString:SGImportedLRCKey]) continue;
+        [rows addObject:SGMenuRow(provider.name, choices, ^NSString *{ return choices[SGLyricsSourceTypes(provider.key)]; },
+                                 ^(NSInteger index) { SGLyricsSetSourceTypes(provider.key, index); })];
+    }
+    SGModRow *first = SGOptionRow(SGL(@"settings.lyrics.types.first.title", @"Type first"),
+        SGL(@"settings.lyrics.types.first.subtitle", @"Looks for word timing first. This can take longer, and the lyrics card may come later."), SGKeyLyricsTypeFirst);
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.types.title", @"Lyric types") intro:nil
+        sections:@[SGSection(nil, @[first]), SGSection(SGL(@"settings.lyrics.sources.header", @"Sources"), rows)] footer:nil];
+}
+
+SGModRow *SGLyricsTypesRow(void) {
+    SGModRow *row = SGPageRow(SGL(@"settings.lyrics.types.title", @"Lyric types"), ^UIViewController *{ return SGLyricsTypesPage(); });
+    row.value = ^NSString *{
+        return SGFlag(SGKeyLyricsTypeFirst, NO) ? SGL(@"settings.lyrics.types.first.title", @"Type first")
+            : SGL(@"settings.lyrics.types.default", @"Default");
+    };
+    return row;
 }

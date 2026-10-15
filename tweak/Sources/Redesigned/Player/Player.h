@@ -26,6 +26,7 @@
 //                        under More (Redesigned/ContextMenu)
 //     PlayerSettings.m   the Player page in Mod Settings, led by a showcase of the player
 //     PlayerFree.x       a Spotify Free account given the player mode these units belong to
+//     PlayerTitle.x      the title and the artist shown simplified or translated, over Spotify's own labels
 //
 // Speed and pitch, once the redesign's own, are Shared/Player/SpeedPitch.h's; PlayerHeader.x still hands
 // the more button over, so a menu opened from it is taken for the player's, and hands it to PlayerMenu.m,
@@ -75,6 +76,14 @@ CGRect SGRPlayerArtworkAreaIn(UIView *host);
 // Hides the cover on screen and its shadow, or shows them again, for a stand-in to fly in its place
 // (PlayerMorph.x).
 void SGRPlayerSetCoverHidden(BOOL hidden);
+
+#pragma mark - the title (PlayerTitle.x)
+
+// The title the redesign shows for a track, simplified or translated as the Lyrics page sets, and in
+// \`shownArtist\` the artist; the title as given while neither is on or nothing is in. Main thread.
+NSString *SGRShownTitle(NSString *trackID, NSString *title, NSString *artist, NSString **shownArtist);
+// Finds Spotify's title and artist labels in the information unit's view and has them show the title above.
+void SGRShownTitleWatch(UIView *unit);
 
 #pragma mark - the lyrics in the player (PlayerLyrics.x)
 

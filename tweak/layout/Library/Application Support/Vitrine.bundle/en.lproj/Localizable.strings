@@ -885,11 +885,20 @@
 "settings.lossless.footer" = "Put FLAC or ALAC files in Files › Spotify › Lossless. A file plays when its title and length match the song and its sound matches what Spotify plays, from about 4 s after the song starts or you seek. Spotify still streams its own copy, at its lowest quality while the next song has a file. Karaoke and speeds other than 1x keep Spotify's sound. Applies after you restart Spotify.";
 "settings.lossless.header" = "Lossless";
 
+"settings.lyrics.ai.footer" = "Write Pronunciation and Explain References in the lyrics' menu use Gemini, Claude or your AI service, on your own key. What they write is kept for the song.";
+"settings.lyrics.ai.header" = "AI";
 "settings.lyrics.all_tracks.subtitle" = "Even where Spotify has none";
 "settings.lyrics.all_tracks.title" = "Lyrics for every track";
+"settings.lyrics.break.interlude" = "Interlude";
+"settings.lyrics.break.intro" = "Intro";
+"settings.lyrics.break.outro" = "Outro";
+"settings.lyrics.break_labels.subtitle" = "Intro, Interlude or Outro beside the dots";
+"settings.lyrics.break_labels.title" = "Name the breaks";
 "settings.lyrics.delay.format" = "%ld ms";
 "settings.lyrics.delay.title" = "Delay";
 "settings.lyrics.display.header" = "Display";
+"settings.lyrics.furigana.subtitle" = "Readings over the kanji of Japanese songs";
+"settings.lyrics.furigana.title" = "Furigana";
 "settings.lyrics.hide_controls.subtitle" = "A few seconds after the last touch, the lyrics take the whole player";
 "settings.lyrics.hide_controls.title" = "Hide the controls";
 "settings.lyrics.imported_lrc.title" = "Imported LRC files";
@@ -902,6 +911,9 @@
 "settings.lyrics.keep_awake.title" = "Keep screen on";
 "settings.lyrics.landscape.subtitle" = "Turn the phone with the lyrics open";
 "settings.lyrics.landscape.title" = "Landscape lyrics";
+"settings.lyrics.language_rules.clear.message" = "Translation and pronunciation will use your usual settings for every song.";
+"settings.lyrics.language_rules.clear.title" = "Clear language rules?";
+"settings.lyrics.language_rules.title" = "Rules by song language";
 "settings.lyrics.lockscreen_lyrics.subtitle" = "Current line in place of the artist";
 "settings.lyrics.lockscreen_lyrics.title" = "Lock screen lyrics";
 "settings.lyrics.meanings.choice.artist" = "From the artist";
@@ -913,6 +925,8 @@
 "settings.lyrics.romanized.title" = "Romanized lyrics";
 "settings.lyrics.show_source.subtitle" = "Spicy Lyrics is always credited after the last line: its terms ask for it";
 "settings.lyrics.show_source.title" = "Show source";
+"settings.lyrics.simplify_titles.subtitle" = "Without (feat. …), Remastered and the like";
+"settings.lyrics.simplify_titles.title" = "Simplify song titles";
 "settings.lyrics.simulate_word_timing.title" = "Simulate word timing";
 "settings.lyrics.sing.title" = "Karaoke";
 "settings.lyrics.sources.eevee_conflict.footer" = "EeveeSpotify's lyrics are on, so it answers Spotify's lyrics and these sources stay off: both answering froze Spotify after launch. Turn its lyrics off in its own settings to use these.";
@@ -926,6 +940,13 @@
 "settings.lyrics.translation.header" = "Translation";
 "settings.lyrics.translation_language.footer" = "A language brings Musixmatch's community translations to lyrics that have none, which sends Musixmatch each song's ID. Any shows the first translation the lyrics come with. It is also the language the lyrics' translate menu translates into, offered only for songs in another one; with Any, the iPhone's own language.";
 "settings.lyrics.translation_language.title" = "Translation language";
+"settings.lyrics.types.any" = "Any";
+"settings.lyrics.types.default" = "Default";
+"settings.lyrics.types.first.subtitle" = "Looks for word timing first. This can take longer, and the lyrics card may come later.";
+"settings.lyrics.types.first.title" = "Type first";
+"settings.lyrics.types.synced" = "Synced only";
+"settings.lyrics.types.title" = "Lyric types";
+"settings.lyrics.types.words" = "Word synced only";
 "settings.lyrics.use_beside_eevee.subtitle" = "Only if EeveeSpotify's lyrics are really off";
 "settings.lyrics.use_beside_eevee.title" = "Use these sources anyway";
 
@@ -999,21 +1020,32 @@
 "settings.lyricstext.title" = "Text sizes";
 
 "settings.lyricstools.meaning.artist" = "Meaning from the artist";
+"settings.lyricstools.menu.ai.service" = "the service you pick";
 "settings.lyricstools.menu.bing" = "Translate with Bing";
 "settings.lyricstools.menu.bing.subtitle" = "Sends the lyrics to Bing Translator";
+"settings.lyricstools.menu.claude" = "Translate with Claude";
+"settings.lyricstools.menu.claude.subtitle" = "Sends the lyrics to Anthropic";
 "settings.lyricstools.menu.deepl" = "Translate with DeepL";
 "settings.lyricstools.menu.deepl.subtitle" = "Sends the lyrics to DeepL";
 "settings.lyricstools.menu.google" = "Translate with Google";
 "settings.lyricstools.menu.google.subtitle" = "Sends the lyrics to Google Translate";
 "settings.lyricstools.menu.label" = "Lyrics options";
+"settings.lyricstools.menu.notes" = "Explain References";
+"settings.lyricstools.menu.notes.hide" = "Hide Cultural Notes";
+"settings.lyricstools.menu.notes.subtitle" = "Notes under the lines that need them";
 "settings.lyricstools.menu.openai" = "Translate with your AI service";
 "settings.lyricstools.menu.openai.subtitle" = "Sends the lyrics to the service you set";
+"settings.lyricstools.menu.pronounce" = "Write Pronunciation";
+"settings.lyricstools.menu.pronounce.subtitle" = "Sends the lyrics to %@";
+"settings.lyricstools.menu.reload" = "Reload Lyrics";
 "settings.lyricstools.menu.search" = "Search LRCLIB";
 "settings.lyricstools.menu.search.pinned" = "Picked by hand";
 "settings.lyricstools.menu.sync" = "Sync";
 "settings.lyricstools.menu.translating" = "Translating";
+"settings.lyricstools.notes.failed" = "No Notes";
 "settings.lyricstools.player.search" = "Search Lyrics";
 "settings.lyricstools.player.search.none" = "None found yet, from LRCLIB";
+"settings.lyricstools.pronounce.failed" = "No Pronunciation";
 "settings.lyricstools.search.action" = "Search";
 "settings.lyricstools.search.automatic.footer" = "The sources on the Lyrics page choose again.";
 "settings.lyricstools.search.automatic.title" = "Automatic";
@@ -1336,6 +1368,16 @@
 "settings.sleep_timer.fade.2m" = "2 minutes";
 "settings.sleep_timer.fade.30s" = "30 s";
 
+"settings.songlanguage.automatic" = "Automatic";
+"settings.songlanguage.choose" = "Song Language";
+"settings.songlanguage.keep.format" = "Keep for %@ Songs";
+"settings.songlanguage.keep.subtitle" = "Translation and pronunciation as they are now";
+"settings.songlanguage.rule.none" = "Kept: shows neither";
+"settings.songlanguage.rule.pronunciation" = "pronunciation";
+"settings.songlanguage.rule.shows.format" = "Kept: shows %@";
+"settings.songlanguage.rule.translation" = "translation";
+"settings.songlanguage.unsure" = "Not sure";
+
 "settings.sources.none_on.header" = "None on";
 "settings.sources.order.header" = "Asked in this order";
 
@@ -1498,6 +1540,9 @@
 "settings.tabbar.title" = "Tab bar";
 "settings.tabbar.use_spotify_tabs.title" = "Use Spotify's tabs";
 
+"settings.translation.ai.custom" = "your AI service";
+"settings.translation.ai.error.status" = "The AI service did not complete the request (%ld).";
+"settings.translation.ai.error.unreadable" = "The AI service's answer could not be read. Try again.";
 "settings.translation.bing.error.busy" = "Bing Translator is busy right now. Try again in a minute.";
 "settings.translation.bing.error.disabled" = "Turn on Bing Translator on the Lyrics page first.";
 "settings.translation.bing.error.language" = "Choose a valid language for Bing Translator.";
@@ -1508,6 +1553,17 @@
 "settings.translation.bing.error.unreadable" = "Bing Translator's answer could not be read. Try again.";
 "settings.translation.bing.subtitle" = "Sends the song's lyrics to Bing Translator's public web page";
 "settings.translation.bing.title" = "Bing Translator";
+"settings.translation.claude.error.badrequest" = "Claude did not take the request: %@";
+"settings.translation.claude.error.busy" = "Claude is busy right now. Try again in a minute.";
+"settings.translation.claude.error.keyinvalid" = "Claude turned the key down. Check it on the Lyrics page.";
+"settings.translation.claude.error.model" = "Check Claude's model on the Lyrics page.";
+"settings.translation.claude.error.nokey" = "Add a Claude API key on the Lyrics page first.";
+"settings.translation.claude.error.status" = "Claude did not complete the request (%ld).";
+"settings.translation.claude.error.unreachable" = "Claude could not be reached.";
+"settings.translation.claude.error.unreadable" = "Claude's answer could not be read. Try again.";
+"settings.translation.claudekey.message" = "The song's lyrics go to Anthropic, on your own API key. The key stays on this iPhone.";
+"settings.translation.claudekey.subtitle" = "Translate any song with your own Claude key";
+"settings.translation.claudekey.title" = "Claude API key";
 "settings.translation.deepl.error.busy" = "DeepL is busy right now. Try again in a minute.";
 "settings.translation.deepl.error.keyinvalid" = "DeepL turned the key down. Check it on the Lyrics page.";
 "settings.translation.deepl.error.language" = "DeepL does not support this translation language.";
@@ -1551,6 +1607,8 @@
 "settings.translation.google.error.unreadable" = "Google Translate's answer could not be read. Try again.";
 "settings.translation.google.subtitle" = "Sends the song's lyrics to Google Translate's public web endpoint";
 "settings.translation.google.title" = "Google Translate";
+"settings.translation.notes.subtitle" = "An AI service explains references under the lines when asked from the lyrics' menu";
+"settings.translation.notes.title" = "Cultural notes";
 "settings.translation.openai.error.busy" = "The translation service is busy right now. Try again in a minute.";
 "settings.translation.openai.error.keyinvalid" = "The translation service turned the key down. Check it on the Lyrics page.";
 "settings.translation.openai.error.nokey" = "Add an OpenAI-compatible API key on the Lyrics page first.";
@@ -1559,6 +1617,9 @@
 "settings.translation.openai.error.toolong" = "The song is too long to send to the translation service.";
 "settings.translation.openai.error.unreachable" = "The translation service could not be reached.";
 "settings.translation.openai.error.unreadable" = "The translation service's answer could not be read. Try again.";
+"settings.translation.openai.preset.custom" = "Custom";
+"settings.translation.openai.preset.nokey" = " · no key";
+"settings.translation.openai.preset.title" = "Service";
 "settings.translation.openaikey.baseurl" = "Base URL";
 "settings.translation.openaikey.key" = "API key";
 "settings.translation.openaikey.message" = "The song's lyrics go to the service at this address, on your own API key. The key stays on this iPhone. Use an HTTPS base URL; HTTP is allowed only for localhost, 127.0.0.1 or a .local host.";
@@ -1566,12 +1627,18 @@
 "settings.translation.openaikey.set" = "Set";
 "settings.translation.openaikey.subtitle" = "Choose a service, model and your own API key";
 "settings.translation.openaikey.title" = "OpenAI-compatible translation";
+"settings.translation.pronunciation.ipa" = "IPA";
+"settings.translation.pronunciation.latin" = "Latin letters";
+"settings.translation.pronunciation.native" = "In my language's letters";
+"settings.translation.pronunciation.title" = "Pronunciation by AI";
+"settings.translation.savedtranslations.aisubtitle" = "Saved translations, pronunciations and cultural notes";
 "settings.translation.savedtranslations.alert.message" = "Songs translated before are translated again the next time you ask.";
 "settings.translation.savedtranslations.alert.title" = "Delete saved translations?";
-"settings.translation.savedtranslations.subtitle" = "Songs translated on this iPhone or by Gemini come back translated";
 "settings.translation.savedtranslations.title" = "Saved translations";
 "settings.translation.savedtranslations.value.format" = "%lu · %@";
 "settings.translation.savedtranslations.value.none" = "None";
+"settings.translation.titles.subtitle" = "The title and artist go to the first translator that is on";
+"settings.translation.titles.title" = "Translate song titles";
 "settings.translation.translateanysong.subtitle" = "The lyrics' translate menu for songs that already read as your language";
 "settings.translation.translateanysong.title" = "Translate any song";
 

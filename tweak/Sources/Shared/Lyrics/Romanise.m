@@ -100,3 +100,53 @@ NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
     [kept setObject:romanised forKey:key];
     return romanised.length ? romanised : nil;
 }
+
+@implementation SGLyricsRuby
+@end
+
+NSArray<SGLyricsRuby *> *SGLyricsFurigana(NSString *text) {
+    if (!text.length) return @[];
+    static NSCache<NSString *, NSArray<SGLyricsRuby *> *> *kept;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = 1000; });
+    NSArray *cached = [kept objectForKey:text];
+    if (cached) return cached;
+    NSMutableArray *runs = [NSMutableArray array];
+    CFLocaleRef japanese = CFLocaleCreate(NULL, CFSTR("ja"));
+    CFStringTokenizerRef words = CFStringTokenizerCreate(NULL, (__bridge CFStringRef)text, CFRangeMake(0, text.length),
+                                                         kCFStringTokenizerUnitWord, japanese);
+    while (CFStringTokenizerAdvanceToNextToken(words) != kCFStringTokenizerTokenNone) {
+        CFRange token = CFStringTokenizerGetCurrentTokenRange(words);
+        NSRange range = NSMakeRange(token.location, token.length);
+        NSString *word = [text substringWithRange:range];
+        if (!has(word, @"\\p{Han}")) continue;
+        NSString *latin = CFBridgingRelease(CFStringTokenizerCopyCurrentTokenAttribute(words, kCFStringTokenizerAttributeLatinTranscription));
+        NSString *reading = [latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO];
+        if (!reading.length || !has(reading, @"\\p{Hiragana}")) continue;
+        // Compare kana in hiragana so a katakana affix can be trimmed too. Han never shares a
+        // character with the reading, so these bounds cannot cut into the kanji's pronunciation.
+        NSString *kana = [word stringByApplyingTransform:@"Katakana-Hiragana" reverse:NO];
+        NSUInteger head = 0, tail = 0;
+        while (head < kana.length && head < reading.length &&
+               [kana characterAtIndex:head] == [reading characterAtIndex:head] &&
+               hasKana([kana substringWithRange:NSMakeRange(head, 1)])) head++;
+        while (tail < kana.length - head && tail < reading.length - head &&
+               [kana characterAtIndex:kana.length - tail - 1] == [reading characterAtIndex:reading.length - tail - 1] &&
+               hasKana([kana substringWithRange:NSMakeRange(kana.length - tail - 1, 1)])) tail++;
+        // Some compound readings cannot be divided this way. Keep the token whole in that case.
+        if (head + tail < reading.length && kana.length == word.length) {
+            range.location += head;
+            range.length -= head + tail;
+            reading = [reading substringWithRange:NSMakeRange(head, reading.length - head - tail)];
+        }
+        SGLyricsRuby *ruby = [SGLyricsRuby new];
+        ruby.range = range;
+        ruby.reading = reading;
+        [runs addObject:ruby];
+    }
+    CFRelease(words);
+    CFRelease(japanese);
+    NSArray *answer = [runs copy];
+    [kept setObject:answer forKey:text];
+    return answer;
+}

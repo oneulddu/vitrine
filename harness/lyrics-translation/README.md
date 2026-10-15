@@ -28,6 +28,28 @@ The checks cover:
   Scripted transport exercises the production job: token refresh once, line-count fallback, embedded
   newlines, protected lines unchanged, percent encoding, increasing SFX, configuration reuse, memo
   reuse and invalidation on changed source text, opt-in checks, and a single completion on main.
+- Claude's joined text parts, JSON fences, mismatched counts, malformed and oversized content, token
+  exhaustion and HTTP/network errors, including 400's error message and 529. The request uses
+  `claude-sonnet-5` by default, the Messages API headers, 8192 output tokens and the translation instruction
+  shared with the OpenAI-compatible service.
+- Every OpenAI-compatible preset's endpoint and model, menu selection, Custom leaving stored values alone,
+  trailing-slash matching, and service names. All five preset base URLs pass `SGOpenAICompletionURL`.
+- OpenAI-compatible keys belong to the base URL's lowercased host, independent of its path or port.
+  Pure checks cover host derivation and legacy migration decisions. An in-memory Keychain exercises
+  default/custom-host migration, preserving an existing host key, deleting the old `api-key` item,
+  failures and retries, migrating before a preset changes the address, and the ` · no key` row value.
+  Lyrics, AI jobs and automatic titles send nothing for a host without a key; requests for configured
+  hosts carry only that host's key. The key alert saves to the host of the URL entered in the alert
+  (the alert itself still needs device verification).
+- AI pronunciation and cultural notes: JSON-array prompts, all three notations, sound rather than meaning,
+  sparse notes, composed-character length limits, strict replies, all three service request shapes and safety
+  settings, shared in-flight requests, single main-thread completion, memory/disk reuse and deletion while
+  a request is running.
+- Saved AI round trips in a unique temporary folder: empty answers, hashed tuple isolation, malformed
+  values, notation zero following the current translation language, the combined saved-file count and deletion, and retaining the newest 200 AI files.
+- Title language/script decisions, unchanged Latin artist names, two-line requests, local translation falling
+  back when languages are unavailable, main-thread track notifications, one attempt per track and eviction
+  after 200 cached title results. The on-device translator is a harness stand-in.
 - OpenAI-compatible replies as strict JSON arrays or single-value objects, with and without a JSON
   code fence. Wrong types, malformed fences, excessive sizes and mismatched counts fail. Base URLs
   accept HTTPS, or HTTP only for localhost, 127.0.0.1 and .local hosts, and reject credentials, query
@@ -39,6 +61,11 @@ Expected output:
 ```text
 DeepL / Google / OpenAI: mapping, malformed replies, line counts, bounds, form encoding and URL checks passed
 Bing: language, configuration, bounds, padded lines, token retry, fallback, opt-in, memo and main completion checks passed
+OpenAI keys: host derivation, migration decisions, failure retry, preset isolation and lyrics/AI/title request guards passed
+Claude / presets: multipart and fenced replies, errors, bounds, all five endpoints and stored selection passed
+AI jobs: prompt JSON, notation, note limits, all three requests, strict replies, main completion, coalescing and memo passed
+Saved AI: isolated round trip, empty values, tuple isolation, malformed data, combined count/delete and newest 200 passed
+Titles: language/script detection, Latin artists, two-line request, local fallback, notification, once per track and 200-result cache passed
 lyrics translation: all checks passed
 ```
 
@@ -52,7 +79,13 @@ checks that the source text still matches, and completes on main. DeepL sends at
 or splitting their characters. Bing uses the same structure, with 40-line / 2800-unit batches and
 its page configuration cached until 30 seconds before expiry. Whole inputs are limited to 2000 lines and 128000 UTF-16 units.
 
-The harness compiles the network and settings code. DeepL's transport symbol is renamed in its
+The harness compiles the network and settings code. Key reads return a fixed test value for explicitly
+enabled services, with OpenAI-compatible keys held separately by account in memory. All Keychain read,
+add, update and delete functions are replaced, including in the DeepL object; real entries are never
+read or written. `SG_LYRICS_TEST_STORE`
+redirects only the harness build's saved-file root to a unique temporary directory. Settings changed by
+preset and notation tests are restored. `check-ai.m` is included by `check.m`, sharing its transport and
+settings stand-ins. DeepL's transport symbol is renamed in its
 harness object so an offline wrapper can supply scripted Bing replies; the real transport remains
 available for the live mode. `SGLyricsSourceRequest` is a harness stand-in to avoid linking the
 unrelated lyrics-provider registry. Its live GET uses a private ephemeral session, no cookies or
@@ -71,6 +104,17 @@ This mode checks a Korean result, the unchanged music marker and main-thread com
 GET/POST counts. It makes real requests only when explicitly invoked. No tokens or keys are printed.
 
 Not exercised here: real token expiration, transport retry/backoff under 429/5xx, Keychain storage,
-settings alerts, saved translations, or lyrics views taking up a result on the iPhone. Settings-page
+settings alerts, real on-device translation, live AI output quality, or lyrics views taking up a result on the iPhone. Settings-page
 and menu integration and localization table updates belong to the parent assignment. New visible
 strings use SGL with English fallbacks; Korean text is supplied in the implementation handoff.
+
+Title translation uses Apple's Translate first when available, then the first enabled online service in
+Bing, Google, DeepL, Gemini, Claude, OpenAI-compatible order. A local failure can mean the required
+languages are not installed, so it advances to that first online service; an online failure stops the job.
+Only 200 title/artist results stay in memory. Attempted track IDs remain until relaunch to prevent a
+request for an evicted result from spending another call.
+
+All changed Objective-C implementation files are compiled by this harness. The normal production paths,
+including the non-test saved-file root and real Keychain declarations, were additionally checked using
+`xcrun --sdk iphoneos clang -target arm64-apple-ios16.1 -fobjc-arc -fblocks -fsyntax-only` with the iOS 26.5
+SDK, `-Wall -Wextra -Werror -Wno-unused-parameter` and `-Itweak/Sources`. No Logos files were changed.

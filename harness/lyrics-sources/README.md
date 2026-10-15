@@ -36,7 +36,7 @@ lyrics-sources: all checks passed
 
 The transport is replaced by an offline responder. This checks request URLs, headers and bodies, but
 not the live services, transport size cancellation, real Deezer authentication, Keychain access or the
-settings alert on a phone. The source order and on-device lyrics rendering are outside this harness. The shared
+settings alert on a phone. This binary does not walk the source order or draw lyrics on a device. The state check below covers the walk. The shared
 transport and settings integration can be checked with clang's syntax-only mode without a Theos build.
 No replies containing real lyrics are stored in the fixtures.
 
@@ -51,3 +51,25 @@ Spotify lines, request generations survive donor rewriting, and stale donor, hel
 deliveries are discarded after pin/unpin (including a change while awaiting the source callback).
 Its defaults use a fresh
 suite removed on exit. This does not test Bluetooth hardware, the hook installation or Spotify's UI.
+
+The language checks also exercise furigana for `東京の空`, `君の名前を呼ぶ`, `食べる`, kana-only
+and Latin lines, a supplementary-plane character before a ruby range, and concurrent cached reads.
+Song detection checks made-up Japanese, Korean, English and Spanish lines, repeated chorus lines,
+a kana override and uncertain input. The line copy keeps its cultural-reference note independently.
+Title simplification has 20 cases, including Korean suffixes, fullwidth and nested brackets, repeated
+extras and malformed brackets. Every balanced trailing group is treated as an extra: `Love (Is All)`
+becomes `Love`, while `Love (Is All) Around` stays whole because the group is inside the title.
+A title made only of extras, or with no recognized extra, stays exactly as it came in.
+
+The state check uses an isolated defaults suite for language rules, optional output pointers,
+malformed records, per-track overrides, removal, main-queue notifications and the 500-track bound.
+Made-up providers check source type filtering, default early stopping, type-first upgrades, ties in
+source order even when a later source learns the track name and imported LRC bypass. Reload checks the cleared state at notification time, pin
+preservation and refetch, and the rejection of a reply that arrives after another reload.
+Held provider replies also check that Type first releases all waiters, including the color-lyrics
+completion, on the first synced answer while the next source is still pending. Later requests use
+that cached answer; a later word-timed answer updates the kept lines and credit without answering
+twice. Type filters still apply, a successful pin stops the walk, and pinning or reloading during
+the continued walk rejects its late result. These checks cover the keeper handoff, not the
+redesign's on-screen replacement of already shown lines.
+These checks do not open the settings pages or draw ruby text on a phone.
