@@ -964,6 +964,8 @@
 "settings.lyricstext.title" = "텍스트 크기";
 
 "settings.lyricstools.meaning.artist" = "아티스트의 설명";
+"settings.lyricstools.menu.bing" = "Bing으로 번역";
+"settings.lyricstools.menu.bing.subtitle" = "가사를 Bing 번역기로 전송";
 "settings.lyricstools.menu.deepl" = "DeepL로 번역";
 "settings.lyricstools.menu.deepl.subtitle" = "가사를 DeepL로 전송";
 "settings.lyricstools.menu.google" = "Google로 번역";
@@ -1447,6 +1449,16 @@
 "settings.tabbar.title" = "탭 막대";
 "settings.tabbar.use_spotify_tabs.title" = "Spotify 탭 사용";
 
+"settings.translation.bing.error.busy" = "현재 Bing 번역기가 혼잡합니다. 잠시 후 다시 시도해 주세요.";
+"settings.translation.bing.error.disabled" = "먼저 가사 설정에서 Bing 번역기를 켜 주세요.";
+"settings.translation.bing.error.language" = "Bing 번역기에 쓸 수 있는 언어를 선택해 주세요.";
+"settings.translation.bing.error.status" = "Bing 번역기가 곡을 번역하지 못했습니다(%ld).";
+"settings.translation.bing.error.token" = "Bing 번역기가 웹 토큰을 거부했습니다. 잠시 후 다시 시도해 주세요.";
+"settings.translation.bing.error.toolong" = "곡의 가사가 너무 길어 Bing 번역기로 보낼 수 없습니다.";
+"settings.translation.bing.error.unreachable" = "Bing 번역기에 연결할 수 없습니다.";
+"settings.translation.bing.error.unreadable" = "Bing 번역기의 응답을 읽을 수 없습니다. 다시 시도해 주세요.";
+"settings.translation.bing.subtitle" = "곡의 가사를 Bing 번역기의 공개 웹 페이지로 보냄";
+"settings.translation.bing.title" = "Bing 번역기";
 "settings.translation.deepl.error.busy" = "현재 DeepL이 혼잡합니다. 잠시 후 다시 시도해 주세요.";
 "settings.translation.deepl.error.keyinvalid" = "DeepL이 키를 거부했습니다. 가사 설정에서 확인해 주세요.";
 "settings.translation.deepl.error.language" = "DeepL이 지원하지 않는 번역 언어입니다.";

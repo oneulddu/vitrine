@@ -162,7 +162,7 @@ static UIViewController *lyricsPage(void) {
                 SGSwitchRow(SGL(@"settings.lyrics.landscape.title", @"Landscape lyrics"), SGL(@"settings.lyrics.landscape.subtitle", @"Turn the phone with the lyrics open"), SGRKeyLyricsLandscape)]),
             timing,
             SGSection(SGL(@"settings.lyrics.translation.header", @"Translation"), @[SGLyricsTranslationLanguageRow(), SGTranslateEverySongRow(), SGGeminiKeyRow(),
-                SGDeepLKeyRow(), SGOpenAIKeyRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
+                SGDeepLKeyRow(), SGOpenAIKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
             SGSection(nil, @[SGLyricsMeaningsRow()]),
         ]];
     } else {

@@ -14,10 +14,173 @@ NSString *SGLyricsTranslationLanguage(void) { return nil; }
 SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { return nil; }
 SGModRow *SGOptionRow(NSString *t, NSString *s, NSString *k) { return nil; }
 id SGKaraokeTrackFor(NSString *trackID) { return nil; }
-BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
+static BOOL bingEnabled;
+BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : fallback; }
 UIViewController *SGTopController(void) { return nil; }
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
+
+// Offline jobs use scripted replies; only --bing-live permits a network request.
+static BOOL bingLive;
+static NSUInteger bingGets, bingPosts;
+static NSMutableArray *bingReplies;
+static BOOL disableOnReply;
+static NSString *const bingHTML = @"<div data-iid=\"translator.1\"></div><script>IG: \"abc&def\"; params_AbusePreventionHelper = [1234567890123,\"token&+=%\",3600000];</script>";
+
+// Stand-in for LyricsSources.m's transport, whose unrelated provider registry is not linked here.
+// The optional live check retains its 2 MiB bound, ephemeral storage and redirect refusal.
+@interface BingPageRequest : NSObject <NSURLSessionDataDelegate>
+@property (nonatomic, strong) NSMutableData *data;
+@property (nonatomic) NSInteger status;
+@property (nonatomic, copy) void (^done)(NSData *, NSInteger);
+@end
+@implementation BingPageRequest
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completion {
+    self.status = [(NSHTTPURLResponse *)response statusCode];
+    completion(response.expectedContentLength > 2 * 1024 * 1024 ? NSURLSessionResponseCancel : NSURLSessionResponseAllow);
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
+    if (data.length > 2 * 1024 * 1024 - self.data.length) { [task cancel]; return; }
+    [self.data appendData:data];
+}
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response newRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURLRequest *))completion { completion(nil); }
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    void (^done)(NSData *, NSInteger) = self.done;
+    self.done = nil;
+    [session finishTasksAndInvalidate];
+    if (done) done(error ? nil : self.data, self.status);
+}
+@end
+void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *headers, NSData *body, void (^done)(NSData *, NSInteger)) {
+    CHECK(NSThread.isMainThread && bingEnabled && !body);
+    CHECK([url.absoluteString isEqual:@"https://www.bing.com/translator"]);
+    CHECK([headers[@"Accept"] isEqual:@"text/html"]);
+    bingGets++;
+    if (!bingLive) {
+        dispatch_async(dispatch_get_main_queue(), ^{ done([bingHTML dataUsingEncoding:NSUTF8StringEncoding], 200); });
+        return;
+    }
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.allHTTPHeaderFields = headers;
+    request.HTTPShouldHandleCookies = NO;
+    request.timeoutInterval = 60;
+    NSURLSessionConfiguration *config = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    config.HTTPCookieStorage = nil; config.URLCredentialStorage = nil; config.URLCache = nil;
+    config.timeoutIntervalForResource = 60;
+    BingPageRequest *receiver = [BingPageRequest new];
+    receiver.data = [NSMutableData data]; receiver.done = done;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:receiver delegateQueue:NSOperationQueue.mainQueue];
+    [[session dataTaskWithRequest:request] resume];
+}
+// DeepL.m is compiled with just this transport symbol renamed so the production implementation
+// stays available for the explicit live run, while offline Bing jobs can receive scripted replies.
+void SGLyricsTranslationRealSendRequest(NSURLRequest *, BOOL, BOOL (^)(void), void (^)(NSData *, NSInteger, NSError *));
+void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retry, BOOL (^allowed)(void), void (^done)(NSData *, NSInteger, NSError *)) {
+    CHECK(NSThread.isMainThread && allowed && allowed() && retry);
+    CHECK([request.HTTPMethod isEqual:@"POST"]);
+    CHECK([request.URL.host isEqual:@"www.bing.com"]);
+    CHECK([request valueForHTTPHeaderField:@"Origin"] && [request valueForHTTPHeaderField:@"Referer"]);
+    bingPosts++;
+    if (bingLive) { SGLyricsTranslationRealSendRequest(request, retry, allowed, done); return; }
+    CHECK([request.URL.absoluteString containsString:@"IG=abc%26def&IID=translator.1"]);
+    CHECK(([request.URL.absoluteString containsString:[NSString stringWithFormat:@"&SFX=%lu&", (unsigned long)bingPosts]]));
+    NSString *body = [[NSString alloc] initWithData:request.HTTPBody encoding:NSUTF8StringEncoding];
+    CHECK([body containsString:@"&token=token%26%2B%3D%25&key=1234567890123&to=ko&"]);
+    if (bingPosts <= 3) CHECK([body containsString:@"text=A%20%26%2B%3D%25%20%ED%95%9C%F0%9F%98%80"]);
+    CHECK(![body containsString:@"[Chorus]"] && ![body containsString:@"%E2%99%AA"]);
+    CHECK(bingReplies.count);
+    id reply = bingReplies.firstObject;
+    [bingReplies removeObjectAtIndex:0];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (disableOnReply) bingEnabled = NO;
+        done([NSJSONSerialization dataWithJSONObject:reply options:0 error:nil], 200, nil);
+    });
+}
+static id bingReply(NSString *text) { return @[@{@"translations": @[@{@"text": text}]}]; }
+static NSArray *bingAsk(NSString *track, NSArray *texts, NSString **problem) {
+    __block BOOL finished = NO;
+    __block NSUInteger calls = 0;
+    __block NSArray *result;
+    __block NSString *error;
+    NSMutableArray *lines = [NSMutableArray array];
+    for (NSString *text in texts) {
+        SGKaraokeWord *word = [SGKaraokeWord new]; word.text = text;
+        SGKaraokeLine *line = [SGKaraokeLine new]; line.words = @[word];
+        [lines addObject:line];
+    }
+    SGLyricsTranslateWithBing(track, lines, @"ko-KR", ^(NSArray *translated, NSString *message) {
+        CHECK(NSThread.isMainThread && ++calls == 1);
+        result = translated; error = message; finished = YES;
+    });
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:90];
+    while (!finished && deadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    CHECK(finished);
+    *problem = error;
+    return result;
+}
+static void checkBing(void) {
+    CHECK([SGBingTargetLanguage(@"zh-Hans-CN") isEqual:@"zh-Hans"]);
+    CHECK([SGBingTargetLanguage(@"zh-CN") isEqual:@"zh-Hans"]);
+    CHECK([SGBingTargetLanguage(@"zh_Hant_TW") isEqual:@"zh-Hant"]);
+    CHECK([SGBingTargetLanguage(@"zh-TW") isEqual:@"zh-Hant"]);
+    CHECK([SGBingTargetLanguage(@"PT-PT") isEqual:@"pt-PT"]);
+    CHECK([SGBingTargetLanguage(@"pt-BR") isEqual:@"pt"]);
+    CHECK([SGBingTargetLanguage(@"HE-IL") isEqual:@"he"]);
+    CHECK([SGBingTargetLanguage(@"nb-NO") isEqual:@"nb"]);
+    CHECK([SGBingTargetLanguage(@"ko_KR") isEqual:@"ko"]);
+    for (id bad in @[@"", @"en--US", @"en&to=ko", @" 한 ", @42, NSNull.null, [@"a" stringByPaddingToLength:65 withString:@"a" startingAtIndex:0]]) CHECK(!SGBingTargetLanguage(bad));
+    CHECK(!SGBingTargetLanguage(nil));
+    NSDictionary *configuration = SGBingConfigurationIn(bingHTML);
+    CHECK([configuration[@"ig"] isEqual:@"abc&def"] && [configuration[@"iid"] isEqual:@"translator.1"]);
+    CHECK([configuration[@"key"] longLongValue] == 1234567890123 && [configuration[@"seconds"] doubleValue] == 3600);
+    CHECK([configuration[@"token"] isEqual:@"token&+=%"]);
+    for (NSString *marker in @[@"IG:", @"data-iid", @"params_AbusePreventionHelper"]) CHECK(!SGBingConfigurationIn([bingHTML stringByReplacingOccurrencesOfString:marker withString:@"missing"]));
+    for (NSString *tuple in @[@"[]", @"[1]", @"[true,\"x\"]", @"[1.5,\"x\"]", @"[-1,\"x\"]", @"[9223372036854775808,\"x\"]", @"[\"123\",\"x\"]", @"[1,42]", @"[1,\"\"]", @"[1,null]", @"[1,\"x\",\"600\"]", @"[1,\"x\",true]", @"[1,\"x\",-1]", @"[1,\"x\",null]", @"[1,\"x\",600,7]"]) {
+        CHECK(!SGBingConfigurationIn([NSString stringWithFormat:@"IG:\"x\" data-iid=\"y\" params_AbusePreventionHelper = %@;", tuple]));
+    }
+    CHECK([SGBingConfigurationIn(@"IG:\"x\" data-iid=\"y\" params_AbusePreventionHelper=[1,\"x\"]")[@"seconds"] doubleValue] == 600);
+    CHECK([SGBingConfigurationIn(@"IG:\"x\" data-iid=\"y\" params_AbusePreventionHelper=[1,\"x\",1000]")[@"seconds"] doubleValue] == 60);
+    CHECK([SGBingConfigurationIn(@"IG:\"x\" data-iid=\"y\" params_AbusePreventionHelper=[9223372036854775807,\"x\"]")[@"key"] longLongValue] == LLONG_MAX);
+    CHECK(!SGBingConfigurationIn((id)@42));
+    NSString *text = SGBingTranslationTextIn(bingReply(@"  밤에 달려가  \r\n고마워\t \r♪  "));
+    CHECK(([[text componentsSeparatedByString:@"\n"] isEqual:@[@"  밤에 달려가", @"고마워", @"♪"]]));
+    CHECK([SGBingTranslationTextIn(bingReply(@"A\nB\n")) hasSuffix:@"\n"]);
+    CHECK([SGBingTranslationTextIn(bingReply(@"")) isEqual:@""]);
+    CHECK(!SGBingTranslationTextIn(bingReply([@"x" stringByPaddingToLength:128001 withString:@"x" startingAtIndex:0])));
+    for (id bad in @[NSNull.null, @{}, @[], @[NSNull.null], @[@{}], @[@{@"translations": @[]}], @[@{@"translations": @[NSNull.null]}], @[@{@"translations": @[@{@"text": @7}]}]]) CHECK(!SGBingTranslationTextIn(bad));
+    CHECK(SGBingTokenRefused(@{@"statusCode": @205, @"errorMessage": @""}));
+    CHECK(!SGBingTokenRefused(@{}) && !SGBingTokenRefused(bingReply(@"A")) && !SGBingTokenRefused(NSNull.null));
+    NSMutableArray *many = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 41; i++) [many addObject:@"A"];
+    NSArray *batches = SGLyricsTranslationBatches(many, 40, 2800);
+    CHECK(batches.count == 2 && [batches[0] count] == 40 && [batches[1] count] == 1);
+    NSString *full = [@"A" stringByPaddingToLength:2800 withString:@"A" startingAtIndex:0];
+    CHECK(([SGLyricsTranslationBatches(@[full, @"B"], 40, 2800) isEqual:@[@[@0], @[@1]]]));
+    CHECK(!SGLyricsTranslationBatches(@[[full stringByAppendingString:@"A"]], 40, 2800));
+    // A refused token is refreshed once; a merged reply then falls back to individual source lines.
+    bingEnabled = YES;
+    bingReplies = [@[@{@"statusCode": @205}, bingReply(@"merged"), bingReply(@"하나  "), bingReply(@"둘\t ")] mutableCopy];
+    NSString *problem;
+    NSArray *source = @[@"A &+=% 한😀", @" ♪ ", @" [Chorus] ", @"B"];
+    NSArray *got = bingAsk(@"offline-fallback", source, &problem);
+    CHECK(!problem && ([got isEqual:@[@"하나", @" ♪ ", @" [Chorus] ", @"둘"]]));
+    CHECK(bingGets == 2 && bingPosts == 4 && !bingReplies.count);
+    CHECK([bingAsk(@"offline-fallback", source, &problem) isEqual:got] && bingPosts == 4 && bingGets == 2);
+    bingReplies = [@[bingReply(@"새로  \n둘  ")] mutableCopy];
+    CHECK(bingAsk(@"offline-fallback", @[@"changed", @"B"], &problem) && !problem && bingPosts == 5 && bingGets == 2);
+    bingReplies = [@[bingReply(@"안\n녕  "), bingReply(@"둘 ")] mutableCopy];
+    CHECK(([bingAsk(nil, @[@"A\nB", @"C"], &problem) isEqual:@[@"안\n녕", @"둘"]]) && !problem);
+    bingReplies = [@[@{@"statusCode": @205}, @{@"statusCode": @205}] mutableCopy];
+    NSUInteger before = bingPosts;
+    CHECK(!bingAsk(nil, @[@"A"], &problem) && [problem containsString:@"token"] && bingPosts == before + 2);
+    disableOnReply = YES;
+    bingReplies = [@[bingReply(@"ignored")] mutableCopy];
+    CHECK(!bingAsk(nil, @[@"A"], &problem) && [problem containsString:@"Turn on"]);
+    disableOnReply = NO;
+    before = bingPosts;
+    CHECK(!bingAsk(nil, @[@"A"], &problem) && [problem containsString:@"Turn on"] && bingPosts == before);
+    puts("Bing: language, configuration, bounds, padded lines, token retry, fallback, opt-in, memo and main completion checks passed");
+}
 
 static NSArray<NSString *> *readReply(NSString *json, NSInteger status, NSUInteger count, NSString **problem) {
     *problem = nil;
@@ -117,8 +280,18 @@ static void checkProviders(void) {
     puts("DeepL / Google / OpenAI: mapping, malformed replies, line counts, bounds, form encoding and URL checks passed");
 }
 
-int main(void) {
+int main(int argc, const char **argv) {
     @autoreleasepool {
+        if (argc > 1 && strcmp(argv[1], "--bing-live") == 0) {
+            bingLive = bingEnabled = YES;
+            NSString *problem;
+            NSArray *got = bingAsk(nil, @[@"The blue robot waves hello.", @"Thank you.", @" ♪ "], &problem);
+            if (problem) fprintf(stderr, "Bing live: %s\n", problem.UTF8String);
+            CHECK(got.count == 3 && !problem && [got[2] isEqual:@" ♪ "]);
+            CHECK([got[0] rangeOfCharacterFromSet:[NSCharacterSet characterSetWithRange:NSMakeRange(0xAC00, 11172)]].location != NSNotFound);
+            printf("Bing live: %lu page GET, %lu translation POST, main completion, %s\n", (unsigned long)bingGets, (unsigned long)bingPosts, [[got componentsJoinedByString:@" | "] UTF8String]);
+            return 0;
+        }
         // Musixmatch's translations go on copies of the lines they match, by the folded text.
         NSArray<SGKaraokeLine *> *lines = SGKaraokeEstimatedLines(@[@0, @2000, @4000, @6000],
                                                                   @[@"Où est l'amour ?", @"Yeah", @"Rien", @""]);
@@ -156,6 +329,7 @@ int main(void) {
         CHECK(!readReply(@"{\"error\":{}}", 429, 2, &problem) && [problem containsString:@"limit"]);
         CHECK(!readReply(@"{}", 200, 2, &problem) && [problem containsString:@"could not be read"]);
         checkProviders();
+        checkBing();
         puts("lyrics translation: all checks passed");
     }
     return 0;

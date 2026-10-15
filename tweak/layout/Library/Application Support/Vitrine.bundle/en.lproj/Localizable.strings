@@ -999,6 +999,8 @@
 "settings.lyricstext.title" = "Text sizes";
 
 "settings.lyricstools.meaning.artist" = "Meaning from the artist";
+"settings.lyricstools.menu.bing" = "Translate with Bing";
+"settings.lyricstools.menu.bing.subtitle" = "Sends the lyrics to Bing Translator";
 "settings.lyricstools.menu.deepl" = "Translate with DeepL";
 "settings.lyricstools.menu.deepl.subtitle" = "Sends the lyrics to DeepL";
 "settings.lyricstools.menu.google" = "Translate with Google";
@@ -1496,6 +1498,16 @@
 "settings.tabbar.title" = "Tab bar";
 "settings.tabbar.use_spotify_tabs.title" = "Use Spotify's tabs";
 
+"settings.translation.bing.error.busy" = "Bing Translator is busy right now. Try again in a minute.";
+"settings.translation.bing.error.disabled" = "Turn on Bing Translator on the Lyrics page first.";
+"settings.translation.bing.error.language" = "Choose a valid language for Bing Translator.";
+"settings.translation.bing.error.status" = "Bing Translator did not translate the song (%ld).";
+"settings.translation.bing.error.token" = "Bing Translator refused its web token. Try again in a minute.";
+"settings.translation.bing.error.toolong" = "The song is too long to send to Bing Translator.";
+"settings.translation.bing.error.unreachable" = "Bing Translator could not be reached.";
+"settings.translation.bing.error.unreadable" = "Bing Translator's answer could not be read. Try again.";
+"settings.translation.bing.subtitle" = "Sends the song's lyrics to Bing Translator's public web page";
+"settings.translation.bing.title" = "Bing Translator";
 "settings.translation.deepl.error.busy" = "DeepL is busy right now. Try again in a minute.";
 "settings.translation.deepl.error.keyinvalid" = "DeepL turned the key down. Check it on the Lyrics page.";
 "settings.translation.deepl.error.language" = "DeepL does not support this translation language.";

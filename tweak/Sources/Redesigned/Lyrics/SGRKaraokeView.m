@@ -1935,8 +1935,9 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
     BOOL intelligence = [SGOnDeviceTranslation appleIntelligenceAvailable:language];
     // A translator is offered only for a song in another language than the one it would translate into.
     BOOL deepl = SGDeepLKeySet(), google = SGFlag(SGKeyLyricsGoogleTranslate, NO), openai = SGOpenAIKeySet();
+    BOOL bing = SGFlag(SGKeyLyricsBingTranslate, NO);
     BOOL translatable = (_foreign || SGHidden(SGKeyLyricsTranslateEverySong)) && _untranslated
-        && (gemini || onDevice || intelligence || deepl || google || openai);
+        && (gemini || onDevice || intelligence || deepl || google || bing || openai);
     // Sync and Search LRCLIB are there for every song with lines, so the button is too; its glyph says
     // translate only while it has a pronunciation or a translation to offer.
     BOOL offered = _lines && !_sample && _track.length;
@@ -2023,6 +2024,11 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
                           SGL(@"settings.lyricstools.menu.google.subtitle", @"Sends the lyrics to Google Translate"),
                           ^(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
             SGLyricsTranslateWithGoogle(track, lines, to, done);
+        });
+        if (bing) offer(SGL(@"settings.lyricstools.menu.bing", @"Translate with Bing"), @"globe.americas",
+                        SGL(@"settings.lyricstools.menu.bing.subtitle", @"Sends the lyrics to Bing Translator"),
+                        ^(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
+            SGLyricsTranslateWithBing(track, lines, to, done);
         });
         if (openai) offer(SGL(@"settings.lyricstools.menu.openai", @"Translate with your AI service"), @"cpu",
                           SGL(@"settings.lyricstools.menu.openai.subtitle", @"Sends the lyrics to the service you set"),

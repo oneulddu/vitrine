@@ -166,6 +166,8 @@ void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lin
                                void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
 void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                 void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+void SGLyricsTranslateWithBing(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                              void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
 void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                 void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
 NSNotificationName const SGLyricsOffsetsDidChangeNotification = @"spotifyglass.lyricsOffsetsDidChange";

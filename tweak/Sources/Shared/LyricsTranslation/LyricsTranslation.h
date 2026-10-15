@@ -88,3 +88,11 @@ NSArray<NSString *> *SGOpenAITranslationsIn(id root, NSUInteger count);
 // on main too. Retries 429 three times, and 5xx when asked. `allowed` is checked before every attempt.
 void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retryServer, BOOL (^allowed)(void),
                                    void (^finished)(NSData *data, NSInteger status, NSError *error));
+
+#define SGKeyLyricsBingTranslate @"spotifyglass.lyrics.bingTranslate"   // off until switched on
+SGModRow *SGBingTranslateRow(void);
+void SGLyricsTranslateWithBing(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag, void (^done)(NSArray<NSString *> *translations, NSString *error));
+NSString *SGBingTargetLanguage(NSString *tag);
+NSDictionary *SGBingConfigurationIn(NSString *html);
+NSString *SGBingTranslationTextIn(id root);
+BOOL SGBingTokenRefused(id root);
