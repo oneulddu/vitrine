@@ -128,6 +128,7 @@ void SGLyricsDeleteTranslation(NSString *track, NSString *language) {
 void SGHarnessDeleteAllTranslations(void) {
     [SGHarnessSavedTranslations removeAllObjects];
     [sg_jobTokens removeAllObjects];
+    [NSNotificationCenter.defaultCenter postNotificationName:@"harness.lyricsAIResultDidChange" object:nil];
     [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
 }
 NSUInteger SGHarnessTranslationJobs(void) { return sg_jobTokens.count; }
@@ -169,7 +170,8 @@ void SGHarnessStartClock(double at, double rate, double pauseAt, double holdFor)
     sg_heldAt = 0;
 }
 
-NSString *SGKaraokePlayingTrack(void) { return @"harness"; }
+NSString *SGHarnessPlayingTrack;
+NSString *SGKaraokePlayingTrack(void) { return SGHarnessPlayingTrack ?: @"harness"; }
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) { return sg_lines; }
 void SGKaraokeKeepLines(NSString *trackID, NSArray<SGKaraokeLine *> *lines) { sg_lines = lines; }
 
@@ -208,7 +210,7 @@ NSNotificationName const SGSingButtonDidChangeNotification = @"SGSingButtonDidCh
 // The other translators and the lyrics' tools (LyricsTools.m): off in the harness, so the menu offers what it
 // did before, with Sync and Search LRCLIB under it.
 BOOL SGDeepLKeySet(void) { return NO; }
-BOOL SGOpenAIKeySet(void) { return NO; }
+BOOL SGOpenAIKeySet(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"openai"]; }
 void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
 // Google answers as a check sets it to (translation-check.m), else turns the song down.
@@ -218,10 +220,12 @@ void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *li
     if (SGHarnessGoogle) SGHarnessGoogle(lines, done);
     else done(nil, @"harness");
 }
+void (^SGHarnessBing)(NSArray<SGKaraokeLine *> *, void (^)(NSArray<NSString *> *, NSString *));
 void SGLyricsTranslateWithBing(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
-                              void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+                              void (^done)(NSArray<NSString *> *translations, NSString *error)) { if (SGHarnessBing) SGHarnessBing(lines, done); else done(nil, @"harness"); }
+void (^SGHarnessOpenAI)(NSArray<SGKaraokeLine *> *, void (^)(NSArray<NSString *> *, NSString *));
 void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
-                                void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+                                void (^done)(NSArray<NSString *> *translations, NSString *error)) { if (SGHarnessOpenAI) SGHarnessOpenAI(lines, done); else done(nil, @"harness"); }
 NSNotificationName const SGLyricsOffsetsDidChangeNotification = @"spotifyglass.lyricsOffsetsDidChange";
 NSNotificationName const SGLyricsPinDidChangeNotification = @"spotifyglass.lyricsPinDidChange";
 NSNumber *SGLyricsPinnedID(NSString *trackID) { return nil; }
@@ -283,3 +287,12 @@ void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictio
 }
 NSNotificationName const SGLyricsDidReloadNotification = @"spotifyglass.lyricsDidReload";
 void SGLyricsReload(NSString *trackID) { NSLog(@"harness: Reload for %@", trackID); }
+
+// Automatic translation capability checks remain offline; real provider validators have their own suite.
+NSString *SGGoogleTargetLanguage(NSString *language) { return [language isEqual:@"invalid"] ? nil : language; }
+NSString *SGBingTargetLanguage(NSString *language) { return SGGoogleTargetLanguage(language); }
+NSString *SGDeepLTargetLanguage(NSString *language) { return SGGoogleTargetLanguage(language); }
+NSURL *SGOpenAICompletionURL(NSString *base) { return [NSURL URLWithString:base]; }
+NSNotificationName const SGTitleTranslationSettingsDidChangeNotification = @"spotifyglass.titleTranslationSettingsDidChange";
+
+NSNotificationName const SGLyricsTranslationServiceSettingsDidChangeNotification = @"spotifyglass.translationServiceSettingsDidChange";

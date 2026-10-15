@@ -217,7 +217,7 @@ static void askForKey(void) {
         NSMutableCharacterSet *around = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
         [around addCharactersInString:@"\"'“”‘’"];
         NSString *key = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:around];
-        if (key.length) { storeKey(key); SGLyricsTitleSettingsChanged(); }
+        if (key.length) { storeKey(key); SGLyricsTranslationServiceSettingsChanged(); }
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
@@ -234,7 +234,7 @@ static void askForKey(void) {
     [alert addAction:save];
     if (SGGeminiKeySet()) {
         [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-            storeKey(nil); SGLyricsTitleSettingsChanged();
+            storeKey(nil); SGLyricsTranslationServiceSettingsChanged();
         }]];
     }
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];

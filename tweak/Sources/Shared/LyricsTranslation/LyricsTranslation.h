@@ -141,6 +141,9 @@ extern NSNotificationName const SGTranslatedTitleDidChangeNotification;
 extern NSNotificationName const SGTitleTranslationSettingsDidChangeNotification;
 // Settings actions invalidate pending/failed title requests, preserve successful results and refresh labels.
 void SGLyricsTitleSettingsChanged(void);
+// Credentials/provider options changed (not title display or notes visibility). Main queue.
+extern NSNotificationName const SGLyricsTranslationServiceSettingsDidChangeNotification;
+void SGLyricsTranslationServiceSettingsChanged(void);
 // Main queue. Coalesces title/artist/language requests; at most two attempts per configuration, 30s apart.
 // Successful identities remain remembered past result eviction. Latin artist names stay.
 NSString *SGLyricsTranslatedTitle(NSString *trackID, NSString *title, NSString *artist, NSString **artistOut);

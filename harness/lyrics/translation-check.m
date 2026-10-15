@@ -6,6 +6,10 @@
 #import <objc/message.h>
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Redesigned/Lyrics/LyricsText.h"
+#if __has_include("Redesigned/Lyrics/AutoTranslation.h")
+#import "Redesigned/Lyrics/AutoTranslation.h"
+#define SG_HARNESS_AUTO_TRANSLATION 1
+#endif
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 
 extern NSMutableDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *SGHarnessSavedTranslations;
@@ -100,9 +104,17 @@ static void googleHolds(void) {
     SGHarnessGoogle = ^(NSArray<SGKaraokeLine *> *lines, SGHarnessDone done) { sg_held = done; };
 }
 
+#ifdef SG_HARNESS_AUTO_TRANSLATION
+#include "auto-check.inc"
+#endif
+
 void SGHarnessRunTranslationCheck(UIWindow *window) {
     NSUserDefaults *args = NSUserDefaults.standardUserDefaults;
     for (NSString *key in @[@"translateTo", SGRKeyLyricsTranslation]) [args removeObjectForKey:key];
+#ifdef SG_HARNESS_AUTO_TRANSLATION
+    [args removeObjectForKey:SGRKeyLyricsAutoTranslation];
+    [args removeObjectForKey:SGRKeyLyricsAutoTranslationOrder];
+#endif
     [args setBool:YES forKey:@"gemini"];
     [args setDouble:0 forKey:@"geminiDelay"];
     [args setBool:YES forKey:SGKeyLyricsGoogleTranslate];
@@ -257,7 +269,14 @@ void SGHarnessRunTranslationCheck(UIWindow *window) {
           @"an old Remove deletes the song it was offered for, not the new one");
     check([translations(copies) isEqualToString:@"one two | - | - | -"], @"and the view still on that song goes back to its lyrics");
 
-    printf("%d failed\n", sg_failed);
-    fflush(stdout);
-    exit(sg_failed);
+    // A timer leaves the dispatch-main callback before the automatic tests pump their nested run loop.
+    // Otherwise queued translator completions cannot run while this main-queue block is still executing.
+    [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:NO block:^(NSTimer *timer) {
+#ifdef SG_HARNESS_AUTO_TRANSLATION
+        autoCheck(window);
+#endif
+        printf("%d failed\n", sg_failed);
+        fflush(stdout);
+        exit(sg_failed);
+    }];
 }

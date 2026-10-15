@@ -58,3 +58,14 @@ A screen recording catches the motion: `simctl io <udid> recordVideo -f run.mp4`
 
 What it does not cover: Spotify's pages around the view (the player's stage is only its size, `-player 1`),
 the lyrics arriving late or changing track, and the device's frame pacing.
+
+
+`translation-check.sh` also runs `auto-check.inc` on Mac Catalyst, without a simulator or network.
+It links the actual automatic scheduler, provider chain and lyrics view with scripted providers and
+an in-memory saved-results store. Two separately hosted views exercise default-off, order validation,
+failure fallback, partial preservation, cached replay, removal/manual suppression, bounded failed
+attempts, disabling/reordering during a request, target/track changes, hidden/detached views, language
+rules, enabling a service later and clear-all cancellation. Layout and display ticks are driven explicitly;
+the asynchronous checks start from a timer so a nested run loop can drain main-queue completions.
+The existing manual translation and AI-view checks run in the same invocation. Live provider accuracy,
+phone layout and real Apple language downloads remain outside this harness.

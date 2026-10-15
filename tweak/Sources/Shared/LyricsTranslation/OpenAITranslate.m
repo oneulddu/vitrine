@@ -237,7 +237,7 @@ static void askForKey(void) {
             !migrateKey(setting(SGKeyLyricsOpenAIBaseURL, kBase)) || !storeKey(key, SGOpenAIKeyHost(base))) return;
         [NSUserDefaults.standardUserDefaults setObject:base forKey:SGKeyLyricsOpenAIBaseURL];
         [NSUserDefaults.standardUserDefaults setObject:model forKey:SGKeyLyricsOpenAIModel];
-        SGLyricsTitleSettingsChanged();
+        SGLyricsTranslationServiceSettingsChanged();
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
@@ -265,7 +265,7 @@ static void askForKey(void) {
         }];
     }
     [alert addAction:save];
-    if (SGOpenAIKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { if (storeKey(nil, originalHost)) SGLyricsTitleSettingsChanged(); }]];
+    if (SGOpenAIKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { if (storeKey(nil, originalHost)) SGLyricsTranslationServiceSettingsChanged(); }]];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
@@ -307,7 +307,7 @@ SGModRow *SGOpenAIPresetRow(void) {
             if (!migrateKey(setting(SGKeyLyricsOpenAIBaseURL, kBase))) return;
             [NSUserDefaults.standardUserDefaults setObject:preset[@"base"] forKey:SGKeyLyricsOpenAIBaseURL];
             [NSUserDefaults.standardUserDefaults setObject:preset[@"model"] forKey:SGKeyLyricsOpenAIModel];
-            SGLyricsTitleSettingsChanged();
+            SGLyricsTranslationServiceSettingsChanged();
             [sg_done removeAllObjects];
         });
 }

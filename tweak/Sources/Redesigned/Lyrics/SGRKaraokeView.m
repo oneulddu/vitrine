@@ -19,6 +19,7 @@
 #import "Shared/Sing/Sing.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
+#import "AutoTranslation.h"
 #import "Settings/SGPageStyle.h"
 #import "Shared/Player/PlayerEvents.h"
 #import "Shared/Haptics/Haptics.h"
@@ -1437,6 +1438,7 @@ typedef struct {
     BOOL _hasNotes;   // whether any line has a cultural note
     BOOL _spokenMade;   // the pronunciation shown was written by an AI service, asked from the menu
     BOOL _untranslated;   // whether a line with words has no translation, which a translator can fill in
+    BOOL _autoQueued;
     BOOL _madeTranslation;   // whether a line shows a translation made here, which the menu can make again or remove
     BOOL _foreign;        // whether the song is in a language other than the one translations are asked in
     NSArray<SGKaraokeLine *> *_passedOver;   // lines kept for the song that changed nothing here, not looked at again
@@ -1517,6 +1519,7 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsTextDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGLyricsRomanisedDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationsChanged) name:SGLyricsTranslationsDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(autoTranslationSettingsChanged) name:SGRAutoTranslationDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(aiResultsChanged:) name:SGLyricsAIResultDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationDidChange:) name:SGRTranslationNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(lookChanged) name:SGRLyricsLookDidChangeNotification object:nil];
@@ -1794,6 +1797,7 @@ typedef struct {
     _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
     _link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
     [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+    [self queueAutomaticTranslation];
 }
 
 - (void)playerTransitionChanged:(NSNotification *)note {
@@ -2010,6 +2014,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     [self countTranslations];
     [self offerExtras];
     [self askMeanings];
+    [self queueAutomaticTranslation];
 }
 
 - (void)countTranslations {
@@ -2065,6 +2070,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 // the main thread, as for a new width, but the lines on the page stay until it is in, and then the
 // new ones crossfade over them where they were, so nothing blinks and nothing is lost of the place.
 - (void)restyle {
+    [self queueAutomaticTranslation];
     [self offerExtras];
     if (!_lines || !_tops || _builtWidth <= 0) return;   // the next build picks the style up
     SGRKaraokeStyle *style = [self styleNow];
@@ -2163,7 +2169,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
                                            handler:^(UIAction *action) { SGRSetLyricsTextShown(SGRLyricsTextPronunciation, !on); }]];
     }
     // A switch of what shows, for every song; Remove Translation below is what takes this song's away.
-    if (_hasTranslation) {
+    if (_hasTranslation || (SGRAutoTranslationEnabled() && (_foreign || SGHidden(SGKeyLyricsTranslateEverySong)))) {
         BOOL on = SGFlag(SGRKeyLyricsTranslation, NO);
         UIAction *shown = [UIAction actionWithTitle:on ? SGL(@"settings.lyricstools.menu.translation.hide", @"Hide Translation")
                                                        : SGL(@"settings.lyricstools.menu.translation.show", @"Show Translation")
@@ -2299,23 +2305,78 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     [self setNeedsLayout];
 }
 
+// Settle source/rule updates before requesting. No work is scheduled by the display link's per-frame path.
+- (void)queueAutomaticTranslation {
+    if (_autoQueued || _sample || !self.window || !_lines.count || !SGRAutoTranslationEnabled()) return;
+    SGRAutoTranslationRevision(); // Install settings/store observers even while translation display is hidden.
+    _autoQueued = YES;
+    __weak SGRKaraokeView *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SGRKaraokeView *view = weakSelf;
+        if (!view) return;
+        view->_autoQueued = NO;
+        [view automaticTranslationIfNeeded];
+    });
+}
+- (void)autoTranslationSettingsChanged {
+    [self offerExtras];
+    [self queueAutomaticTranslation];
+}
+- (BOOL)automaticTranslationVisible {
+    if (_sample || !self.window || !_lines.count || ![_track isEqual:SGKaraokePlayingTrack()] ||
+        UIApplication.sharedApplication.applicationState != UIApplicationStateActive || !SGFlag(SGRKeyLyricsTranslation, NO)) return NO;
+    for (UIView *view = self; view; view = view.superview) if (view.hidden || view.alpha < 0.01) return NO;
+    BOOL translation = YES, pronunciation = NO;
+    NSString *source = SGLyricsSongLanguage(_track, _lines);
+    if (source && SGLyricsLanguageRule(source, &translation, &pronunciation) && !translation) return NO;
+    return YES;
+}
+- (void)automaticTranslationIfNeeded {
+    if (![self automaticTranslationVisible]) return;
+    if (!(_foreign || SGHidden(SGKeyLyricsTranslateEverySong))) return;
+    NSString *language = SGLyricsGeminiLanguage();
+    SGLyricsSyncSavedTranslation(_track, language, _lines);
+    [self countTranslations];
+    if (!SGRAutoTranslationEnabled() || !_untranslated || jobRunning(_track, language)) return;
+    BOOL available = NO;
+    for (NSNumber *provider in SGRAutoTranslationOrder()) available = available || SGRAutoTranslationAvailable(provider.integerValue, language);
+    if (!available) return;
+    NSUInteger revision = SGRAutoTranslationClaim(_track, language);
+    if (!revision) return;
+    __weak SGRKaraokeView *weakSelf = self;
+    [self translateWith:^(NSArray *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
+        SGRAutoTranslateInOrder(lines, track, to, revision, ^BOOL {
+            SGRKaraokeView *view = weakSelf;
+            return view && [view->_track isEqual:track] && [view automaticTranslationVisible];
+        }, progress, done);
+    } again:NO track:_track language:language automaticRevision:revision];
+}
+
 // The song's lines into the Lyrics page's language, or the phone's: each line without a translation, or with one
 // made here, takes the translator's. The whole song goes, for the sense; asked again, with what was made here taken
 // off, and the page keeps that until the new one is in. Translations are switched on as it is asked, and only then,
 // so hiding them while it works stands. An answer a newer one, a removal or another language overtook changes nothing.
 - (void)translateWith:(SGRTranslator)translator again:(BOOL)again track:(NSString *)asked language:(NSString *)askedIn {
+    if (![_track isEqual:asked] || ![SGLyricsGeminiLanguage() isEqual:askedIn]) return;
+    SGRAutoTranslationSuppress(asked, askedIn); // An explicit manual choice owns this song for the session.
+    [self translateWith:translator again:again track:asked language:askedIn automaticRevision:0];
+}
+- (void)translateWith:(SGRTranslator)translator again:(BOOL)again track:(NSString *)asked language:(NSString *)askedIn automaticRevision:(NSUInteger)automaticRevision {
     NSArray<SGKaraokeLine *> *lines = _lines;
     NSString *track = _track, *language = SGLyricsGeminiLanguage();
     if (![track isEqualToString:asked] || ![language isEqualToString:askedIn]) return;   // a menu from before the song or the language changed
     if (!lines.count || !track.length || !language.length || jobRunning(track, language)) return;
     NSUInteger token = SGLyricsBeginTranslation(track, language);
+    if (!token) return;
+    if (automaticRevision) SGRAutoTranslationRegister(track, language, token);
     NSString *key = jobKey(track, language);
     if (!sgr_jobs) sgr_jobs = [NSMutableDictionary dictionary];
     sgr_jobs[key] = @(token);
     BOOL had = NO;
     for (SGKaraokeLine *line in lines) had = had || line.translation.length;
     BOOL (^current)(void) = ^BOOL {
-        return SGLyricsTranslationIsCurrent(track, language, token) && [SGLyricsGeminiLanguage() isEqualToString:language];
+        return (!automaticRevision || SGRAutoTranslationRevision() == automaticRevision) &&
+            SGLyricsTranslationIsCurrent(track, language, token) && [SGLyricsGeminiLanguage() isEqualToString:language];
     };
     // Kept a batch at a time too, so a translation cut off by Spotify closing keeps what was done.
     void (^take)(NSArray<NSString *> *) = ^(NSArray<NSString *> *translations) {
@@ -2324,7 +2385,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         translationChanged(track, language, kTranslationLines);
     };
     translationChanged(track, language, nil);
-    if (!SGFlag(SGRKeyLyricsTranslation, NO)) SGRSetLyricsTextShown(SGRLyricsTextTranslation, YES);
+    if (!automaticRevision && !SGFlag(SGRKeyLyricsTranslation, NO)) SGRSetLyricsTextShown(SGRLyricsTextTranslation, YES);
     translator(again ? withoutMade(lines) : lines, track, language, ^(NSArray<NSString *> *soFar, NSString *error) {
         if (current()) take(soFar);
     }, ^(NSArray<NSString *> *translations, NSString *error) {
@@ -2332,9 +2393,10 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         // Translations can come with a note, which names the lines left out. Those lines keep what they had.
         if (live && translations) take(translations);
         SGLyricsEndTranslation(track, language, token);
+        if (automaticRevision) SGRAutoTranslationFinish(track, language, token);
         if ([sgr_jobs[key] isEqualToNumber:@(token)]) [sgr_jobs removeObjectForKey:key];
         translationChanged(track, language, nil);
-        if (live && error) {
+        if (live && error && !automaticRevision) {
             NSString *message = had ? [NSString stringWithFormat:@"%@\n\n%@", error, SGL(@"settings.lyricstools.translation.kept", @"Lines that could not be translated keep their previous translation.")] : error;
             UIAlertController *alert = [UIAlertController alertControllerWithTitle:translations ? @"Partly translated" : @"No translation"
                                                                            message:message preferredStyle:UIAlertControllerStyleAlert];
@@ -2350,6 +2412,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 // in every lyrics view of that song the lines go back to what the lyrics came with.
 - (void)removeTranslationOf:(NSString *)track language:(NSString *)language {
     if (!track.length || !language.length) return;
+    SGRAutoTranslationSuppress(track, language);
     SGLyricsDeleteTranslation(track, language);
     [sgr_jobs removeObjectForKey:jobKey(track, language)];
     translationChanged(track, language, kTranslationRemoved);
@@ -2737,6 +2800,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     if (showing == _showing) return;
     _showing = showing;
     self.hidden = !showing;
+    if (showing) [self queueAutomaticTranslation];
     if (showing && !_browsing) _scroll.contentOffset = CGPointZero;
     _credit.hidden = !showing || !_credit.text.length;
     for (UIView *sibling in self.superview.subviews) {

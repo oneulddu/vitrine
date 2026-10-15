@@ -184,7 +184,20 @@ Shared:
                   deletes only the current song and target language, preserving its other languages and AI notes.
                   Shared job tokens invalidate late answers after removal, a newer request, or deleting all saved
                   translations, and both open lyrics views refresh from the same result. A failed disk write keeps its
-                  answer in memory for the session (up to 200); removing it clears that copy too. Requests still need a tap.
+                  answer in memory for the session (up to 200); removing it clears that copy too. Requests need a tap unless Automatic translation is on.
+                  Automatic translation is off by default (redesign only). Its Translation order can be dragged;
+                  the default is Apple Translate, Bing, Google, DeepL, Gemini, Claude, the configured AI service,
+                  then Apple Intelligence. Only available services are tried, once each in order, until all missing
+                  lines are filled or the list ends. Each answer keeps earlier successful lines and source/saved
+                  translations. Existing Google/Bing opt-ins and API keys still apply; no new service is enabled.
+                  A visible current-song view starts one shared chain after its lines settle. Hidden translations,
+                  a language rule set to off, and background/detached views do not start another request. A song
+                  or display change stops the next fallback; an in-flight answer can still be cached without
+                  revealing hidden text. Settings/target changes, removal and clearing saved results invalidate
+                  old jobs. Automatic failures remain silent and are not retried on redraw; manual translation
+                  remains available. A manual choice or removal suppresses automatic work for that song/target
+                  until restart or an explicit automatic switch/order change (bounded session history: 2000 pairs).
+                  Enabling the switch shows translations once; rearranging the order does not override Hide.
                   Both AI results are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
                   translations row counts and deletes with them. AI completion refreshes every open view of that song,
                   including views sharing the same line objects. Failed writes keep the answer in the shared

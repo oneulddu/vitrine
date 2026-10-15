@@ -63,6 +63,13 @@ void SGLyricsTitleSettingsChanged(void) {
         [NSNotificationCenter.defaultCenter postNotificationName:SGTitleTranslationSettingsDidChangeNotification object:nil];
     });
 }
+NSNotificationName const SGLyricsTranslationServiceSettingsDidChangeNotification = @"spotifyglass.translationServiceSettingsDidChange";
+void SGLyricsTranslationServiceSettingsChanged(void) {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ SGLyricsTranslationServiceSettingsChanged(); }); return; }
+    SGLyricsTitleSettingsChanged();
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationServiceSettingsDidChangeNotification object:nil];
+}
+
 static NSArray *titleConfiguration(void) {
     BOOL local = SGOnDeviceTranslation.translationAvailable;
     NSString *online = nil, *base = @"", *model = @"";
