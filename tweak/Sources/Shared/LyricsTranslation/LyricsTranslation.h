@@ -46,10 +46,16 @@ SGModRow *SGGeminiKeyRow(void);
 @end
 
 // SavedTranslations.m: a song's translations kept on disk by track and language, matched to lines by their text.
-// The saved ones are the truth for translations made here: syncing fills the lines with no translation from them,
-// and takes a made translation off a line that has none saved (after Delete). Main thread.
+// The saved ones are the truth for translations made here: syncing replaces made translations, fills empty
+// lines, and takes a made translation off a line with nothing saved. Source translations stay. Main thread.
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
+// Main-thread job tokens shared by all views: a newer job or deletion invalidates earlier callbacks.
+NSUInteger SGLyricsBeginTranslation(NSString *track, NSString *language);
+BOOL SGLyricsTranslationIsCurrent(NSString *track, NSString *language, NSUInteger token);
+void SGLyricsEndTranslation(NSString *track, NSString *language, NSUInteger token);
+// Delete only this song/language's generated translation; ordered after pending saves. No notification.
+void SGLyricsDeleteTranslation(NSString *track, NSString *language);
 // The Lyrics page's row: how many songs are kept, and a tap to delete them.
 SGModRow *SGSavedTranslationsRow(void);
 

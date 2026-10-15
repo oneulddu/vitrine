@@ -177,7 +177,14 @@ Shared:
                   asks Gemini, Claude or that service for two other jobs, on the user's own key: how each line sounds,
                   in the translation language's letters, Latin letters or IPA (SGKeyLyricsPronunciationNotation), and a
                   one-sentence cultural note for the few lines a listener would miss (SGKeyLyricsCulturalNotes, off);
-                  both are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
+                  The lyrics menu keeps its translator choices after a generated translation, under Translate Again.
+                  Switching service replaces generated translations as answers arrive, while source translations and
+                  the previous answer to a failed line stay. Hide Translation applies to all songs; Remove Translation
+                  deletes only the current song and target language, preserving its other languages and AI notes.
+                  Shared job tokens invalidate late answers after removal, a newer request, or deleting all saved
+                  translations, and both open lyrics views refresh from the same result. A failed disk write keeps its
+                  answer in memory for the session (up to 200); removing it clears that copy too. Requests still need a tap.
+                  Both AI results are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
                   translations row counts and deletes with them. TranslatedTitles.m shows the playing song's title
                   and artist in the user's language (SGKeyLyricsTranslateTitles, off), asked once a track of the first
                   translator that is on, an artist in Latin letters left as it is. Their replies are checked on the

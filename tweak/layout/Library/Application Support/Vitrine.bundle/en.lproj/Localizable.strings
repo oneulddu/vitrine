@@ -1037,11 +1037,20 @@
 "settings.lyricstools.menu.openai.subtitle" = "Sends the lyrics to the service you set";
 "settings.lyricstools.menu.pronounce" = "Write Pronunciation";
 "settings.lyricstools.menu.pronounce.subtitle" = "Sends the lyrics to %@";
+"settings.lyricstools.menu.pronunciation.hide" = "Hide Pronunciation";
+"settings.lyricstools.menu.pronunciation.show" = "Show Pronunciation";
 "settings.lyricstools.menu.reload" = "Reload Lyrics";
+"settings.lyricstools.menu.retranslate" = "Translate Again";
+"settings.lyricstools.menu.retranslate.subtitle" = "Replaces the translation made here";
 "settings.lyricstools.menu.search" = "Search LRCLIB";
 "settings.lyricstools.menu.search.pinned" = "Picked by hand";
 "settings.lyricstools.menu.sync" = "Sync";
 "settings.lyricstools.menu.translating" = "Translating";
+"settings.lyricstools.menu.translation.hide" = "Hide Translation";
+"settings.lyricstools.menu.translation.remove" = "Remove Translation";
+"settings.lyricstools.menu.translation.remove.subtitle" = "This song only";
+"settings.lyricstools.menu.translation.scope" = "For all songs";
+"settings.lyricstools.menu.translation.show" = "Show Translation";
 "settings.lyricstools.notes.failed" = "No Notes";
 "settings.lyricstools.player.search" = "Search Lyrics";
 "settings.lyricstools.player.search.none" = "None found yet, from LRCLIB";
@@ -1071,6 +1080,7 @@
 "settings.lyricstools.sync.summary.song" = "Song %@";
 "settings.lyricstools.sync.title" = "Sync";
 "settings.lyricstools.sync.value.format" = "%@ ms";
+"settings.lyricstools.translation.kept" = "Lines that could not be translated keep their previous translation.";
 
 "settings.main.airpods_gestures.title" = "AirPods gestures";
 "settings.main.albums.title" = "Albums";

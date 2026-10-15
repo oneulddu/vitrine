@@ -38,6 +38,13 @@ estimate instead, as the Lyrics page's switch does. Untimed lyrics show every li
 Run it on an iOS 26 simulator, by UDID: iOS 27 refuses an app without a scene delegate and crashes it
 at launch. `-dumpTo PATH` writes the dump to a file, for when `--console` shows nothing.
 
+`./translation-check.sh` runs the lyrics menu's translation checks (`translation-check.m`) on the Mac, built for
+Mac Catalyst, with no simulator: two views on one song, the real menu items tapped, stubs.m's saved translations
+and job tokens behind them. It exits with the number of failures.
+The build is build.sh's with three changes: the target is `arm64-apple-ios17.0-macabi`, the SDK is the macOS one
+with `-iframework $SDK/System/iOSSupport/System/Library/Frameworks`, and the binary goes into
+`Check.app/Contents/MacOS/` in a new `mktemp -d` folder under /tmp, which it then launches with `-translationCheck 1`.
+
 A real file goes in with `-file /path/song.ttml`: the simulator reads the Mac's paths.
 
 `-perf LABEL` logs the view's per frame cost (its display link's `tick`) every 240 frames; run with

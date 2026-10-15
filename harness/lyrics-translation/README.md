@@ -47,6 +47,12 @@ The checks cover:
   a request is running.
 - Saved AI round trips in a unique temporary folder: empty answers, hashed tuple isolation, malformed
   values, notation zero following the current translation language, the combined saved-file count and deletion, and retaining the newest 200 AI files.
+- Switching saved translations between services and target languages on the same line objects;
+  source translations stay intact and are not copied into generated-translation files. Per-song deletion
+  leaves other songs, other target languages and AI notes intact, even directly after a queued save.
+  Shared request tokens reject stale callbacks after replacement, per-song deletion or global deletion;
+  finishing an old token cannot end a newer request. A real blocked-directory write failure
+  retains results for both views in memory until removed; long local-track identifiers save under a bounded hash.
 - Title language/script decisions, unchanged Latin artist names, two-line requests, local translation falling
   back when languages are unavailable, main-thread track notifications, one attempt per track and eviction
   after 200 cached title results. The on-device translator is a harness stand-in.

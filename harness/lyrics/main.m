@@ -30,6 +30,7 @@
 //   -seekLag S     the player reports a seek S seconds after it is asked for (stubs.m)
 //   -check 1       asserts the view's fixes (see runChecks), prints PASS and FAIL lines and quits with the
 //                  number of failures; run it with -song duet -at 20000 -gemini 1 -geminiDelay 1 -seekLag 0.4
+//   -translationCheck 1 asserts the menu's translations (translation-check.m) and quits with the number of failures
 // and the lyrics' own settings by their keys: -spotifyglass.lyricsSimulateWords 1 (sweep line timed
 // lines on the estimate), -spotifyglass.redesign.lyricsPronunciation 1,
 // -spotifyglass.redesign.lyricsTranslation 1, -spotifyglass.lyricsRomanised 1, -spotifyglass.redesign.lyricsTextOrder '(translation, lyrics, pronunciation)'.
@@ -47,6 +48,7 @@
 
 NSArray<SGKaraokeLine *> *SGTTMLLines(NSString *xml);
 void SGHarnessStartClock(double at, double rate, double pauseAt, double holdFor);
+void SGHarnessRunTranslationCheck(UIWindow *window);
 
 static const NSInteger kWordMs = 500;
 
@@ -561,6 +563,10 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     // -light 1: the system in light mode, as a phone set to it would put the player's panes.
     self.window.overrideUserInterfaceStyle = [args boolForKey:@"light"] ? UIUserInterfaceStyleLight : UIUserInterfaceStyleDark;
+    if ([args boolForKey:@"translationCheck"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ SGHarnessRunTranslationCheck(self.window); });
+        return YES;
+    }
     UIViewController *root = [UIViewController new];
     root.view.backgroundColor = UIColor.blackColor;
     CGRect bounds = root.view.bounds;

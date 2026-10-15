@@ -244,6 +244,7 @@ static void checkAIStore(void) {
     CHECK(!SGLyricsSavedAI(@"other", @"bad", @"ko"));
     NSArray *lines = aiLines(@[@"saved line"]);
     ((SGKaraokeLine *)lines[0]).translation = @"저장";
+    ((SGKaraokeLine *)lines[0]).translationMade = YES;
     SGLyricsSaveTranslation(@"store-test", @"ko", lines);
     SGLyricsSavedAI(@"notes", @"barrier", @"ko");
     CHECK([SGSavedTranslationsRow().value() hasPrefix:@"2 ·"]);
@@ -272,6 +273,96 @@ static void checkAIStore(void) {
     SGLyricsDeleteSavedTranslations();
     CHECK(!SGLyricsSavedAI(@"notes", @"track-199", @"ko"));
     puts("Saved AI: isolated round trip, empty values, tuple isolation, malformed data, combined count/delete and newest 200 passed");
+}
+static void checkTranslationReplacement(void) {
+    SGLyricsDeleteSavedTranslations();
+    NSArray<SGKaraokeLine *> *first = aiLines(@[@"blue robot", @"source-only"]);
+    first[0].translation = @"구글 번역"; first[0].translationMade = YES;
+    first[1].translation = @"Source translation";
+    SGLyricsSaveTranslation(@"switch-service", @"ko", first);
+    NSArray<SGKaraokeLine *> *reopened = aiLines(@[@"blue robot", @"source-only"]);
+    reopened[1].translation = @"Source translation";
+    SGLyricsSyncSavedTranslation(@"switch-service", @"ko", reopened);
+    CHECK([reopened[0].translation isEqual:@"구글 번역"] && reopened[0].translationMade);
+    CHECK([reopened[1].translation isEqual:@"Source translation"] && !reopened[1].translationMade);
+    NSUInteger firstJob = SGLyricsBeginTranslation(@"switch-service", @"ko");
+    NSUInteger otherLanguage = SGLyricsBeginTranslation(@"switch-service", @"ja");
+    NSUInteger otherTrack = SGLyricsBeginTranslation(@"other-track", @"ko");
+    CHECK(firstJob && SGLyricsTranslationIsCurrent(@"switch-service", @"ko", firstJob));
+    NSUInteger secondJob = SGLyricsBeginTranslation(@"switch-service", @"ko");
+    CHECK(!SGLyricsTranslationIsCurrent(@"switch-service", @"ko", firstJob));
+    CHECK(SGLyricsTranslationIsCurrent(@"switch-service", @"ko", secondJob));
+    CHECK(SGLyricsTranslationIsCurrent(@"switch-service", @"ja", otherLanguage));
+    CHECK(SGLyricsTranslationIsCurrent(@"other-track", @"ko", otherTrack));
+    first[0].translation = @"빙 번역";
+    SGLyricsSaveTranslation(@"switch-service", @"ko", first);
+    SGLyricsSyncSavedTranslation(@"switch-service", @"ko", reopened);
+    CHECK([reopened[0].translation isEqual:@"빙 번역"]);
+    first[0].translation = @"日本語";
+    SGLyricsSaveTranslation(@"switch-service", @"ja", first);
+    SGLyricsSyncSavedTranslation(@"switch-service", @"ja", reopened);
+    CHECK([reopened[0].translation isEqual:@"日本語"]);
+    SGLyricsSaveTranslation(@"other-track", @"ko", first);
+    SGLyricsSaveAI(@"notes", @"switch-service", @"ko", @{@"blue robot": @"note"});
+    SGLyricsDeleteTranslation(@"switch-service", @"ko");
+    CHECK(!SGLyricsTranslationIsCurrent(@"switch-service", @"ko", secondJob));
+    CHECK(SGLyricsTranslationIsCurrent(@"switch-service", @"ja", otherLanguage));
+    CHECK(SGLyricsTranslationIsCurrent(@"other-track", @"ko", otherTrack));
+    SGLyricsSyncSavedTranslation(@"switch-service", @"ko", reopened);
+    CHECK(!reopened[0].translation && !reopened[0].translationMade);
+    CHECK([reopened[1].translation isEqual:@"Source translation"]);
+    SGLyricsSyncSavedTranslation(@"switch-service", @"ja", reopened);
+    CHECK([reopened[0].translation isEqual:@"日本語"]);
+    SGLyricsSyncSavedTranslation(@"other-track", @"ko", reopened);
+    CHECK([reopened[0].translation isEqual:@"日本語"]);
+    CHECK([SGLyricsSavedAI(@"notes", @"switch-service", @"ko")[@"blue robot"] isEqual:@"note"]);
+    SGLyricsDeleteTranslation(@"../switch-service", @"ko");
+    CHECK(!SGLyricsBeginTranslation(nil, @"ko") && !SGLyricsTranslationIsCurrent(@"other-track", @"ko", 0));
+    SGLyricsEndTranslation(@"other-track", @"ko", firstJob);
+    CHECK(SGLyricsTranslationIsCurrent(@"other-track", @"ko", otherTrack));
+    SGLyricsEndTranslation(@"other-track", @"ko", otherTrack);
+    CHECK(!SGLyricsTranslationIsCurrent(@"other-track", @"ko", otherTrack));
+    SGLyricsDeleteSavedTranslations();
+    CHECK(!SGLyricsTranslationIsCurrent(@"switch-service", @"ja", otherLanguage));
+    CHECK(!SGLyricsTranslationIsCurrent(@"other-track", @"ko", otherTrack));
+    // Force a real filesystem failure: the expected directory is a file. Both current and sibling
+    // views still take the latest result in memory; removal and global deletion clear it too.
+    NSURL *directory = [SGLyricsTestCacheRoot() URLByAppendingPathComponent:@"Translations"];
+    [@"not a directory" writeToURL:directory atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    NSArray<SGKaraokeLine *> *failed = aiLines(@[@"blue robot"]);
+    failed[0].translation = @"메모리 번역"; failed[0].translationMade = YES;
+    SGLyricsSaveTranslation(@"disk-failure", @"ko", failed);
+    NSArray<SGKaraokeLine *> *sibling = aiLines(@[@"blue robot"]);
+    SGLyricsSyncSavedTranslation(@"disk-failure", @"ko", failed);
+    SGLyricsSyncSavedTranslation(@"disk-failure", @"ko", sibling);
+    CHECK([failed[0].translation isEqual:@"메모리 번역"] && [sibling[0].translation isEqual:@"메모리 번역"]);
+    SGLyricsDeleteTranslation(@"disk-failure", @"ko");
+    SGLyricsSyncSavedTranslation(@"disk-failure", @"ko", sibling);
+    CHECK(!sibling[0].translation);
+    SGLyricsSaveTranslation(@"disk-failure", @"ko", failed);
+    SGLyricsDeleteSavedTranslations();
+    SGLyricsSyncSavedTranslation(@"disk-failure", @"ko", failed);
+    CHECK(!failed[0].translation);
+    // A local identifier that fit before must keep using its old file, without requiring migration.
+    NSString *legacyLocalID = [@"spotify:local:" stringByPaddingToLength:180 withString:@"a" startingAtIndex:0];
+    [NSFileManager.defaultManager createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:nil];
+    NSURL *legacyFile = [directory URLByAppendingPathComponent:[legacyLocalID stringByAppendingString:@".ko.json"]];
+    NSData *legacyData = [NSJSONSerialization dataWithJSONObject:@{@"blue robot": @"기존 번역"} options:0 error:nil];
+    CHECK([legacyData writeToURL:legacyFile atomically:YES]);
+    SGLyricsSyncSavedTranslation(legacyLocalID, @"ko", sibling);
+    CHECK([sibling[0].translation isEqual:@"기존 번역"]);
+    SGLyricsDeleteTranslation(legacyLocalID, @"ko");
+    CHECK(![NSFileManager.defaultManager fileExistsAtPath:legacyFile.path]);
+    NSString *longLocalID = [@"spotify:local:" stringByAppendingString:[@"한" stringByPaddingToLength:100 withString:@"한" startingAtIndex:0]];
+    failed[0].translation = @"긴 제목 번역"; failed[0].translationMade = YES;
+    SGLyricsSaveTranslation(longLocalID, @"ko", failed);
+    SGLyricsSyncSavedTranslation(longLocalID, @"ko", sibling);
+    CHECK([sibling[0].translation isEqual:@"긴 제목 번역"]);
+    CHECK([NSFileManager.defaultManager contentsOfDirectoryAtURL:directory includingPropertiesForKeys:nil options:0 error:nil].count == 1);
+    SGLyricsDeleteTranslation(longLocalID, @"ko");
+    SGLyricsSyncSavedTranslation(longLocalID, @"ko", sibling);
+    CHECK(!sibling[0].translation);
+    puts("Translation replacement: service/language refresh, scoped deletion, stale-job guards and failed-write retention passed");
 }
 static void checkTitles(void) {
     CHECK(SGLyricsTitleNeedsTranslation(@"파란 하늘", @"en"));
@@ -329,6 +420,7 @@ static void checkNewAI(void) {
     checkClaudeAndPresets();
     checkAIJobs();
     checkAIStore();
+    checkTranslationReplacement();
     checkTitles();
     for (NSString *key in keys) {
         if (before[key] == NSNull.null) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
