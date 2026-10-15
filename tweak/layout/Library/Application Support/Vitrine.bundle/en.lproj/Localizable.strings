@@ -1211,7 +1211,10 @@
 "settings.player.expand_sticky_header.title" = "Expand the sticky header on tap";
 "settings.player.fluid.blur" = "Blur";
 "settings.player.fluid.brightness" = "Brightness";
-"settings.player.fluid.footer" = "Brightness above 100% can make white text harder to read. A paused song holds the background still. Animated and Visualizer use these where they show Fluid.";
+"settings.player.fluid.footer" = "Smooth lets the cover flow and carries the next song's cover in through it, using a little more battery. Brightness above 100% can make white text harder to read. A paused song holds the background still. Animated and Visualizer use these where they show Fluid.";
+"settings.player.fluid.renderer.light" = "Light";
+"settings.player.fluid.renderer.smooth" = "Smooth";
+"settings.player.fluid.renderer.title" = "Style";
 "settings.player.fluid.saturation" = "Saturation";
 "settings.player.fluid.speed" = "Speed";
 "settings.player.fluid.warp" = "Warp";

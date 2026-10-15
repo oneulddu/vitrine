@@ -881,7 +881,13 @@ mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The sel
 `spotifyglass.visualizer.shader` key, with invalid or absent values falling back to Hills, and the preview and player update at
 once. Visualizer motion pauses while hidden, backgrounded, in Low Power Mode, under serious heat or during player transitions,
 and is restrained by Reduce Motion. Artwork sources and Download in Low Data Mode appear while Animated is chosen,
-while Fluid is chosen its five sliders and a red Reset (Redesigned/Kit/SGRFluid.h, spotifyglass.redesign.fluid.*):
+while Fluid is chosen a Style menu, Light or Smooth (spotifyglass.redesign.fluid.renderer, offered where Metal exists),
+its five sliders and a red Reset (Redesigned/Kit/SGRFluid.h, spotifyglass.redesign.fluid.*). Light is the four turning
+copies below; Smooth (Redesigned/Kit/SGRFluidGPU.m) draws the same blurred cover on the GPU, bent along a slowly
+changing field at up to 30 Hz and only while it moves or a new cover runs in through the old one (a crossfade under
+Reduce Motion), from a shader compiled at run time. It lies under the copies, which hide only once its first frame
+is drawn, so a failed shader leaves Light; Reset keeps the style. Checked in the simulator with a bare SGRFluidLayer
+(both styles, switched both ways while moving, a cover change mid-flow). The sliders:
 Speed (25-300 %, how fast the four blurred copies turn, picked up from the angle each is at), Warp (0-100 %, how
 far from the middle they turn and how much the upper three show; at none one copy turns alone), Blur (2-24, the
 radius at 1.25 px a step on the 128 px cover), Saturation (0-250 %) and Brightness (40-150 %, a gain on linear

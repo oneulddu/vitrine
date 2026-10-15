@@ -1,6 +1,7 @@
 #import <CoreImage/CoreImage.h>
 #import "Core/SGCore.h"
 #import "SGRFluid.h"
+#import "SGRFluidGPU.h"
 #import "SGRTokens.h"
 
 // Each copy: its side as a share of the visible rect's longer side, its center as shares of that rect, and
@@ -48,6 +49,21 @@ void SGRSetFluidValue(SGRFluidSetting setting, NSInteger value) {
 void SGRResetFluidSettings(void) {
     for (NSInteger i = 0; i < SGRFluidSettingCount; i++) [NSUserDefaults.standardUserDefaults removeObjectForKey:kSetting[i].key];
     [NSNotificationCenter.defaultCenter postNotificationName:SGRFluidSettingsDidChangeNotification object:nil];
+}
+
+static NSString *const kRendererKey = @"spotifyglass.redesign.fluid.renderer";
+
+SGRFluidRenderer SGRFluidRendererChosen(void) {
+    return SGInt(kRendererKey, SGRFluidRendererLight) == SGRFluidRendererSmooth ? SGRFluidRendererSmooth : SGRFluidRendererLight;
+}
+
+void SGRSetFluidRenderer(SGRFluidRenderer renderer) {
+    SGSetInt(kRendererKey, renderer);
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRFluidSettingsDidChangeNotification object:nil];
+}
+
+NSArray<NSString *> *SGRFluidRendererNames(void) {
+    return @[SGL(@"settings.player.fluid.renderer.light", @"Light"), SGL(@"settings.player.fluid.renderer.smooth", @"Smooth")];
 }
 
 // `gain` is the Brightness setting as a factor on linear light, applied under the ceiling below.
@@ -105,11 +121,15 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
     CALayer *_copies[kCopies];
     CAGradientLayer *_shade;
     UIImage *_source;
+    UIImage *_blur;   // the last blurred cover shown, handed to Smooth when it comes
     NSUInteger _generation;
     BOOL _moving;
+    BOOL _turning;   // the copies' turns are running (moving, and Smooth is not showing)
     CFTimeInterval _since, _elapsed;   // _elapsed in turns at the standard speed
     CGFloat _rate, _warp;              // Speed and Warp as factors, read when the copies are laid out or started
     CGRect _laidOutFor;
+    SGRFluidGPULayer *_gpu;   // Smooth, under the copies; nil while Light is chosen
+    BOOL _gpuShown;           // its first frame is on screen and the copies are hidden
 }
 
 - (instancetype)init {
@@ -125,6 +145,7 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
     _shade = [CAGradientLayer layer];
     _shade.colors = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor, (id)[UIColor colorWithWhite:0 alpha:kShadeAlpha].CGColor];
     [self addSublayer:_shade];
+    [self applyRenderer];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(contrastChanged)
         name:UIAccessibilityDarkerSystemColorsStatusDidChangeNotification object:nil];
     // Posted on the main thread by the Player page's sliders, so the change applies at once.
@@ -160,13 +181,65 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
 
 - (void)settingsChanged {
     // Restarted at the new speed from the angle each copy is at, and laid out again for the new warp.
-    BOOL moving = _moving;
-    if (moving) [self stop];
+    if (_turning) [self stop];
     [self applyWarp];
     _laidOutFor = CGRectNull;
     [self setNeedsLayout];
-    if (moving) [self start];
+    [self applyRenderer];
+    [self updateCopies];
     [self reblur];
+}
+
+#pragma mark - the renderer
+
+// Smooth made and laid under the copies, or taken away and the copies shown again, as chosen.
+- (void)applyRenderer {
+    BOOL smooth = SGRFluidRendererChosen() == SGRFluidRendererSmooth && SGRFluidGPUAvailable();
+    if (smooth && !_gpu) {
+        _gpu = [SGRFluidGPULayer layer];
+        [self insertSublayer:_gpu atIndex:0];
+        __weak SGRFluidLayer *weakSelf = self;
+        __weak SGRFluidGPULayer *weakGPU = _gpu;
+        _gpu.drawn = ^{ [weakSelf gpuDrew:weakGPU]; };
+        _gpu.held = self.hidden;
+        _gpu.moving = _moving;
+        [self setNeedsLayout];
+        if (_blur) [_gpu setPicture:_blur.CGImage animated:NO];
+    } else if (!smooth && _gpu) {
+        _gpu.moving = NO;
+        [_gpu removeFromSuperlayer];
+        _gpu = nil;
+        _gpuShown = NO;
+        [self showCopies];
+    }
+    _gpu.rate = (float)(SGRFluidValue(SGRFluidSpeed) / 100.0);
+    _gpu.warp = (float)_warp;
+}
+
+- (void)gpuDrew:(SGRFluidGPULayer *)gpu {
+    if (!gpu || gpu != _gpu || _gpuShown) return;
+    _gpuShown = YES;
+    [self showCopies];
+}
+
+// The copies shown and turning while Smooth is not on screen, hidden and still while it is.
+- (void)showCopies {
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    for (int i = 0; i < kCopies; i++) _copies[i].hidden = _gpuShown;
+    [CATransaction commit];
+    [self updateCopies];
+}
+
+- (void)updateCopies {
+    BOOL turn = _moving && !_gpuShown;
+    if (turn && !_turning) [self start];
+    else if (!turn && _turning) [self stop];
+}
+
+- (void)setHidden:(BOOL)hidden {
+    [super setHidden:hidden];
+    _gpu.held = hidden;
 }
 
 - (BOOL)moving {
@@ -189,10 +262,11 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
     _shade.frame = bounds;
     _shade.locations = @[@(MIN(1, (CGRectGetMinY(visible) + visible.size.height * kShadeFrom) / total)),
                          @(MIN(1, CGRectGetMaxY(visible) / total))];
+    _gpu.frame = bounds;
+    _gpu.visibleRect = visible;
     if (!CGRectEqualToRect(visible, _laidOutFor) && visible.size.width >= 1) {
         _laidOutFor = visible;
-        BOOL moving = _moving;
-        if (moving) [self stop];
+        if (_turning) [self stop];
         CGFloat longer = MAX(visible.size.width, visible.size.height);
         for (int i = 0; i < kCopies; i++) {
             CGFloat side = round(longer * kCopy[i].side);
@@ -200,7 +274,7 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
             _copies[i].position = CGPointMake(CGRectGetMidX(visible) + visible.size.width * (kCopy[i].x - 0.5) * _warp,
                                               CGRectGetMidY(visible) + visible.size.height * (kCopy[i].y - 0.5) * _warp);
         }
-        if (moving) [self start];
+        [self updateCopies];
     }
     [CATransaction commit];
 }
@@ -224,6 +298,8 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
 }
 
 - (void)show:(UIImage *)blur animated:(BOOL)animated {
+    _blur = blur;
+    [_gpu setPicture:blur.CGImage animated:animated];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     for (int i = 0; i < kCopies; i++) {
@@ -243,12 +319,13 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
 - (void)setMoving:(BOOL)moving {
     if (moving == _moving) return;
     _moving = moving;
-    if (moving) [self start];
-    else [self stop];
+    _gpu.moving = moving;
+    [self updateCopies];
 }
 
 - (void)start {
     if (self.bounds.size.width < 1) return;
+    _turning = YES;
     _since = CACurrentMediaTime();
     _rate = SGRFluidValue(SGRFluidSpeed) / 100.0;
     CAFrameRateRange rate = CAFrameRateRangeMake(15, 60, 30);
@@ -272,6 +349,8 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
 
 // Every copy held at the angle it is drawn at now.
 - (void)stop {
+    if (!_turning) return;
+    _turning = NO;
     if (_since > 0) _elapsed += (CACurrentMediaTime() - _since) * _rate;
     _since = 0;
     [CATransaction begin];

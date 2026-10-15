@@ -9,6 +9,11 @@
 // The Player page tunes it with five sliders (Redesigned/Player/PlayerSettings.m), stored as whole numbers under
 // spotifyglass.redesign.fluid.<speed|warp|blur|saturation|brightness>. Every layer follows a change at once.
 //
+// Two renderers draw it, picked on the same page (spotifyglass.redesign.fluid.renderer): Light, the turning copies
+// above, which cost the app nothing per frame, and Smooth (SGRFluidGPU.h), the same blurred cover flowing on the
+// GPU, a new cover running in through the old one. Smooth starts under the copies and they go only once its first
+// frame is on screen, so a slow or failed shader leaves Light showing. Both hold still on the same conditions.
+//
 // Threading: main thread only; the blur runs off it.
 #import <UIKit/UIKit.h>
 
@@ -27,6 +32,15 @@ NSInteger SGRFluidValue(SGRFluidSetting setting);   // held to its limits
 void SGRSetFluidValue(SGRFluidSetting setting, NSInteger value);
 void SGRResetFluidSettings(void);   // all five back to their standard values, one notification
 extern NSNotificationName const SGRFluidSettingsDidChangeNotification;
+
+typedef NS_ENUM(NSInteger, SGRFluidRenderer) {
+    SGRFluidRendererLight,    // Core Animation's turning copies: the standard
+    SGRFluidRendererSmooth,   // the GPU's flow (SGRFluidGPU.h), a little more battery
+};
+SGRFluidRenderer SGRFluidRendererChosen(void);
+// Stores the choice and posts SGRFluidSettingsDidChangeNotification on the main thread. Reset leaves it.
+void SGRSetFluidRenderer(SGRFluidRenderer renderer);
+NSArray<NSString *> *SGRFluidRendererNames(void);   // in SGRFluidRenderer's order
 
 @interface SGRFluidLayer : CALayer
 // The cover, blurred off the main thread and crossfaded in. The same image again is a no-op.

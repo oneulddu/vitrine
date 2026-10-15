@@ -27,6 +27,7 @@
 #import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRFluid.h"
+#import "Redesigned/Kit/SGRFluidGPU.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Shared/Player/SGLastTrack.h"
@@ -373,16 +374,24 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
         [weakPage.tableView reloadData];   // the sliders at once, rather than at the page's next tick
     });
     reset.color = SGRed();
+    // Light or Smooth, the way Fluid is drawn (SGRFluid.h); the card and the player change at once.
+    SGModRow *renderer = SGMenuRow(SGL(@"settings.player.fluid.renderer.title", @"Style"), SGRFluidRendererNames(), ^NSString *{
+        return SGRFluidRendererNames()[SGRFluidRendererChosen()];
+    }, ^(NSInteger index) {
+        SGRSetFluidRenderer(index == SGRFluidRendererSmooth ? SGRFluidRendererSmooth : SGRFluidRendererLight);
+    });
     NSArray<SGModRow *> *fluid = @[
-        fluidSlider(SGL(@"settings.player.fluid.speed", @"Speed"), SGRFluidSpeed, @"%"), fluidSlider(SGL(@"settings.player.fluid.warp", @"Warp"), SGRFluidWarp, @"%"), fluidSlider(SGL(@"settings.player.fluid.blur", @"Blur"), SGRFluidBlur, @""),
+        renderer, fluidSlider(SGL(@"settings.player.fluid.speed", @"Speed"), SGRFluidSpeed, @"%"), fluidSlider(SGL(@"settings.player.fluid.warp", @"Warp"), SGRFluidWarp, @"%"), fluidSlider(SGL(@"settings.player.fluid.blur", @"Blur"), SGRFluidBlur, @""),
         fluidSlider(SGL(@"settings.player.fluid.saturation", @"Saturation"), SGRFluidSaturation, @"%"), fluidSlider(SGL(@"settings.player.fluid.brightness", @"Brightness"), SGRFluidBrightness, @"%"), reset,
     ];
     for (SGModRow *row in fluid) row.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundFluid; };
+    renderer.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundFluid && SGRFluidGPUAvailable(); };
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
         SGSection(nil, @[sources, lowData]),
         SGSection(nil, @[visualiserStyle]),
-        SGNotedSection(nil, fluid, SGL(@"settings.player.fluid.footer", @"Brightness above 100% can make white text harder to read. A paused song holds the "
+        SGNotedSection(nil, fluid, SGL(@"settings.player.fluid.footer", @"Smooth lets the cover flow and carries the next song's cover in through it, "
+                                   @"using a little more battery. Brightness above 100% can make white text harder to read. A paused song holds the "
                                    @"background still. Animated and Visualizer use these where they show Fluid.")),
         SGNotedSection(SGL(@"settings.player.controls.header", @"Controls"), @[SGSwitchRow(SGL(@"settings.player.volume.title", @"Volume"), nil, SGRKeyPlayerVolume),
                                       SGOptionRow(SGL(@"settings.player.follows_cover.title", @"Follow the cover"), nil, SGRKeyPlayerFollowsCover)],

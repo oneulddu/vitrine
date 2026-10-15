@@ -1171,7 +1171,10 @@
 "settings.player.expand_sticky_header.title" = "탭하여 고정 헤더 펼치기";
 "settings.player.fluid.blur" = "흐림";
 "settings.player.fluid.brightness" = "밝기";
-"settings.player.fluid.footer" = "밝기가 100%를 넘으면 흰색 텍스트가 읽기 어려워질 수 있습니다. 노래를 일시 정지하면 배경이 멈춥니다. 움직임과 비주얼라이저도 플루이드를 보여 줄 때 이 값을 사용합니다.";
+"settings.player.fluid.footer" = "스무스는 커버가 물 흐르듯 움직이고 다음 노래의 커버가 그 사이로 흘러들도록 표현하며, 배터리를 조금 더 소모합니다. 밝기가 100%를 넘으면 흰색 텍스트가 읽기 어려워질 수 있습니다. 노래를 일시 정지하면 배경이 멈춥니다. 움직임과 비주얼라이저도 플루이드를 보여 줄 때 이 설정을 사용합니다.";
+"settings.player.fluid.renderer.light" = "라이트";
+"settings.player.fluid.renderer.smooth" = "스무스";
+"settings.player.fluid.renderer.title" = "스타일";
 "settings.player.fluid.saturation" = "채도";
 "settings.player.fluid.speed" = "속도";
 "settings.player.fluid.warp" = "왜곡";
