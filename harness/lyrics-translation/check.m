@@ -16,12 +16,17 @@ NSURL *SGLyricsTestCacheRoot(void) {
 static BOOL deviceAvailable;
 static NSArray *deviceAnswer;
 static NSUInteger deviceCalls;
+static NSMutableArray *heldDeviceReplies;
+static NSTimeInterval titleTestClock = 100;
+NSTimeInterval SGLyricsTitleTestTime(void) { return titleTestClock; }
 @implementation SGOnDeviceTranslation
 + (BOOL)translationAvailable { return deviceAvailable; }
 + (BOOL)appleIntelligenceAvailable:(NSString *)languageTag { return NO; }
 + (void)translate:(NSArray<NSString *> *)lines to:(NSString *)tag done:(void (^)(NSArray<NSString *> *, NSString *))done {
     deviceCalls++;
-    dispatch_async(dispatch_get_main_queue(), ^{ done(deviceAnswer, deviceAnswer ? nil : @"Languages not installed"); });
+    if (heldDeviceReplies) { [heldDeviceReplies addObject:[done copy]]; return; }
+    NSArray *answer = deviceAnswer;
+    dispatch_async(dispatch_get_main_queue(), ^{ done(answer, answer ? nil : @"Languages not installed"); });
 }
 + (void)translateWithAppleIntelligence:(NSArray<NSString *> *)lines to:(NSString *)tag song:(NSString *)song progress:(void (^)(NSArray<NSString *> *))progress done:(void (^)(NSArray<NSString *> *, NSString *))done { done(nil, @"Not exercised"); }
 @end
@@ -97,6 +102,30 @@ static NSUInteger bingGets, bingPosts;
 static NSMutableArray *bingReplies;
 static BOOL disableOnReply;
 static NSString *const bingHTML = @"<div data-iid=\"translator.1\"></div><script>IG: \"abc&def\"; params_AbusePreventionHelper = [1234567890123,\"token&+=%\",3600000];</script>";
+
+// Exercise Gemini's real job/cache without allowing its NSURLSession to reach the network.
+static NSMutableArray *geminiTitleReplies;
+static NSUInteger geminiTitleRequests;
+@interface SGGeminiTitleProtocol : NSURLProtocol
+@end
+@implementation SGGeminiTitleProtocol
++ (BOOL)canInitWithRequest:(NSURLRequest *)request { return [request.URL.host isEqual:@"generativelanguage.googleapis.com"]; }
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CHECK(geminiTitleReplies.count > 0);
+        geminiTitleRequests++;
+        NSString *reply = geminiTitleReplies.firstObject;
+        [geminiTitleReplies removeObjectAtIndex:0];
+        NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": reply}]}, @"finishReason": @"STOP"}]} options:0 error:nil];
+        NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
+        [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+        [self.client URLProtocol:self didLoadData:data];
+        [self.client URLProtocolDidFinishLoading:self];
+    });
+}
+- (void)stopLoading {}
+@end
 
 // Stand-in for LyricsSources.m's transport, whose unrelated provider registry is not linked here.
 // The optional live check retains its 2 MiB bound, ephemeral storage and redirect refusal.

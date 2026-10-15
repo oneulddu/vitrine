@@ -1,5 +1,47 @@
 # Player harness
 
+## Landscape title notifications without a simulator
+
+From the repository root on an Apple Silicon Mac with Xcode and Theos:
+
+```sh
+THEOS="$HOME/theos" harness/player/title-notification-check.sh
+```
+
+`title-notification-check.sh` builds and runs a temporary, ad-hoc-signed Mac Catalyst app.
+It compiles the **complete current `PlayerLandscape.x`** through Logos, plus the production
+`SGMarqueeLabel` and design tokens/animation helpers. It creates the real
+`SGRLandscapeLyricsController`, runs `viewDidLoad`, and posts both title notifications through
+`NSNotificationCenter`; it does not extract helper bodies or call title handlers directly.
+`SRC=/path/to/tweak/Sources` can select another source checkout. Build files are removed on exit;
+a compile/runtime/assertion failure exits nonzero, and an in-app 15-second watchdog bounds execution.
+
+The offline stubs provide player state with weak observers, cached title/artist answers,
+artwork and karaoke views. `SGRedesignedUI()` is false only to skip automatic device-orientation
+setup in the file's constructor; the controller's own notification registrations execute unchanged.
+The title engine, lyric sources, AI providers, credentials and network clients are not linked.
+No simulator is started. This focused check is independent of `build.sh` and its older missing
+AI/lyrics symbols; it does not repair or validate the full simulator harness.
+
+The 69 assertions cover original metadata, asynchronous current-track title and artist updates
+(including accessibility labels), no update before notification, exactly one provider read per
+matching event, irrelevant/malformed events, an old track's delayed completion after a track switch,
+NSURL and NSString track identities, settings disable/re-enable, paused playback, local/episode/invalid
+URIs, and no player state. Before and after events, snapshots compare the rest timer's identity,
+validity and deadline, shield attachment, control/title/artist/stage alpha, gesture enablement,
+lyrics extras, bare layout, playback state, play glyph/label, background motion and app idle state.
+Forwarding spies also detect calls to `restartRest`, `setControlsShown:` and `setIdleTimerDisabled:`.
+Object ivars are read directly: KVC's `rest` would invoke the production hide action, and `title`
+would resolve `UIViewController.title` instead of the marquee. Finally, weak references prove the
+controller and label deallocate, the scheduled timer is invalidated, and both notifications after
+deallocation cause no refresh or crash.
+
+Verified 2026-10-15: **69/69 passed**, exit 0. This checks title notification behavior on Catalyst,
+not phone layout/rotation or translation-provider correctness; the separate translation suite is
+not rerun here.
+
+## Simulator harness
+
 Spotify's full screen player mocked under its own class names and accessibility identifiers
 (from `trees/clean/player/01.txt`), so the redesign's player can be laid out, animated and
 looked at on the Mac without the phone.

@@ -247,4 +247,5 @@ void SGLyricsDeleteSavedTranslations(void) {
         [NSFileManager.defaultManager removeItemAtURL:folder() error:nil];
         [NSFileManager.defaultManager removeItemAtURL:aiFolder() error:nil];
     });
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsAIResultDidChangeNotification object:nil];
 }

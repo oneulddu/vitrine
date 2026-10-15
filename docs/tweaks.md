@@ -138,7 +138,8 @@ Shared:
                   source's row; checked on the Mac against harness/spicy-lyrics/. QQMusic.m (line timed LRC) and KuGou.m (word timed KRC, unpacked with
                   zlib and read by NetEase.m's parser) for Chinese and other Asian songs, matched by title, singer
                   and length; checked on the Mac against harness/lyrics-sources/. Also: LyricsPlus.m (word
-                  and syllable timing, backing vocals, two mirrors), Bugs.m and Genie.m (Korean catalogs, line timed),
+                  and syllable timing, backing vocals, prjktla.my.id then binimum.org), Bugs.m and Genie.m (Korean catalogs, line timed;
+                  Genie requests the desktop site to avoid a mobile redirect),
                   and Deezer.m on the user's own ARL in the Keychain, off until one is set, its JWT kept in memory and
                   renewed once on a refusal; their requests go through SGLyricsSourceRequest, which caps a reply at
                   2 MiB, follows no redirect and keeps no cookie. A track can be pinned to one LRCLIB record picked by
@@ -185,9 +186,15 @@ Shared:
                   translations, and both open lyrics views refresh from the same result. A failed disk write keeps its
                   answer in memory for the session (up to 200); removing it clears that copy too. Requests still need a tap.
                   Both AI results are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
-                  translations row counts and deletes with them. TranslatedTitles.m shows the playing song's title
-                  and artist in the user's language (SGKeyLyricsTranslateTitles, off), asked once a track of the first
-                  translator that is on, an artist in Latin letters left as it is. Their replies are checked on the
+                  translations row counts and deletes with them. AI completion refreshes every open view of that song,
+                  including views sharing the same line objects. Failed writes keep the answer in the shared
+                  32-entry memory cache; deleting saved results also clears it and cancels pending jobs.
+                  TranslatedTitles.m shows the playing song's title and artist in the user's language
+                  (SGKeyLyricsTranslateTitles, off), using local translation then the first enabled online service,
+                  an artist in Latin letters left as it is. Track, original title/artist and target form its identity;
+                  200 results and 2000 successful identities are remembered. Missing services consume no attempt;
+                  failures permit one retry after 30 s on a later label update. Translator settings reset failed
+                  attempts and invalidate pending replies. Their replies are checked on the
                   Mac against the same harness
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
@@ -640,7 +647,8 @@ Redesigned:
                   breaks (SGRKeyLyricsBreakLabels, off) sets Intro, Interlude or Outro beside the dots, in their group
                   so it breathes and fades with them. Simplify song titles and Translate song titles change what the
                   player's own title and artist labels draw (Player/PlayerTitle.x, which gives those two labels a
-                  subclass of their own class), and the landscape lyrics' title, never Spotify's text underneath.
+                  subclass of their own class), and the landscape lyrics' title, never Spotify's text underneath. Both refresh after title
+                  translation completes or its settings change; a landscape refresh leaves controls and idle timers alone.
                   Keep screen on (SGRKeyLyricsKeepAwake, off) holds the idle timer off while lines show and the song moves,
                   and lets it go 5 s into a pause, when the view leaves its window or the app leaves the front.
                   A word held 0.9 s or more glows and its letters rise in a wave as the sweep reaches

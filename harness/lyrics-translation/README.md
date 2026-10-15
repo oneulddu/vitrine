@@ -44,7 +44,8 @@ The checks cover:
 - AI pronunciation and cultural notes: JSON-array prompts, all three notations, sound rather than meaning,
   sparse notes, composed-character length limits, strict replies, all three service request shapes and safety
   settings, shared in-flight requests, single main-thread completion, memory/disk reuse and deletion while
-  a request is running.
+  a request is running. One track-scoped notification updates peer views; cancelled jobs return no result or error.
+  A real blocked-directory failure keeps AI answers in the shared memory cache until cleared.
 - Saved AI round trips in a unique temporary folder: empty answers, hashed tuple isolation, malformed
   values, notation zero following the current translation language, the combined saved-file count and deletion, and retaining the newest 200 AI files.
 - Switching saved translations between services and target languages on the same line objects;
@@ -54,8 +55,11 @@ The checks cover:
   finishing an old token cannot end a newer request. A real blocked-directory write failure
   retains results for both views in memory until removed; long local-track identifiers save under a bounded hash.
 - Title language/script decisions, unchanged Latin artist names, two-line requests, local translation falling
-  back when languages are unavailable, main-thread track notifications, one attempt per track and eviction
+  back when languages are unavailable, main-thread track notifications, service enablement after a missed lookup, target changes,
+  out-of-order completion, a two-attempt cap with a 30-second cooldown, settings invalidation and eviction
   after 200 cached title results. The on-device translator is a harness stand-in.
+  A custom NSURLProtocol intercepts Gemini HTTP requests to exercise its actual title fallback and cache:
+  changed title/artist text makes a new request, while identical text reuses the answer, with no live API call.
 - OpenAI-compatible replies as strict JSON arrays or single-value objects, with and without a JSON
   code fence. Wrong types, malformed fences, excessive sizes and mismatched counts fail. Base URLs
   accept HTTPS, or HTTP for localhost, 127.0.0.1, .local hosts and numeric Tailscale IPv4 addresses
@@ -119,10 +123,13 @@ strings use SGL with English fallbacks; Korean text is supplied in the implement
 Title translation uses Apple's Translate first when available, then the first enabled online service in
 Bing, Google, DeepL, Gemini, Claude, OpenAI-compatible order. A local failure can mean the required
 languages are not installed, so it advances to that first online service; an online failure stops the job.
-Only 200 title/artist results stay in memory. Attempted track IDs remain until relaunch to prevent a
-request for an evicted result from spending another call.
+Only 200 title/artist results stay in memory, with up to 2000 successful identities remembered to avoid
+repeat calls after result eviction. Identity includes track, original title/artist and target language.
+Without a service no attempt is consumed. Failures allow one retry after 30 seconds, on a later label
+refresh; changing service settings resets failed attempts and invalidates pending callbacks.
+Both portrait and landscape title labels refresh when the result or translation settings change.
 
 All changed Objective-C implementation files are compiled by this harness. The normal production paths,
 including the non-test saved-file root and real Keychain declarations, were additionally checked using
 `xcrun --sdk iphoneos clang -target arm64-apple-ios16.1 -fobjc-arc -fblocks -fsyntax-only` with the iOS 26.5
-SDK, `-Wall -Wextra -Werror -Wno-unused-parameter` and `-Itweak/Sources`. No Logos files were changed.
+SDK, `-Wall -Wextra -Werror -Wno-unused-parameter` and `-Itweak/Sources`. The landscape notification harness separately compiles the complete Logos controller.

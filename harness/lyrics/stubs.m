@@ -240,6 +240,8 @@ NSString *SGLyricsAIName(NSInteger service) { return @"Gemini"; }
 // -ai 1 offers the AI items, and answers them at once: a sound for each line, a note for every third. Each answer
 // is kept for the song as AIServices.m keeps it, so the view reads it back the way it does on the phone.
 void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine);
+NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant);
+extern NSNotificationName const SGLyricsAIResultDidChangeNotification;
 static void keepAnswer(NSString *kind, NSString *track, NSString *variant, NSArray<SGKaraokeLine *> *lines, NSArray<NSString *> *answer) {
     NSMutableDictionary *byLine = [NSMutableDictionary dictionary];
     [lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
@@ -247,12 +249,13 @@ static void keepAnswer(NSString *kind, NSString *track, NSString *variant, NSArr
         if (text.length) byLine[text] = answer[i];
     }];
     SGLyricsSaveAI(kind, track, variant, byLine);
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsAIResultDidChangeNotification object:track];
 }
 void SGLyricsAIPronounce(NSInteger service, NSString *trackID, NSArray<SGKaraokeLine *> *lines,
                         void (^done)(NSArray<NSString *> *spoken, NSString *error)) {
     NSMutableArray *out = [NSMutableArray array];
     // A sound unlike the line, as a service's would be: a pronunciation that reads the same as its line is dropped.
-    for (SGKaraokeLine *line in lines) [out addObject:SGLyricsRomanised(SGKaraokeLineText(line), YES) ?: @""];
+    for (SGKaraokeLine *line in lines) [out addObject:SGLyricsRomanised(SGKaraokeLineText(line), YES) ?: ([NSUserDefaults.standardUserDefaults boolForKey:@"aiCheck"] ? @"ha ha" : @"")];
     keepAnswer(@"pronunciation", trackID, [NSString stringWithFormat:@"%ld", (long)[NSUserDefaults.standardUserDefaults integerForKey:@"spotifyglass.lyrics.pronunciationNotation"]], lines, out);
     done(out, nil);
 }
@@ -266,6 +269,11 @@ void SGLyricsAINotes(NSInteger service, NSString *trackID, NSArray<SGKaraokeLine
     done(out, nil);
 }
 static NSMutableDictionary *sg_savedAI;
+NSNotificationName const SGLyricsAIResultDidChangeNotification = @"harness.lyricsAIResultDidChange";
+NSDictionary<NSString *, NSString *> *SGLyricsAIValues(NSString *kind, NSString *track, NSString *variant) {
+    return SGLyricsSavedAI(kind, track, variant);
+}
+
 NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant) {
     return sg_savedAI[[NSString stringWithFormat:@"%@|%@|%@", kind, track, variant]];
 }

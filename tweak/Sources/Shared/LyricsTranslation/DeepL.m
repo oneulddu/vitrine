@@ -267,7 +267,7 @@ static void askForKey(void) {
     __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *key = cleanKey(weakAlert.textFields.firstObject.text);
-        if (key.length) storeKey(key);
+        if (key.length) { storeKey(key); SGLyricsTitleSettingsChanged(); }
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
@@ -282,7 +282,7 @@ static void askForKey(void) {
         }] forControlEvents:UIControlEventEditingChanged];
     }];
     [alert addAction:save];
-    if (SGDeepLKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { storeKey(nil); }]];
+    if (SGDeepLKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { storeKey(nil); SGLyricsTitleSettingsChanged(); }]];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }

@@ -1444,10 +1444,6 @@ typedef struct {
     UIButton *_extras;
     NSString *_extrasGlyph;   // the glyph _extras shows: translate while it has languages to offer, else ellipsis
     NSArray<SGKaraokeLine *> *_asking;        // the lines an AI service is writing pronunciations or notes for
-    // Answers an AI service gave for the song that could not be kept (the saved answers were deleted meanwhile, or
-    // the language changed), by kind and variant as they are saved: shown until the song goes or the saved answers
-    // change, read as if they had been saved.
-    NSMutableDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *_unsavedAI;
     SGRSingButton *_sing;   // across from _extras
     CGFloat _builtWidth, _placedHeight;
     BOOL _showing;
@@ -1521,6 +1517,7 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsTextDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGLyricsRomanisedDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationsChanged) name:SGLyricsTranslationsDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(aiResultsChanged:) name:SGLyricsAIResultDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationDidChange:) name:SGRTranslationNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(lookChanged) name:SGRLyricsLookDidChangeNotification object:nil];
     // The menu says the song's offsets and whether its lyrics were picked by hand.
@@ -2402,11 +2399,9 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 - (void)takeSavedAI {
     NSString *notation = [NSString stringWithFormat:@"%ld", (long)SGInt(SGKeyLyricsPronunciationNotation, 0)];
     NSString *language = SGLyricsGeminiLanguage();
-    NSDictionary<NSString *, NSString *> *spoken = SGLyricsSavedAI(@"pronunciation", _track, notation)
-        ?: _unsavedAI[[@"pronunciation|" stringByAppendingString:notation]];
+    NSDictionary<NSString *, NSString *> *spoken = SGLyricsAIValues(@"pronunciation", _track, notation);
     NSDictionary<NSString *, NSString *> *notes = !SGFlag(SGKeyLyricsCulturalNotes, NO) ? nil
-        : SGLyricsSavedAI(@"notes", _track, language) ?: _unsavedAI[[@"notes|" stringByAppendingString:language]];
-    BOOL changed = NO;
+        : SGLyricsAIValues(@"notes", _track, language);
     for (SGKaraokeLine *line in _lines) {
         NSString *text = SGKaraokeLineText(line);
         if (!text.length) continue;
@@ -2419,31 +2414,32 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
             if (made && ![SGKaraokeLineText(made) isEqualToString:SGKaraokeLineText(line.pronunciation)]) {
                 line.pronunciation = made;
                 line.pronunciationMade = YES;
-                changed = YES;
             }
         } else if (line.pronunciationMade) {
             // Taken off once nothing for the song in the notation set covers the line any more: the saved answers
             // were deleted, or the notation changed.
             line.pronunciation = nil;
             line.pronunciationMade = NO;
-            changed = YES;
         }
         NSString *note = notes[text];
         if (note.length && ![line.note isEqualToString:note]) {
             line.note = note;
-            changed = YES;
         }
-        if (!notes && line.note) {
+        if (!note.length && line.note) {
             line.note = nil;
-            changed = YES;
         }
     }
-    if (!changed) return;
     _hasSpoken = _hasNotes = NO;
     for (SGKaraokeLine *line in _lines) {
         _hasSpoken = _hasSpoken || line.pronunciation || line.backing.pronunciation;
         _hasNotes = _hasNotes || line.note.length;
     }
+}
+
+- (void)aiResultsChanged:(NSNotification *)note {
+    if (_sample || !_lines || (note.object && ![note.object isEqual:_track])) return;
+    [self takeSavedAI];   // Recount even when another view already mutated these same objects.
+    [self restyle];
 }
 
 // Asks the service for the song's pronunciation or its notes, keeps the answer for the song, and shows it.
@@ -2457,24 +2453,15 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     // The service keeps what it was given for the song (AIServices.m); the lines read it back from there.
     void (^answered)(NSArray<NSString *> *, NSString *) = ^(NSArray<NSString *> *values, NSString *error) {
         if (self->_asking == lines) self->_asking = nil;
-        if (values.count == lines.count && lines == self->_lines) {
-            NSString *kind = notes ? @"notes" : @"pronunciation", *variant = notes ? language : notation;
-            if (!SGLyricsSavedAI(kind, track, variant)) {
-                NSMutableDictionary<NSString *, NSString *> *byLine = [NSMutableDictionary dictionary];
-                [lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
-                    NSString *text = SGKaraokeLineText(line);
-                    if (text.length) byLine[text] = values[i];
-                }];
-                if (!self->_unsavedAI) self->_unsavedAI = [NSMutableDictionary dictionary];
-                self->_unsavedAI[[NSString stringWithFormat:@"%@|%@", kind, variant]] = byLine;
-            }
+        NSString *currentNotation = [NSString stringWithFormat:@"%ld", (long)SGInt(SGKeyLyricsPronunciationNotation, 0)];
+        BOOL sameContext = lines == self->_lines && [track isEqual:self->_track] &&
+            [language isEqual:SGLyricsGeminiLanguage()] && (notes || [notation isEqual:currentNotation]);
+        if (values.count == lines.count && sameContext) {
             [self takeSavedAI];
-            if (notes) [self restyle];
-            else if (!SGFlag(SGRKeyLyricsPronunciation, NO)) SGRSetLyricsTextShown(SGRLyricsTextPronunciation, YES);
-            else [self restyle];
+            [self restyle];
         }
         [self offerExtras];
-        if (!error) return;
+        if (!sameContext || !error) return;
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:notes ? SGL(@"settings.lyricstools.notes.failed", @"No Notes")
                                                                                      : SGL(@"settings.lyricstools.pronounce.failed", @"No Pronunciation")
                                                                        message:error preferredStyle:UIAlertControllerStyleAlert];
@@ -2482,14 +2469,13 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
         [SGTopController() presentViewController:alert animated:YES completion:nil];
     };
+    if (!notes && !SGFlag(SGRKeyLyricsPronunciation, NO)) SGRSetLyricsTextShown(SGRLyricsTextPronunciation, YES);
     if (notes) SGLyricsAINotes(service, track, lines, language, answered);
     else SGLyricsAIPronounce(service, track, lines, answered);
 }
 
-// The saved translations deleted, or Translate any song switched: the song is synced again and redrawn. An answer
-// the view held for want of saving it goes too, since it may be one of those just deleted.
+// Saved translations deleted, the target language changed, or Translate any song switched: sync and redraw.
 - (void)translationsChanged {
-    _unsavedAI = nil;
     if (!_lines) return;
     [self timeLines];
     [self restyle];
@@ -2793,7 +2779,6 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
         SGLog(@"karaoke: page shows track %@, lyrics %@", track, [self linesFor:track] ? @"captured" : @"not captured yet");
         _track = track;
         _lines = nil;
-        _unsavedAI = nil;
         _passedOver = nil;
         _builtWidth = 0;
         _stillSince = 0;   // the last song's pause says nothing of this one's

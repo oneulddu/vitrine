@@ -226,6 +226,23 @@ void SGHarnessRunTranslationCheck(UIWindow *window) {
     sg_held(markAll(lines, @"stale: "), nil);
     check([translations(lines) isEqualToString:@"one two | - | - | -"] && !saved(), @"and the job's answer is dropped");
 
+    // AI completion must reach views sharing the objects as well as a view holding its own copies.
+    [args setBool:YES forKey:@"ai"];
+    [args setBool:YES forKey:@"aiCheck"];
+    [args setBool:YES forKey:SGKeyLyricsCulturalNotes];
+    SGRKaraokeView *shared = [[SGRKaraokeView alloc] initWithFrame:CGRectZero];
+    [shared setValue:@"harness" forKey:@"track"];
+    [shared setValue:lines forKey:@"lines"];
+    NSArray *aiViews = @[player, page, shared];
+    for (SGRKaraokeView *view in aiViews) ((void (*)(id, SEL))objc_msgSend)(view, NSSelectorFromString(@"timeLines"));
+    check(tap(itemIn((UIMenu *)item(player, @"Write Pronunciation"), @"Gemini")), @"AI pronunciation requested");
+    check([[page valueForKey:@"hasSpoken"] boolValue] && [[shared valueForKey:@"hasSpoken"] boolValue], @"AI pronunciation flags update in copied and shared views");
+    check(lines[1].pronunciation && [SGKaraokeLineText(lines[1].pronunciation) isEqualToString:SGKaraokeLineText(((SGKaraokeLine *)copies[1]).pronunciation)], @"AI pronunciation reaches the other array");
+    check(tap(itemIn((UIMenu *)item(player, @"Explain References"), @"Gemini")), @"AI notes requested");
+    check([[page valueForKey:@"hasNotes"] boolValue] && [[shared valueForKey:@"hasNotes"] boolValue], @"AI note flags update in copied and shared views");
+    check(lines[1].note.length && [lines[1].note isEqualToString:((SGKaraokeLine *)copies[1]).note], @"AI notes reach the other array");
+    [args setBool:NO forKey:@"ai"];
+
     // A menu kept from before the view moved to another song acts on the song it was offered for, or not at all.
     googleAnswers(@"G5: ");
     tap(item(player, @"Translate with Google"));

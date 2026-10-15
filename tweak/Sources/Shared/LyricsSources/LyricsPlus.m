@@ -83,7 +83,7 @@ SGLyricsResult *SGLyricsPlusResult(id root) {
 }
 
 static void ask(SGLyricsQuery *query, BOOL fallback, void (^done)(SGLyricsResult *)) {
-    NSString *base = fallback ? @"https://lyrics.geeked.wtf" : @"https://lyricsplus.prjktla.my.id";
+    NSString *base = fallback ? @"https://lyricsplus.binimum.org" : @"https://lyricsplus.prjktla.my.id";
     NSURL *url = SGLyricsURL([base stringByAppendingString:@"/v2/lyrics/get"], @{@"title": query.title, @"artist": SGLyricsLeadArtist(query.artist), @"album": query.album ?: @"", @"duration": [NSString stringWithFormat:@"%.3f", (double)MAX(0, query.seconds)]});
     SGLyricsSourceRequest(url, nil, nil, ^(NSData *data, NSInteger status) {
         id root = status == 200 && data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;

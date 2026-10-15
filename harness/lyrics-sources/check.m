@@ -288,8 +288,11 @@ static void checkNewSources(void) {
     };
     SGBugsAsk(query, ^(SGLyricsResult *r) { CHECK(NSThread.isMainThread); got = r; calls++; });
     CHECK(calls == 1 && plain == 1 && got && !got.synced);
+    __block NSUInteger genieRequests = 0;
     sg_sourceAnswer = ^id(NSURL *url, NSDictionary *headers, NSData *body, NSInteger *status) {
-        CHECK([headers[@"User-Agent"] isEqualToString:SGLyricsBrowserAgent]);
+        genieRequests++;
+        if ([headers[@"User-Agent"] containsString:@"iPhone"]) { *status = 302; return nil; }
+        CHECK([headers[@"User-Agent"] containsString:@"Macintosh"]);
         if ([url.host isEqualToString:@"www.genie.co.kr"]) return @"<tr class='list' songid='1'><a class='title ellipsis' title='Made up'>x</a></tr>"
             "<tr class='list' songid='2'><a class='title ellipsis' title='Other'>x</a><a class='artist ellipsis'>Singer</a></tr>"
             "<tr class='list' songid='3'><a class='title ellipsis' title='Made&#32;up'>x</a><a class='artist ellipsis'><span>Singer</span></a></tr>";
@@ -298,17 +301,23 @@ static void checkNewSources(void) {
     };
     calls = 0;
     SGGenieAsk(query, ^(SGLyricsResult *r) { got = r; calls++; });
-    CHECK(calls == 1 && got.synced && got.karaokeLines.firstObject.start == 8700);
+    CHECK(calls == 1 && genieRequests == 2 && got.synced && got.karaokeLines.firstObject.start == 8700);
     __block NSUInteger plusRequests = 0;
     sg_sourceAnswer = ^id(NSURL *url, NSDictionary *headers, NSData *body, NSInteger *status) {
         CHECK([param(url, @"duration") isEqualToString:@"200.000"]);
         plusRequests++;
         if ([url.host isEqualToString:@"lyricsplus.prjktla.my.id"]) { *status = 503; return nil; }
-        CHECK([url.host isEqualToString:@"lyrics.geeked.wtf"]); return plus;
+        CHECK([url.host isEqualToString:@"lyricsplus.binimum.org"]); return plus;
     };
     calls = 0;
     SGLyricsPlusAsk(query, ^(SGLyricsResult *r) { got = r; calls++; });
     CHECK(calls == 1 && plusRequests == 2 && got.wordTimed);
+    plusRequests = calls = 0;
+    sg_sourceAnswer = ^id(NSURL *url, NSDictionary *headers, NSData *body, NSInteger *status) {
+        plusRequests++; CHECK([url.host isEqualToString:@"lyricsplus.prjktla.my.id"]); return plus;
+    };
+    SGLyricsPlusAsk(query, ^(SGLyricsResult *r) { got = r; calls++; });
+    CHECK(calls == 1 && plusRequests == 1 && got.wordTimed);
 
     __block NSUInteger logins = 0, lyricsRequests = 0;
     __block BOOL refuse = YES;

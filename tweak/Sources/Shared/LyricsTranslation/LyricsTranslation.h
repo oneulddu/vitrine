@@ -128,11 +128,19 @@ SGModRow *SGLyricsCulturalNotesRow(void);
 // AI answers are kept by their original line text. Pronunciation uses the notation number as its variant;
 // notes use the language tag. Reads and writes are ordered, so an immediate read sees the last save.
 NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant);
+// Main-thread shared result, including an answer that could not be written to disk. Notation 0 follows language.
+NSDictionary<NSString *, NSString *> *SGLyricsAIValues(NSString *kind, NSString *track, NSString *variant);
+extern NSNotificationName const SGLyricsAIResultDidChangeNotification; // track ID, or nil after deleting all
+
 void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine);
 
 #define SGKeyLyricsTranslateTitles @"spotifyglass.lyrics.translateTitles"
 SGModRow *SGTranslateTitlesRow(void);
 // Posted on main with the track ID when a translated title arrives.
 extern NSNotificationName const SGTranslatedTitleDidChangeNotification;
-// Main queue. Returns a cached title or starts one request for this track this launch. Latin artist names stay.
+extern NSNotificationName const SGTitleTranslationSettingsDidChangeNotification;
+// Settings actions invalidate pending/failed title requests, preserve successful results and refresh labels.
+void SGLyricsTitleSettingsChanged(void);
+// Main queue. Coalesces title/artist/language requests; at most two attempts per configuration, 30s apart.
+// Successful identities remain remembered past result eviction. Latin artist names stay.
 NSString *SGLyricsTranslatedTitle(NSString *trackID, NSString *title, NSString *artist, NSString **artistOut);

@@ -16,6 +16,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/Player/PlayerState.h"
 #import "Player.h"
 
@@ -148,6 +149,10 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
     [self playerStateDidChange:SGPlayerState()];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(artworkChanged)
                                                name:SGRNowPlayingArtworkDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translatedTitleChanged:)
+                                               name:SGTranslatedTitleDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(titleSettingsChanged:)
+                                               name:SGTitleTranslationSettingsDidChangeNotification object:nil];
     // The shield is hidden from VoiceOver, so turning it on brings the controls back and keeps them.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(wake)
                                                name:UIAccessibilityVoiceOverStatusDidChangeNotification object:nil];
@@ -250,14 +255,27 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
     else [self restartRest];
 }
 
-- (void)playerStateDidChange:(SPTPlayerState *)state {
+// A late title must not wake the controls, restart the idle timer, or alter playback state.
+- (void)updateTitleForState:(SPTPlayerState *)state {
     if (!state) return;
-    [self updateBare:NO];
     // The title and artist as the player shows them, simplified or translated (PlayerTitle.x).
     NSString *artist = nil, *uri = SGURIString(state.track.URI);
     NSString *track = [uri hasPrefix:@"spotify:track:"] ? [uri substringFromIndex:@"spotify:track:".length] : nil;
     _title.text = SGRShownTitle(track, state.track.trackTitle, state.track.artistName, &artist);
     _artist.text = artist;
+}
+- (void)translatedTitleChanged:(NSNotification *)note {
+    SPTPlayerState *state = SGPlayerState();
+    NSString *uri = SGURIString(state.track.URI);
+    NSString *track = [uri hasPrefix:@"spotify:track:"] ? [uri substringFromIndex:@"spotify:track:".length] : nil;
+    if (track && [note.object isEqual:track]) [self updateTitleForState:state];
+}
+- (void)titleSettingsChanged:(NSNotification *)note { [self updateTitleForState:SGPlayerState()]; }
+
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    if (!state) return;
+    [self updateBare:NO];
+    [self updateTitleForState:state];
     [_play setImage:[UIImage systemImageNamed:state.isPaused ? @"play.fill" : @"pause.fill" withConfiguration:
         [UIImageSymbolConfiguration configurationWithPointSize:30 weight:UIImageSymbolWeightBold]] forState:UIControlStateNormal];
     _play.accessibilityLabel = state.isPaused ? @"Play" : @"Pause";
