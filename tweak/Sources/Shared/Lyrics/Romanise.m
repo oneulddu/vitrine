@@ -49,15 +49,47 @@ static NSString *readJapanese(NSString *text) {
     return read;
 }
 
+// Only words holding Han take a reading. The particles, kana, spaces and punctuation between them
+// stay exactly as written, including を, which the tokenizer's Latin reading would turn into wo.
+static NSString *readHiragana(NSString *text) {
+    NSMutableString *read = [NSMutableString string];
+    CFLocaleRef japanese = CFLocaleCreate(NULL, CFSTR("ja"));
+    CFStringTokenizerRef words = CFStringTokenizerCreate(NULL, (__bridge CFStringRef)text, CFRangeMake(0, text.length),
+                                                         kCFStringTokenizerUnitWord, japanese);
+    NSUInteger from = 0;
+    while (CFStringTokenizerAdvanceToNextToken(words) != kCFStringTokenizerTokenNone) {
+        CFRange range = CFStringTokenizerGetCurrentTokenRange(words);
+        [read appendString:[text substringWithRange:NSMakeRange(from, range.location - from)]];
+        NSString *word = [text substringWithRange:NSMakeRange(range.location, range.length)];
+        if (has(word, @"\\p{Han}")) {
+            NSString *latin = CFBridgingRelease(CFStringTokenizerCopyCurrentTokenAttribute(words, kCFStringTokenizerAttributeLatinTranscription));
+            word = [latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO] ?: word;
+        }
+        [read appendString:word];
+        from = range.location + range.length;
+    }
+    [read appendString:[text substringFromIndex:from]];
+    CFRelease(words);
+    CFRelease(japanese);
+    return read;
+}
+
 NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
     // Only a line with a letter of another script: Latin with accents (German, Vietnamese) is left alone.
     if (!text.length || !has(text, @"[\\p{L}&&[^\\p{Latin}]]")) return nil;
     static NSCache<NSString *, NSString *> *kept;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ kept = [NSCache new]; });
-    NSString *key = japanese ? [@"ja:" stringByAppendingString:text] : text;
+    BOOL hiragana = japanese && [NSUserDefaults.standardUserDefaults boolForKey:SGKeyLyricsJapaneseKana];
+    NSString *key = [NSString stringWithFormat:@"%@:%@", hiragana ? @"hiragana" : japanese ? @"ja" : @"latin", text];
     NSString *romanised = [kept objectForKey:key];
     if (romanised) return romanised.length ? romanised : nil;
+    if (hiragana) {
+        romanised = readHiragana(text);
+        if ([romanised isEqualToString:text]) romanised = @"";
+        [kept setObject:romanised forKey:key];
+        return romanised.length ? romanised : nil;
+    }
     BOOL kana = japanese || hasKana(text);
     NSString *source = kana ? readJapanese(text) : text;
     // Han left over is Chinese: its pinyin keeps the tones, and only its punctuation is made ASCII.

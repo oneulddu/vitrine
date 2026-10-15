@@ -21,6 +21,7 @@
 #import "Shared/Lossless/SGLossless.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Lyrics/LyricsLook.h"
+#import "Redesigned/Lyrics/LyricsTools.h"
 #import "Redesigned/Navbar/Navbar.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
 #import "Redesigned/Kit/SGRAccent.h"
@@ -150,14 +151,18 @@ static UIViewController *lyricsPage(void) {
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:SGSection(nil, @[SGWithTile(sing, @"music.mic", UIColor.systemRedColor)]),
                                                 SGLyricsSourcesSection(redesigned), nil];
     SGModSection *timing = SGNotedSection(SGL(@"settings.lyrics.timing.header", @"Timing"), @[SGLyricsDelayRow()],
-        SGL(@"settings.lyrics.timing.footer", @"Every line shows this much later than the song, for Bluetooth headphones that play a little behind the lyrics. Applies at once."));
+        redesigned ? SGL(@"settings.lyrics.timing.footer.redesigned", @"Every line shows this much later than the song, for Bluetooth headphones that play a little behind the lyrics. "
+                         @"Sync in the lyrics' corner menu adds an offset for one song, and one for the headphones it plays through. Applies at once.")
+                   : SGL(@"settings.lyrics.timing.footer", @"Every line shows this much later than the song, for Bluetooth headphones that play a little behind the lyrics. Applies at once."));
     if (redesigned) {
         [sections addObjectsFromArray:@[
             SGSection(SGL(@"settings.lyrics.display.header", @"Display"), @[SGRLyricsTextSizesRow(), SGLyricsWordTimingRow(), SGLyricsRomanisedRow(),
+                SGLyricsJapaneseReadingRow(), SGRLyricsKeepAwakeRow(),
                 SGSwitchRow(SGL(@"settings.lyrics.hide_controls.title", @"Hide the controls"), SGL(@"settings.lyrics.hide_controls.subtitle", @"A few seconds after the last touch, the lyrics take the whole player"), SGRKeyLyricsAutoHide),
                 SGSwitchRow(SGL(@"settings.lyrics.landscape.title", @"Landscape lyrics"), SGL(@"settings.lyrics.landscape.subtitle", @"Turn the phone with the lyrics open"), SGRKeyLyricsLandscape)]),
             timing,
-            SGSection(SGL(@"settings.lyrics.translation.header", @"Translation"), @[SGLyricsTranslationLanguageRow(), SGTranslateEverySongRow(), SGGeminiKeyRow(), SGSavedTranslationsRow()]),
+            SGSection(SGL(@"settings.lyrics.translation.header", @"Translation"), @[SGLyricsTranslationLanguageRow(), SGTranslateEverySongRow(), SGGeminiKeyRow(),
+                SGDeepLKeyRow(), SGOpenAIKeyRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
             SGSection(nil, @[SGLyricsMeaningsRow()]),
         ]];
     } else {

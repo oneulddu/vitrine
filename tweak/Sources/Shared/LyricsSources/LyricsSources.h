@@ -4,8 +4,9 @@
 // later one that times every word.
 //
 // SGTTML.m reads the TTML that Apple Music's own lyrics are written in, which is what BiniLyrics and
-// Unison serve. It is the only shape carrying a second voice and the (oh, aye) sung under a line; every other source times lines, or the words inside them, and nothing more.
+// Unison serve. It carries a second voice and the (oh, aye) sung under a line, as LyricsPlus can too.
 #import <UIKit/UIKit.h>
+#import <math.h>
 #import "Shared/Lyrics/Lyrics.h"
 
 // The sources in the order they are asked, as their keys. Unset means the order below, so a source
@@ -18,6 +19,29 @@
 // The language a line's translation is asked for in, as an index into SGLyricsTranslationLanguages;
 // unset or 0 takes whatever translation the source has.
 #define SGKeyLyricsTranslationLanguage @"spotifyglass.lyricsTranslationLanguage"
+
+@class SGLyricsResult;
+
+// A manual LRCLIB choice, kept by track id across launches. At most 500 pins.
+#define SGKeyLyricsPins @"spotifyglass.lyrics.pins"
+// Main queue, object the track id, after the pinned lines are kept or the pin is removed.
+extern NSNotificationName const SGLyricsPinDidChangeNotification;
+// Each record has id (NSNumber), title, artist, album (NSString, maybe empty), seconds (NSNumber),
+// synced and instrumental (NSNumber BOOL), and record (the raw LRCLIB dictionary). At most 20,
+// synced first then closest length when seconds > 0. Main queue; an empty array on failure, never nil.
+void SGLrcLibSearch(NSString *title, NSString *artist, NSInteger seconds, void (^done)(NSArray<NSDictionary *> *records));
+NSNumber *SGLyricsPinnedID(NSString *trackID);
+// Safe from any thread. A hook request must discard its delivery if this changes.
+NSUInteger SGLyricsPinGeneration(NSString *trackID);
+// Keeps the record's lines and LRCLIB credit now, replacing the walk's kept answer too. NO, changing
+// nothing, for a record with no lines that is not instrumental. Main queue.
+BOOL SGLyricsPin(NSString *trackID, NSDictionary *record);
+// Drops the pin, the walk's answer and missing mark, and KaraokeSource's lines, requests and losses;
+// announces it and asks for the track again. Main queue.
+void SGLyricsUnpin(NSString *trackID);
+// LrcLib.m: the same conversion for a search choice and a pin read back by its id.
+SGLyricsResult *SGLrcLibRecordResult(NSDictionary *record);
+void SGLrcLibGetID(NSNumber *recordID, void (^done)(SGLyricsResult *result));
 
 // A page a credit names someone on: "Uploader: name" and the address it opens.
 @interface SGLyricsLink : NSObject
@@ -166,6 +190,78 @@ extern SGLyricsAsk SGLrcLibAsk;
 extern SGLyricsAsk SGSpicyLyricsAsk;
 extern SGLyricsAsk SGQQMusicAsk;
 extern SGLyricsAsk SGKuGouAsk;
+extern SGLyricsAsk SGBugsAsk;
+extern SGLyricsAsk SGGenieAsk;
+extern SGLyricsAsk SGLyricsPlusAsk;
+extern SGLyricsAsk SGDeezerAsk;
+
+// The newer endpoints return untrusted text as well as JSON. Requests stop at 2 MiB, never follow
+// redirects with credentials, and answer once on main. A nil body is GET; any data body is POST.
+void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *headers, NSData *body,
+                           void (^done)(NSData *data, NSInteger status));
+
+// Small checks shared by these parsers. A time must be finite and within a day; accepting a numeric
+// prefix of an error message would silently put the wrong words at the start of a song.
+static inline id SGLyricsField(id object, NSString *key) {
+    return [object isKindOfClass:NSDictionary.class] ? object[key] : nil;
+}
+static inline NSString *SGLyricsString(id value, NSUInteger limit) {
+    return [value isKindOfClass:NSString.class] && [value length] <= limit ? value : nil;
+}
+static inline BOOL SGLyricsNumber(id value, double *number) {
+    if ([value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()) {
+        *number = [value doubleValue];
+    } else if ([value isKindOfClass:NSString.class] && [value length] && [value length] <= 32) {
+        NSScanner *scanner = [NSScanner scannerWithString:value];
+        scanner.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        scanner.charactersToBeSkipped = nil;
+        if (![scanner scanDouble:number] || !scanner.isAtEnd) return NO;
+    } else return NO;
+    return isfinite(*number) && *number >= 0 && *number <= 86400000;
+}
+static inline NSString *SGLyricsDecimalID(id value) {
+    NSString *text = [value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()
+        ? [value stringValue] : SGLyricsString(value, 20);
+    return text.length && text.length <= 20 &&
+        [text rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"0123456789"].invertedSet].location == NSNotFound ? text : nil;
+}
+static inline SGLyricsResult *SGLyricsResultWithLines(NSArray<SGKaraokeLine *> *lines, NSString *provider) {
+    if (!lines.count) return nil;
+    SGLyricsResult *result = [SGLyricsResult new];
+    result.provider = provider;
+    result.karaokeLines = SGKaraokeInTimeOrder(lines);
+    result.synced = SGKaraokeLinesTiming(lines) != SGKaraokeTimingNone;
+    result.wordTimed = SGKaraokeLinesTiming(lines) == SGKaraokeTimingWords;
+    NSArray *starts, *texts;
+    SGLyricsPageLines(result.karaokeLines, &starts, &texts);
+    result.starts = starts;
+    result.texts = texts;
+    return result;
+}
+static inline SGLyricsResult *SGLyricsPlainResult(id text, NSString *provider) {
+    NSString *plain = SGLyricsString(text, 262144);
+    if (!plain.length) return nil;
+    NSArray *rows = [plain componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet];
+    if (rows.count > 4000) return nil;
+    NSMutableArray *texts = [NSMutableArray array], *starts = [NSMutableArray array];
+    for (NSString *row in rows) {
+        NSString *line = [row stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        if (line.length > 4096) return nil;
+        if (line.length) { [texts addObject:line]; [starts addObject:@0]; }
+    }
+    SGLyricsResult *result = SGLyricsResultWithLines(SGKaraokeStaticLines(texts), provider);
+    result.starts = starts;
+    result.texts = texts;
+    return result;
+}
+
+SGLyricsResult *SGBugsResult(id root, BOOL timed);
+SGLyricsResult *SGGenieResult(NSString *jsonp);
+SGLyricsResult *SGLyricsPlusResult(id root);
+SGLyricsResult *SGDeezerResult(id root);
+@class SGModRow;
+SGModRow *SGDeezerARLRow(void);
+BOOL SGDeezerARLSet(void);
 
 // LrcLib.m. Timed LRC as a synced result, nil when no line in it is timed.
 SGLyricsResult *SGLyricsLRCResult(NSString *lrc);

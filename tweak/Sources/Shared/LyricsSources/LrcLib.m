@@ -18,6 +18,31 @@ static NSDictionary<NSString *, NSString *> *headers(void) {
     return @{@"User-Agent": @"Vitrine " @SG_VERSION};
 }
 
+// Bound transport before JSON allocation, and each sheet before ranking or LRC conversion.
+static void getJSON(NSURL *url, void (^done)(id)) {
+    SGLyricsSourceRequest(url, headers(), nil, ^(NSData *data, NSInteger status) {
+        id reply = status == 200 && data.length ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        done(reply);
+    });
+}
+
+static BOOL boundedSheet(id text) {
+    if (![text isKindOfClass:NSString.class]) return YES;
+    if ([text length] > 256 * 1024 || [text lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 256 * 1024) return NO;
+    __block NSUInteger lines = 0;
+    [text enumerateSubstringsInRange:NSMakeRange(0, [text length])
+                            options:NSStringEnumerationByLines | NSStringEnumerationSubstringNotRequired
+                         usingBlock:^(NSString *line, NSRange range, NSRange enclosing, BOOL *stop) {
+        if (++lines > 4000) *stop = YES;
+    }];
+    return lines <= 4000;
+}
+
+static BOOL boundedRecord(id record) {
+    return [record isKindOfClass:NSDictionary.class] &&
+        boundedSheet(record[@"syncedLyrics"]) && boundedSheet(record[@"plainLyrics"]);
+}
+
 // [00:34.30] Look — the timestamp in minutes, seconds and hundredths, or thousandths where a line
 // carries three digits. A line may be stamped more than once when it is sung more than once, and
 // the tags LRC opens with ([ar:…], [length:…]) are not timestamps, so they fall out on their own.
@@ -78,26 +103,68 @@ SGLyricsResult *SGLyricsLRCResult(NSString *lrc) {
     return result;
 }
 
-static SGLyricsResult *resultFrom(NSDictionary *record) {
-    if (![record isKindOfClass:NSDictionary.class]) return nil;
-    SGLyricsResult *result = [SGLyricsResult new];
-    result.instrumental = [record[@"instrumental"] boolValue];
-    if (result.instrumental) return result;
-    id synced = record[@"syncedLyrics"], plain = record[@"plainLyrics"];
-    SGLyricsResult *timed = SGLyricsLRCResult(synced);
-    if (timed) return timed;
-    // Nothing timed, but the words still beat an empty page when no other source has any.
-    if (![plain isKindOfClass:NSString.class] || ![plain length]) return nil;
-    NSMutableArray<NSNumber *> *starts = [NSMutableArray array];
-    NSMutableArray<NSString *> *texts = [NSMutableArray array];
-    for (NSString *row in [plain componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
-        [starts addObject:@0];
-        [texts addObject:row.length ? row : @"♪"];
+SGLyricsResult *SGLrcLibRecordResult(NSDictionary *record) {
+    if (!boundedRecord(record)) return nil;
+    SGLyricsResult *result;
+    if ([record[@"instrumental"] isKindOfClass:NSNumber.class] && [record[@"instrumental"] boolValue]) {
+        result = [SGLyricsResult new];
+        result.instrumental = YES;
+    } else {
+        result = SGLyricsLRCResult(record[@"syncedLyrics"]);
+        if (!result.karaokeLines.count) result = SGLyricsPlainResult(record[@"plainLyrics"], @"LRCLIB");
+        if (!result.karaokeLines.count) return nil;
     }
-    result.starts = starts;
-    result.texts = texts;
-    result.karaokeLines = SGKaraokeStaticLines(texts);
+    result.provider = @"LRCLIB";
+    result.pageProvider = @"LRCLIB";
     return result;
+}
+
+void SGLrcLibGetID(NSNumber *recordID, void (^done)(SGLyricsResult *result)) {
+    NSString *identifier = SGLyricsDecimalID(recordID);
+    if (!identifier.length) { done(nil); return; }
+    NSURL *url = [NSURL URLWithString:[kGet stringByAppendingFormat:@"/%@", identifier]];
+    getJSON(url, ^(id record) { done(SGLrcLibRecordResult(record)); });
+}
+
+// Search is for a person choosing a recording: keep different lengths, and show the closest first
+// within each timing kind. A malformed record has nothing useful to choose and is left out.
+static NSArray<NSDictionary *> *searchRecords(id reply, NSInteger seconds) {
+    NSMutableArray<NSDictionary *> *records = [NSMutableArray array];
+    NSUInteger read = 0;
+    for (id raw in [reply isKindOfClass:NSArray.class] ? reply : @[]) {
+        if (read++ >= 100) break;
+        if (!boundedRecord(raw)) continue;
+        id identifier = raw[@"id"];
+        if (![identifier isKindOfClass:NSNumber.class] || !SGLyricsDecimalID(identifier).length || [identifier longLongValue] <= 0) continue;
+        double duration = 0;
+        if (!SGLyricsNumber(raw[@"duration"], &duration)) duration = 0;
+        if (!isfinite(duration) || duration < 0 || duration > 86400) duration = 0;
+        BOOL synced = [raw[@"syncedLyrics"] isKindOfClass:NSString.class] && [raw[@"syncedLyrics"] length];
+        BOOL instrumental = [raw[@"instrumental"] isKindOfClass:NSNumber.class] && [raw[@"instrumental"] boolValue];
+        [records addObject:@{@"id": identifier, @"title": SGLyricsString(raw[@"trackName"], 4096) ?: @"",
+                             @"artist": SGLyricsString(raw[@"artistName"], 4096) ?: @"",
+                             @"album": SGLyricsString(raw[@"albumName"], 4096) ?: @"", @"seconds": @(duration),
+                             @"synced": @(synced), @"instrumental": @(instrumental), @"record": raw}];
+    }
+    [records sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        if ([a[@"synced"] boolValue] != [b[@"synced"] boolValue]) return [a[@"synced"] boolValue] ? NSOrderedAscending : NSOrderedDescending;
+        if (seconds <= 0) return NSOrderedSame;
+        double off = fabs([a[@"seconds"] doubleValue] - seconds), wasOff = fabs([b[@"seconds"] doubleValue] - seconds);
+        return off < wasOff ? NSOrderedAscending : off > wasOff ? NSOrderedDescending : NSOrderedSame;
+    }];
+    return records.count > 20 ? [records subarrayWithRange:NSMakeRange(0, 20)] : [records copy];
+}
+
+void SGLrcLibSearch(NSString *title, NSString *artist, NSInteger seconds, void (^done)(NSArray<NSDictionary *> *records)) {
+    void (^search)(void) = ^{
+        if (!title.length && !artist.length) { done(@[]); return; }
+        NSMutableDictionary *query = [NSMutableDictionary dictionary];
+        if (title.length) query[@"track_name"] = title;
+        if (artist.length) query[@"artist_name"] = artist;
+        getJSON(SGLyricsURL(kSearch, query), ^(id reply) { done(searchRecords(reply, seconds)); });
+    };
+    if (NSThread.isMainThread) search();
+    else dispatch_async(dispatch_get_main_queue(), search);
 }
 
 // How good a recording is for the track: timed beats untimed, then the closest length. With no
@@ -120,8 +187,10 @@ static BOOL betterRecord(NSDictionary *record, NSDictionary *best, NSInteger sec
 
 static NSDictionary *bestOf(id found, NSInteger seconds) {
     NSDictionary *best = nil;
+    NSUInteger read = 0;
     for (NSDictionary *record in [found isKindOfClass:NSArray.class] ? found : @[]) {
-        if (![record isKindOfClass:NSDictionary.class]) continue;
+        if (read++ >= 100) break;
+        if (!boundedRecord(record)) continue;
         NSInteger length = (NSInteger)[record[@"duration"] doubleValue];
         if (seconds > 0 && length > 0 && labs(length - seconds) > kLengthSlack) continue;
         if (betterRecord(record, best, seconds)) best = record;
@@ -142,9 +211,9 @@ SGLyricsAsk SGLrcLibAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *r
     if (query.album.length) search[@"album_name"] = query.album;
 
     void (^bySearch)(void) = ^{
-        SGLyricsGetJSON(SGLyricsURL(kSearch, search), headers(), ^(id found) {
+        getJSON(SGLyricsURL(kSearch, search), ^(id found) {
             NSDictionary *record = bestOf(found, query.seconds);
-            SGLyricsResult *result = resultFrom(record);
+            SGLyricsResult *result = SGLrcLibRecordResult(record);
             SGLog(@"lrclib: search for %@ by %@ gave %@", query.title, query.artist,
                   !result ? @"nothing" : result.instrumental ? @"an instrumental"
                   : result.synced ? [NSString stringWithFormat:@"%lu timed lines", (unsigned long)result.karaokeLines.count]
@@ -160,8 +229,8 @@ SGLyricsAsk SGLrcLibAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *r
     }
     NSMutableDictionary<NSString *, NSString *> *exact = [search mutableCopy];
     exact[@"duration"] = @(query.seconds).stringValue;
-    SGLyricsGetJSON(SGLyricsURL(kGet, exact), headers(), ^(id record) {
-        SGLyricsResult *result = resultFrom(record);
+    getJSON(SGLyricsURL(kGet, exact), ^(id record) {
+        SGLyricsResult *result = SGLrcLibRecordResult(record);
         if (!result) {
             bySearch();
             return;

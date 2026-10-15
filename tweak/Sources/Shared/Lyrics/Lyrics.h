@@ -17,15 +17,18 @@ SGModRow *SGLockScreenLyricsRow(void);
 SGModRow *SGLyricsTranslationLanguageRow(void);
 SGModRow *SGLyricsWordTimingRow(void);
 SGModRow *SGLyricsRomanisedRow(void);
+SGModRow *SGLyricsJapaneseReadingRow(void);
 SGModRow *SGLyricsDelayRow(void);
 
 // Shows a line written in another alphabet (Japanese, Korean, Chinese, Cyrillic, Greek, Thai, Arabic,
 // Hebrew, Devanagari...) again under itself in Latin letters, before its translation. Off by default.
 // Only the redesign's lyrics view draws it, and it applies at once: the switch posts the notification.
 #define SGKeyLyricsRomanised @"spotifyglass.lyricsRomanised"
+// A Japanese song reads in hiragana instead of romaji; kana and Latin stay as written. Off by default.
+#define SGKeyLyricsJapaneseKana @"spotifyglass.lyricsJapaneseKana"
 extern NSNotificationName const SGLyricsRomanisedDidChangeNotification;
 // Romanise.m: the text in Latin letters, offline; nil where it has no letter of another script, or
-// reads the same. `japanese` reads kanji the Japanese way, for a song SGLyricsLooksJapanese says is
+// reads the same. With Japanese reading set to Hiragana, only tokens holding kanji change. `japanese` reads kanji the Japanese way, for a song SGLyricsLooksJapanese says is
 // (a line of kanji alone would read as Chinese). Safe off the main thread, and kept per text.
 NSString *SGLyricsRomanised(NSString *text, BOOL japanese);
 // Whether any of the lines has kana in it.
@@ -117,6 +120,8 @@ NSArray<SGKaraokeLine *> *SGKaraokeInTimeOrder(NSArray<SGKaraokeLine *> *lines);
 
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID);   // nil until the lyrics came
 void SGKaraokeKeepLines(NSString *trackID, NSArray<SGKaraokeLine *> *lines);
+// Main queue: the track's kept lines, request marks and losses dropped.
+void SGKaraokeForgetLyrics(NSString *trackID);
 // Posted on the main queue, object the track's id as SGKaraokePlayingTrack names it, when lines are kept
 // for it, and when a look for its lyrics (SGKaraokeLooking) ends with none, so a reader waiting on one
 // learns the look is over.
@@ -148,11 +153,23 @@ BOOL SGLyricsStandAsideForEevee(void);
 // The base62 id, a local file's lyrics key (Shared/LocalFiles), nil before the player reported.
 NSString *SGKaraokePlayingTrack(void);
 NSInteger SGKaraokePositionMs(void);     // negative when unknown
-// The Lyrics page's Delay: every line shows this many ms later than the song, for headphones that play
-// behind it. Whatever times lines against the position compares them with the position less this, and a
-// tap on a line seeks to its start plus this. Read at every call, so a change applies at once.
+// The Lyrics page's Delay plus the playing track's and current output's offsets. Positive shows
+// lines later, negative earlier: compare with position less this, and seek to a line's start plus
+// this. Kept in memory and safe on any thread; no defaults read on the frame's clock.
 #define SGKeyLyricsDelay @"spotifyglass.lyricsDelay"
+#define SGKeyLyricsTrackOffsets @"spotifyglass.lyrics.trackOffsets"
+#define SGKeyLyricsRouteOffsets @"spotifyglass.lyrics.routeOffsets"
 NSInteger SGKaraokeDelayMs(void);
+// Main queue, after an offset is set or the output changes.
+extern NSNotificationName const SGLyricsOffsetsDidChangeNotification;
+NSInteger SGLyricsTrackOffsetMs(NSString *trackID);
+// Clamped to -5000...5000; zero removes it. At most 500 tracks, always keeping the one just set.
+void SGLyricsSetTrackOffsetMs(NSString *trackID, NSInteger ms);
+// The output's portName, nil for the built-in speaker or receiver; offsets use its port UID.
+NSString *SGLyricsRouteName(void);
+NSInteger SGLyricsRouteOffsetMs(void);
+// The same clamp; zero removes it, and the built-in speaker and receiver are left alone.
+void SGLyricsSetRouteOffsetMs(NSInteger ms);
 void SGKaraokeSeek(NSInteger ms);
 id SGKaraokePlayer(void);                // SPTEsperantoPlayer, nil before the app asked it for its state
 // A track the player has reported, by its base62 id; nil for one it has not played this session.

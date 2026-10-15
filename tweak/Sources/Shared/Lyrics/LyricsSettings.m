@@ -21,7 +21,7 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
         return count ? @(count).stringValue : SGL(@"settings.lyrics.imported_lrc.value.none", @"None");
     };
     NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources, imported,
-        SGSwitchRow(SGL(@"settings.lyrics.all_tracks.title", @"Lyrics for every track"), SGL(@"settings.lyrics.all_tracks.subtitle", @"Even where Spotify has none"), SGKeyLyricsAllTracks), SGSpicyLyricsKeyRow(), nil];
+        SGSwitchRow(SGL(@"settings.lyrics.all_tracks.title", @"Lyrics for every track"), SGL(@"settings.lyrics.all_tracks.subtitle", @"Even where Spotify has none"), SGKeyLyricsAllTracks), SGSpicyLyricsKeyRow(), SGDeezerARLRow(), nil];
     // Spicy Lyrics' terms ask for its credit wherever its lines show (Shared/LyricsSources/SpicyLyrics.m), so the switch
     // says so, or its credit under the lyrics reads as the switch not working (issue #20).
     if (namingSource) [rows addObject:SGOptionRow(SGL(@"settings.lyrics.show_source.title", @"Show source"), SGL(@"settings.lyrics.show_source.subtitle", @"Spicy Lyrics is always credited after the last line: its terms ask for it"), SGKeyLyricsCredit)];
@@ -56,6 +56,18 @@ SGModRow *SGLyricsRomanisedRow(void) {
     return row;
 }
 
+SGModRow *SGLyricsJapaneseReadingRow(void) {
+    NSArray<NSString *> *choices = @[SGL(@"settings.lyrics.japanese_reading.romaji", @"Romaji"),
+                                    SGL(@"settings.lyrics.japanese_reading.hiragana", @"Hiragana")];
+    SGModRow *row = SGMenuRow(SGL(@"settings.lyrics.japanese_reading.title", @"Japanese reading"), choices,
+                             ^NSString *{ return choices[SGFlag(SGKeyLyricsJapaneseKana, NO) ? 1 : 0]; }, ^(NSInteger index) {
+        SGSetEnabled(SGKeyLyricsJapaneseKana, index == 1);
+        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsRomanisedDidChangeNotification object:nil];
+    });
+    row.waitsOn = SGKeyLyricsRomanised;
+    return row;
+}
+
 // Only the redesign's lyrics view sweeps words.
 SGModRow *SGLyricsWordTimingRow(void) {
     return SGOptionRow(SGL(@"settings.lyrics.simulate_word_timing.title", @"Simulate word timing"), nil, SGKeyLyricsSimulateWords);
@@ -63,7 +75,7 @@ SGModRow *SGLyricsWordTimingRow(void) {
 
 // Read wherever lines are timed, so it applies as the thumb moves.
 SGModRow *SGLyricsDelayRow(void) {
-    return SGSliderRow(SGL(@"settings.lyrics.delay.title", @"Delay"), nil, 0, 1000, 25, ^double { return SGKaraokeDelayMs(); },
+    return SGSliderRow(SGL(@"settings.lyrics.delay.title", @"Delay"), nil, 0, 1000, 25, ^double { return SGInt(SGKeyLyricsDelay, 0); },
                        ^(double value) { SGSetInt(SGKeyLyricsDelay, lround(value)); },
                        ^NSString *(double value) { return [NSString stringWithFormat:SGL(@"settings.lyrics.delay.format", @"%ld ms"), lround(value)]; });
 }

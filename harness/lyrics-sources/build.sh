@@ -7,6 +7,6 @@ SRC=$(cd "$HERE/../../tweak/Sources" && pwd)
 LS="$SRC/Shared/LyricsSources"
 mkdir -p "$HERE/build"
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$(xcrun --sdk macosx --show-sdk-path)" -iframework "$(xcrun --sdk macosx --show-sdk-path)/System/iOSSupport/System/Library/Frameworks" -fobjc-arc -g -Wall -I"$SRC" -DSG_VERSION=\"0.0.0\" \
-    "$HERE/check.m" "$LS/KuGou.m" "$LS/QQMusic.m" "$LS/NetEase.m" "$LS/LrcLib.m" "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
-    -framework UIKit -framework Foundation -lz -o "$HERE/build/check"
+    "$HERE/check.m" "$LS/KuGou.m" "$LS/QQMusic.m" "$LS/NetEase.m" "$LS/LrcLib.m" "$LS/Bugs.m" "$LS/Genie.m" "$LS/LyricsPlus.m" "$LS/Deezer.m" "$SRC/Shared/Lyrics/Romanise.m" "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
+    -framework UIKit -framework Foundation -framework Security -lz -o "$HERE/build/check"
 "$HERE/build/check" "$@"

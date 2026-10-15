@@ -14,6 +14,7 @@
 #import "Shared/Sing/Sing.h"
 #import "Shared/Player/PlayerState.h"
 #import "Headers/SPTPlayer.h"
+#import <AVFoundation/AVFoundation.h>
 #import <mach-o/dyld.h>
 #import <objc/runtime.h>
 
@@ -31,6 +32,8 @@ static NSMutableSet<NSString *> *sg_requested;
 // and leaves them asked for, so no second request runs beside the first.
 static NSMutableSet<NSString *> *sg_asking;
 static NSMutableDictionary<NSString *, NSNumber *> *sg_losses;   // requests lost in a row, by track
+// A new token on each ask lets a forget retire both its reply and its retry pause. Main queue.
+static NSMutableDictionary<NSString *, NSObject *> *sg_requests;
 static NSMutableSet<NSString *> *sg_looking;   // asked of the sources or spclient right now (SGKaraokeLooking)
 static NSDictionary<NSString *, NSString *> *sg_spclientHeaders;
 static NSMutableArray<void (^)(NSDictionary<NSString *, NSString *> *)> *sg_headersWaiting;   // SGSpclientHeaders
@@ -44,6 +47,119 @@ static __weak SPTPlayerTrack *sg_lastSeen;
 static NSString *sg_lastSeenID;   // the player makes a new track object on every state it reports, so the id is what tells a change
 static BOOL sg_ownSources;   // a source of the mod's answers the color-lyrics request, not Spotify
 static char kBodyKey;
+
+NSNotificationName const SGLyricsOffsetsDidChangeNotification = @"spotifyglass.lyrics.offsetsDidChange";
+static NSObject *sg_offsetsLock;
+static NSMutableDictionary<NSString *, NSNumber *> *sg_trackOffsets, *sg_routeOffsets;
+static NSString *sg_routeUID, *sg_routeName;
+static NSInteger sg_delay;
+
+static NSInteger offsetMs(id value) {
+    return [value isKindOfClass:NSNumber.class] ? MAX(-5000, MIN(5000, [value integerValue])) : 0;
+}
+
+static NSMutableDictionary *offsetsFrom(id stored) {
+    NSMutableDictionary *offsets = [NSMutableDictionary dictionary];
+    if ([stored isKindOfClass:NSDictionary.class]) {
+        for (id key in stored) {
+            if ([key isKindOfClass:NSString.class] && [key length] && offsetMs(stored[key])) offsets[key] = @(offsetMs(stored[key]));
+        }
+    }
+    return offsets;
+}
+
+static void offsetsChanged(void) {
+    void (^post)(void) = ^{
+        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsOffsetsDidChangeNotification object:nil];
+    };
+    if (NSThread.isMainThread) post();
+    else dispatch_async(dispatch_get_main_queue(), post);
+}
+
+static void readRoute(void) {
+    AVAudioSessionPortDescription *output = AVAudioSession.sharedInstance.currentRoute.outputs.firstObject;
+    BOOL external = output && ![output.portType isEqualToString:AVAudioSessionPortBuiltInSpeaker]
+                           && ![output.portType isEqualToString:AVAudioSessionPortBuiltInReceiver];
+    @synchronized (sg_offsetsLock) {
+        sg_routeUID = external && output.UID.length ? [output.UID copy] : nil;
+        sg_routeName = sg_routeUID ? [output.portName copy] : nil;
+    }
+}
+
+static void readOffsets(void) {
+    @synchronized (sg_offsetsLock) {
+        NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+        sg_trackOffsets = offsetsFrom([defaults objectForKey:SGKeyLyricsTrackOffsets]);
+        for (NSString *track in sg_trackOffsets.allKeys) {
+            if (sg_trackOffsets.count <= 500) break;
+            [sg_trackOffsets removeObjectForKey:track];
+        }
+        sg_routeOffsets = offsetsFrom([defaults objectForKey:SGKeyLyricsRouteOffsets]);
+        sg_delay = MAX(0, MIN(1000, [defaults integerForKey:SGKeyLyricsDelay]));
+    }
+}
+
+static void setUpOffsets(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        sg_offsetsLock = [NSObject new];
+        readOffsets();
+        readRoute();
+        // These notifications may arrive from the audio or preferences thread. Never make that
+        // thread wait for main: at launch main may itself be waiting for Spotify's CoreThread.
+        [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionRouteChangeNotification object:nil queue:nil
+                                                    usingBlock:^(NSNotification *note) {
+            dispatch_async(dispatch_get_main_queue(), ^{ readRoute(); offsetsChanged(); });
+        }];
+        [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
+                                                    usingBlock:^(NSNotification *note) {
+            readOffsets();
+        }];
+    });
+}
+
+NSInteger SGLyricsTrackOffsetMs(NSString *trackID) {
+    setUpOffsets();
+    @synchronized (sg_offsetsLock) { return trackID ? sg_trackOffsets[trackID].integerValue : 0; }
+}
+
+void SGLyricsSetTrackOffsetMs(NSString *trackID, NSInteger ms) {
+    if (!trackID.length) return;
+    setUpOffsets();
+    @synchronized (sg_offsetsLock) {
+        ms = MAX(-5000, MIN(5000, ms));
+        if (ms) sg_trackOffsets[trackID] = @(ms);
+        else [sg_trackOffsets removeObjectForKey:trackID];
+        for (NSString *other in sg_trackOffsets.allKeys) {
+            if (sg_trackOffsets.count <= 500) break;
+            if (![other isEqualToString:trackID]) [sg_trackOffsets removeObjectForKey:other];
+        }
+        [NSUserDefaults.standardUserDefaults setObject:[sg_trackOffsets copy] forKey:SGKeyLyricsTrackOffsets];
+    }
+    offsetsChanged();
+}
+
+NSString *SGLyricsRouteName(void) {
+    setUpOffsets();
+    @synchronized (sg_offsetsLock) { return sg_routeName; }
+}
+
+NSInteger SGLyricsRouteOffsetMs(void) {
+    setUpOffsets();
+    @synchronized (sg_offsetsLock) { return sg_routeUID ? sg_routeOffsets[sg_routeUID].integerValue : 0; }
+}
+
+void SGLyricsSetRouteOffsetMs(NSInteger ms) {
+    setUpOffsets();
+    @synchronized (sg_offsetsLock) {
+        if (!sg_routeUID) return;
+        ms = MAX(-5000, MIN(5000, ms));
+        if (ms) sg_routeOffsets[sg_routeUID] = @(ms);
+        else [sg_routeOffsets removeObjectForKey:sg_routeUID];
+        [NSUserDefaults.standardUserDefaults setObject:[sg_routeOffsets copy] forKey:SGKeyLyricsRouteOffsets];
+    }
+    offsetsChanged();
+}
 
 static NSString *trackInURL(NSURL *url) {
     NSString *path = url.path;
@@ -143,6 +259,7 @@ static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines) {
             if ([spared containsObject:kept]) continue;
             [sg_lyrics removeObjectForKey:kept];
             [sg_requested removeObject:kept];
+            [sg_requests removeObjectForKey:kept];
         }
     }
     sg_lyrics[track] = SGKaraokeInTimeOrder(lines);
@@ -151,7 +268,23 @@ static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines) {
 }
 
 void SGKaraokeKeepLines(NSString *track, NSArray<SGKaraokeLine *> *lines) {
-    dispatch_async(dispatch_get_main_queue(), ^{ keep(track, lines); });
+    if (!track.length) return;
+    void (^save)(void) = ^{
+        if (!sg_lyrics) sg_lyrics = [NSMutableDictionary dictionary];
+        keep(track, lines);
+    };
+    if (NSThread.isMainThread) save();
+    else dispatch_async(dispatch_get_main_queue(), save);
+}
+
+void SGKaraokeForgetLyrics(NSString *trackID) {
+    if (!trackID.length) return;
+    [sg_lyrics removeObjectForKey:trackID];
+    [sg_requested removeObject:trackID];
+    [sg_asking removeObject:trackID];
+    [sg_looking removeObject:trackID];
+    [sg_losses removeObjectForKey:trackID];
+    [sg_requests removeObjectForKey:trackID];
 }
 
 static void received(NSURLSession *session, NSURLSessionTask *task, NSData *data) {
@@ -174,7 +307,9 @@ static void completed(NSURLSessionTask *task, NSError *error) {
     if (error || !track) return;
     NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesFromBody(body);
     SGLog(@"karaoke: lyrics for %@, %lu bytes, %lu synced lines", track, (unsigned long)body.length, (unsigned long)lines.count);
-    if (lines) SGKaraokeKeepLines(track, lines);
+    if (lines) dispatch_async(dispatch_get_main_queue(), ^{
+        if (!SGLyricsPinnedID(track)) SGKaraokeKeepLines(track, lines);
+    });
 }
 
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) {
@@ -184,13 +319,16 @@ NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) {
 // Main queue only. The track stays asked for through the pause, so the readers asking on every tick
 // send nothing until it is over.
 static void askAgainLater(NSString *trackID) {
+    NSObject *request = sg_requests[trackID];
     NSUInteger losses = sg_losses[trackID].unsignedIntegerValue;
     sg_losses[trackID] = @(losses + 1);
     NSTimeInterval pause = MIN(kRetryPause * pow(2, losses), kRetryPauseMost);
     SGLog(@"karaoke: lyrics for %@ not answered, may ask again in %.0fs", trackID, pause);
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(pause * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (sg_requests[trackID] != request) return;
         [sg_asking removeObject:trackID];
         [sg_requested removeObject:trackID];
+        [sg_requests removeObjectForKey:trackID];
     });
 }
 
@@ -253,6 +391,9 @@ BOOL SGEeveeLyricsOn(void) {
 static BOOL requestFromSpotify(NSString *trackID) {
     NSDictionary<NSString *, NSString *> *headers = sg_spclientHeaders;
     if (!headers || SGLyricsStandAsideForEevee()) return NO;
+    if (!sg_requests) sg_requests = [NSMutableDictionary dictionary];
+    NSObject *token = [NSObject new];
+    sg_requests[trackID] = token;
     [sg_requested addObject:trackID];
     [sg_asking addObject:trackID];
     [sg_looking addObject:trackID];
@@ -274,10 +415,12 @@ static BOOL requestFromSpotify(NSString *trackID) {
         // spclient request brings a fresh one.
         BOOL lost = SGLyricsReplyFailed(response, error) || status == 401 || status == 403;
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (sg_requests[trackID] != token) return;
             [sg_looking removeObject:trackID];
             if (lost) {
                 askAgainLater(trackID);
             } else {
+                [sg_requests removeObjectForKey:trackID];
                 [sg_asking removeObject:trackID];
                 [sg_losses removeObjectForKey:trackID];
                 // Asked after the chain found plain text only: Spotify's replace it only when they are timed.
@@ -296,7 +439,7 @@ static BOOL requestFromSpotify(NSString *trackID) {
 
 void SGKaraokeAskSpotifyForTiming(NSString *trackID) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!trackID || [sg_requested containsObject:trackID]) return;
+        if (!trackID || [sg_requested containsObject:trackID] || SGLyricsPinnedID(trackID)) return;
         requestFromSpotify(trackID);
     });
 }
@@ -336,45 +479,68 @@ void SGKaraokeRequestLyrics(NSString *trackID) {
     // spclient has nothing for a local file, which only the sources can name. A file of the user's own,
     // linked to it or matching its names, comes before every source.
     BOOL local = SGLocalFileIs(trackID);
-    SGLyricsResult *imported = local ? SGImportedLRCFor(trackID, nil, nil) : nil;
+    BOOL pinned = SGLyricsPinnedID(trackID) != nil;
+    SGLyricsResult *imported = local && !pinned ? SGImportedLRCFor(trackID, nil, nil) : nil;
     if (imported) {
         keep(trackID, imported.karaokeLines);
         SGLyricsSetCredit(trackID, imported.provider);
         return;
     }
-    if (!sg_ownSources && !local) {
+    if (!sg_ownSources && !local && !pinned) {
         requestFromSpotify(trackID);
         return;
     }
     [sg_requested addObject:trackID];
     [sg_asking addObject:trackID];
     [sg_looking addObject:trackID];
+    if (!sg_requests) sg_requests = [NSMutableDictionary dictionary];
+    NSObject *token = [NSObject new];
+    sg_requests[trackID] = token;
     void (^answered)(SGLyricsResult *) = ^(SGLyricsResult *lyrics) {
+        if (sg_requests[trackID] != token) return;
         [sg_looking removeObject:trackID];
+        if (lyrics.instrumental) {
+            [sg_requests removeObjectForKey:trackID];
+            [sg_asking removeObject:trackID];
+            [sg_losses removeObjectForKey:trackID];
+            keep(trackID, @[]);
+            SGLyricsSetCredit(trackID, lyrics.provider);
+            return;
+        }
         if (lyrics.karaokeLines) {
             [sg_asking removeObject:trackID];
             [sg_losses removeObjectForKey:trackID];
             keep(trackID, lyrics.karaokeLines);   // on the main queue, where the sources answer
             SGLyricsSetCredit(trackID, lyrics.provider);
             // Plain text is shown while Spotify is asked whether it has the song timed; it has no local file.
-            if (local || SGKaraokeLinesTiming(lyrics.karaokeLines) != SGKaraokeTimingNone) return;
+            if (local || pinned || SGKaraokeLinesTiming(lyrics.karaokeLines) != SGKaraokeTimingNone) {
+                [sg_requests removeObjectForKey:trackID];
+                return;
+            }
         } else if (local) {
             // Asked again after a pause; a miss the sources keep answers at once then. An instrumental, or
             // a file out of tries, is left asked for: the readers ask on every tick, and an edit of its
             // names gives it a new key.
             if (!lyrics.instrumental && sg_losses[trackID].unsignedIntegerValue < kLocalTries) askAgainLater(trackID);
-            else [sg_asking removeObject:trackID];
+            else {
+                [sg_asking removeObject:trackID];
+                [sg_requests removeObjectForKey:trackID];
+            }
             announce(trackID);
             return;
         }
         [sg_asking removeObject:trackID];
         [sg_requested removeObject:trackID];
         // Spotify is asked next, so the look goes on; with nothing to ask it with, it is over.
-        if (!requestFromSpotify(trackID)) announce(trackID);
+        if (!requestFromSpotify(trackID)) {
+            [sg_requests removeObjectForKey:trackID];
+            announce(trackID);
+        }
     };
-    if (sg_ownSources) {
+    if (sg_ownSources || pinned) {
         SGLyricsFetch(trackID, answered);
     } else if (!askLrcLib(trackID, answered)) {
+        [sg_requests removeObjectForKey:trackID];
         [sg_asking removeObject:trackID];
         [sg_looking removeObject:trackID];
         announce(trackID);
@@ -401,10 +567,17 @@ NSInteger SGKaraokePositionMs(void) {
 }
 
 NSInteger SGKaraokeDelayMs(void) {
-    return SGInt(SGKeyLyricsDelay, 0);
+    setUpOffsets();
+    NSString *track;
+    @synchronized (sg_seenTracks) { track = sg_lastSeenID; }
+    @synchronized (sg_offsetsLock) {
+        return sg_delay + (track ? sg_trackOffsets[track].integerValue : 0)
+                        + (sg_routeUID ? sg_routeOffsets[sg_routeUID].integerValue : 0);
+    }
 }
 
 void SGKaraokeSeek(NSInteger ms) {
+    ms = MAX(0, ms);
     id player = sg_player;
     if (![player respondsToSelector:@selector(seekTo:)]) {
         SGLog(@"seek: to %ld ms, but no player to seek", (long)ms);
@@ -479,7 +652,10 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
 // -state hook on any thread, and from the player's own reports on the main one.
 static void seen(SPTPlayerState *state) {
     SPTPlayerTrack *track = state.track;
-    if (!track || track == sg_lastSeen) return;
+    if (!track) {
+        @synchronized (sg_seenTracks) { sg_lastSeen = nil; sg_lastSeenID = nil; }
+        return;
+    }
     NSString *trackID = nil;
     @synchronized (sg_seenTracks) {
         if (track == sg_lastSeen) return;
@@ -576,7 +752,10 @@ static SGKaraokeTrackWatcher *sg_trackWatcher;
     [NSNotificationCenter.defaultCenter addObserverForName:SGLocalFileEditsDidChangeNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {
         NSString *key = SGLocalFileLyricsKey(note.object);
-        if (key && [key isEqualToString:SGKaraokePlayingTrack()]) SGKaraokeRequestLyrics(key);
+        if (key && [key isEqualToString:SGKaraokePlayingTrack()]) {
+            @synchronized (sg_seenTracks) { sg_lastSeenID = key; }
+            SGKaraokeRequestLyrics(key);
+        }
     }];
     // An imported or deleted LRC file can change any local file's lyrics, found or missed: they are
     // forgotten, but for a look still out, and the file playing is asked for again.

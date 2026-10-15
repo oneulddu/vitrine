@@ -53,3 +53,38 @@ void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<S
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
 // The Lyrics page's row: how many songs are kept, and a tap to delete them.
 SGModRow *SGSavedTranslationsRow(void);
+
+// Other services for the same menu. Keys stay in the Keychain; Google requires its own opt-in switch.
+BOOL SGDeepLKeySet(void);
+SGModRow *SGDeepLKeyRow(void);
+#define SGKeyLyricsGoogleTranslate @"spotifyglass.lyrics.googleTranslate"
+SGModRow *SGGoogleTranslateRow(void);
+void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                               void (^done)(NSArray<NSString *> *translations, NSString *error));
+void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                void (^done)(NSArray<NSString *> *translations, NSString *error));
+
+#define SGKeyLyricsOpenAIBaseURL @"spotifyglass.lyrics.openai.baseURL"
+#define SGKeyLyricsOpenAIModel @"spotifyglass.lyrics.openai.model"
+BOOL SGOpenAIKeySet(void);
+SGModRow *SGOpenAIKeyRow(void);
+void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                void (^done)(NSArray<NSString *> *translations, NSString *error));
+
+// Pure checks shared with harness/lyrics-translation. Batches contain original line indices, skip blank
+// lines and include joined newlines in their character limit. Invalid or oversized input returns nil.
+NSString *SGDeepLTargetLanguage(NSString *tag);
+NSArray<NSString *> *SGDeepLTranslationsIn(id root, NSUInteger count);
+NSArray<NSArray<NSNumber *> *> *SGLyricsTranslationBatches(NSArray<NSString *> *texts, NSUInteger maxLines, NSUInteger maxCharacters);
+NSString *SGGoogleTargetLanguage(NSString *tag);
+BOOL SGGoogleKeepsLine(NSString *text);
+NSString *SGGoogleTranslationTextIn(id root);
+NSArray<NSString *> *SGGoogleTranslationLinesIn(id root, NSUInteger count);
+NSData *SGGoogleTranslationForm(NSString *text, NSString *languageTag);
+NSURL *SGOpenAICompletionURL(NSString *base);
+NSArray<NSString *> *SGOpenAITranslationsIn(id root, NSUInteger count);
+
+// The translators' bounded, ephemeral transport, implemented in DeepL.m. Call on main; completion is
+// on main too. Retries 429 three times, and 5xx when asked. `allowed` is checked before every attempt.
+void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retryServer, BOOL (^allowed)(void),
+                                   void (^finished)(NSData *data, NSInteger status, NSError *error));

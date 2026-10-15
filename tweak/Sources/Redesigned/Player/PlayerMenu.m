@@ -4,6 +4,7 @@
 //
 //     Speed, Pitch & Reverb   opens the sliders in a popover from the ⋯ (SGPlayerShowSpeedPitchPanel): speed,
 //                             pitch, reverb and Pitch follows speed, as on Spotify's sheet (issue #14)
+//     Search Lyrics           LRCLIB searched by hand for the song, its pick pinned to it (Redesigned/Lyrics/LyricsTools.h)
 //     Show Fluid Artwork, Show Animated Artwork, Show Visualizer
 //                             a button for each of the two the background is not, while it is one of the
 //                             three, named for what it switches to
@@ -14,6 +15,8 @@
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
+#import "Shared/Lyrics/Lyrics.h"
+#import "Redesigned/Lyrics/LyricsTools.h"
 
 static __weak UIView *sg_moreButton;   // the ⋯ the sliders' panel comes from
 
@@ -51,8 +54,13 @@ static UIAction *soundMenu(void) {
     return open;
 }
 
+static NSString *sheetKind(void);
+
 static NSArray<UIMenuElement *> *playerItems(void) {
     NSMutableArray<UIMenuElement *> *items = [NSMutableArray arrayWithObject:soundMenu()];
+    // Not for a podcast: LRCLIB has songs.
+    UIAction *search = [sheetKind() isEqualToString:@"episode"] ? nil : SGRLyricsSearchAction(SGKaraokePlayingTrack());
+    if (search) [items addObject:search];
     if (SGPlayerMenuOffersAnimatedArtwork()) {
         // Buttons named for what they do, not checkmarks: the HIG's changeable label for a toggled item.
         NSArray<NSArray *> *backgrounds = @[

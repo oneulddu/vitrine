@@ -157,3 +157,22 @@ void SGKaraokeSeek(NSInteger ms) {
 NSString *SGLyricsSongName(NSString *trackID) { return @"“Sample” by Harness"; }
 // Karaoke's settings tell the lyrics to show or hide the mic.
 NSNotificationName const SGSingButtonDidChangeNotification = @"SGSingButtonDidChangeNotification";
+
+// The other translators and the lyrics' tools (LyricsTools.m): off in the harness, so the menu offers what it
+// did before, with Sync and Search LRCLIB under it.
+BOOL SGDeepLKeySet(void) { return NO; }
+BOOL SGOpenAIKeySet(void) { return NO; }
+void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                               void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+NSNotificationName const SGLyricsOffsetsDidChangeNotification = @"spotifyglass.lyricsOffsetsDidChange";
+NSNotificationName const SGLyricsPinDidChangeNotification = @"spotifyglass.lyricsPinDidChange";
+NSNumber *SGLyricsPinnedID(NSString *trackID) { return nil; }
+void SGRShowLyricsSync(NSString *trackID) { NSLog(@"harness: Sync for %@", trackID); }
+void SGRShowLyricsSearch(NSString *trackID) { NSLog(@"harness: Search LRCLIB for %@", trackID); }
+NSString *SGRLyricsSyncSummary(NSString *trackID) { return nil; }
+BOOL SGRLyricsKeepAwakeOn(void) { return NO; }
+void SGRLyricsHoldAwake(id holder, BOOL hold) {}

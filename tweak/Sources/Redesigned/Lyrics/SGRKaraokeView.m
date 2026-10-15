@@ -13,6 +13,7 @@
 #import "LyricsText.h"
 #import "LyricsLook.h"
 #import "MeaningSheet.h"
+#import "LyricsTools.h"
 #import "SGRSingButton.h"
 #import "Shared/Sing/Sing.h"
 #import "Shared/LyricsSources/LyricsSources.h"
@@ -44,7 +45,8 @@ static const CGFloat kCreditSize = 12, kCreditGap = 12, kCreditSlop = 8;
 // mic's across from it, so it is drawn smaller to weigh the same: 14 pt is about the mic's 17 pt in area.
 static const CGFloat kExtrasSide = 44, kExtrasBottom = 12, kExtrasGlyph = 14;
 static char kExtrasGlassKey;
-static const NSTimeInterval kRestyleFade = 0.3;   // the lines crossfading to a new style
+static const NSTimeInterval kRestyleFade = 0.3;
+static const NSTimeInterval kAwakeAfterPause = 5;   // Keep screen on lets the screen lock this long into a pause   // the lines crossfading to a new style
 static const NSTimeInterval kBrowseHold = 3;   // after scrolling by hand, how long until it follows the song again
 static const double kFloatMinMs = 700, kFloatLeadMs = 80;   // a short word still floats up this slowly
 // A word held this long starts to glow, and one held kGlowFullMs glows fully. The glow grows over the
@@ -1028,7 +1030,7 @@ static const NSUInteger kLinesPerFrame = 4;
         _bubble.alpha = kBubbleAlpha;
         _bubble.frame = CGRectMake(x, last.center.y - kBubbleSide / 2, kBubbleSide, kBubbleSide);
         _bubble.isAccessibilityElement = YES;
-        _bubble.accessibilityLabel = @"Meaning from the artist";
+        _bubble.accessibilityLabel = SGL(@"settings.lyricstools.meaning.artist", @"Meaning from the artist");
         [self addSubview:_bubble];
         return;
     }
@@ -1292,6 +1294,7 @@ typedef struct {
     NSArray<SGKaraokeLine *> *_passedOver;   // lines kept for the song that changed nothing here, not looked at again
     UIView *_extrasBox;   // the Kit's glass and _extras over it, which holds none, so its alpha can fade
     UIButton *_extras;
+    NSString *_extrasGlyph;   // the glyph _extras shows: translate while it has languages to offer, else ellipsis
     NSArray<SGKaraokeLine *> *_translating;   // the lines Gemini is translating, nil while it is not
     SGRSingButton *_sing;   // across from _extras
     CGFloat _builtWidth, _placedHeight;
@@ -1367,11 +1370,26 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGLyricsRomanisedDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationsChanged) name:SGLyricsTranslationsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(lookChanged) name:SGRLyricsLookDidChangeNotification object:nil];
+    // The menu says the song's offsets and whether its lyrics were picked by hand.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(offerExtras) name:SGLyricsOffsetsDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pinChanged:) name:SGLyricsPinDidChangeNotification object:nil];
     // A locked phone leaves the card in its window, so the link has to be put down by the app going
     // away rather than by the view going: see scheduleLink.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(scheduleLink) name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(scheduleLink) name:UIApplicationWillResignActiveNotification object:nil];
     return self;
+}
+
+// Lyrics picked by hand for the song shown, or the pick taken off: its lines go, and the ones kept for it next
+// are built the way a new song's are.
+- (void)pinChanged:(NSNotification *)note {
+    if (_sample || ![note.object isEqual:_track]) return;
+    _lines = nil;
+    _passedOver = nil;
+    _builtWidth = 0;
+    [self creditTo:nil];
+    [self dropLineViews];
+    [self offerExtras];
 }
 
 // Karaoke's settings switched the mic off or on: hidden at once, Karaoke itself as it was.
@@ -1407,6 +1425,7 @@ typedef struct {
 
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];
+    SGRLyricsHoldAwake(self, NO);
     free(_spans);
     free(_breaks);
 }
@@ -1610,6 +1629,7 @@ typedef struct {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startLink) object:nil];
     [_link invalidate];
     _link = nil;
+    SGRLyricsHoldAwake(self, NO);   // held again by the next frame, while the song plays
     if (!self.window) return;
     NSTimeInterval wait = SGPlayerTransitionEnds() - CACurrentMediaTime();
     if (wait <= 0) [self startLink];
@@ -1914,8 +1934,13 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
     BOOL gemini = SGGeminiKeySet(), onDevice = SGOnDeviceTranslation.translationAvailable;
     BOOL intelligence = [SGOnDeviceTranslation appleIntelligenceAvailable:language];
     // A translator is offered only for a song in another language than the one it would translate into.
-    BOOL translatable = (_foreign || SGHidden(SGKeyLyricsTranslateEverySong)) && _untranslated && (gemini || onDevice || intelligence);
-    BOOL offered = _lines && !_sample && (_hasSpoken || _hasTranslation || translatable);
+    BOOL deepl = SGDeepLKeySet(), google = SGFlag(SGKeyLyricsGoogleTranslate, NO), openai = SGOpenAIKeySet();
+    BOOL translatable = (_foreign || SGHidden(SGKeyLyricsTranslateEverySong)) && _untranslated
+        && (gemini || onDevice || intelligence || deepl || google || openai);
+    // Sync and Search LRCLIB are there for every song with lines, so the button is too; its glyph says
+    // translate only while it has a pronunciation or a translation to offer.
+    BOOL offered = _lines && !_sample && _track.length;
+    BOOL languages = _hasSpoken || _hasTranslation || translatable;
     if (!offered) {
         _extrasBox.hidden = YES;
         [self setNeedsLayout];
@@ -1935,7 +1960,7 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
         _extras.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         _extras.showsMenuAsPrimaryAction = YES;
         _extras.preferredMenuElementOrder = UIContextMenuConfigurationElementOrderFixed;
-        _extras.accessibilityLabel = @"Pronunciation and translation";
+        _extras.accessibilityLabel = SGL(@"settings.lyricstools.menu.label", @"Lyrics options");
         [_extrasBox addSubview:_extras];
         [self addSubview:_extrasBox];
         self.extrasHidden = _extrasHidden;
@@ -1943,10 +1968,13 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
     // While a translation is worked out the glyph turns into a spinner, and the menu has nothing to ask a second time.
     BOOL translating = _translating && _translating == _lines;
     UIButtonConfiguration *config = _extras.configuration;
-    if (config.showsActivityIndicator != translating) {
+    NSString *glyph = languages ? @"translate" : @"ellipsis";
+    if (config.showsActivityIndicator != translating || ![_extrasGlyph isEqualToString:glyph]) {
         config.showsActivityIndicator = translating;
+        config.image = [UIImage systemImageNamed:glyph];
+        _extrasGlyph = glyph;
         _extras.configuration = config;
-        _extras.accessibilityValue = translating ? @"Translating" : nil;
+        _extras.accessibilityValue = translating ? SGL(@"settings.lyricstools.menu.translating", @"Translating") : nil;
     }
     NSMutableArray<UIMenuElement *> *items = [NSMutableArray array];
     if (_hasSpoken) {
@@ -1986,8 +2014,32 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
         if (gemini) offer(@"Translate with Gemini", @"sparkles", @"Sends the lyrics to Google", ^(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
             SGLyricsTranslateWithGemini(track, lines, to, done);
         });
+        if (deepl) offer(SGL(@"settings.lyricstools.menu.deepl", @"Translate with DeepL"), @"character.book.closed",
+                         SGL(@"settings.lyricstools.menu.deepl.subtitle", @"Sends the lyrics to DeepL"),
+                         ^(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
+            SGLyricsTranslateWithDeepL(track, lines, to, done);
+        });
+        if (google) offer(SGL(@"settings.lyricstools.menu.google", @"Translate with Google"), @"globe",
+                          SGL(@"settings.lyricstools.menu.google.subtitle", @"Sends the lyrics to Google Translate"),
+                          ^(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
+            SGLyricsTranslateWithGoogle(track, lines, to, done);
+        });
+        if (openai) offer(SGL(@"settings.lyricstools.menu.openai", @"Translate with your AI service"), @"cpu",
+                          SGL(@"settings.lyricstools.menu.openai.subtitle", @"Sends the lyrics to the service you set"),
+                          ^(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
+            SGLyricsTranslateWithOpenAI(track, lines, to, done);
+        });
     }
-    _extras.menu = [UIMenu menuWithChildren:items];
+    // The song's own tools, under the languages: its timing, and which lyrics it gets.
+    NSString *track = _track;
+    UIAction *sync = [UIAction actionWithTitle:SGL(@"settings.lyricstools.menu.sync", @"Sync") image:[UIImage systemImageNamed:@"timer"] identifier:nil
+                                       handler:^(UIAction *action) { SGRShowLyricsSync(track); }];
+    sync.subtitle = SGRLyricsSyncSummary(track);
+    UIAction *search = [UIAction actionWithTitle:SGL(@"settings.lyricstools.menu.search", @"Search LRCLIB") image:[UIImage systemImageNamed:@"magnifyingglass"] identifier:nil
+                                         handler:^(UIAction *action) { SGRShowLyricsSearch(track); }];
+    if (SGLyricsPinnedID(track)) search.subtitle = SGL(@"settings.lyricstools.menu.search.pinned", @"Picked by hand");
+    UIMenu *tools = [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[sync, search]];
+    _extras.menu = [UIMenu menuWithChildren:items.count ? @[[UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:items], tools] : @[tools]];
     _extrasBox.hidden = NO;
     [self setNeedsLayout];
 }
@@ -2020,7 +2072,7 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
                                                                            message:error preferredStyle:UIAlertControllerStyleAlert];
             // Over the player, which is dark whatever the system's appearance.
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+            [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
             [SGTopController() presentViewController:alert animated:YES completion:nil];
         }
     });
@@ -2326,6 +2378,7 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
         _lines = nil;
         _passedOver = nil;
         _builtWidth = 0;
+        _stillSince = 0;   // the last song's pause says nothing of this one's
         [self creditTo:nil];
         [self dropLineViews];
         [self offerExtras];
@@ -2365,11 +2418,16 @@ static BOOL anyUntranslated(NSArray<SGKaraokeLine *> *lines) {
         [self setNeedsLayout];
     }
     [self setShowing:_tops != nil];
+    // Keep screen on: held while lines are shown and the song moves, let go a few seconds into a pause.
+    if (!_sample && SGRLyricsKeepAwakeOn())
+        SGRLyricsHoldAwake(self, _showing && !(_stillSince && _link.targetTimestamp - _stillSince > kAwakeAfterPause));
     // The source is settled a moment after the lines are, so it is asked for until it answers.
     if (!_sample && _lines && !_creditSource) [self creditTo:SGLyricsCreditFor(track)];
     if (!_tops) return;
     [self alignFade];
     if (_plain) {
+        // Nothing follows the clock, but it is read so a pause is seen (_stillSince), which Keep screen on goes by.
+        [self clockMs];
         [self showLinesInSight];   // it moves only when scrolled by hand
         return;
     }

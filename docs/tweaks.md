@@ -108,7 +108,12 @@ Shared:
                   screen's line and artwork, the Live Activity, the native look's lyrics page for local files), and a
                   tap on a line seeks to its start plus the delay. Karaoke's audio, the scrubber and the lyrics preview
                   are left alone. It is read at every use, so a change applies at once (checked by harness/lyrics' -check). With EeveeSpotify injected (SGEeveeSpotifyInjected), its lyrics
-                  answer Spotify's requests and the mod's sources and its own requests stand aside
+                  answer Spotify's requests and the mod's sources and its own requests stand aside. On top of the Delay, an
+                  offset per song (SGLyricsTrackOffsetMs, the newest 500) and one per output (SGLyricsRouteOffsetMs, by the
+                  port's UID, none for the iPhone's own speaker), each -5000 to 5000 ms and set from the redesign's Sync
+                  sheet, both cached in memory and the route read again on a route change. With Japanese reading set to
+                  Hiragana, a Japanese song's kanji are read in hiragana instead of romaji (Romanise.m). The new
+                  sync and state features are checked on the Mac by harness/lyrics-sources/state-build.sh
     LyricsSources/ the sources lyrics come from, asked in the order the Lyrics page puts them in and merged into the
                   best answer (LyricsSources.m, the list to drag in LyricsSourcesPage.m): Apple Music's TTML from
                   BiniLyrics.m (now lrc.red: first the TTML filed under Spotify's ISRC for the track, from
@@ -124,7 +129,13 @@ Shared:
                   kept per track, a rate limit is waited out and a refused key is left for 10 min, its reason on the
                   source's row; checked on the Mac against harness/spicy-lyrics/. QQMusic.m (line timed LRC) and KuGou.m (word timed KRC, unpacked with
                   zlib and read by NetEase.m's parser) for Chinese and other Asian songs, matched by title, singer
-                  and length; checked on the Mac against harness/lyrics-sources/. color-lyrics is answered with whichever won
+                  and length; checked on the Mac against harness/lyrics-sources/. Also: LyricsPlus.m (word
+                  and syllable timing, backing vocals, two mirrors), Bugs.m and Genie.m (Korean catalogs, line timed),
+                  and Deezer.m on the user's own ARL in the Keychain, off until one is set, its JWT kept in memory and
+                  renewed once on a refusal; their requests go through SGLyricsSourceRequest, which caps a reply at
+                  2 MiB, follows no redirect and keeps no cookie. A track can be pinned to one LRCLIB record picked by
+                  hand (SGLrcLibSearch, SGLyricsPin), asked by its id before the walk; Automatic (SGLyricsUnpin) drops
+                  the pin and everything kept for the track. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
                   its request sent to a donor track that does, so the reply is a real 200 (a 404 answered as a 200 in the
                   delegate alone never showed the card on 9.1.78); a 404 for a track not seen yet is held until the chain
@@ -143,7 +154,11 @@ Shared:
                   the user's own text, 12 lines a session, greedy and capped at 60 tokens a line, exactly one string a line by a generation schema; Translate retried once, as its first ask can fail while it loads), both in
                   OnDeviceTranslation.swift, the frameworks weak linked; and by Gemini on the user's own key (Keychain),
                   whose prompt and menu item say the lyrics go to Google. The translate items show for every song with Translate any song on (SGKeyLyricsTranslateEverySong, off), else only for a song NaturalLanguage finds in another language than the Lyrics page's (or the iPhone's): one distinct line in five it is at least 80% sure of, or two in another script (a verse in Hangul among English), not the whole song's guess (short lines sway that: Havana reads as Dutch), so songs half in English count and a repeated chorus weighs as one line; Translate on iPhone translates from the language most of those lines are in and leaves lines already in the target as they are. Apple Intelligence's lines show and are saved a batch at a time, only lines without a translation are sent, and a batch it turns down is skipped (asking again sends only those lines). Every finished translation is kept by SavedTranslations.m in Caches/Vitrine/Translations, one JSON file a song and language mapping each line's text to its translation, the newest 200, synced when the song's lines are shown: each line knows whether its translation was made here (SGKaraokeLine.translationMade), and a made one with nothing saved is taken off, so the Lyrics page's Saved translations row deletes them at once, posting SGLyricsTranslationsDidChangeNotification as Translate any song does for the open lyrics to sync and redraw. Gemini's reply read and checked on the Mac
-                  against harness/lyrics-translation/
+                  against harness/lyrics-translation/. DeepL.m (the user's own key, free or pro endpoint by the key),
+                  OpenAITranslate.m (any OpenAI-compatible chat endpoint, https only but for a local host; base URL and
+                  model in the settings, the key in the Keychain) and GoogleTranslate.m (Google Translate's keyless web
+                  endpoint, off until switched on) add their items to the same menu; their replies are checked on the
+                  Mac against the same harness
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
                   next one dimmed over the blurred cover, SGLyricsClip.m) written only when the lock screen asks for it,
@@ -580,10 +595,15 @@ Redesigned:
                   the stack moving on once the first is sung out; an instrumental break of 7 s or more held by three dots
                   that breathe and fill over its length on a Core Animation timeline laid against the song's clock; and
                   a line's pronunciation (under the words it spells) and translation, switched on from a glass button in
-                  the lyrics' corner that shows only for a song that has them, in the order of sizes the Lyrics page sets
+                  the lyrics' corner (its translate glyph an ellipsis for a song with neither), whose menu also has Sync
+                  and Search LRCLIB (LyricsTools.m: the song's and the output's offsets in steps of 10 and 100 ms, and
+                  LRCLIB searched by title and artist, the pick pinned to the song; the player's ⋯ menu has Search Lyrics
+                  too, for a song with no lines to open the lyrics on), in the order of sizes the Lyrics page sets
                   (LyricsText.h). With the Lyrics page's Romanized lyrics on, a line in another alphabet has the same
                   again in Latin letters right under its words (the source's own pronunciation where it is hidden, none
                   where it shows), before the translation, at the pronunciation's size, lit with its line but never swept.
+                  Keep screen on (SGRKeyLyricsKeepAwake, off) holds the idle timer off while lines show and the song moves,
+                  and lets it go 5 s into a pause, when the view leaves its window or the app leaves the front.
                   A word held 0.9 s or more glows and its letters rise in a wave as the sweep reaches
                   them. The size, the room between lines, the blur, the glow and the wave are the Lyrics page's look
                   (LyricsLook.h): five presets and a sheet of sliders, applied at once to every view, under a live

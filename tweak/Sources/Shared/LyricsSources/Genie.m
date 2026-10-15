@@ -1,0 +1,97 @@
+// Genie's search is HTML. Each candidate is read inside its own table row so a title can never pick
+// up the next row's artist or id. Its lyrics callback wraps a dictionary keyed by milliseconds.
+#import "Core/SGCore.h"
+#import "LyricsSources.h"
+
+static NSArray<NSTextCheckingResult *> *matches(NSString *pattern, NSString *text) {
+    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators error:nil];
+    return [regex matchesInString:text options:0 range:NSMakeRange(0, text.length)];
+}
+static NSString *capture(NSString *pattern, NSString *text) {
+    NSTextCheckingResult *match = matches(pattern, text).firstObject;
+    return match && [match rangeAtIndex:1].location != NSNotFound ? [text substringWithRange:[match rangeAtIndex:1]] : nil;
+}
+
+// Only text and attributes are needed. Decode the common named entities and numeric references,
+// without asking a web view to render a page or load its links.
+static NSString *unescape(NSString *text) {
+    if (!text) return nil;
+    NSMutableString *out = [text mutableCopy];
+    NSArray *entities = matches(@"&#(x[0-9a-f]+|[0-9]+);", text);
+    for (NSTextCheckingResult *match in entities.reverseObjectEnumerator) {
+        NSString *digits = [text substringWithRange:[match rangeAtIndex:1]];
+        unsigned long code = strtoul(([digits hasPrefix:@"x"] || [digits hasPrefix:@"X"] ? [digits substringFromIndex:1] : digits).UTF8String, NULL, [digits.lowercaseString hasPrefix:@"x"] ? 16 : 10);
+        if (!code || code > 0x10FFFF || (code >= 0xD800 && code <= 0xDFFF)) continue;
+        UTF32Char scalar = (UTF32Char)code;
+        NSString *value = [[NSString alloc] initWithBytes:&scalar length:sizeof(scalar) encoding:NSUTF32LittleEndianStringEncoding];
+        if (value) [out replaceCharactersInRange:match.range withString:value];
+    }
+    for (NSArray *pair in @[@[@"&quot;", @"\""], @[@"&apos;", @"'"], @[@"&lt;", @"<"], @[@"&gt;", @">"], @[@"&nbsp;", @" "], @[@"&amp;", @"&"]])
+        [out replaceOccurrencesOfString:pair[0] withString:pair[1] options:0 range:NSMakeRange(0, out.length)];
+    return [out stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+}
+
+static NSString *anchor(NSString *row, NSString *kind) {
+    for (NSTextCheckingResult *match in matches(@"<a\\b[^>]*>.*?</a\\s*>", row)) {
+        NSString *tag = [row substringWithRange:match.range];
+        NSString *classes = capture(@"\\bclass\\s*=\\s*['\"]([^'\"]*)['\"]", tag);
+        if (![[classes componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] containsObject:kind]) continue;
+        NSString *title = capture(@"\\btitle\\s*=\\s*['\"]([^'\"]*)['\"]", tag);
+        if ([kind isEqualToString:@"title"] && title.length) return unescape(title);
+        NSString *body = capture(@"<a\\b[^>]*>(.*?)</a\\s*>", tag);
+        NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
+        return unescape([tags stringByReplacingMatchesInString:body options:0 range:NSMakeRange(0, body.length) withTemplate:@""]);
+    }
+    return nil;
+}
+
+static NSString *songFor(NSString *html, SGLyricsQuery *query) {
+    if (!html.length || html.length > 1024 * 1024) return nil;
+    NSUInteger count = 0;
+    for (NSTextCheckingResult *match in matches(@"<tr\\b[^>]*>.*?</tr\\s*>", html)) {
+        if (++count > 300) break;
+        NSString *row = [html substringWithRange:match.range];
+        if (row.length > 32768) continue;
+        NSString *opening = capture(@"^(<tr\\b[^>]*>)", row);
+        NSString *classes = capture(@"\\bclass\\s*=\\s*['\"]([^'\"]*)['\"]", opening);
+        if (![[classes componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] containsObject:@"list"]) continue;
+        NSString *song = SGLyricsDecimalID(capture(@"\\bsongid\\s*=\\s*['\"]([0-9]+)['\"]", opening));
+        if (song && [SGLyricsMatchKey(anchor(row, @"title")) isEqualToString:SGLyricsMatchKey(query.title)] && SGLyricsSameArtist(anchor(row, @"artist"), query.artist)) return song;
+    }
+    return nil;
+}
+
+SGLyricsResult *SGGenieResult(NSString *jsonp) {
+    if (!SGLyricsString(jsonp, 262144).length) return nil;
+    NSRange open = [jsonp rangeOfString:@"("], close = [jsonp rangeOfString:@")" options:NSBackwardsSearch];
+    if (open.location == NSNotFound || close.location == NSNotFound || close.location <= open.location) return nil;
+    NSString *body = [jsonp substringWithRange:NSMakeRange(open.location + 1, close.location - open.location - 1)];
+    id root = [NSJSONSerialization JSONObjectWithData:[body dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil];
+    if (![root isKindOfClass:NSDictionary.class] || ![root count] || [root count] > 2000) return nil;
+    NSMutableArray *rows = [NSMutableArray array];
+    for (id key in root) {
+        double at;
+        NSString *text = SGLyricsString(root[key], 4096);
+        if (!SGLyricsDecimalID(key) || !SGLyricsNumber(key, &at) || !text) return nil;
+        [rows addObject:@{@"at": @(llround(at)), @"text": text}];
+    }
+    [rows sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) { return [a[@"at"] compare:b[@"at"]]; }];
+    return SGLyricsResultWithLines(SGKaraokeEstimatedLines([rows valueForKey:@"at"], [rows valueForKey:@"text"]), @"Genie");
+}
+
+SGLyricsAsk SGGenieAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *)) {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ SGGenieAsk(query, done); }); return; }
+    if (!SGLyricsMatchKey(query.title).length || !SGLyricsMatchKey(query.artist).length) { done(nil); return; }
+    NSDictionary *headers = @{@"User-Agent": SGLyricsBrowserAgent, @"Referer": @"https://www.genie.co.kr/"};
+    NSURL *url = SGLyricsURL(@"https://www.genie.co.kr/search/searchMain", @{@"query": [NSString stringWithFormat:@"%@ %@", query.title, SGLyricsLeadArtist(query.artist)]});
+    SGLyricsSourceRequest(url, headers, nil, ^(NSData *data, NSInteger status) {
+        NSString *html = status == 200 && data.length ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+        NSString *song = songFor(html, query);
+        if (!song) { done(nil); return; }
+        SGLyricsSourceRequest(SGLyricsURL(@"https://dn.genie.co.kr/app/purchase/get_msl.asp", @{@"path": @"a", @"songid": song}), headers, nil, ^(NSData *answer, NSInteger code) {
+            SGLyricsResult *result = code == 200 && answer.length ? SGGenieResult([[NSString alloc] initWithData:answer encoding:NSUTF8StringEncoding]) : nil;
+            SGLog(@"genie: %lu lines", (unsigned long)result.karaokeLines.count);
+            done(result);
+        });
+    });
+};

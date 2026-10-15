@@ -14,6 +14,7 @@ static NSString *const kCardListPath = @"/scrollsita/";
 static NSString *const kTrackPrefix = @"spotify:track:";
 // On a request sent to the donor, the track it really asks for.
 static NSString *const kDonorForKey = @"spotifyglass.lyricsDonorFor";
+static NSString *const kPinGenerationKey = @"spotifyglass.lyricsPinGeneration";
 static NSString *const kUnnamedProvider = @"Vitrine";
 
 typedef void (^SGDisposition)(NSURLSessionResponseDisposition disposition);
@@ -27,13 +28,14 @@ typedef NS_ENUM(NSInteger, SGLyricsTaskKind) {
     SGLyricsTaskMissing,    // anything but a 200
 };
 
-// What a task is and where it stands. The first five are set before the state is attached to its task
-// and never change; the rest are read and written under @synchronized on the state, from URLSession's
+// What a task is and where it stands. The request metadata is set before state is attached to its task
+// and never changes; the rest are read and written under @synchronized on the state, from URLSession's
 // delegate queue and the main queue both.
 @interface SGLyricsTaskState : NSObject
 @property (nonatomic) SGLyricsTaskKind kind;
 @property (nonatomic, copy) NSString *track;
 @property (nonatomic) NSInteger status;
+@property (nonatomic) NSUInteger pinGeneration;
 @property (nonatomic) BOOL donor, artwork;
 @property (nonatomic, strong) NSMutableData *body;     // collected, none of it forwarded
 @property (nonatomic) BOOL dropping;                   // the server's bytes go nowhere
@@ -49,6 +51,7 @@ typedef NS_ENUM(NSInteger, SGLyricsTaskKind) {
 @end
 
 static char kStateKey, kAnswerKey;
+static BOOL sg_everyTrack; // Read once at launch.
 static NSData *sg_sectionTemplate;
 static os_unfair_lock sg_templateLock = OS_UNFAIR_LOCK_INIT;
 
@@ -112,6 +115,26 @@ static NSURLRequest *donorRequestFor(NSURLRequest *request) {
     return donor;
 }
 
+// Stamp before the request starts, including requests whose response arrives after a pin change.
+// NSURLSession and its concrete subclass may both see it; preserve the first stamp.
+static NSURLRequest *lyricsRequestFor(NSURLRequest *request) {
+    if ([NSURLProtocol propertyForKey:SGLyricsOwnRequestKey inRequest:request]) return request;
+    NSString *track = donorFor(request) ?: lyricsTrack(request.URL);
+    if (!track) return request;
+    NSMutableURLRequest *marked = [request mutableCopy];
+    if (![NSURLProtocol propertyForKey:kPinGenerationKey inRequest:marked])
+        [NSURLProtocol setProperty:@(SGLyricsPinGeneration(track)) forKey:kPinGenerationKey inRequest:marked];
+    return sg_everyTrack ? (donorRequestFor(marked) ?: marked) : marked;
+}
+
+static BOOL currentChoice(SGLyricsTaskState *state) {
+    return state.pinGeneration == SGLyricsPinGeneration(state.track);
+}
+
+static NSError *staleChoiceError(void) {
+    return [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+}
+
 #pragma mark - bodies
 
 static NSData *defaultColours(void) {
@@ -168,12 +191,18 @@ static NSData *decide(NSString *track, SGLyricsResult *chain, NSData *spotifyBod
     NSArray<SGKaraokeLine *> *spotifyLines = spotifyBody ? SGKaraokeLinesFromBody(spotifyBody) : nil;
     if (!spotifyLines.count) spotifyLines = nil;
     SGKaraokeTiming spotifyTiming = SGKaraokeLinesTiming(spotifyLines);
-    BOOL replace = chain.texts.count && (chain.synced || spotifyTiming == SGKaraokeTimingNone);
+    BOOL pinned = SGLyricsPinnedID(track) != nil;
+    BOOL replace = (pinned && chain.instrumental) ||
+        (chain.texts.count && (pinned || chain.synced || spotifyTiming == SGKaraokeTimingNone));
     NSData *page = replace ? pageBody(chain, colours) : nil;
 
     NSArray<SGKaraokeLine *> *viewLines = nil;
     NSString *credit = chain.provider;
-    if (chain.karaokeLines.count && (!spotifyLines || SGKaraokeLinesTiming(chain.karaokeLines) <= spotifyTiming)) {
+    if (chain.instrumental) {
+        viewLines = @[];
+    } else if (pinned) {
+        viewLines = chain.karaokeLines;
+    } else if (chain.karaokeLines.count && (!spotifyLines || SGKaraokeLinesTiming(chain.karaokeLines) <= spotifyTiming)) {
         viewLines = chain.karaokeLines;
     } else if (spotifyLines) {
         viewLines = spotifyLines;
@@ -182,7 +211,7 @@ static NSData *decide(NSString *track, SGLyricsResult *chain, NSData *spotifyBod
     if (viewLines) SGKaraokeKeepLines(track, viewLines);
     SGLyricsSetCredit(track, credit);
     // Spotify's JSON may have the song timed where its page does not.
-    if (!donor && spotifyBody.length && SGKaraokeLinesTiming(viewLines) == SGKaraokeTimingNone) SGKaraokeAskSpotifyForTiming(track);
+    if (!pinned && !chain.instrumental && !donor && spotifyBody.length && SGKaraokeLinesTiming(viewLines) == SGKaraokeTimingNone) SGKaraokeAskSpotifyForTiming(track);
 
     NSString *provider = chain.provider.length ? chain.provider : kUnnamedProvider;
     NSString *pageGets = page ? [NSString stringWithFormat:@"%@'s lines", provider] : spotifyBody ? @"Spotify's own" : @"none";
@@ -323,6 +352,9 @@ static SGLyricsTaskState *classify(NSURLSessionTask *task, NSURLResponse *respon
     if (!track) track = lyricsTrack(original.URL) ?: lyricsTrack(current.URL);
     if (!track) return nil;
     state.track = track;
+    NSNumber *generation = [NSURLProtocol propertyForKey:kPinGenerationKey inRequest:original] ?:
+        [NSURLProtocol propertyForKey:kPinGenerationKey inRequest:current];
+    state.pinGeneration = generation ? generation.unsignedIntegerValue : SGLyricsPinGeneration(track);
     SGLog(@"lyrics: Spotify answered %ld for %@%@", (long)state.status, track, state.donor ? @" through the donor" : @"");
     if (state.status == 200 && !state.donor) {
         state.kind = SGLyricsTaskSpotify;
@@ -412,6 +444,11 @@ static void answerHeld(id delegate, NSURLSession *session, NSURLSessionDataTask 
         if (cancelled) handler(NSURLSessionResponseCancel);
         return;
     }
+    if (!currentChoice(state)) {
+        @synchronized (state) { state.delivering = NO; }
+        handler(NSURLSessionResponseCancel);
+        return;
+    }
     if (state.kind == SGLyricsTaskDonor) answerDonor(task, state, chain, response, handler, forward);
     else answerMissing(delegate, session, task, state, chain, response, handler, forward);
     @synchronized (state) { state.delivering = NO; }
@@ -451,8 +488,8 @@ static BOOL forwardsData(NSURLSessionTask *task, NSData *data) {
 // Main queue.
 static void finishSpotify(id delegate, NSURLSession *session, NSURLSessionDataTask *task, SGLyricsTaskState *state,
                           NSData *body, NSError *error, SGForwardEnd forward) {
-    if (error) {
-        forward(error);
+    if (error || !currentChoice(state)) {
+        forward(error ?: staleChoiceError());
         return;
     }
     if (isJSON(body)) {
@@ -461,6 +498,7 @@ static void finishSpotify(id delegate, NSURLSession *session, NSURLSessionDataTa
         return;
     }
     SGLyricsFetch(state.track, ^(SGLyricsResult *chain) {
+        if (!currentChoice(state)) { forward(staleChoiceError()); return; }
         NSData *page = decide(state.track, chain, body, NO, coloursIn(body));
         give(delegate, session, task, state, page ?: body);
         forward(nil);
@@ -472,8 +510,9 @@ static void finishDonor(id delegate, NSURLSession *session, NSURLSessionDataTask
                         NSData *body, NSError *error, SGForwardEnd forward) {
     SGLyricsResult *chain;
     @synchronized (state) { chain = state.chain; }
-    if (error || !chain) {
-        forward(error);
+    BOOL stale = !currentChoice(state);
+    if (error || !chain || stale) {
+        forward(error ?: (stale ? staleChoiceError() : nil));
         return;
     }
     // The donor's colors are the track's own only when they were worked out from its artwork.
@@ -585,9 +624,13 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 }
 %end
 
+%end
+
+%group SGLyricsRequests
+
 %hook NSURLSession
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
-    return %orig(donorRequestFor(request) ?: request);
+    return %orig(lyricsRequestFor(request));
 }
 %end
 
@@ -597,7 +640,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
 
 %hook __NSURLSessionLocal
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
-    return %orig(donorRequestFor(request) ?: request);
+    return %orig(lyricsRequestFor(request));
 }
 %end
 
@@ -607,15 +650,16 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
     SGLyricsMigrateLegacyKeys();
     if (!SGLyricsEnabled()) return;
     %init(SGLyricsReplies);
-    BOOL everyTrack = SGEnabled(SGKeyLyricsAllTracks);
-    if (everyTrack) {
+    BOOL everyTrack = sg_everyTrack = SGEnabled(SGKeyLyricsAllTracks);
+    if (everyTrack) { %init(SGLyricsEveryTrack); }
+    {
         // The generator gives a class that only inherits the method an override of its own, which would
         // put a second hook in front of NSURLSession's.
         SEL selector = @selector(dataTaskWithRequest:);
         Class local = objc_getClass("__NSURLSessionLocal");
         Method own = local ? ownMethod(local, selector) : NULL;
         BOOL hookLocal = own && method_getImplementation(own) != method_getImplementation(class_getInstanceMethod(NSURLSession.class, selector));
-        %init(SGLyricsEveryTrack);
+        %init(SGLyricsRequests);
         if (hookLocal) %init(SGLyricsLocalSession);
     }
     SGLog(@"lyrics: sources %@, every track %@", [SGLyricsOrder() componentsJoinedByString:@", "], everyTrack ? @"on" : @"off");
