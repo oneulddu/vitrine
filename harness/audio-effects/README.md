@@ -34,6 +34,12 @@ and 471 in turn, 512, and a mix down to single frames), and each check prints a 
 settings, a route change being a direct call: the speaker, a pair remembered with a pick, another with None, a pick
 made with nothing remembered, a hand-made curve, the effects left off, forgetting and renaming.
 
+`./build.sh presets && build/preset-files-check` checks preset files (AudioEffectsPresets.m) through the real settings:
+a preset written and read back with a name safe for Files, the master switch left out, a taken name numbered, and
+the files the reader refuses (no data, an array, another format, a later, boolean or fractional version, values that
+are not a dictionary, nothing usable, over 256 KB) or trims (keys and types this build lacks, a file name with a path
+or a dot first, a blank or long name).
+
 A last word `stress` runs the convolver, the threaded checks, rate changes and Liveprog only.
 
 ## The hook in the simulator (`sim/main.m`)

@@ -6,6 +6,7 @@
 // take its place at the same size, each weight as the family's nearest face. Read at launch.
 #import <CoreText/CoreText.h>
 #import "Core/SGCore.h"
+#import "Shared/Fonts/FontLibrary.h"
 #import "Shared/Fonts/Fonts.h"
 
 static SGAppFont sg_font;
@@ -145,7 +146,7 @@ static CGFloat fitScale(UIFontWeight weight) {
 
 SGAppFont SGAppFontChosen(void) {
     NSInteger font = SGInt(SGKeyAppFont, SGAppFontSpotify);
-    return font >= SGAppFontSpotify && font <= SGAppFontFamily ? font : SGAppFontSpotify;
+    return font >= SGAppFontSpotify && font <= SGAppFontLibrary ? font : SGAppFontSpotify;
 }
 
 NSArray<NSString *> *SGAppFontNames(void) {
@@ -179,6 +180,16 @@ NSArray<NSString *> *SGAppFontFamilies(void) {
             return;
         }
         sg_family = name;
+    }
+    // A free family downloaded from the library is registered the same way an imported one is. A family whose
+    // files are gone leaves Spotify's font and keeps the choice, so downloading it again is all it takes.
+    if (sg_font == SGAppFontLibrary) {
+        NSString *identifier = [NSUserDefaults.standardUserDefaults stringForKey:SGKeyAppFontLibrary];
+        sg_family = identifier ? SGFontLibraryRegister(identifier) : nil;
+        if (!sg_family) {
+            SGLog(@"fonts: the downloaded family %@ is not there, Spotify's stays", identifier);
+            return;
+        }
     }
     %init;
     if (sg_font >= SGAppFontRounded) %init(Designs);

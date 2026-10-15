@@ -279,7 +279,15 @@ Shared:
                   every AVAudioSessionRouteChangeNotification to another output (AudioEffects.x), a remembered output
                   gets its correction or None, and any other output takes off a correction that came on for one; a
                   pick made with nothing remembered and a curve of the user's own stay, and the master switch is
-                  never touched. Checked on the Mac by `harness/audio-effects/build.sh route`.
+                  never touched. Checked on the Mac by `harness/audio-effects/build.sh route`. A preset of the
+                  user's is shared from a swipe or a long press as a file (`<name>.vitrine-preset.json`:
+                  {"format": "vitrine.audio-preset", "version": 1, "name", "values"}) through the share sheet, and
+                  Import preset file… reads one from Files on a queue of its own: another format, a later version,
+                  over 256 KB or nothing usable is refused, values are kept to this build's dsp keys and types (never
+                  the master switch, a file name with a path or a leading dot dropped), and it is saved under Yours,
+                  not applied, a name taken asking Replace or Keep both. An impulse response, DDC or Liveprog file
+                  is named, not carried; the alert lists the ones missing here. Checked on the Mac by
+                  `harness/audio-effects/build.sh presets`.
                   Tested on the Mac against harness/audio-effects/ and harness/autoeq/, the hook in the simulator
                   against its sim/, the page against harness/audio-effects-page/
     AutoMix/      Spotify's own Automix and Crossfade, which its player core does, set from one page (AutoMix.h lists
@@ -773,12 +781,18 @@ Typewriter), each weight taken as the family's nearest face; and Your fonts, the
 together) added from Files, refused when their faces name more than one family, copied to Application Support/Vitrine/Font
 and registered again at each launch, each weight taken as the family's nearest face, Spotify's font coming back when
 the files are gone. Swiping the row deletes the family. An import from before families (one file under
-spotifyglass.font.file) moves to spotifyglass.font.files and the family name on first use. Then the App icon. Everything on the page applies after a restart. Redesigned UI, the main page's
+spotifyglass.font.file) moves to spotifyglass.font.files and the family name on first use. Free fonts, between More fonts and Your fonts, lists
+the free families on this iPhone and opens the free fonts page (Shared/Fonts/FontLibraryPage.m, also in Workshop): sixteen SIL Open
+Font License families from github.com/google/fonts pinned to one commit, Korean first, each file and its OFL.txt checked against its
+size and SHA-256 (FontLibrary.m) before the family moves from a hidden folder into Application Support/Vitrine/Font Library, one
+download at a time with its progress on the row and a tap stopping it. A family downloaded becomes the app's font
+(spotifyglass.font 7, spotifyglass.font.library) and is registered again at each launch; a swipe deletes it or opens its license, and
+Spotify's font comes back when its files are gone. Then the App icon. Everything on the page applies after a restart. Redesigned UI, the main page's
 first row, is the one switch between the two looks (see Layers): it glows (Settings/SGGlowSwitch), its ⓘ says what
 it changes, and flipping it offers to restart Spotify. The pages show only what the stored look has: a page opened
 after flipping the switch already shows what the restart will bring, and the main page swaps Home & Library for
 Albums and Artists as it is flipped. Workshop collects Vitrine's existing local and open libraries: audio presets,
-public AutoEq headphone corrections and on-device custom fonts
+shared as files, public AutoEq headphone corrections, free fonts to download and on-device custom fonts
 under either look, plus visualizer styles and lyric looks when Redesigned UI is selected. Tab bar: the tab editor of the stored look, each with
 its own list of tabs. Lyrics, on the main page of its own: in the redesign a live preview of the lyrics first, with the presets of their look
 under it and their sliders in a sheet (Text size, Line spacing, Blur, Glow, Wave), applying at once; then Karaoke, then the ordered list of lyrics sources,

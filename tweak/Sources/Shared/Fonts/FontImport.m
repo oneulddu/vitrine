@@ -7,6 +7,7 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
+#import "Shared/Fonts/FontLibrary.h"
 #import "Shared/Fonts/Fonts.h"
 
 static NSURL *fontFolder(void) {
@@ -202,16 +203,18 @@ static NSString *chosenLabel(void) {
     SGAppFont font = SGAppFontChosen();
     if (font == SGAppFontCustom) return importedFamily() ?: SGL(@"settings.font.choice.custom", @"Your font");
     if (font == SGAppFontFamily) return [store stringForKey:SGKeyAppFontFamily] ?: SGAppFontNames()[0];
+    if (font == SGAppFontLibrary) return SGFontLibraryFont([store stringForKey:SGKeyAppFontLibrary]).name ?: SGAppFontNames()[0];
     return SGAppFontNames()[font];
 }
 
-typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYours };
+typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFree, SGFontYours };
 
 @interface SGFontPage : SGPage
 @end
 
 @implementation SGFontPage {
     NSArray<NSString *> *_families;
+    NSArray<SGLibraryFont *> *_free;   // the free families on this iPhone
     UIView *_footer;
 }
 
@@ -248,6 +251,9 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
 }
 
 - (void)refresh {
+    _free = [SGFontLibrary() filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(SGLibraryFont *font, NSDictionary *bindings) {
+        return SGFontLibraryInstalled(font.identifier) && SGFontLibraryRegister(font.identifier);
+    }]];
     [self refreshFooter];
     [self.tableView reloadData];
 }
@@ -264,17 +270,20 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
-    return 3;
+    return 4;
 }
 
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
     if (section == SGFontBuiltIn) return (NSInteger)SGAppFontNames().count;
     if (section == SGFontMore) return (NSInteger)_families.count;
+    if (section == SGFontFree) return (NSInteger)_free.count + 1;
     return self.importedName.length ? 2 : 1;
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
-    return section == SGFontBuiltIn ? nil : SGSectionHeader(table, section == SGFontMore ? SGL(@"settings.font.more.header", @"More fonts") : SGL(@"settings.font.yours.header", @"Your fonts"));
+    if (section == SGFontBuiltIn) return nil;
+    if (section == SGFontFree) return SGSectionHeader(table, SGL(@"settings.font.free.header", @"Free fonts"));
+    return SGSectionHeader(table, section == SGFontMore ? SGL(@"settings.font.more.header", @"More fonts") : SGL(@"settings.font.yours.header", @"Your fonts"));
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
@@ -297,6 +306,18 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
         title = _families[(NSUInteger)path.row];
         font = previewFont(title, YES, size);
         selected = chosen == SGAppFontFamily && [title isEqualToString:[store stringForKey:SGKeyAppFontFamily]];
+    } else if (path.section == SGFontFree && path.row < (NSInteger)_free.count) {
+        SGLibraryFont *free = _free[(NSUInteger)path.row];
+        title = free.name;
+        font = previewFont(SGFontLibraryRegister(free.identifier), YES, size);
+        selected = chosen == SGAppFontLibrary && [free.identifier isEqualToString:[store stringForKey:SGKeyAppFontLibrary]];
+    } else if (path.section == SGFontFree) {
+        SGFillCell(cell, _free.count ? SGL(@"settings.font.free.more.title", @"More free fonts") : SGL(@"settings.font.free.get.title", @"Get free fonts"),
+                   SGL(@"settings.font.free.get.subtitle", @"Korean and Latin families under the Open Font License"), nil, nil);
+        cell.accessoryView = SGChevronView();
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        cell.accessibilityTraits = UIAccessibilityTraitButton;
+        return cell;
     } else if (path.row == 0 && self.importedName.length) {
         title = self.importedName;
         font = previewFont(title, YES, size);
@@ -329,6 +350,12 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontYou
     } else if (path.section == SGFontMore) {
         [NSUserDefaults.standardUserDefaults setObject:_families[(NSUInteger)path.row] forKey:SGKeyAppFontFamily];
         SGSetInt(SGKeyAppFont, SGAppFontFamily);
+    } else if (path.section == SGFontFree && path.row < (NSInteger)_free.count) {
+        [NSUserDefaults.standardUserDefaults setObject:_free[(NSUInteger)path.row].identifier forKey:SGKeyAppFontLibrary];
+        SGSetInt(SGKeyAppFont, SGAppFontLibrary);
+    } else if (path.section == SGFontFree) {
+        SGShowPage(self, SGFontLibraryPage());
+        return;
     } else if (path.row == 0 && self.importedName.length) {
         SGSetInt(SGKeyAppFont, SGAppFontCustom);
     } else {

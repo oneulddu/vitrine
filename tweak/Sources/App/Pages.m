@@ -128,11 +128,13 @@ UIViewController *SGWorkshopPage(void) {
 
     NSMutableArray<SGModRow *> *fonts = [NSMutableArray array];
     for (SGModRow *row in SGAppFontRows()) [fonts addObject:SGWithTile(row, @"textformat.alt", UIColor.systemIndigoColor)];
+    [fonts addObject:SGWithTile(SGPageRow(SGL(@"settings.workshop.free_fonts.title", @"Free fonts"), ^UIViewController *{ return SGFontLibraryPage(); }),
+                                @"arrow.down.circle", UIColor.systemTealColor)];
     if (fonts.count) [sections addObject:SGSection(SGL(@"settings.workshop.type.header", @"Type"), fonts)];
 
     NSString *intro = SGRedesignedUIStored()
-        ? SGL(@"settings.workshop.intro.redesigned", @"Built-in and open libraries Vitrine can use without an account. Headphone corrections come from AutoEq; fonts you add stay on this iPhone.")
-        : SGL(@"settings.workshop.intro.native", @"Built-in and open libraries Vitrine can use without an account. Visualizers and lyrics looks appear here when Redesigned UI is selected. Headphone corrections come from AutoEq; fonts you add stay on this iPhone.");
+        ? SGL(@"settings.workshop.intro.redesigned.v2", @"Built-in and open libraries Vitrine can use without an account. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.")
+        : SGL(@"settings.workshop.intro.native.v2", @"Built-in and open libraries Vitrine can use without an account. Visualizers and lyrics looks appear here when Redesigned UI is selected. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.");
     SGModPage *page = [[SGModPage alloc] initWithTitle:SGL(@"settings.workshop.title", @"Workshop") intro:intro sections:sections footer:nil];
     page.tiles = YES;
     return page;

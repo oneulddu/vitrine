@@ -2,3 +2,4 @@
 // it is found before the real one.
 #import "Core/SGLog.h"
 #import "Core/SGPrefs.h"
+#import "Core/SGLocalize.h"

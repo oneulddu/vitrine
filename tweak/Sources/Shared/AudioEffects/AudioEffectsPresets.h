@@ -26,6 +26,27 @@ void SGDSPSaveUserPreset(NSString *name);          // replaces one of the same n
 BOOL SGDSPLoadUserPreset(NSString *name);
 void SGDSPDeleteUserPreset(NSString *name);
 
+#pragma mark - preset files
+
+// A preset as a file to share and import: {"format": "vitrine.audio-preset", "version": 1, "name": ...,
+// "values": {key: value}}, the values being the preset's spotifyglass.dsp.* keys (never the master switch) as
+// they are stored: booleans, numbers and text. An impulse response, DDC or Liveprog file is named, not carried.
+//
+// The user's preset `name` as the file's bytes, and a file name for it ("Late night.vitrine-preset.json");
+// nil when there is no such preset.
+NSData *SGDSPPresetFileData(NSString *name, NSString **fileName);
+// A file's preset: its values, kept to the keys and types this build knows, and its name (`fallbackName` when
+// the file has none). Nil and why not, in the person's language, when it is not one: another format, a later
+// version, malformed, over 256 KB, or no value this build can use. Any thread.
+NSDictionary<NSString *, id> *SGDSPReadPresetFile(NSData *data, NSString *fallbackName, NSString **name, NSString **error);
+// Saves the values as the user's preset `name`, replacing one of the same name.
+void SGDSPSaveUserPresetValues(NSString *name, NSDictionary<NSString *, id> *values);
+BOOL SGDSPUserPresetExists(NSString *name);
+// `name` when no preset of the user's has it, else "name 2", "name 3" and on.
+NSString *SGDSPUniquePresetName(NSString *name);
+// The impulse response, DDC and Liveprog files the values name that are not in this iPhone's libraries.
+NSArray<NSString *> *SGDSPPresetMissingFiles(NSDictionary<NSString *, id> *values);
+
 // The text as one GraphicEQ line, trimmed and on one line, or nil when it is not one: what the Graphic EQ
 // editor saves and what a headphone's file is checked with.
 NSString *SGDSPGraphicEqLine(NSString *text);

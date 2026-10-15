@@ -4,6 +4,7 @@
 #import "AudioEffects.h"
 #import "AudioEffectsApply.h"
 #import "AudioEffectsPresets.h"
+#import <math.h>
 
 static NSString *const kPrefix = @"spotifyglass.dsp.";
 
@@ -135,6 +136,172 @@ void SGDSPDeleteUserPreset(NSString *name) {
     NSMutableDictionary *presets = [userPresets() mutableCopy];
     [presets removeObjectForKey:name];
     [store() setObject:presets forKey:SGKeyDSPUserPresets];
+}
+
+#pragma mark - preset files
+
+enum { kPresetSwitch, kPresetNumber, kPresetString };
+
+// The keys and types this build can exchange, without the master switch.
+static NSDictionary<NSString *, NSNumber *> *presetTypes(void) {
+    static NSDictionary<NSString *, NSNumber *> *types;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        types = @{
+            SGKeyDSPCompander: @(kPresetSwitch), SGKeyDSPBass: @(kPresetSwitch),
+            SGKeyDSPEqualizer: @(kPresetSwitch), SGKeyDSPGraphicEq: @(kPresetSwitch),
+            SGKeyDSPConvolver: @(kPresetSwitch), SGKeyDSPDDC: @(kPresetSwitch),
+            SGKeyDSPLiveprog: @(kPresetSwitch), SGKeyDSPReverb: @(kPresetSwitch),
+            SGKeyDSPStereoWide: @(kPresetSwitch), SGKeyDSPCrossfeed: @(kPresetSwitch),
+            SGKeyDSPTube: @(kPresetSwitch),
+            SGKeyDSPPostGain: @(kPresetNumber), SGKeyDSPLimiterThreshold: @(kPresetNumber),
+            SGKeyDSPLimiterRelease: @(kPresetNumber), SGKeyDSPCompanderTime: @(kPresetNumber),
+            SGKeyDSPBassGain: @(kPresetNumber), SGKeyDSPConvolverMode: @(kPresetNumber),
+            SGKeyDSPReverbPreset: @(kPresetNumber), SGKeyDSPReverbAmount: @(kPresetNumber),
+            SGKeyDSPStereoWideLevel: @(kPresetNumber), SGKeyDSPCrossfeedMode: @(kPresetNumber),
+            SGKeyDSPTubeDrive: @(kPresetNumber),
+            SGKeyDSPCompanderGains: @(kPresetString), SGKeyDSPEqualizerGains: @(kPresetString),
+            SGKeyDSPGraphicEqNodes: @(kPresetString), SGKeyDSPGraphicEqHeadphone: @(kPresetString),
+            SGKeyDSPConvolverFile: @(kPresetString), SGKeyDSPDDCFile: @(kPresetString),
+            SGKeyDSPLiveprogFile: @(kPresetString),
+        };
+    });
+    return types;
+}
+
+// Keep whole composed characters when shortening a name.
+static NSString *presetShortName(NSString *name, NSUInteger limit) {
+    NSUInteger end = 0;
+    for (NSUInteger count = 0; count < limit && end < name.length; count++) {
+        end = NSMaxRange([name rangeOfComposedCharacterSequencesForRange:NSMakeRange(end, 1)]);
+    }
+    return [name substringToIndex:end];
+}
+
+// Imported strings have size and file-name limits as well as their declared type.
+static NSDictionary<NSString *, id> *presetFileValues(NSDictionary *values, BOOL importing) {
+    NSMutableDictionary<NSString *, id> *kept = [NSMutableDictionary dictionary];
+    NSDictionary<NSString *, NSNumber *> *types = presetTypes();
+    for (NSString *key in types) {
+        id value = values[key];
+        NSInteger type = types[key].integerValue;
+        if (type == kPresetString) {
+            if (![value isKindOfClass:NSString.class]) continue;
+            NSString *text = value;
+            if (importing) {
+                if ([text lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 64 * 1024) continue;
+                BOOL file = [key isEqualToString:SGKeyDSPConvolverFile] || [key isEqualToString:SGKeyDSPDDCFile]
+                            || [key isEqualToString:SGKeyDSPLiveprogFile];
+                if (file && text.length && (![text isEqualToString:text.lastPathComponent]
+                    || [text containsString:@"/"] || [text containsString:@"\\"] || [text hasPrefix:@"."])) continue;
+            }
+            kept[key] = text;
+        } else {
+            if (![value isKindOfClass:NSNumber.class]) continue;
+            if (type == kPresetSwitch) kept[key] = @([value boolValue]);
+            else {
+                double number = [value doubleValue];
+                if (!isnan(number) && !isinf(number)) kept[key] = value;
+            }
+        }
+    }
+    return [kept copy];
+}
+
+// Share the saved values with a name safe for Files.
+NSData *SGDSPPresetFileData(NSString *name, NSString **fileName) {
+    if (fileName) *fileName = nil;
+    NSDictionary *values = name ? userPresets()[name] : nil;
+    if (![values isKindOfClass:NSDictionary.class]) return nil;
+    NSDictionary *file = @{@"format": @"vitrine.audio-preset", @"version": @1,
+                           @"name": name, @"values": presetFileValues(values, NO)};
+    NSData *data = [NSJSONSerialization dataWithJSONObject:file
+                         options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
+    if (!data) return nil;
+    NSMutableCharacterSet *unsafe = [NSCharacterSet.controlCharacterSet mutableCopy];
+    [unsafe addCharactersInString:@"/\\:"];
+    NSString *safe = [[name componentsSeparatedByCharactersInSet:unsafe] componentsJoinedByString:@"-"];
+    safe = [safe stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    safe = presetShortName(safe, 60);
+    if (fileName) *fileName = [(safe.length ? safe : @"Preset") stringByAppendingString:@".vitrine-preset.json"];
+    return data;
+}
+
+// Check a file without touching preferences or applying any effect.
+NSDictionary<NSString *, id> *SGDSPReadPresetFile(NSData *data, NSString *fallbackName, NSString **name, NSString **error) {
+    if (name) *name = nil;
+    if (error) *error = nil;
+    if (data.length > 256 * 1024) {
+        if (error) *error = SGL(@"settings.audioeffects.presetfile.error.toolarge", @"This preset file is too large.");
+        return nil;
+    }
+    id file = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if (![file isKindOfClass:NSDictionary.class] || ![file[@"format"] isEqual:@"vitrine.audio-preset"]) {
+        if (error) *error = SGL(@"settings.audioeffects.presetfile.error.format", @"This file is not a Vitrine audio preset.");
+        return nil;
+    }
+    id version = file[@"version"];
+    if (![version isKindOfClass:NSNumber.class] || CFGetTypeID((__bridge CFTypeRef)version) == CFBooleanGetTypeID()
+        || !isfinite([version doubleValue]) || floor([version doubleValue]) != [version doubleValue]
+        || [version doubleValue] < 1) {
+        if (error) *error = SGL(@"settings.audioeffects.presetfile.error.version", @"This preset file has an invalid version.");
+        return nil;
+    }
+    if ([version doubleValue] > 1) {
+        if (error) *error = SGL(@"settings.audioeffects.presetfile.error.newer", @"This preset was made by a newer Vitrine. Update Vitrine to import it.");
+        return nil;
+    }
+    if (![file[@"values"] isKindOfClass:NSDictionary.class]) {
+        if (error) *error = SGL(@"settings.audioeffects.presetfile.error.values", @"This preset file has invalid settings.");
+        return nil;
+    }
+    NSDictionary<NSString *, id> *values = presetFileValues(file[@"values"], YES);
+    if (!values.count) {
+        if (error) *error = SGL(@"settings.audioeffects.presetfile.error.empty", @"This preset has no settings this version of Vitrine can use.");
+        return nil;
+    }
+    NSString *title = [file[@"name"] isKindOfClass:NSString.class] ? file[@"name"] : @"";
+    title = [title stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!title.length) title = [fallbackName stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!title.length) title = @"Preset";
+    if (name) *name = presetShortName(title, 80);
+    return values;
+}
+
+// Save imported values under the chosen name.
+void SGDSPSaveUserPresetValues(NSString *name, NSDictionary<NSString *, id> *values) {
+    if (!name.length) return;
+    NSMutableDictionary *presets = [userPresets() mutableCopy];
+    presets[name] = values;
+    [store() setObject:presets forKey:SGKeyDSPUserPresets];
+}
+
+// A stored entry reserves its name, even when its values cannot be loaded.
+BOOL SGDSPUserPresetExists(NSString *name) {
+    return name && userPresets()[name] != nil;
+}
+
+// Keep the requested name when free, or take its first unused numbered variant.
+NSString *SGDSPUniquePresetName(NSString *name) {
+    NSDictionary *presets = userPresets();
+    if (!presets[name]) return name;
+    for (NSUInteger suffix = 2; ; suffix++) {
+        NSString *candidate = [NSString stringWithFormat:@"%@ %lu", name, (unsigned long)suffix];
+        if (!presets[candidate]) return candidate;
+    }
+}
+
+// List missing library files in effect order, with each name only once.
+NSArray<NSString *> *SGDSPPresetMissingFiles(NSDictionary<NSString *, id> *values) {
+    NSArray<NSString *> *keys = @[SGKeyDSPConvolverFile, SGKeyDSPDDCFile, SGKeyDSPLiveprogFile];
+    const SGDSPFileKind kinds[] = {SGDSPFileImpulseResponse, SGDSPFileDDC, SGDSPFileLiveprog};
+    NSMutableArray<NSString *> *missing = [NSMutableArray array];
+    for (NSUInteger i = 0; i < keys.count; i++) {
+        id value = values[keys[i]];
+        if (![value isKindOfClass:NSString.class] || ![value length]) continue;
+        if (![SGDSPLibraryFiles(kinds[i]) containsObject:value] && ![missing containsObject:value]) [missing addObject:value];
+    }
+    return [missing copy];
 }
 
 #pragma mark - GraphicEQ text

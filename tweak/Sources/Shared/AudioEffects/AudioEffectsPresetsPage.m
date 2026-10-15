@@ -1,5 +1,6 @@
 // The Presets and Headphones pages the Audio effects page's first card opens. Both stay open after a pick,
 // so one preset or one headphone after another can be heard before going back.
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Core/SGCore.h"
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
@@ -42,8 +43,27 @@ static NSArray<NSString *> *userPresetNames(void) {
     return names;
 }
 
-// The built-in presets, then the user's, then Save. The last one picked is ticked until something else is.
-@interface SGDSPPresetList : SGPage
+// A preset to share is written to a folder of its own in tmp, which the share sheet hands on and which is
+// deleted when the sheet is done.
+static NSURL *sharedFileFor(NSString *name) {
+    NSString *fileName = nil;
+    NSData *data = SGDSPPresetFileData(name, &fileName);
+    if (!data) return nil;
+    NSURL *folder = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:NSUUID.UUID.UUIDString isDirectory:YES];
+    NSURL *url = [folder URLByAppendingPathComponent:fileName];
+    if (![NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil]
+        || ![data writeToURL:url options:NSDataWritingAtomic error:nil]) {
+        [NSFileManager.defaultManager removeItemAtURL:folder error:nil];
+        return nil;
+    }
+    return url;
+}
+
+// The rows of the last section: Save, then Import.
+enum { kSaveRow, kImportRow, kActionRows };
+
+// The built-in presets, then the user's, then Save and Import. The last one picked is ticked until something else is.
+@interface SGDSPPresetList : SGPage <UIDocumentPickerDelegate>
 @end
 
 @implementation SGDSPPresetList {
@@ -62,10 +82,12 @@ static NSArray<NSString *> *userPresetNames(void) {
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    _footer = SGNote(SGL(@"settings.audioeffects.presets.footer", @"Picking a preset turns Audio effects on and replaces the other effects' settings. A built-in "
+    _footer = SGNote([NSString stringWithFormat:@"%@\n\n%@", SGL(@"settings.audioeffects.presets.footer", @"Picking a preset turns Audio effects on and replaces the other effects' settings. A built-in "
                       "preset leaves the Graphic EQ, your headphones' correction, as it is; your own presets keep every "
                       "effect, the Graphic EQ too. What you had before the first pick is kept under Yours as Before presets. "
-                      "Swipe left on one of yours to delete it."));
+                      "Swipe left on one of yours to delete it."),
+                      SGL(@"settings.audioeffects.presets.sharing.footer", @"Swipe left on one of yours to share it as a file, and import a file someone sent you to add it to yours. "
+                          "A preset names the impulse response, DDC or Liveprog file it uses without carrying it, so send that file along.")]);
     self.tableView.tableFooterView = _footer;
 }
 
@@ -92,7 +114,7 @@ static NSArray<NSString *> *userPresetNames(void) {
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return (NSInteger)_builtIn.count;
     if (section == 1) return MAX((NSInteger)_mine.count, 1);
-    return 1;
+    return kActionRows;
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
@@ -114,8 +136,13 @@ static NSArray<NSString *> *userPresetNames(void) {
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = SGDequeueCell(table, @"preset");
     if (path.section == 2) {
-        SGFillCell(cell, SGL(@"settings.audioeffects.presets.savecurrent.title", @"Save current settings…"), SGL(@"settings.audioeffects.presets.savecurrent.subtitle", @"Every effect as it is now, under a name"), nil, @"square.and.arrow.down");
+        if (path.row == kImportRow) {
+            SGFillCell(cell, SGL(@"settings.audioeffects.presets.import.title", @"Import preset file…"), SGL(@"settings.audioeffects.presets.import.subtitle", @"A preset someone shared, from Files"), nil, @"tray.and.arrow.down");
+        } else {
+            SGFillCell(cell, SGL(@"settings.audioeffects.presets.savecurrent.title", @"Save current settings…"), SGL(@"settings.audioeffects.presets.savecurrent.subtitle", @"Every effect as it is now, under a name"), nil, @"square.and.arrow.down");
+        }
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        cell.accessibilityTraits = UIAccessibilityTraitButton;
         return cell;
     }
     if (path.section == 1 && !_mine.count) {
@@ -137,7 +164,8 @@ static NSArray<NSString *> *userPresetNames(void) {
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:YES];
     if (path.section == 2) {
-        [self askForName];
+        if (path.row == kImportRow) [self pickFile];
+        else [self askForName];
         return;
     }
     if (path.section == 1 && !_mine.count) return;
@@ -170,7 +198,113 @@ static NSArray<NSString *> *userPresetNames(void) {
             done(YES);
         }];
     delete.image = [UIImage systemImageNamed:@"trash"];
-    return [UISwipeActionsConfiguration configurationWithActions:@[delete]];
+    UIContextualAction *share = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal title:SGL(@"settings.audioeffects.presets.action.share", @"Share")
+        handler:^(UIContextualAction *action, UIView *view, void (^done)(BOOL)) {
+            [self share:name from:[self.tableView cellForRowAtIndexPath:path] ?: view];
+            done(YES);
+        }];
+    share.image = [UIImage systemImageNamed:@"square.and.arrow.up"];
+    share.backgroundColor = UIColor.systemBlueColor;
+    UISwipeActionsConfiguration *configuration = [UISwipeActionsConfiguration configurationWithActions:@[delete, share]];
+    configuration.performsFirstActionWithFullSwipe = NO;
+    return configuration;
+}
+
+// A long press on one of yours offers the same, for anyone who does not swipe.
+- (UIContextMenuConfiguration *)tableView:(UITableView *)table contextMenuConfigurationForRowAtIndexPath:(NSIndexPath *)path point:(CGPoint)point {
+    if (path.section != 1 || !_mine.count) return nil;
+    NSString *name = _mine[(NSUInteger)path.row];
+    __weak SGDSPPresetList *page = self;
+    return [UIContextMenuConfiguration configurationWithIdentifier:nil previewProvider:nil actionProvider:^UIMenu *(NSArray<UIMenuElement *> *suggested) {
+        UIAction *share = [UIAction actionWithTitle:SGL(@"settings.audioeffects.presets.action.share", @"Share") image:[UIImage systemImageNamed:@"square.and.arrow.up"] identifier:nil
+            handler:^(UIAction *action) { [page share:name from:[page.tableView cellForRowAtIndexPath:path]]; }];
+        return [UIMenu menuWithChildren:@[share]];
+    }];
+}
+
+- (void)share:(NSString *)name from:(UIView *)source {
+    NSURL *url = sharedFileFor(name);
+    if (!url) {
+        showAlert(self, SGL(@"settings.audioeffects.presets.share_failed.alert.title", @"Could not share the preset"), SGL(@"settings.stats.error.try_again", @"Please try again."));
+        return;
+    }
+    UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+    NSURL *folder = url.URLByDeletingLastPathComponent;
+    sheet.completionWithItemsHandler = ^(UIActivityType type, BOOL completed, NSArray *items, NSError *error) {
+        [NSFileManager.defaultManager removeItemAtURL:folder error:nil];
+    };
+    sheet.popoverPresentationController.sourceView = source ?: self.view;
+    sheet.popoverPresentationController.sourceRect = (source ?: self.view).bounds;
+    SGPresentDark(sheet);
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+#pragma mark - importing a file
+
+- (void)pickFile {
+    UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeJSON, UTTypeData] asCopy:YES];
+    picker.delegate = self;
+    picker.allowsMultipleSelection = NO;
+    SGPresentDark(picker);
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    NSURL *url = urls.firstObject;
+    if (!url) return;
+    NSString *fallback = url.lastPathComponent;
+    for (NSString *suffix in @[@".vitrine-preset.json", @".json"]) {
+        if ([fallback.lowercaseString hasSuffix:suffix]) { fallback = [fallback substringToIndex:fallback.length - suffix.length]; break; }
+    }
+    __weak SGDSPPresetList *page = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // A copy in the app's own inbox, so no security scope is needed. A file over the limit is not read at all.
+        NSDictionary *attributes = [NSFileManager.defaultManager attributesOfItemAtPath:url.path error:nil];
+        BOOL tooLarge = [attributes fileSize] > 256 * 1024;
+        NSData *data = tooLarge ? nil : [NSData dataWithContentsOfURL:url options:NSDataReadingMappedIfSafe error:nil];
+        NSString *name = nil, *error = nil;
+        NSDictionary<NSString *, id> *values = tooLarge ? nil : SGDSPReadPresetFile(data, fallback, &name, &error);
+        if (tooLarge) error = SGL(@"settings.audioeffects.presetfile.error.toolarge", @"This preset file is too large.");
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SGDSPPresetList *strong = page;
+            if (!strong) return;
+            if (!values) {
+                showAlert(strong, SGL(@"settings.audioeffects.presets.import_failed.alert.title", @"Preset not imported"), error);
+                return;
+            }
+            if (SGDSPUserPresetExists(name)) [strong ask:name values:values];
+            else [strong keep:values as:name];
+        });
+    });
+}
+
+// A preset of the same name is replaced only when asked; the other choice keeps both under a new name.
+- (void)ask:(NSString *)name values:(NSDictionary<NSString *, id> *)values {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:SGL(@"settings.audioeffects.presets.import_exists.alert.title", @"You already have “%@”"), userPresetTitle(name)]
+        message:SGL(@"settings.audioeffects.presets.import_exists.alert.message", @"Replace it with the file's preset, or keep both.") preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.audioeffects.presets.action.keep_both", @"Keep both") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        [self keep:values as:SGDSPUniquePresetName(name)];
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.audioeffects.presets.action.replace", @"Replace") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        [self keep:values as:name];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
+// Saved under Yours, not applied: a tap on it is how it is heard, as with any preset of the user's.
+- (void)keep:(NSDictionary<NSString *, id> *)values as:(NSString *)name {
+    SGDSPSaveUserPresetValues(name, values);
+    _mine = userPresetNames();
+    NSIndexPath *picked = _picked;
+    if (picked.section == 1) _picked = nil;   // the rows under Yours may have moved
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, 2)] withRowAnimation:UITableViewRowAnimationFade];
+    NSArray<NSString *> *missing = SGDSPPresetMissingFiles(values);
+    NSString *message = missing.count
+        ? [NSString stringWithFormat:SGL(@"settings.audioeffects.presets.imported.missing.alert.message", @"“%@” is under Yours. It uses files this iPhone does not have: %@. Import them on the Audio effects page, or the effects that need them stay silent."),
+           userPresetTitle(name), [missing componentsJoinedByString:@", "]]
+        : [NSString stringWithFormat:SGL(@"settings.audioeffects.presets.imported.alert.message", @"“%@” is under Yours. Tap it to hear it."), userPresetTitle(name)];
+    showAlert(self, SGL(@"settings.audioeffects.presets.imported.alert.title", @"Preset imported"), message);
 }
 
 - (void)askForName {

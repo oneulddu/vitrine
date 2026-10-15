@@ -10,6 +10,8 @@
 #define SGKeyAppFontFile @"spotifyglass.font.file"
 // The family chosen under More fonts, by its name ("Avenir Next").
 #define SGKeyAppFontFamily @"spotifyglass.font.family"
+// The free family chosen, by its identifier in FontLibrary.h's catalog ("nanumgothic").
+#define SGKeyAppFontLibrary @"spotifyglass.font.library"
 
 typedef NS_ENUM(NSInteger, SGAppFont) {
     SGAppFontSpotify,   // Spotify's own, untouched
@@ -19,6 +21,7 @@ typedef NS_ENUM(NSInteger, SGAppFont) {
     SGAppFontMono,      // SF Mono
     SGAppFontCustom,    // the family imported from Files
     SGAppFontFamily,    // a family iOS carries, named by SGKeyAppFontFamily
+    SGAppFontLibrary,   // a free family downloaded from FontLibrary.h's catalog, named by SGKeyAppFontLibrary
 };
 
 SGAppFont SGAppFontChosen(void);
@@ -32,3 +35,5 @@ NSString *SGFontSingleFamily(NSArray<NSString *> *names);
 
 @class SGModRow;
 NSArray<SGModRow *> *SGAppFontRows(void);   // the Font row, opening the page of choices
+// The free families to download (FontLibraryPage.m), for Workshop and the Font page.
+UIViewController *SGFontLibraryPage(void);
