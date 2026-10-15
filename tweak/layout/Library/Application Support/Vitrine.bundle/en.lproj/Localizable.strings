@@ -1635,7 +1635,7 @@
 "settings.translation.openai.preset.title" = "Service";
 "settings.translation.openaikey.baseurl" = "Base URL";
 "settings.translation.openaikey.key" = "API key";
-"settings.translation.openaikey.message" = "The song's lyrics go to the service at this address, on your own API key. The key stays on this iPhone. Use an HTTPS base URL; HTTP is allowed only for localhost, 127.0.0.1 or a .local host.";
+"settings.translation.openaikey.message" = "The song's lyrics go to the service at this address, on your own API key. The key stays on this iPhone. Use an HTTPS base URL; HTTP is also allowed for localhost, 127.0.0.1, .local hosts and Tailscale IPv4 addresses (100.64.0.0/10).";
 "settings.translation.openaikey.model" = "Model";
 "settings.translation.openaikey.set" = "Set";
 "settings.translation.openaikey.subtitle" = "Choose a service, model and your own API key";

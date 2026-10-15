@@ -58,8 +58,10 @@ The checks cover:
   after 200 cached title results. The on-device translator is a harness stand-in.
 - OpenAI-compatible replies as strict JSON arrays or single-value objects, with and without a JSON
   code fence. Wrong types, malformed fences, excessive sizes and mismatched counts fail. Base URLs
-  accept HTTPS, or HTTP only for localhost, 127.0.0.1 and .local hosts, and reject credentials, query
-  strings and fragments (`SGOpenAITranslationsIn`, `SGOpenAICompletionURL`). Requests follow the
+  accept HTTPS, or HTTP for localhost, 127.0.0.1, .local hosts and numeric Tailscale IPv4 addresses
+  (100.64.0.0/10), and reject credentials, query strings and fragments. Tailscale checks include both
+  CIDR boundaries, adjacent networks, malformed IPs, hostname lookalikes and invalid ports
+  (`SGOpenAITranslationsIn`, `SGOpenAICompletionURL`). Requests follow the
   [Chat Completions format](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
 
 Expected output:

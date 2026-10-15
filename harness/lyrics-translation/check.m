@@ -348,6 +348,12 @@ static void checkProviders(void) {
     CHECK(SGOpenAICompletionURL(@"http://localhost:8080/v1"));
     CHECK(SGOpenAICompletionURL(@"http://127.0.0.1:8080"));
     CHECK(SGOpenAICompletionURL(@"http://server.local/v1"));
+    CHECK([SGOpenAICompletionURL(@"http://100.97.8.81:10100/v1").absoluteString isEqual:@"http://100.97.8.81:10100/v1/chat/completions"]);
+    CHECK(SGOpenAICompletionURL(@"http://100.64.0.0/v1") && SGOpenAICompletionURL(@"http://100.127.255.255:65535/v1/"));
+    for (NSString *bad in @[@"http://100.63.255.255/v1", @"http://100.128.0.0/v1", @"http://101.97.8.81/v1",
+        @"http://100.97.8.256/v1", @"http://100.97.8/v1", @"http://100.97.8.81.example.com/v1",
+        @"http://100.97.8.81:0/v1", @"http://100.97.8.81:65536/v1", @"http://user:key@100.97.8.81/v1",
+        @"http://100.97.8.81/v1?key=value", @"http://100.97.8.81/v1#x", @"ftp://100.97.8.81/v1"]) CHECK(!SGOpenAICompletionURL(bad));
     for (NSString *bad in @[@"", @"http://example.com/v1", @"http://localhost.evil/v1", @"http://server.local.evil/v1", @"ftp://localhost/v1", @"https://user:secret@example.com/v1", @"https://example.com/v1?q=x", @"https://example.com/v1#x", @"https://example.com:65536/v1", @"https://exa mple.com", @"/v1"]) {
         CHECK(!SGOpenAICompletionURL(bad));
     }

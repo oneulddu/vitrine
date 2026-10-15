@@ -1585,7 +1585,7 @@
 "settings.translation.openai.preset.title" = "서비스";
 "settings.translation.openaikey.baseurl" = "기본 URL";
 "settings.translation.openaikey.key" = "API 키";
-"settings.translation.openaikey.message" = "본인의 API 키로 이 주소의 서비스에 곡의 가사를 보냅니다. 키는 이 iPhone에 보관됩니다. 기본 URL은 HTTPS를 쓰세요. HTTP는 localhost, 127.0.0.1, .local 호스트에서만 허용됩니다.";
+"settings.translation.openaikey.message" = "본인의 API 키로 이 주소의 서비스에 곡의 가사를 보냅니다. 키는 이 iPhone에 보관됩니다. 기본 URL은 HTTPS를 쓰세요. HTTP는 localhost, 127.0.0.1, .local 호스트와 테일스케일 IPv4 주소(100.64.0.0/10)에서도 사용할 수 있습니다.";
 "settings.translation.openaikey.model" = "모델";
 "settings.translation.openaikey.set" = "설정됨";
 "settings.translation.openaikey.subtitle" = "서비스, 모델과 본인의 API 키 설정";

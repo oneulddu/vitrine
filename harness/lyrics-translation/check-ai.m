@@ -35,6 +35,7 @@ static void checkOpenAIHostKeys(void) {
     CHECK([SGOpenAIKeyHost(@"http://LOCALHOST:8080/v1") isEqual:@"localhost"]);
     CHECK([SGOpenAIKeyHost(@"http://127.0.0.1:8080") isEqual:@"127.0.0.1"]);
     CHECK([SGOpenAIKeyHost(@"http://Server.LOCAL/v1") isEqual:@"server.local"]);
+    CHECK([SGOpenAIKeyHost(@"http://100.97.8.81:10100/v1") isEqual:@"100.97.8.81"]);
     for (id bad in @[@"", @"/v1", @"https://user:pass@openrouter.ai/v1", @"https://api.openai.com/v1?x=1", @"https://api.openai.com/#x", @"http://openrouter.ai", @42]) CHECK(!SGOpenAIKeyHost(bad));
     CHECK(SGOpenAIKeyMigrationDecision(nil, NO, NO) == SGOpenAIKeyMigrationNone);
     CHECK(SGOpenAIKeyMigrationDecision(nil, YES, NO) == SGOpenAIKeyMigrationCopy);
@@ -106,6 +107,13 @@ static void checkOpenAIHostKeys(void) {
     [defaults setObject:@"invalid" forKey:SGKeyLyricsOpenAIBaseURL];
     openAIKeys = [@{@"api-key": legacy} mutableCopy];
     CHECK(!SGOpenAIKeySet() && openAIKeys[@"api-key"] && openAIKeys.count == 1);
+    [defaults setObject:@"http://100.97.8.81:10100/v1" forKey:SGKeyLyricsOpenAIBaseURL];
+    openAIKeys = [@{@"100.97.8.81": [@"tailnet-test-key" dataUsingEncoding:NSUTF8StringEncoding]} mutableCopy];
+    NSURLRequest *tailnet = SGOpenAIRequest(@"system", @"prompt", &problem);
+    CHECK([tailnet.URL.absoluteString isEqual:@"http://100.97.8.81:10100/v1/chat/completions"]);
+    CHECK([[tailnet valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer tailnet-test-key"]);
+    [defaults setObject:@"http://100.97.8.82:10100/v1" forKey:SGKeyLyricsOpenAIBaseURL];
+    CHECK(!SGOpenAIKeySet());
     testKeys = [NSSet set]; openAIKeys = nil;
     puts("OpenAI keys: host derivation, migration decisions, failure retry, preset isolation and lyrics/AI/title request guards passed");
 }
