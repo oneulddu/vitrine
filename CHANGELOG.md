@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.0.0-beta.15](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.14...v1.0.0-beta.15) (2026-10-16)
+
+
+### Features
+
+* AI DJ player in the redesign ([#36](https://github.com/oneulddu/vitrine/issues/36)) ([7c3067f](https://github.com/oneulddu/vitrine/commit/7c3067f65b8b11f56fcf4a0e12f3a70b8f0a9947))
+* the landscape lyrics stay up for a song without lines, with its cover at the screen's height ([8797991](https://github.com/oneulddu/vitrine/commit/8797991c8a03af612cb693ccfbac3c3a8432a492))
+* 가사 자동 번역과 번역 서비스 우선순위 추가 ([43e1459](https://github.com/oneulddu/vitrine/commit/43e145998d59569d5b1c545b7c784712c06ebb0b))
+* 가사 출처·번역·싱크·수동 검색을 추가 ([4d03bbb](https://github.com/oneulddu/vitrine/commit/4d03bbb2985b8213c9f59e07667f532f3bf5b2db))
+* 번역 진행 상태와 재시도 및 연결 확인 추가 ([e4cccb8](https://github.com/oneulddu/vitrine/commit/e4cccb80f392d52e20ffb7523070ab7a09b6698b))
+* 오디오 프리셋 파일 공유와 무료 서체 다운로드를 추가 ([7637284](https://github.com/oneulddu/vitrine/commit/763728426d2d1bf97f38b7f6271dcbf0d131c432))
+* 자동 번역과 가사 제어 사용성 개선 ([7f7a4bf](https://github.com/oneulddu/vitrine/commit/7f7a4bf9bfb18f5e5e2250aa730257e1f9b5ab43))
+* 자동 번역과 가사 제어 사용성 개선 ([7f7a4bf](https://github.com/oneulddu/vitrine/commit/7f7a4bf9bfb18f5e5e2250aa730257e1f9b5ab43))
+* 키 없이 쓰는 Bing 번역을 가사 번역에 추가 ([a682daa](https://github.com/oneulddu/vitrine/commit/a682daa3b0bee5c8c2a6f2f0f0552c4f0376902b))
+* 플레이어 Fluid 배경에 GPU로 그리는 스무스 스타일을 추가 ([e530432](https://github.com/oneulddu/vitrine/commit/e530432ff50cf2d9d503ea47221b3f39a5c0825a))
+* 후리가나, 곡 언어별 규칙, AI 발음·맥락 설명을 추가 ([152b672](https://github.com/oneulddu/vitrine/commit/152b672fa3aef6e3202a4c4231c903e73ef37003))
+
+
+### Fixes
+
+* 가사 소스와 제목 번역 및 AI 결과 갱신 오류 수정 ([e1ea293](https://github.com/oneulddu/vitrine/commit/e1ea29326129f612d86166432d08e13843928785))
+* 감상 기록 내보내기 제한 오류를 현지화 ([6b75ecf](https://github.com/oneulddu/vitrine/commit/6b75ecf04ec00be7670611f3fdf09045daf89d77))
+* 번역 서비스 전환과 곡별 번역 삭제를 지원 ([f97ddbc](https://github.com/oneulddu/vitrine/commit/f97ddbc30484f87659b5d0a871a11a8fada4e461))
+* 테일스케일 HTTP 번역 서버 주소를 허용 ([0c76461](https://github.com/oneulddu/vitrine/commit/0c76461c06e4c7734cda991df001af60c37cdd5d))
+
 ## [1.0.0-beta.14](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.13...v1.0.0-beta.14) (2026-10-14)
 
 
