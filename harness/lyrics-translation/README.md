@@ -68,6 +68,30 @@ The checks cover:
   (`SGOpenAITranslationsIn`, `SGOpenAICompletionURL`). Requests follow the
   [Chat Completions format](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create).
 
+The connection-test regression can also run on its own:
+
+```sh
+harness/lyrics-translation/build.sh --connection-only
+```
+
+`check-connection.m` compiles the real `ConnectionTest.m` and calls `SGTestOpenAITranslation`.
+Its scripted `SendOnce` replacement checks missing-key/no-send, the exact HTTP Tailscale endpoint,
+host-bound fake authorization, saved model and target, and a prompt containing only the fixed test
+sentence as input. It covers success, 401/403, 400/404, 429/5xx, unreachable, malformed/empty replies,
+key echoes, output and payload bounds, duplicate completion, explicit cancellation, and stale base,
+model, key or target both without a notification and with each settings/redraw notification separately.
+An unchanged generic redraw leaves the request alive. These are service/lifecycle fixture checks;
+they do not exercise UI or a network service.
+
+The production `SGLyricsTranslationSendOnce` is separately linked as `SGLyricsTranslationRealSendOnce`.
+A scoped ephemeral-configuration method replacement injects only an `NSURLProtocol` fixture into the
+real session; production still sets its policies and handles responses. This verifies a 20-second
+request timeout, disabled request cookies, single 200/429/503 attempts, main-thread completion,
+transport cancellation, and unknown-length payloads at exactly 512 KiB and one byte above it.
+Redirect refusal is a direct call to the production delegate, not an end-to-end HTTP redirect test.
+No socket server, paid API, real key or simulator is used. Resource timeout expiration, announced
+Content-Length rejection, and actual wire redirects are not exercised by this focused check.
+
 Expected output:
 
 ```text
@@ -78,6 +102,8 @@ Claude / presets: multipart and fenced replies, errors, bounds, all five endpoin
 AI jobs: prompt JSON, notation, note limits, all three requests, strict replies, main completion, coalescing and memo passed
 Saved AI: isolated round trip, empty values, tuple isolation, malformed data, combined count/delete and newest 200 passed
 Titles: language/script detection, Latin artists, two-line request, local fallback, notification, once per track and 200-result cache passed
+Connection fixtures: no key/no send, exact host/model/auth/fixed prompt, safe errors, single completion, cancellation and stale configuration passed
+Connection transport: real SendOnce, 20s request, 429/503 no retry, cancel, 512 KiB boundary; direct redirect delegate passed
 lyrics translation: all checks passed
 ```
 
@@ -133,3 +159,32 @@ All changed Objective-C implementation files are compiled by this harness. The n
 including the non-test saved-file root and real Keychain declarations, were additionally checked using
 `xcrun --sdk iphoneos clang -target arm64-apple-ios16.1 -fobjc-arc -fblocks -fsyntax-only` with the iOS 26.5
 SDK, `-Wall -Wextra -Werror -Wno-unused-parameter` and `-Itweak/Sources`. The landscape notification harness separately compiles the complete Logos controller.
+
+## Explicit automatic Retry against the real provider cache
+
+```sh
+harness/lyrics-translation/build.sh --auto-retry-only
+```
+
+`check-auto-retry.m` links the actual redesigned `AutoTranslation.m` and the actual
+`OpenAITranslate.m` already compiled by this harness. Only transport replies, in-memory credentials,
+feature availability and the existing on-device boundary are fixtures; neither the automatic chain nor
+OpenAI translation is stubbed. No service is contacted.
+
+Two cases begin with an existing translated line and a real provider response containing either one
+translated gap or only empty gaps. The automatic status becomes Partial or Failed. A direct call then
+proves that the provider has cached the incomplete array and returns it without another request.
+Explicit Retry itself sends nothing; the next automatic chain makes a fresh transport request and
+reaches Complete under the real track identity. A second track's seeded cache is reused even between
+Retry and that next chain. Both its cache and the existing translations survive the retry. In the
+partial case, the harness places the first successful line on the input model as the view would; the
+real chain's returned replacements leave both previously translated positions empty. A later ordinary
+attempt still reuses the original provider memo, demonstrating that the fresh request neither clears
+nor rewrites it.
+
+Observed: both cases pass, using six scripted HTTP responses total; the integrated default harness
+also passes. A temporary negative-control copy under `build/retry-negative-control/` replaced only
+`fresh ? nil : track` with `track`, reproducing the old cache routing. It fails the assertion requiring
+one new request and consumption of the queued fresh reply. Production sources were not edited for
+this control. This specifically exercises OpenAI's actual memo; the other remote providers' fresh
+routing is not independently executed here.

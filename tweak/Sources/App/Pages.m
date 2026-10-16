@@ -3,6 +3,7 @@
 #import "Shared/AudioEffects/AudioEffectsPage.h"
 #import "Shared/Fonts/Fonts.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
+#import "Shared/LyricsTranslation/ConnectionTest.h"
 #import "Redesigned/Player/Player.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
@@ -165,7 +166,7 @@ static UIViewController *lyricsPage(void) {
                 SGSwitchRow(SGL(@"settings.lyrics.landscape.title", @"Landscape lyrics"), SGL(@"settings.lyrics.landscape.subtitle", @"Turn the phone with the lyrics open"), SGRKeyLyricsLandscape)]),
             timing,
             SGSection(SGL(@"settings.lyrics.translation.header", @"Translation"), @[SGLyricsTranslationLanguageRow(), SGRAutoTranslationRow(), SGRAutoTranslationOrderRow(), SGTranslateEverySongRow(), SGLyricsLanguageRulesRow(), SGTranslateTitlesRow(), SGGeminiKeyRow(),
-                SGClaudeKeyRow(), SGDeepLKeyRow(), SGOpenAIPresetRow(), SGOpenAIKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
+                SGClaudeKeyRow(), SGDeepLKeyRow(), SGOpenAIPresetRow(), SGOpenAIKeyRow(), SGOpenAIConnectionTestRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
             SGNotedSection(SGL(@"settings.lyrics.ai.header", @"AI"), @[SGLyricsPronunciationNotationRow(), SGLyricsCulturalNotesRow()],
                 SGL(@"settings.lyrics.ai.footer", @"Write Pronunciation and Explain References in the lyrics' menu use Gemini, Claude or your AI service, on your own key. What they write is kept for the song.")),
             SGSection(nil, @[SGLyricsMeaningsRow()]),

@@ -75,9 +75,16 @@ SGModRow *SGLyricsJapaneseReadingRow(void) {
     return row;
 }
 
-// Only the redesign's lyrics view sweeps words.
+// Only the redesign's lyrics view sweeps words, and it restyles as the switch flips.
+NSNotificationName const SGLyricsWordTimingDidChangeNotification = @"spotifyglass.lyricsWordTimingDidChange";
 SGModRow *SGLyricsWordTimingRow(void) {
-    return SGOptionRow(SGL(@"settings.lyrics.simulate_word_timing.title", @"Simulate word timing"), nil, SGKeyLyricsSimulateWords);
+    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.simulate_word_timing.title", @"Simulate word timing"),
+                               SGL(@"settings.lyrics.simulate_word_timing.subtitle", @"Sweeps lines timed only by the line on estimated words. Applies at once"),
+                               SGKeyLyricsSimulateWords);
+    row.changed = ^(BOOL on) {
+        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsWordTimingDidChangeNotification object:nil];
+    };
+    return row;
 }
 
 // Read wherever lines are timed, so it applies as the thumb moves.

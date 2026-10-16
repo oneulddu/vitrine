@@ -69,3 +69,10 @@ rules, enabling a service later and clear-all cancellation. Layout and display t
 the asynchronous checks start from a timer so a nested run loop can drain main-queue completions.
 The existing manual translation and AI-view checks run in the same invocation. Live provider accuracy,
 phone layout and real Apple language downloads remain outside this harness.
+
+The same Catalyst check also exercises generation-guarded translation status, per-song retry,
+no-ready-service versus failed/partial results, cancellation and removal clearing stale status, and
+live word-timing changes in two views. The actual tools menu identifies all timing modes and its
+estimate toggle changes both views immediately. `TranslationStatusView.m` is linked unchanged;
+360pt-wide running/failed status images are written to `/tmp/vitrine-usability-*.png` for visual review.
+The separate `harness/connection-test-settings/` smoke covers the connection-test row and result alerts.

@@ -198,6 +198,18 @@ Shared:
                   remains available. A manual choice or removal suppresses automatic work for that song/target
                   until restart or an explicit automatic switch/order change (bounded session history: 2000 pairs).
                   Enabling the switch shows translations once; rearranging the order does not override Hide.
+                  A compact note beside the lyrics menu names the working translator and completed missing lines;
+                  a fallback updates that name. Partial, failed and paused work offers Retry for only that song and
+                  language; a missing setup is explained separately and does not count as a failed provider. Finished
+                  work hides the note, and a restored translation is never assigned a guessed provider. Status is
+                  main-thread, generation guarded and bounded to 200 song/language pairs. Display-only changes do
+                  not restart work. Only known local failures become connection/key/busy reasons; remote bodies
+                  and credentials are never copied into the note.
+                  Test connection, below the OpenAI-compatible key row, sends one fixed short sentence using the
+                  saved address, model, key and translation language. It runs only from a tap, with no retries,
+                  redirects, cookies or credential storage, a 20 s limit and a 512 KiB response cap. A second tap
+                  while testing cancels. Saving a key remains distinct from a successful test. Service/target changes
+                  clear the UI result and cancel stale requests; completing after leaving the page shows no popup.
                   Both AI results are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
                   translations row counts and deletes with them. AI completion refreshes every open view of that song,
                   including views sharing the same line objects. Failed writes keep the answer in the shared

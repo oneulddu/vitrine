@@ -104,6 +104,20 @@ NSArray<NSString *> *SGDeepLTranslationsIn(id root, NSUInteger count) {
 }
 @end
 
+NSURLSessionDataTask *SGLyricsTranslationSendOnce(NSURLRequest *request, void (^finished)(NSData *, NSInteger, NSError *)) {
+    SGLyricsTranslationRequest *receiver = [SGLyricsTranslationRequest new];
+    receiver.data = [NSMutableData data]; receiver.finished = finished;
+    NSURLSessionConfiguration *config = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    config.URLCache = nil; config.HTTPCookieStorage = nil; config.URLCredentialStorage = nil;
+    config.HTTPShouldSetCookies = NO; config.timeoutIntervalForResource = 20;
+    NSMutableURLRequest *bounded = [request mutableCopy];
+    bounded.timeoutInterval = 20; bounded.HTTPShouldHandleCookies = NO;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:receiver delegateQueue:NSOperationQueue.mainQueue];
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:bounded];
+    [task resume];
+    return task;
+}
+
 static void sendRequest(NSURLRequest *request, BOOL retryServer, BOOL (^allowed)(void), NSUInteger attempt,
                         void (^finished)(NSData *, NSInteger, NSError *)) {
     if (allowed && !allowed()) {

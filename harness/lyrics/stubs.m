@@ -296,3 +296,5 @@ NSURL *SGOpenAICompletionURL(NSString *base) { return [NSURL URLWithString:base]
 NSNotificationName const SGTitleTranslationSettingsDidChangeNotification = @"spotifyglass.titleTranslationSettingsDidChange";
 
 NSNotificationName const SGLyricsTranslationServiceSettingsDidChangeNotification = @"spotifyglass.translationServiceSettingsDidChange";
+
+NSNotificationName const SGLyricsWordTimingDidChangeNotification = @"spotifyglass.lyricsWordTimingDidChange";

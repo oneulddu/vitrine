@@ -61,8 +61,65 @@ BOOL SGRAutoTranslationAvailable(SGRAutoTranslator provider, NSString *language)
 // translation or starting a manual replacement makes an older automatic answer harmless.
 static NSUInteger revision = 1;
 static NSArray *configuration;
-static NSMutableOrderedSet<NSArray *> *attempted, *suppressed;
+static NSMutableOrderedSet<NSArray *> *attempted, *suppressed, *freshRetries;
 static NSMutableDictionary<NSArray *, NSNumber *> *active;
+@interface SGRAutoTranslationProgress ()
+@property (nonatomic) SGRAutoTranslationPhase phase;
+@property (nonatomic) SGRAutoTranslator provider;
+@property (nonatomic) SGRAutoTranslationFailure failure;
+@property (nonatomic) NSUInteger completed, total, attempt;
+@end
+@implementation SGRAutoTranslationProgress
+@end
+NSNotificationName const SGRAutoTranslationProgressDidChangeNotification = @"spotifyglass.redesign.autoTranslationProgressDidChange";
+static NSMutableDictionary<NSArray *, SGRAutoTranslationProgress *> *statuses;
+static NSMutableOrderedSet<NSArray *> *statusOrder;
+static void statusChanged(NSArray *pair) {
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRAutoTranslationProgressDidChangeNotification
+        object:pair.firstObject userInfo:pair ? @{@"language": pair[1]} : nil];
+}
+static void clearStatus(NSArray *pair) {
+    if (!statuses[pair]) return;
+    [statuses removeObjectForKey:pair]; [statusOrder removeObject:pair]; statusChanged(pair);
+}
+static void publishStatus(NSArray *pair, SGRAutoTranslationPhase phase, SGRAutoTranslator provider,
+                          SGRAutoTranslationFailure failure, NSUInteger completed, NSUInteger total, NSUInteger attempt) {
+    SGRAutoTranslationProgress *old = statuses[pair];
+    if (old && old.phase == phase && old.provider == provider && old.failure == failure &&
+        old.completed == completed && old.total == total && old.attempt == attempt) return;
+    SGRAutoTranslationProgress *snapshot = [SGRAutoTranslationProgress new];
+    snapshot.phase = phase; snapshot.provider = provider; snapshot.failure = failure;
+    snapshot.completed = completed; snapshot.total = total; snapshot.attempt = attempt;
+    if (!old && statusOrder.count >= 200) { [statuses removeObjectForKey:statusOrder.firstObject]; [statusOrder removeObjectAtIndex:0]; }
+    statuses[pair] = snapshot; [statusOrder removeObject:pair]; [statusOrder addObject:pair]; statusChanged(pair);
+}
+// Match only known local messages. Untrusted server bodies are never exposed as status text.
+static SGRAutoTranslationFailure failureOf(NSString *problem) {
+    NSArray *connection = @[
+        SGL(@"settings.translation.openai.error.unreachable", @"The translation service could not be reached."),
+        SGL(@"settings.translation.error.unreachable", @"Gemini could not be reached."),
+        SGL(@"settings.translation.deepl.error.unreachable", @"DeepL could not be reached."),
+        SGL(@"settings.translation.google.error.unreachable", @"Google Translate could not be reached."),
+        SGL(@"settings.translation.bing.error.unreachable", @"Bing Translator could not be reached."),
+        SGL(@"settings.translation.claude.error.unreachable", @"Claude could not be reached.")];
+    if (problem && [connection containsObject:problem]) return SGRAutoTranslationFailureConnection;
+    NSArray *authentication = @[
+        SGL(@"settings.translation.openai.error.keyinvalid", @"The translation service turned the key down. Check it on the Lyrics page."),
+        SGL(@"settings.translation.error.keyinvalid", @"Gemini turned the key down. Check it on the Lyrics page."),
+        SGL(@"settings.translation.deepl.error.keyinvalid", @"DeepL turned the key down. Check it on the Lyrics page."),
+        SGL(@"settings.translation.claude.error.keyinvalid", @"Claude turned the key down. Check it on the Lyrics page.")];
+    if (problem && [authentication containsObject:problem]) return SGRAutoTranslationFailureAuthentication;
+    NSArray *busy = @[
+        SGL(@"settings.translation.openai.error.busy", @"The translation service is busy right now. Try again in a minute."),
+        SGL(@"settings.translation.error.busy", @"Gemini is busy right now. Try again in a minute."),
+        SGL(@"settings.translation.error.ratelimit", @"Gemini's limit for this key is reached for now."),
+        SGL(@"settings.translation.deepl.error.busy", @"DeepL is busy right now. Try again in a minute."),
+        SGL(@"settings.translation.deepl.error.quota", @"This DeepL key's translation quota is used up."),
+        SGL(@"settings.translation.google.error.busy", @"Google Translate is busy right now. Try again in a minute."),
+        SGL(@"settings.translation.bing.error.busy", @"Bing Translator is busy right now. Try again in a minute."),
+        SGL(@"settings.translation.claude.error.busy", @"Claude is busy right now. Try again in a minute.")];
+    return problem && [busy containsObject:problem] ? SGRAutoTranslationFailureBusy : SGRAutoTranslationFailureResponse;
+}
 static NSArray *currentConfiguration(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSString *language = SGLyricsGeminiLanguage();
@@ -82,7 +139,8 @@ static void remember(NSMutableOrderedSet *set, NSArray *pair) {
 static void invalidate(BOOL explicitSelection) {
     for (NSArray *pair in active) SGLyricsEndTranslation(pair[0], pair[1], active[pair].unsignedIntegerValue);
     [active removeAllObjects];
-    [attempted removeAllObjects];
+    [attempted removeAllObjects]; [freshRetries removeAllObjects];
+    [statuses removeAllObjects]; [statusOrder removeAllObjects]; statusChanged(nil);
     if (explicitSelection) [suppressed removeAllObjects];
     revision++;
     configuration = currentConfiguration();
@@ -92,6 +150,8 @@ static void prepare(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         attempted = [NSMutableOrderedSet orderedSet]; suppressed = [NSMutableOrderedSet orderedSet]; active = [NSMutableDictionary dictionary];
+        freshRetries = [NSMutableOrderedSet orderedSet];
+        statuses = [NSMutableDictionary dictionary]; statusOrder = [NSMutableOrderedSet orderedSet];
         configuration = currentConfiguration();
         for (NSNotificationName name in @[SGLyricsTranslationsDidChangeNotification, SGLyricsTranslationServiceSettingsDidChangeNotification]) {
             [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:nil usingBlock:^(NSNotification *note) {
@@ -135,6 +195,8 @@ void SGRAutoTranslationSuppress(NSString *track, NSString *language) {
     if (!track.length || !language.length) return;
     NSArray *pair = @[track, language];
     remember(suppressed, pair);
+    [freshRetries removeObject:pair];
+    clearStatus(pair);
     SGLyricsEndTranslation(track, language, active[pair].unsignedIntegerValue);
     [active removeObjectForKey:pair];
 }
@@ -145,23 +207,47 @@ void SGRAutoTranslationFinish(NSString *track, NSString *language, NSUInteger to
     NSArray *pair = @[track, language];
     if ([active[pair] isEqual:@(token)]) [active removeObjectForKey:pair];
 }
+SGRAutoTranslationProgress *SGRAutoTranslationProgressFor(NSString *track, NSString *language) {
+    if (!track.length || !language.length) return nil;
+    prepare();
+    return statuses[@[track, language]];
+}
+BOOL SGRAutoTranslationRetry(NSString *track, NSString *language) {
+    if (!track.length || !language.length) return NO;
+    prepare();
+    NSArray *pair = @[track, language];
+    SGRAutoTranslationProgress *status = statuses[pair];
+    if (!status || status.phase == SGRAutoTranslationPhaseRunning || status.phase == SGRAutoTranslationPhaseComplete || active[pair]) return NO;
+    [attempted removeObject:pair]; [suppressed removeObject:pair]; remember(freshRetries, pair); clearStatus(pair);
+    return YES;
+}
+void SGRAutoTranslationUnavailable(NSString *track, NSString *language) {
+    if (!track.length || !language.length) return;
+    prepare();
+    NSArray *pair = @[track, language];
+    if ([suppressed containsObject:pair] || active[pair]) return;
+    publishStatus(pair, SGRAutoTranslationPhaseUnavailable, SGRAutoTranslatorOff, SGRAutoTranslationFailureNone, 0, 0, 0);
+}
 static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> *lines, NSString *track,
-                      NSString *language, SGRAutoTranslated progress, SGRAutoTranslated done) {
+                      NSString *language, BOOL fresh, SGRAutoTranslated progress, SGRAutoTranslated done) {
     if (!SGRAutoTranslationAvailable(provider, language)) { done(nil, nil); return; }
     NSMutableArray *texts = [NSMutableArray arrayWithCapacity:lines.count];
     for (SGKaraokeLine *line in lines) [texts addObject:SGKaraokeLineText(line) ?: @""];
+    // A nil cache identity is already supported by every remote translator. Explicit Retry must not
+    // replay a cached partial answer; ordinary automatic attempts keep using their normal memo.
+    NSString *cacheTrack = fresh ? nil : track;
     switch (provider) {
         case SGRAutoTranslatorOnDevice: [SGOnDeviceTranslation translate:texts to:language done:done]; break;
         case SGRAutoTranslatorAppleIntelligence: {
             [SGOnDeviceTranslation translateWithAppleIntelligence:texts to:language song:SGLyricsSongName(track)
                 progress:^(NSArray *answer) { progress(answer, nil); } done:done]; break;
         }
-        case SGRAutoTranslatorGoogle: SGLyricsTranslateWithGoogle(track, lines, language, done); break;
-        case SGRAutoTranslatorBing: SGLyricsTranslateWithBing(track, lines, language, done); break;
-        case SGRAutoTranslatorDeepL: SGLyricsTranslateWithDeepL(track, lines, language, done); break;
-        case SGRAutoTranslatorGemini: SGLyricsTranslateWithGemini(track, lines, language, done); break;
-        case SGRAutoTranslatorClaude: SGLyricsTranslateWithClaude(track, lines, language, done); break;
-        case SGRAutoTranslatorOpenAI: SGLyricsTranslateWithOpenAI(track, lines, language, done); break;
+        case SGRAutoTranslatorGoogle: SGLyricsTranslateWithGoogle(cacheTrack, lines, language, done); break;
+        case SGRAutoTranslatorBing: SGLyricsTranslateWithBing(cacheTrack, lines, language, done); break;
+        case SGRAutoTranslatorDeepL: SGLyricsTranslateWithDeepL(cacheTrack, lines, language, done); break;
+        case SGRAutoTranslatorGemini: SGLyricsTranslateWithGemini(cacheTrack, lines, language, done); break;
+        case SGRAutoTranslatorClaude: SGLyricsTranslateWithClaude(cacheTrack, lines, language, done); break;
+        case SGRAutoTranslatorOpenAI: SGLyricsTranslateWithOpenAI(cacheTrack, lines, language, done); break;
         default: done(nil, nil); break;
     }
 }
@@ -174,7 +260,10 @@ static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> 
 @property (nonatomic, copy) NSArray<NSNumber *> *order;
 @property (nonatomic, strong) NSMutableArray<NSString *> *answer;
 @property (nonatomic, strong) NSMutableIndexSet *missing;
-@property (nonatomic) NSUInteger revision, next, step;
+@property (nonatomic) NSUInteger revision, next, step, total, token;
+@property (nonatomic) SGRAutoTranslator provider;
+@property (nonatomic) SGRAutoTranslationFailure failure;
+@property (nonatomic) BOOL interrupted, fresh;
 @property (nonatomic) BOOL finished;
 @property (nonatomic, copy) SGRAutoTranslated progress, done;
 @property (nonatomic, copy) BOOL (^mayContinue)(void);
@@ -188,6 +277,16 @@ static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> 
 - (void)finish:(BOOL)cancelled {
     if (self.finished) return;
     self.finished = YES;
+    NSArray *pair = @[self.track, self.language];
+    // The old chain may finish after a replacement; it must never clear or overwrite the new status.
+    if ([active[pair] isEqual:@(self.token)] && revision == self.revision) {
+        if (cancelled) clearStatus(pair);
+        else {
+            SGRAutoTranslationPhase phase = !self.missing.count ? SGRAutoTranslationPhaseComplete : self.interrupted ? SGRAutoTranslationPhasePaused :
+                self.missing.count < self.total ? SGRAutoTranslationPhasePartial : SGRAutoTranslationPhaseFailed;
+            publishStatus(pair, phase, self.provider, self.failure, self.total - self.missing.count, self.total, self.step);
+        }
+    }
     BOOL any = NO;
     for (NSString *text in self.answer) any = any || text.length;
     SGRAutoTranslated done = self.done;
@@ -206,11 +305,16 @@ static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> 
         }
     }];
     [self.missing removeIndexes:filled];
-    if (filled.count) self.progress([self.answer copy], nil);
+    if (filled.count) {
+        publishStatus(@[self.track, self.language], SGRAutoTranslationPhaseRunning, self.provider,
+            SGRAutoTranslationFailureNone, self.total - self.missing.count, self.total, self.step);
+        self.progress([self.answer copy], nil);
+    }
 }
 - (void)runNext {
     if (![self current]) { [self finish:YES]; return; }
-    if (!self.missing.count || !self.mayContinue()) { [self finish:NO]; return; }
+    if (!self.missing.count) { [self finish:NO]; return; }
+    if (!self.mayContinue()) { self.interrupted = YES; [self finish:NO]; return; }
     SGRAutoTranslator provider = SGRAutoTranslatorOff;
     while (self.next < self.order.count) {
         SGRAutoTranslator candidate = self.order[self.next++].integerValue;
@@ -218,14 +322,20 @@ static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> 
     }
     if (provider == SGRAutoTranslatorOff) { [self finish:NO]; return; }
     NSUInteger step = ++self.step;
+    self.provider = provider;
+    publishStatus(@[self.track, self.language], SGRAutoTranslationPhaseRunning, provider, SGRAutoTranslationFailureNone,
+        self.total - self.missing.count, self.total, step);
+    if (![self current]) { [self finish:YES]; return; }
+    if (!self.mayContinue()) { self.interrupted = YES; [self finish:NO]; return; }
     __block BOOL answered = NO;
-    translateUsing(provider, self.lines, self.track, self.language, ^(NSArray *values, NSString *error) {
+    translateUsing(provider, self.lines, self.track, self.language, self.fresh, ^(NSArray *values, NSString *error) {
         if (!answered && self.step == step && [self current]) [self take:values];
     }, ^(NSArray *values, NSString *error) {
         if (answered || self.step != step || self.finished) return;
         answered = YES;
         if (![self current]) { [self finish:YES]; return; }
         [self take:values];
+        if (self.missing.count) self.failure = failureOf(error);
         dispatch_async(dispatch_get_main_queue(), ^{ [self runNext]; });
     });
 }
@@ -233,7 +343,9 @@ static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> 
 void SGRAutoTranslateInOrder(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *language,
                              NSUInteger revision, BOOL (^mayContinue)(void), SGRAutoTranslated progress, SGRAutoTranslated done) {
     SGRAutoTranslationJob *job = [SGRAutoTranslationJob new];
-    job.track = track; job.language = language; job.revision = revision;
+    job.track = track; job.language = language; job.revision = revision; job.token = active[@[track, language]].unsignedIntegerValue;
+    NSArray *pair = @[track, language];
+    job.fresh = [freshRetries containsObject:pair]; [freshRetries removeObject:pair];
     job.order = SGRAutoTranslationOrder(); job.progress = progress; job.done = done; job.mayContinue = mayContinue;
     job.answer = [NSMutableArray array]; job.missing = [NSMutableIndexSet indexSet];
     NSMutableArray *copies = [NSMutableArray array];
@@ -243,6 +355,6 @@ void SGRAutoTranslateInOrder(NSArray<SGKaraokeLine *> *lines, NSString *track, N
         if (!line.translation.length && [SGKaraokeLineText(line) rangeOfCharacterFromSet:NSCharacterSet.letterCharacterSet].location != NSNotFound)
             [job.missing addIndex:i];
     }];
-    job.lines = copies;
+    job.lines = copies; job.total = job.missing.count;
     [job runNext];
 }

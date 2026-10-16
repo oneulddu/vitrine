@@ -31,3 +31,25 @@ void SGRAutoTranslationFinish(NSString *track, NSString *language, NSUInteger to
 typedef void (^SGRAutoTranslated)(NSArray<NSString *> *lines, NSString *error);
 void SGRAutoTranslateInOrder(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *language,
                              NSUInteger revision, BOOL (^mayContinue)(void), SGRAutoTranslated progress, SGRAutoTranslated done);
+
+// Main-thread snapshots for the current song, never persisted or attributed to restored cache entries.
+typedef NS_ENUM(NSInteger, SGRAutoTranslationPhase) {
+    SGRAutoTranslationPhaseRunning, SGRAutoTranslationPhaseComplete, SGRAutoTranslationPhasePartial,
+    SGRAutoTranslationPhaseFailed, SGRAutoTranslationPhaseUnavailable, SGRAutoTranslationPhasePaused
+};
+typedef NS_ENUM(NSInteger, SGRAutoTranslationFailure) {
+    SGRAutoTranslationFailureNone, SGRAutoTranslationFailureConnection,
+    SGRAutoTranslationFailureAuthentication, SGRAutoTranslationFailureBusy, SGRAutoTranslationFailureResponse
+};
+@interface SGRAutoTranslationProgress : NSObject
+@property (nonatomic, readonly) SGRAutoTranslationPhase phase;
+@property (nonatomic, readonly) SGRAutoTranslator provider;
+@property (nonatomic, readonly) SGRAutoTranslationFailure failure;
+@property (nonatomic, readonly) NSUInteger completed, total, attempt;
+@end
+extern NSNotificationName const SGRAutoTranslationProgressDidChangeNotification; // track or nil after reset; language in userInfo
+SGRAutoTranslationProgress *SGRAutoTranslationProgressFor(NSString *track, NSString *language);
+// A user-requested retry clears only this pair's terminal status/attempt; never starts networking itself.
+BOOL SGRAutoTranslationRetry(NSString *track, NSString *language);
+// Report this only when eligible untranslated lyrics have no available service. Consumes no attempt.
+void SGRAutoTranslationUnavailable(NSString *track, NSString *language);

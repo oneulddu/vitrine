@@ -73,6 +73,8 @@ extern NSNotificationName const SGLyricsDidReloadNotification;
 // the source had timed them. Off, such a line lights up whole as it starts. Off by default: the
 // estimate is a guess dressed up as timing.
 #define SGKeyLyricsSimulateWords @"spotifyglass.lyricsSimulateWords"
+// Posted on main after the switch above changes, from the Lyrics page or the lyrics menu: it applies at once.
+extern NSNotificationName const SGLyricsWordTimingDidChangeNotification;
 
 // How finely a line was timed by where it came from. The words of a line timed by the line are still
 // there, each with an estimated time, for a page that wants to sweep them anyway; a line with no time

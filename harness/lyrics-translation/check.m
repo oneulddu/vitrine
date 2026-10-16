@@ -7,6 +7,7 @@
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/LyricsTranslation/AIServicesInternal.h"
 #import "Settings/SGModPage.h"
+#import "Redesigned/Lyrics/AutoTranslation.h"
 
 NSURL *SGLyricsTestCacheRoot(void) {
     static NSURL *root;
@@ -85,8 +86,10 @@ NSString *SGLyricsTranslationLanguage(void) { return testLanguage; }
 SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { SGModRow *r = [SGModRow new]; r.title = t; r.subtitle = s; r.value = v; r.action = a; return r; }
 SGModRow *SGOptionRow(NSString *t, NSString *s, NSString *k) { return nil; }
 id SGKaraokeTrackFor(NSString *trackID) { return nil; }
-static BOOL bingEnabled, titlesEnabled;
-BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
+static BOOL bingEnabled, titlesEnabled, autoRetryEnabled;
+NSString *SGKaraokePlayingTrack(void) { return nil; }
+NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGRKeyLyricsAutoTranslation] ? autoRetryEnabled : [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
 UIViewController *SGTopController(void) { return nil; }
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
@@ -401,6 +404,8 @@ static void checkProviders(void) {
 }
 
 #include "check-ai.m"
+#include "check-connection.m"
+#include "check-auto-retry.m"
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
@@ -414,6 +419,8 @@ int main(int argc, const char **argv) {
             printf("Bing live: %lu page GET, %lu translation POST, main completion, %s\n", (unsigned long)bingGets, (unsigned long)bingPosts, [[got componentsJoinedByString:@" | "] UTF8String]);
             return 0;
         }
+        if (argc > 1 && strcmp(argv[1], "--auto-retry-only") == 0) { checkAutoRetry(); return 0; }
+        if (argc > 1 && strcmp(argv[1], "--connection-only") == 0) { checkConnection(); return 0; }
         // Musixmatch's translations go on copies of the lines they match, by the folded text.
         NSArray<SGKaraokeLine *> *lines = SGKaraokeEstimatedLines(@[@0, @2000, @4000, @6000],
                                                                   @[@"Où est l'amour ?", @"Yeah", @"Rien", @""]);
@@ -453,6 +460,8 @@ int main(int argc, const char **argv) {
         checkProviders();
         checkBing();
         checkNewAI();
+        checkConnection();
+        checkAutoRetry();
         puts("lyrics translation: all checks passed");
     }
     return 0;
