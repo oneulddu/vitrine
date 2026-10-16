@@ -38,6 +38,13 @@ estimate instead, as the Lyrics page's switch does. Untimed lyrics show every li
 Run it on an iOS 26 simulator, by UDID: iOS 27 refuses an app without a scene delegate and crashes it
 at launch. `-dumpTo PATH` writes the dump to a file, for when `--console` shows nothing.
 
+`./translation-check.sh` runs the lyrics menu's translation checks (`translation-check.m`) on the Mac, built for
+Mac Catalyst, with no simulator: two views on one song, the real menu items tapped, stubs.m's saved translations
+and job tokens behind them. It exits with the number of failures.
+The build is build.sh's with three changes: the target is `arm64-apple-ios17.0-macabi`, the SDK is the macOS one
+with `-iframework $SDK/System/iOSSupport/System/Library/Frameworks`, and the binary goes into
+`Check.app/Contents/MacOS/` in a new `mktemp -d` folder under /tmp, which it then launches with `-translationCheck 1`.
+
 A real file goes in with `-file /path/song.ttml`: the simulator reads the Mac's paths.
 
 `-perf LABEL` logs the view's per frame cost (its display link's `tick`) every 240 frames; run with
@@ -51,3 +58,21 @@ A screen recording catches the motion: `simctl io <udid> recordVideo -f run.mp4`
 
 What it does not cover: Spotify's pages around the view (the player's stage is only its size, `-player 1`),
 the lyrics arriving late or changing track, and the device's frame pacing.
+
+
+`translation-check.sh` also runs `auto-check.inc` on Mac Catalyst, without a simulator or network.
+It links the actual automatic scheduler, provider chain and lyrics view with scripted providers and
+an in-memory saved-results store. Two separately hosted views exercise default-off, order validation,
+failure fallback, partial preservation, cached replay, removal/manual suppression, bounded failed
+attempts, disabling/reordering during a request, target/track changes, hidden/detached views, language
+rules, enabling a service later and clear-all cancellation. Layout and display ticks are driven explicitly;
+the asynchronous checks start from a timer so a nested run loop can drain main-queue completions.
+The existing manual translation and AI-view checks run in the same invocation. Live provider accuracy,
+phone layout and real Apple language downloads remain outside this harness.
+
+The same Catalyst check also exercises generation-guarded translation status, per-song retry,
+no-ready-service versus failed/partial results, cancellation and removal clearing stale status, and
+live word-timing changes in two views. The actual tools menu identifies all timing modes and its
+estimate toggle changes both views immediately. `TranslationStatusView.m` is linked unchanged;
+360pt-wide running/failed status images are written to `/tmp/vitrine-usability-*.png` for visual review.
+The separate `harness/connection-test-settings/` smoke covers the connection-test row and result alerts.

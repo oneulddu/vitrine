@@ -28,3 +28,6 @@ BOOL SGLyricsTitleLatinArtist(NSString *artist);
 
 void SGLyricsAIForgotten(void);
 void SGLyricsDeleteSavedTranslations(void);
+
+// One bounded/cancellable attempt for an explicit connection test; unlike translation jobs, no retry.
+NSURLSessionDataTask *SGLyricsTranslationSendOnce(NSURLRequest *request, void (^finished)(NSData *, NSInteger, NSError *));

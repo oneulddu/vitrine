@@ -120,6 +120,9 @@ void SGRShownTitleWatch(UIView *unit) {
     [NSNotificationCenter.defaultCenter addObserverForName:SGTranslatedTitleDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         dispatch_async(dispatch_get_main_queue(), ^{ refresh(); });
     }];
+    [NSNotificationCenter.defaultCenter addObserverForName:SGTitleTranslationSettingsDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        dispatch_async(dispatch_get_main_queue(), ^{ refresh(); });
+    }];
     [NSNotificationCenter.defaultCenter addObserverForName:SGSimplifyTitlesDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         dispatch_async(dispatch_get_main_queue(), ^{
             sg_simplify = SGFlag(SGKeyLyricsSimplifyTitles, NO);

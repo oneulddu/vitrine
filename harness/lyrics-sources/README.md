@@ -12,8 +12,10 @@
 - Bugs' second-to-millisecond rounding, malformed and backwards sheets, plain fallback, and title,
   artist and four-second duration matching (a music video's length does not stand in for the track's);
 - Genie's bounded HTML rows and entity decoding, browser headers, JSONP removal, numeric-key
-  validation and millisecond sorting;
-- LyricsPlus' Line, Word and Syllable shapes, joining, backing vocals, catalog credit and fallback host;
+  validation and millisecond sorting. A mobile User-Agent returns a rejected redirect in the fixture;
+  Genie must use a desktop User-Agent for both requests;
+- LyricsPlus' Line, Word and Syllable shapes, joining, backing vocals, catalog credit, primary success without a second request,
+  and fallback to lyricsplus.binimum.org when the primary fails;
 - Deezer's word/line/plain preference, title/artist/duration matching, missing or unsafe ARL, in-memory
   JWT reuse, and one refresh on either a GraphQL or HTTP authentication failure. Cookies, tokens and
   lyrics in these checks are invented; no Keychain item is read or written;

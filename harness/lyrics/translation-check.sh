@@ -1,0 +1,42 @@
+#!/bin/sh
+# translation-check.sh: the lyrics menu's translation checks (translation-check.m) built for Mac Catalyst and run on
+# the Mac, no simulator. Prints PASS and FAIL lines and exits with the number of failures.
+set -e
+HERE=$(cd "$(dirname "$0")" && pwd)
+SRC=$(cd "$HERE/../.." && pwd)/tweak/Sources
+OUT=$(mktemp -d /tmp/lyrics-translation-check.XXXXXX)
+trap 'rm -rf "$OUT"' EXIT
+APP=$OUT/Check.app
+mkdir -p "$APP/Contents/MacOS"
+SDK=$(xcrun --sdk macosx --show-sdk-path)
+xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -g -O0 -isysroot "$SDK" \
+    -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" -I"$SRC" -I"$SRC/Redesigned/Lyrics" -Wall -Wno-deprecated-declarations \
+    "$HERE/main.m" "$HERE/../scene.m" "$HERE/stubs.m" "$HERE/translation-check.m" "$HERE/../sing/button/sing-stubs.m" \
+    "$SRC"/Redesigned/Lyrics/AutoTranslation.m $( [ -f "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ] && echo "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ) "$SRC"/Redesigned/Lyrics/SGRKaraokeView.m "$SRC"/Redesigned/Lyrics/LyricsText.m "$SRC"/Redesigned/Lyrics/LyricsLook.m \
+    "$SRC"/Redesigned/Lyrics/SongLanguage.m "$SRC"/Redesigned/Lyrics/MeaningSheet.m "$SRC"/Redesigned/Lyrics/SGRSingButton.m \
+    "$SRC"/Shared/Lyrics/KaraokeTiming.m "$SRC"/Shared/Lyrics/Romanise.m "$SRC"/Shared/Lyrics/LyricsLanguage.m \
+    "$SRC"/Shared/LyricsMeanings/Meanings.m "$SRC"/Shared/AdBlock/Protobuf.m "$SRC"/Shared/LyricsSources/SGTTML.m \
+    "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRGlass.m \
+    "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGLocalize.m "$SRC"/Core/SGGlass.m \
+    -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreText -framework Foundation \
+    -framework Symbols -framework NaturalLanguage -o "$APP/Contents/MacOS/Check"
+cat > "$APP/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>Check</string>
+<key>CFBundleIdentifier</key><string>com.vojta.lyricsharness.translationcheck</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>UIApplicationSceneManifest</key><dict>
+  <key>UIApplicationSupportsMultipleScenes</key><false/>
+  <key>UISceneConfigurations</key><dict>
+    <key>UIWindowSceneSessionRoleApplication</key><array><dict>
+      <key>UISceneConfigurationName</key><string>Default</string>
+      <key>UISceneDelegateClassName</key><string>SGRHarnessScene</string>
+    </dict></array>
+  </dict>
+</dict>
+</dict></plist>
+PLIST
+codesign -f -s - "$APP" >/dev/null 2>&1
+"$APP/Contents/MacOS/Check" -translationCheck 1

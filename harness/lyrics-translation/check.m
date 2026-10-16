@@ -7,6 +7,7 @@
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/LyricsTranslation/AIServicesInternal.h"
 #import "Settings/SGModPage.h"
+#import "Redesigned/Lyrics/AutoTranslation.h"
 
 NSURL *SGLyricsTestCacheRoot(void) {
     static NSURL *root;
@@ -16,12 +17,17 @@ NSURL *SGLyricsTestCacheRoot(void) {
 static BOOL deviceAvailable;
 static NSArray *deviceAnswer;
 static NSUInteger deviceCalls;
+static NSMutableArray *heldDeviceReplies;
+static NSTimeInterval titleTestClock = 100;
+NSTimeInterval SGLyricsTitleTestTime(void) { return titleTestClock; }
 @implementation SGOnDeviceTranslation
 + (BOOL)translationAvailable { return deviceAvailable; }
 + (BOOL)appleIntelligenceAvailable:(NSString *)languageTag { return NO; }
 + (void)translate:(NSArray<NSString *> *)lines to:(NSString *)tag done:(void (^)(NSArray<NSString *> *, NSString *))done {
     deviceCalls++;
-    dispatch_async(dispatch_get_main_queue(), ^{ done(deviceAnswer, deviceAnswer ? nil : @"Languages not installed"); });
+    if (heldDeviceReplies) { [heldDeviceReplies addObject:[done copy]]; return; }
+    NSArray *answer = deviceAnswer;
+    dispatch_async(dispatch_get_main_queue(), ^{ done(answer, answer ? nil : @"Languages not installed"); });
 }
 + (void)translateWithAppleIntelligence:(NSArray<NSString *> *)lines to:(NSString *)tag song:(NSString *)song progress:(void (^)(NSArray<NSString *> *))progress done:(void (^)(NSArray<NSString *> *, NSString *))done { done(nil, @"Not exercised"); }
 @end
@@ -80,8 +86,10 @@ NSString *SGLyricsTranslationLanguage(void) { return testLanguage; }
 SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { SGModRow *r = [SGModRow new]; r.title = t; r.subtitle = s; r.value = v; r.action = a; return r; }
 SGModRow *SGOptionRow(NSString *t, NSString *s, NSString *k) { return nil; }
 id SGKaraokeTrackFor(NSString *trackID) { return nil; }
-static BOOL bingEnabled, titlesEnabled;
-BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
+static BOOL bingEnabled, titlesEnabled, autoRetryEnabled;
+NSString *SGKaraokePlayingTrack(void) { return nil; }
+NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGRKeyLyricsAutoTranslation] ? autoRetryEnabled : [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
 UIViewController *SGTopController(void) { return nil; }
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
@@ -97,6 +105,30 @@ static NSUInteger bingGets, bingPosts;
 static NSMutableArray *bingReplies;
 static BOOL disableOnReply;
 static NSString *const bingHTML = @"<div data-iid=\"translator.1\"></div><script>IG: \"abc&def\"; params_AbusePreventionHelper = [1234567890123,\"token&+=%\",3600000];</script>";
+
+// Exercise Gemini's real job/cache without allowing its NSURLSession to reach the network.
+static NSMutableArray *geminiTitleReplies;
+static NSUInteger geminiTitleRequests;
+@interface SGGeminiTitleProtocol : NSURLProtocol
+@end
+@implementation SGGeminiTitleProtocol
++ (BOOL)canInitWithRequest:(NSURLRequest *)request { return [request.URL.host isEqual:@"generativelanguage.googleapis.com"]; }
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CHECK(geminiTitleReplies.count > 0);
+        geminiTitleRequests++;
+        NSString *reply = geminiTitleReplies.firstObject;
+        [geminiTitleReplies removeObjectAtIndex:0];
+        NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": reply}]}, @"finishReason": @"STOP"}]} options:0 error:nil];
+        NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
+        [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+        [self.client URLProtocol:self didLoadData:data];
+        [self.client URLProtocolDidFinishLoading:self];
+    });
+}
+- (void)stopLoading {}
+@end
 
 // Stand-in for LyricsSources.m's transport, whose unrelated provider registry is not linked here.
 // The optional live check retains its 2 MiB bound, ephemeral storage and redirect refusal.
@@ -348,6 +380,12 @@ static void checkProviders(void) {
     CHECK(SGOpenAICompletionURL(@"http://localhost:8080/v1"));
     CHECK(SGOpenAICompletionURL(@"http://127.0.0.1:8080"));
     CHECK(SGOpenAICompletionURL(@"http://server.local/v1"));
+    CHECK([SGOpenAICompletionURL(@"http://100.97.8.81:10100/v1").absoluteString isEqual:@"http://100.97.8.81:10100/v1/chat/completions"]);
+    CHECK(SGOpenAICompletionURL(@"http://100.64.0.0/v1") && SGOpenAICompletionURL(@"http://100.127.255.255:65535/v1/"));
+    for (NSString *bad in @[@"http://100.63.255.255/v1", @"http://100.128.0.0/v1", @"http://101.97.8.81/v1",
+        @"http://100.97.8.256/v1", @"http://100.97.8/v1", @"http://100.97.8.81.example.com/v1",
+        @"http://100.97.8.81:0/v1", @"http://100.97.8.81:65536/v1", @"http://user:key@100.97.8.81/v1",
+        @"http://100.97.8.81/v1?key=value", @"http://100.97.8.81/v1#x", @"ftp://100.97.8.81/v1"]) CHECK(!SGOpenAICompletionURL(bad));
     for (NSString *bad in @[@"", @"http://example.com/v1", @"http://localhost.evil/v1", @"http://server.local.evil/v1", @"ftp://localhost/v1", @"https://user:secret@example.com/v1", @"https://example.com/v1?q=x", @"https://example.com/v1#x", @"https://example.com:65536/v1", @"https://exa mple.com", @"/v1"]) {
         CHECK(!SGOpenAICompletionURL(bad));
     }
@@ -366,6 +404,8 @@ static void checkProviders(void) {
 }
 
 #include "check-ai.m"
+#include "check-connection.m"
+#include "check-auto-retry.m"
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
@@ -379,6 +419,8 @@ int main(int argc, const char **argv) {
             printf("Bing live: %lu page GET, %lu translation POST, main completion, %s\n", (unsigned long)bingGets, (unsigned long)bingPosts, [[got componentsJoinedByString:@" | "] UTF8String]);
             return 0;
         }
+        if (argc > 1 && strcmp(argv[1], "--auto-retry-only") == 0) { checkAutoRetry(); return 0; }
+        if (argc > 1 && strcmp(argv[1], "--connection-only") == 0) { checkConnection(); return 0; }
         // Musixmatch's translations go on copies of the lines they match, by the folded text.
         NSArray<SGKaraokeLine *> *lines = SGKaraokeEstimatedLines(@[@0, @2000, @4000, @6000],
                                                                   @[@"Où est l'amour ?", @"Yeah", @"Rien", @""]);
@@ -418,6 +460,8 @@ int main(int argc, const char **argv) {
         checkProviders();
         checkBing();
         checkNewAI();
+        checkConnection();
+        checkAutoRetry();
         puts("lyrics translation: all checks passed");
     }
     return 0;

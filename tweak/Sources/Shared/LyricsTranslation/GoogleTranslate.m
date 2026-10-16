@@ -174,6 +174,7 @@ SGModRow *SGGoogleTranslateRow(void) {
     SGModRow *row = SGOptionRow(SGL(@"settings.translation.google.title", @"Google Translate"),
         SGL(@"settings.translation.google.subtitle", @"Sends the song's lyrics to Google Translate's public web endpoint"), SGKeyLyricsGoogleTranslate);
     row.changed = ^(BOOL on) {
+        SGLyricsTranslationServiceSettingsChanged();
         dispatch_async(dispatch_get_main_queue(), ^{
             [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
         });

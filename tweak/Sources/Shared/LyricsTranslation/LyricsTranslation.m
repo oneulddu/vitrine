@@ -136,7 +136,7 @@ static void sendToGemini(NSURLRequest *request, NSURLRequest *plain, NSUInteger 
     }] resume];
 }
 
-static NSMutableDictionary<NSString *, NSArray<NSString *> *> *sg_done;   // per launch, by track and language
+static NSMutableDictionary<NSString *, NSDictionary *> *sg_done;   // per launch, by track and language; source texts must still match
 
 void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                  void (^done)(NSArray<NSString *> *translations, NSString *error)) {
@@ -147,12 +147,13 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
     }
     if (!sg_done) sg_done = [NSMutableDictionary dictionary];
     NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
-    if (trackID && sg_done[memo].count == lines.count) {
-        done(sg_done[memo], nil);
-        return;
-    }
     NSMutableArray<NSString *> *texts = [NSMutableArray arrayWithCapacity:lines.count];
     for (SGKaraokeLine *line in lines) [texts addObject:SGKaraokeLineText(line) ?: @""];
+    NSDictionary *cached = trackID ? sg_done[memo] : nil;
+    if ([cached[@"texts"] isEqual:texts]) {
+        done(cached[@"answer"], nil);
+        return;
+    }
     // By the whole tag, so the script stays: zh-Hant is "Chinese, Traditional" where its language alone is "Chinese".
     NSString *language = [[NSLocale localeWithLocaleIdentifier:@"en"] localizedStringForLocaleIdentifier:languageTag] ?: languageTag;
     NSData *input = [NSJSONSerialization dataWithJSONObject:texts options:0 error:nil];
@@ -196,7 +197,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
         NSArray *translations = SGGeminiTranslationsIn(root, status, error, texts.count, &problem);
         SGLog(@"gemini: %@ lines into %@: %@", @(texts.count), languageTag, translations ? @"translated" : problem);
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (translations && trackID) sg_done[memo] = translations;
+            if (translations && trackID) sg_done[memo] = @{@"texts": texts, @"answer": translations};
             done(translations, problem);
         });
     });
@@ -216,7 +217,7 @@ static void askForKey(void) {
         NSMutableCharacterSet *around = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
         [around addCharactersInString:@"\"'“”‘’"];
         NSString *key = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:around];
-        if (key.length) storeKey(key);
+        if (key.length) { storeKey(key); SGLyricsTranslationServiceSettingsChanged(); }
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
@@ -233,7 +234,7 @@ static void askForKey(void) {
     [alert addAction:save];
     if (SGGeminiKeySet()) {
         [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-            storeKey(nil);
+            storeKey(nil); SGLyricsTranslationServiceSettingsChanged();
         }]];
     }
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];

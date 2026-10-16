@@ -1,4 +1,5 @@
 #import <Security/Security.h>
+#import <arpa/inet.h>
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
@@ -15,7 +16,11 @@ NSURL *SGOpenAICompletionURL(NSString *base) {
     NSURLComponents *parts = [NSURLComponents componentsWithString:base];
     NSString *host = parts.host.lowercaseString, *scheme = parts.scheme.lowercaseString;
     if (!host.length || parts.user || parts.password || parts.query || parts.fragment) return nil;
-    BOOL local = [host isEqualToString:@"localhost"] || [host isEqualToString:@"127.0.0.1"] || (host.length > 6 && [host hasSuffix:@".local"]);
+    // Match a numeric Tailscale IPv4 address, never a hostname which merely starts with one.
+    struct in_addr address;
+    BOOL tailnet = inet_pton(AF_INET, host.UTF8String, &address) == 1 &&
+        (ntohl(address.s_addr) & 0xffc00000U) == 0x64400000U;   // 100.64.0.0/10
+    BOOL local = tailnet || [host isEqualToString:@"localhost"] || [host isEqualToString:@"127.0.0.1"] || (host.length > 6 && [host hasSuffix:@".local"]);
     if (![scheme isEqualToString:@"https"] && !([scheme isEqualToString:@"http"] && local)) return nil;
     if (parts.port && (parts.port.integerValue < 1 || parts.port.integerValue > 65535)) return nil;
     NSString *path = parts.percentEncodedPath;
@@ -221,7 +226,7 @@ void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *li
 static void askForKey(void) {
     NSString *originalHost = SGOpenAIKeyHost(setting(SGKeyLyricsOpenAIBaseURL, kBase));
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.openaikey.title", @"OpenAI-compatible translation")
-        message:SGL(@"settings.translation.openaikey.message", @"The song's lyrics go to the service at this address, on your own API key. The key stays on this iPhone. Use an HTTPS base URL; HTTP is allowed only for localhost, 127.0.0.1 or a .local host.")
+        message:SGL(@"settings.translation.openaikey.message", @"The song's lyrics go to the service at this address, on your own API key. The key stays on this iPhone. Use an HTTPS base URL; HTTP is also allowed for localhost, 127.0.0.1, .local hosts and Tailscale IPv4 addresses (100.64.0.0/10).")
         preferredStyle:UIAlertControllerStyleAlert];
     __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -232,6 +237,7 @@ static void askForKey(void) {
             !migrateKey(setting(SGKeyLyricsOpenAIBaseURL, kBase)) || !storeKey(key, SGOpenAIKeyHost(base))) return;
         [NSUserDefaults.standardUserDefaults setObject:base forKey:SGKeyLyricsOpenAIBaseURL];
         [NSUserDefaults.standardUserDefaults setObject:model forKey:SGKeyLyricsOpenAIModel];
+        SGLyricsTranslationServiceSettingsChanged();
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
@@ -259,7 +265,7 @@ static void askForKey(void) {
         }];
     }
     [alert addAction:save];
-    if (SGOpenAIKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { storeKey(nil, originalHost); }]];
+    if (SGOpenAIKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { if (storeKey(nil, originalHost)) SGLyricsTranslationServiceSettingsChanged(); }]];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
@@ -301,6 +307,7 @@ SGModRow *SGOpenAIPresetRow(void) {
             if (!migrateKey(setting(SGKeyLyricsOpenAIBaseURL, kBase))) return;
             [NSUserDefaults.standardUserDefaults setObject:preset[@"base"] forKey:SGKeyLyricsOpenAIBaseURL];
             [NSUserDefaults.standardUserDefaults setObject:preset[@"model"] forKey:SGKeyLyricsOpenAIModel];
+            SGLyricsTranslationServiceSettingsChanged();
             [sg_done removeAllObjects];
         });
 }

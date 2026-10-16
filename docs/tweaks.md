@@ -138,7 +138,8 @@ Shared:
                   source's row; checked on the Mac against harness/spicy-lyrics/. QQMusic.m (line timed LRC) and KuGou.m (word timed KRC, unpacked with
                   zlib and read by NetEase.m's parser) for Chinese and other Asian songs, matched by title, singer
                   and length; checked on the Mac against harness/lyrics-sources/. Also: LyricsPlus.m (word
-                  and syllable timing, backing vocals, two mirrors), Bugs.m and Genie.m (Korean catalogs, line timed),
+                  and syllable timing, backing vocals, prjktla.my.id then binimum.org), Bugs.m and Genie.m (Korean catalogs, line timed;
+                  Genie requests the desktop site to avoid a mobile redirect),
                   and Deezer.m on the user's own ARL in the Keychain, off until one is set, its JWT kept in memory and
                   renewed once on a refusal; their requests go through SGLyricsSourceRequest, which caps a reply at
                   2 MiB, follows no redirect and keeps no cookie. A track can be pinned to one LRCLIB record picked by
@@ -167,7 +168,7 @@ Shared:
                   OnDeviceTranslation.swift, the frameworks weak linked; and by Gemini on the user's own key (Keychain),
                   whose prompt and menu item say the lyrics go to Google. The translate items show for every song with Translate any song on (SGKeyLyricsTranslateEverySong, off), else only for a song NaturalLanguage finds in another language than the Lyrics page's (or the iPhone's): one distinct line in five it is at least 80% sure of, or two in another script (a verse in Hangul among English), not the whole song's guess (short lines sway that: Havana reads as Dutch), so songs half in English count and a repeated chorus weighs as one line; Translate on iPhone translates from the language most of those lines are in and leaves lines already in the target as they are. Apple Intelligence's lines show and are saved a batch at a time, only lines without a translation are sent, and a batch it turns down is skipped (asking again sends only those lines). Every finished translation is kept by SavedTranslations.m in Caches/Vitrine/Translations, one JSON file a song and language mapping each line's text to its translation, the newest 200, synced when the song's lines are shown: each line knows whether its translation was made here (SGKaraokeLine.translationMade), and a made one with nothing saved is taken off, so the Lyrics page's Saved translations row deletes them at once, posting SGLyricsTranslationsDidChangeNotification as Translate any song does for the open lyrics to sync and redraw. Gemini's reply read and checked on the Mac
                   against harness/lyrics-translation/. DeepL.m (the user's own key, free or pro endpoint by the key),
-                  OpenAITranslate.m (any OpenAI-compatible chat endpoint, https only but for a local host; base URL and
+                  OpenAITranslate.m (any OpenAI-compatible chat endpoint, HTTPS, or HTTP for localhost, .local or a Tailscale IPv4 address; base URL and
                   model in the settings, the key in the Keychain), GoogleTranslate.m (Google Translate's keyless web
                   endpoint, off until switched on) and BingTranslate.m (Bing Translator's web page, keyless, off until
                   switched on: its IG, IID and abuse token read from the page, kept until 30 s before they expire and read
@@ -177,10 +178,48 @@ Shared:
                   asks Gemini, Claude or that service for two other jobs, on the user's own key: how each line sounds,
                   in the translation language's letters, Latin letters or IPA (SGKeyLyricsPronunciationNotation), and a
                   one-sentence cultural note for the few lines a listener would miss (SGKeyLyricsCulturalNotes, off);
-                  both are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
-                  translations row counts and deletes with them. TranslatedTitles.m shows the playing song's title
-                  and artist in the user's language (SGKeyLyricsTranslateTitles, off), asked once a track of the first
-                  translator that is on, an artist in Latin letters left as it is. Their replies are checked on the
+                  The lyrics menu keeps its translator choices after a generated translation, under Translate Again.
+                  Switching service replaces generated translations as answers arrive, while source translations and
+                  the previous answer to a failed line stay. Hide Translation applies to all songs; Remove Translation
+                  deletes only the current song and target language, preserving its other languages and AI notes.
+                  Shared job tokens invalidate late answers after removal, a newer request, or deleting all saved
+                  translations, and both open lyrics views refresh from the same result. A failed disk write keeps its
+                  answer in memory for the session (up to 200); removing it clears that copy too. Requests need a tap unless Automatic translation is on.
+                  Automatic translation is off by default (redesign only). Its Translation order can be dragged;
+                  the default is Apple Translate, Bing, Google, DeepL, Gemini, Claude, the configured AI service,
+                  then Apple Intelligence. Only available services are tried, once each in order, until all missing
+                  lines are filled or the list ends. Each answer keeps earlier successful lines and source/saved
+                  translations. Existing Google/Bing opt-ins and API keys still apply; no new service is enabled.
+                  A visible current-song view starts one shared chain after its lines settle. Hidden translations,
+                  a language rule set to off, and background/detached views do not start another request. A song
+                  or display change stops the next fallback; an in-flight answer can still be cached without
+                  revealing hidden text. Settings/target changes, removal and clearing saved results invalidate
+                  old jobs. Automatic failures remain silent and are not retried on redraw; manual translation
+                  remains available. A manual choice or removal suppresses automatic work for that song/target
+                  until restart or an explicit automatic switch/order change (bounded session history: 2000 pairs).
+                  Enabling the switch shows translations once; rearranging the order does not override Hide.
+                  A compact note beside the lyrics menu names the working translator and completed missing lines;
+                  a fallback updates that name. Partial, failed and paused work offers Retry for only that song and
+                  language; a missing setup is explained separately and does not count as a failed provider. Finished
+                  work hides the note, and a restored translation is never assigned a guessed provider. Status is
+                  main-thread, generation guarded and bounded to 200 song/language pairs. Display-only changes do
+                  not restart work. Only known local failures become connection/key/busy reasons; remote bodies
+                  and credentials are never copied into the note.
+                  Test connection, below the OpenAI-compatible key row, sends one fixed short sentence using the
+                  saved address, model, key and translation language. It runs only from a tap, with no retries,
+                  redirects, cookies or credential storage, a 20 s limit and a 512 KiB response cap. A second tap
+                  while testing cancels. Saving a key remains distinct from a successful test. Service/target changes
+                  clear the UI result and cancel stale requests; completing after leaving the page shows no popup.
+                  Both AI results are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
+                  translations row counts and deletes with them. AI completion refreshes every open view of that song,
+                  including views sharing the same line objects. Failed writes keep the answer in the shared
+                  32-entry memory cache; deleting saved results also clears it and cancels pending jobs.
+                  TranslatedTitles.m shows the playing song's title and artist in the user's language
+                  (SGKeyLyricsTranslateTitles, off), using local translation then the first enabled online service,
+                  an artist in Latin letters left as it is. Track, original title/artist and target form its identity;
+                  200 results and 2000 successful identities are remembered. Missing services consume no attempt;
+                  failures permit one retry after 30 s on a later label update. Translator settings reset failed
+                  attempts and invalidate pending replies. Their replies are checked on the
                   Mac against the same harness
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
@@ -633,7 +672,8 @@ Redesigned:
                   breaks (SGRKeyLyricsBreakLabels, off) sets Intro, Interlude or Outro beside the dots, in their group
                   so it breathes and fades with them. Simplify song titles and Translate song titles change what the
                   player's own title and artist labels draw (Player/PlayerTitle.x, which gives those two labels a
-                  subclass of their own class), and the landscape lyrics' title, never Spotify's text underneath.
+                  subclass of their own class), and the landscape lyrics' title, never Spotify's text underneath. Both refresh after title
+                  translation completes or its settings change; a landscape refresh leaves controls and idle timers alone.
                   Keep screen on (SGRKeyLyricsKeepAwake, off) holds the idle timer off while lines show and the song moves,
                   and lets it go 5 s into a pause, when the view leaves its window or the app leaves the front.
                   A word held 0.9 s or more glows and its letters rise in a wave as the sweep reaches

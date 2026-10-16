@@ -104,6 +104,20 @@ NSArray<NSString *> *SGDeepLTranslationsIn(id root, NSUInteger count) {
 }
 @end
 
+NSURLSessionDataTask *SGLyricsTranslationSendOnce(NSURLRequest *request, void (^finished)(NSData *, NSInteger, NSError *)) {
+    SGLyricsTranslationRequest *receiver = [SGLyricsTranslationRequest new];
+    receiver.data = [NSMutableData data]; receiver.finished = finished;
+    NSURLSessionConfiguration *config = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+    config.URLCache = nil; config.HTTPCookieStorage = nil; config.URLCredentialStorage = nil;
+    config.HTTPShouldSetCookies = NO; config.timeoutIntervalForResource = 20;
+    NSMutableURLRequest *bounded = [request mutableCopy];
+    bounded.timeoutInterval = 20; bounded.HTTPShouldHandleCookies = NO;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:receiver delegateQueue:NSOperationQueue.mainQueue];
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:bounded];
+    [task resume];
+    return task;
+}
+
 static void sendRequest(NSURLRequest *request, BOOL retryServer, BOOL (^allowed)(void), NSUInteger attempt,
                         void (^finished)(NSData *, NSInteger, NSError *)) {
     if (allowed && !allowed()) {
@@ -267,7 +281,7 @@ static void askForKey(void) {
     __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
         NSString *key = cleanKey(weakAlert.textFields.firstObject.text);
-        if (key.length) storeKey(key);
+        if (key.length) { storeKey(key); SGLyricsTranslationServiceSettingsChanged(); }
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
@@ -282,7 +296,7 @@ static void askForKey(void) {
         }] forControlEvents:UIControlEventEditingChanged];
     }];
     [alert addAction:save];
-    if (SGDeepLKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { storeKey(nil); }]];
+    if (SGDeepLKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { storeKey(nil); SGLyricsTranslationServiceSettingsChanged(); }]];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }

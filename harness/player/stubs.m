@@ -136,6 +136,25 @@ NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"harness.l
 NSString *SGLyricsSongName(NSString *trackID) { return @"Harness song"; }
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
+static NSMutableDictionary *sg_translationJobs;
+static NSUInteger sg_nextTranslationJob;
+NSUInteger SGLyricsBeginTranslation(NSString *track, NSString *language) {
+    if (!track || !language) return 0;
+    if (!sg_translationJobs) sg_translationJobs = [NSMutableDictionary dictionary];
+    NSUInteger token = ++sg_nextTranslationJob;
+    sg_translationJobs[@[track, language]] = @(token);
+    return token;
+}
+BOOL SGLyricsTranslationIsCurrent(NSString *track, NSString *language, NSUInteger token) {
+    return token && track && language && [sg_translationJobs[@[track, language]] unsignedIntegerValue] == token;
+}
+void SGLyricsEndTranslation(NSString *track, NSString *language, NSUInteger token) {
+    if (SGLyricsTranslationIsCurrent(track, language, token)) [sg_translationJobs removeObjectForKey:@[track, language]];
+}
+void SGLyricsDeleteTranslation(NSString *track, NSString *language) {
+    if (track && language) [sg_translationJobs removeObjectForKey:@[track, language]];
+}
+
 void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                  void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
 

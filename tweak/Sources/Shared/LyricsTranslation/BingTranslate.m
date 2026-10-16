@@ -228,6 +228,7 @@ SGModRow *SGBingTranslateRow(void) {
     SGModRow *row = SGOptionRow(SGL(@"settings.translation.bing.title", @"Bing Translator"),
         SGL(@"settings.translation.bing.subtitle", @"Sends the song's lyrics to Bing Translator's public web page"), SGKeyLyricsBingTranslate);
     row.changed = ^(BOOL on) {
+        SGLyricsTranslationServiceSettingsChanged();
         dispatch_async(dispatch_get_main_queue(), ^{
             [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
         });

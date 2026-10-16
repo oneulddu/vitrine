@@ -46,10 +46,16 @@ SGModRow *SGGeminiKeyRow(void);
 @end
 
 // SavedTranslations.m: a song's translations kept on disk by track and language, matched to lines by their text.
-// The saved ones are the truth for translations made here: syncing fills the lines with no translation from them,
-// and takes a made translation off a line that has none saved (after Delete). Main thread.
+// The saved ones are the truth for translations made here: syncing replaces made translations, fills empty
+// lines, and takes a made translation off a line with nothing saved. Source translations stay. Main thread.
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
+// Main-thread job tokens shared by all views: a newer job or deletion invalidates earlier callbacks.
+NSUInteger SGLyricsBeginTranslation(NSString *track, NSString *language);
+BOOL SGLyricsTranslationIsCurrent(NSString *track, NSString *language, NSUInteger token);
+void SGLyricsEndTranslation(NSString *track, NSString *language, NSUInteger token);
+// Delete only this song/language's generated translation; ordered after pending saves. No notification.
+void SGLyricsDeleteTranslation(NSString *track, NSString *language);
 // The Lyrics page's row: how many songs are kept, and a tap to delete them.
 SGModRow *SGSavedTranslationsRow(void);
 
@@ -122,11 +128,22 @@ SGModRow *SGLyricsCulturalNotesRow(void);
 // AI answers are kept by their original line text. Pronunciation uses the notation number as its variant;
 // notes use the language tag. Reads and writes are ordered, so an immediate read sees the last save.
 NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant);
+// Main-thread shared result, including an answer that could not be written to disk. Notation 0 follows language.
+NSDictionary<NSString *, NSString *> *SGLyricsAIValues(NSString *kind, NSString *track, NSString *variant);
+extern NSNotificationName const SGLyricsAIResultDidChangeNotification; // track ID, or nil after deleting all
+
 void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine);
 
 #define SGKeyLyricsTranslateTitles @"spotifyglass.lyrics.translateTitles"
 SGModRow *SGTranslateTitlesRow(void);
 // Posted on main with the track ID when a translated title arrives.
 extern NSNotificationName const SGTranslatedTitleDidChangeNotification;
-// Main queue. Returns a cached title or starts one request for this track this launch. Latin artist names stay.
+extern NSNotificationName const SGTitleTranslationSettingsDidChangeNotification;
+// Settings actions invalidate pending/failed title requests, preserve successful results and refresh labels.
+void SGLyricsTitleSettingsChanged(void);
+// Credentials/provider options changed (not title display or notes visibility). Main queue.
+extern NSNotificationName const SGLyricsTranslationServiceSettingsDidChangeNotification;
+void SGLyricsTranslationServiceSettingsChanged(void);
+// Main queue. Coalesces title/artist/language requests; at most two attempts per configuration, 30s apart.
+// Successful identities remain remembered past result eviction. Latin artist names stay.
 NSString *SGLyricsTranslatedTitle(NSString *trackID, NSString *title, NSString *artist, NSString **artistOut);

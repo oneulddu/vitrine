@@ -139,6 +139,7 @@ static void askForKey(void) {
         NSString *model = cleanModel(fields[0].text), *key = cleanKey(fields[1].text);
         if (!model || !key.length || !storeKey(key)) return;
         [NSUserDefaults.standardUserDefaults setObject:model forKey:SGKeyLyricsClaudeModel];
+        SGLyricsTranslationServiceSettingsChanged();
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
@@ -158,7 +159,7 @@ static void askForKey(void) {
         }] forControlEvents:UIControlEventEditingChanged];
     }];
     [alert addAction:save];
-    if (SGClaudeKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { storeKey(nil); }]];
+    if (SGClaudeKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { if (storeKey(nil)) SGLyricsTranslationServiceSettingsChanged(); }]];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }

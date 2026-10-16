@@ -3,6 +3,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Core/SGGlass.h"
 #import "Shared/LocalFiles/LocalLyrics.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
@@ -42,6 +43,10 @@ SGModRow *SGLockScreenLyricsRow(void) {
 
 SGModRow *SGLyricsTranslationLanguageRow(void) {
     SGModRow *row = SGChoiceRow(SGL(@"settings.lyrics.translation_language.title", @"Translation language"), nil, SGKeyLyricsTranslationLanguage, SGLyricsTranslationLanguageNames(), 0);
+    row.chosen = ^(NSInteger index) {
+        SGLyricsTitleSettingsChanged();
+        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
+    };
     row.choiceFooter = SGL(@"settings.lyrics.translation_language.footer", @"A language brings Musixmatch's community translations to lyrics that have none, "
                        @"which sends Musixmatch each song's ID. Any shows the first translation the lyrics come with. "
                        @"It is also the language the lyrics' translate menu translates into, offered only for songs in another one; "
@@ -70,9 +75,16 @@ SGModRow *SGLyricsJapaneseReadingRow(void) {
     return row;
 }
 
-// Only the redesign's lyrics view sweeps words.
+// Only the redesign's lyrics view sweeps words, and it restyles as the switch flips.
+NSNotificationName const SGLyricsWordTimingDidChangeNotification = @"spotifyglass.lyricsWordTimingDidChange";
 SGModRow *SGLyricsWordTimingRow(void) {
-    return SGOptionRow(SGL(@"settings.lyrics.simulate_word_timing.title", @"Simulate word timing"), nil, SGKeyLyricsSimulateWords);
+    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.simulate_word_timing.title", @"Simulate word timing"),
+                               SGL(@"settings.lyrics.simulate_word_timing.subtitle", @"Sweeps lines timed only by the line on estimated words. Applies at once"),
+                               SGKeyLyricsSimulateWords);
+    row.changed = ^(BOOL on) {
+        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsWordTimingDidChangeNotification object:nil];
+    };
+    return row;
 }
 
 // Read wherever lines are timed, so it applies as the thumb moves.

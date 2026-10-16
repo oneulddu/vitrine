@@ -32,8 +32,22 @@ static dispatch_queue_t writes(void) {
 }
 
 static NSURL *fileFor(NSString *track, NSString *language) {
+    if (![track isKindOfClass:NSString.class] || !track.length || track.length > 4096 ||
+        ![language isKindOfClass:NSString.class] || !SGGoogleTargetLanguage(language)) return nil;
     NSCharacterSet *unsafe = [NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-"].invertedSet;
     NSString *tag = [[language componentsSeparatedByCharactersInSet:unsafe] componentsJoinedByString:@"_"];
+    NSString *name = [NSString stringWithFormat:@"%@.%@.json", track, tag];
+    // Keep every previously valid filename, including long local URIs. Only a filename exceeding
+    // the filesystem's 255-byte limit or containing a path separator needs a bounded hash.
+    if ([name lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 255 || [track containsString:@"/"] ||
+        [track containsString:@"\\"] || [track isEqual:@"."] || [track isEqual:@".."]) {
+        NSData *identity = [track dataUsingEncoding:NSUTF8StringEncoding];
+        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+        CC_SHA256(identity.bytes, (CC_LONG)identity.length, digest);
+        NSMutableString *name = [NSMutableString stringWithString:@"local-hash-"];
+        for (NSUInteger i = 0; i < sizeof(digest); i++) [name appendFormat:@"%02x", digest[i]];
+        track = name;
+    }
     return [folder() URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@.json", track, tag]];
 }
 
@@ -55,17 +69,68 @@ static void trim(NSURL *directory) {
     for (NSUInteger i = 0; i < all.count - kKept; i++) [NSFileManager.defaultManager removeItemAtURL:oldestFirst[i] error:nil];
 }
 
+// A disk failure must not erase a result already shown. The serial store queue also owns these
+// session-only answers (or an empty tombstone after a failed delete), with the same 200-song bound.
+static NSMutableDictionary<NSURL *, NSDictionary *> *sg_unsavedTranslations;
+static NSMutableArray<NSURL *> *sg_unsavedOrder;
+static void rememberUnsaved(NSURL *file, NSDictionary *answer) {
+    if (!sg_unsavedTranslations) { sg_unsavedTranslations = [NSMutableDictionary dictionary]; sg_unsavedOrder = [NSMutableArray array]; }
+    [sg_unsavedOrder removeObject:file];
+    [sg_unsavedTranslations removeObjectForKey:file];
+    if (!answer) return;
+    if (sg_unsavedOrder.count >= kKept) {
+        [sg_unsavedTranslations removeObjectForKey:sg_unsavedOrder.firstObject];
+        [sg_unsavedOrder removeObjectAtIndex:0];
+    }
+    sg_unsavedTranslations[file] = [answer copy];
+    [sg_unsavedOrder addObject:file];
+}
+
+// The token belongs to a song/language, not a view. All calls and callback checks are on main.
+static NSMutableDictionary<NSArray *, NSNumber *> *sg_translationJobs;
+static NSUInteger sg_nextTranslationJob;
+NSUInteger SGLyricsBeginTranslation(NSString *track, NSString *language) {
+    if (!fileFor(track, language)) return 0;
+    if (!sg_translationJobs) sg_translationJobs = [NSMutableDictionary dictionary];
+    NSUInteger token = ++sg_nextTranslationJob;
+    if (!token) token = ++sg_nextTranslationJob;
+    sg_translationJobs[@[track, language]] = @(token);
+    return token;
+}
+BOOL SGLyricsTranslationIsCurrent(NSString *track, NSString *language, NSUInteger token) {
+    return token && track && language && [sg_translationJobs[@[track, language]] unsignedIntegerValue] == token;
+}
+void SGLyricsEndTranslation(NSString *track, NSString *language, NSUInteger token) {
+    if (SGLyricsTranslationIsCurrent(track, language, token)) [sg_translationJobs removeObjectForKey:@[track, language]];
+}
+void SGLyricsDeleteTranslation(NSString *track, NSString *language) {
+    NSURL *file = fileFor(track, language);
+    if (!file) return;
+    [sg_translationJobs removeObjectForKey:@[track, language]];
+    dispatch_sync(writes(), ^{
+        BOOL removed = [NSFileManager.defaultManager removeItemAtURL:file error:nil];
+        rememberUnsaved(file, removed || ![NSFileManager.defaultManager fileExistsAtPath:file.path] ? nil : @{});
+    });
+}
+
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
-    if (!track.length || !language.length || !lines.count) return;
-    NSData *data = [NSData dataWithContentsOfURL:fileFor(track, language)];
-    id saved = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-    if (![saved isKindOfClass:NSDictionary.class]) saved = nil;
+    NSURL *file = fileFor(track, language);
+    if (!file || !lines.count) return;
+    __block NSDictionary *saved = nil;
+    // A view notified just after a batch must read that batch, not the preceding async write.
+    dispatch_sync(writes(), ^{
+        saved = sg_unsavedTranslations[file];
+        if (saved) return;
+        NSData *data = [NSData dataWithContentsOfURL:file];
+        id value = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if ([value isKindOfClass:NSDictionary.class]) saved = value;
+    });
     for (SGKaraokeLine *line in lines) {
         id translation = saved[SGKaraokeLineText(line) ?: @""];
         BOOL has = [translation isKindOfClass:NSString.class] && [translation length];
-        if (line.translationMade && !has) {
-            line.translation = nil;
-            line.translationMade = NO;
+        if (line.translationMade) {
+            line.translation = has ? translation : nil;
+            line.translationMade = has;
         } else if (!line.translation.length && has) {
             line.translation = translation;
             line.translationMade = YES;
@@ -74,19 +139,21 @@ void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<S
 }
 
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
-    if (!track.length || !language.length) return;
+    NSURL *file = fileFor(track, language);
+    if (!file) return;
     NSMutableDictionary<NSString *, NSString *> *saved = [NSMutableDictionary dictionary];
     for (SGKaraokeLine *line in lines) {
         NSString *text = SGKaraokeLineText(line);
-        if (text.length && line.translation.length) saved[text] = line.translation;
+        if (text.length && line.translationMade && line.translation.length) saved[text] = line.translation;
     }
     if (!saved.count) return;
     NSData *data = [NSJSONSerialization dataWithJSONObject:saved options:0 error:nil];
     // One at a time, in the order asked: a song is saved after every batch, and an older write must not land last.
     dispatch_async(writes(), ^{
         [NSFileManager.defaultManager createDirectoryAtURL:folder() withIntermediateDirectories:YES attributes:nil error:nil];
-        [data writeToURL:fileFor(track, language) atomically:YES];
-        trim(folder());
+        BOOL written = [data writeToURL:file atomically:YES];
+        rememberUnsaved(file, written ? nil : saved);
+        if (written) trim(folder());
     });
 }
 
@@ -172,9 +239,13 @@ void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictio
 }
 
 void SGLyricsDeleteSavedTranslations(void) {
+    [sg_translationJobs removeAllObjects];
     SGLyricsAIForgotten();
     dispatch_sync(writes(), ^{
+        [sg_unsavedTranslations removeAllObjects];
+        [sg_unsavedOrder removeAllObjects];
         [NSFileManager.defaultManager removeItemAtURL:folder() error:nil];
         [NSFileManager.defaultManager removeItemAtURL:aiFolder() error:nil];
     });
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsAIResultDidChangeNotification object:nil];
 }
