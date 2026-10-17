@@ -1,0 +1,92 @@
+name: Mac harnesses
+
+on:
+  push:
+    branches: [main, ci/harness]
+    paths: ['tweak/**', 'harness/**', '.github/workflows/harness.yml']
+  pull_request:
+    paths: ['tweak/**', 'harness/**', '.github/workflows/harness.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: harness-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harness:
+    name: ${{ matrix.name }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Album credits
+            run: sh harness/album-credits/build.sh && harness/album-credits/build/album-credits-check
+          - name: Audio effects routes
+            run: sh harness/audio-effects/build.sh route && harness/audio-effects/build/route-check
+          - name: Audio effects presets
+            run: sh harness/audio-effects/build.sh presets && harness/audio-effects/build/preset-files-check
+          - name: Automatic translation settings
+            run: sh harness/auto-translation-settings/check.sh
+          - name: AutoEq offline
+            run: sh harness/autoeq/build.sh && harness/autoeq/build/autoeq-check
+          - name: Clean links
+            run: sh harness/clean-links/build.sh && harness/clean-links/build/clean-links-check
+          - name: Connection test settings
+            run: sh harness/connection-test-settings/check.sh
+          - name: Fluid clips
+            run: sh harness/fluid-clip/build.sh && harness/fluid-clip/build/fluid-clip
+          - name: Haptic track
+            run: sh harness/haptics/build.sh && harness/haptics/build/track
+          - name: Head gestures
+            run: sh harness/head-gestures/build.sh && harness/head-gestures/build/head-gestures
+          - name: Listening stats
+            run: sh harness/listening-stats/build.sh && harness/listening-stats/build/listening-stats
+          - name: Local files and LRC
+            run: sh harness/local-files/build.sh
+          - name: Lyrics menu translation
+            run: sh harness/lyrics/translation-check.sh
+          - name: Lyrics clips
+            run: sh harness/lyrics-clip/build.sh && harness/lyrics-clip/build/lyrics-clip
+          - name: Lyrics sources
+            run: sh harness/lyrics-sources/build.sh
+          - name: Lyrics state and concurrent walk
+            run: sh harness/lyrics-sources/state-build.sh
+          - name: Lyrics translation and AI
+            run: sh harness/lyrics-translation/build.sh && harness/lyrics-translation/build/check --auto-retry-only
+          - name: Moving artwork
+            run: sh harness/motion/build.sh && harness/motion/build/motion
+          - name: Now playing
+            theos: true
+            run: sh harness/now-playing/build.sh
+          - name: Palette
+            run: sh harness/palette/build.sh && harness/palette/build/palette-check
+          - name: Pitch
+            run: sh harness/pitch/build.sh && harness/pitch/build/pitch
+          - name: Player title notification
+            theos: true
+            run: sh harness/player/title-notification-check.sh
+          - name: Radio modes
+            run: sh harness/radio-modes/build.sh
+          - name: Sing model-free
+            run: sh harness/sing/build.sh && harness/sing/build/sing spatial
+          - name: Sleep timer
+            run: sh harness/sleep-timer/build.sh && harness/sleep-timer/build/sleep-timer
+          - name: Spicy lyrics
+            run: sh harness/spicy-lyrics/build.sh
+          - name: Visualizer
+            run: sh harness/visualiser/build.sh && harness/visualiser/build/spectrum
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Theos for Logos hooks only
+        if: matrix.theos == true
+        uses: ./.github/actions/setup-theos
+      - name: Build and assert
+        shell: bash
+        env:
+          THEOS: ${{ github.workspace }}/theos
+        run: ${{ matrix.run }}
