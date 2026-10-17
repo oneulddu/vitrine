@@ -45,9 +45,13 @@ runs:
 
     # Theos takes its compiler from TARGET_CC/TARGET_CXX when they are set. Its modules flags need
     # ccache's depend mode. The dSYM Theos makes after linking is never shipped, so it is skipped.
+    # Logos's output follows Perl's hash order, which is random per run, so without a fixed seed a
+    # third of the .x files come out different each time and never hit the cache.
     - shell: bash
       run: |
         {
+          echo "PERL_HASH_SEED=0"
+          echo "PERL_PERTURB_KEYS=0"
           echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
           echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
           echo "CCACHE_DEPEND=1"

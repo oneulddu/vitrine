@@ -38,9 +38,14 @@ jobs:
           mkdir -p ipa
           # Many file hosts throttle each connection and drop long transfers, so fetch in
           # parallel ranges and resume on failure (one connection when ranges aren't served).
-          aria2c --quiet --max-connection-per-server=8 --split=8 --min-split-size=1M \
+          aria2c --console-log-level=error --summary-interval=0 --download-result=hide \
+            --max-connection-per-server=8 --split=8 --min-split-size=1M \
             --max-tries=20 --retry-wait=3 --continue=true --allow-overwrite=true \
-            --dir=ipa --out=spotify.ipa "$IPA_URL"
+            --dir=ipa --out=spotify.ipa "$IPA_URL" || {
+            echo "::warning::the parallel download failed, fetching on one connection"
+            rm -f ipa/spotify.ipa ipa/spotify.ipa.aria2
+            curl -fsSL --retry 10 --retry-all-errors --retry-delay 3 -C - -o ipa/spotify.ipa "$IPA_URL"
+          }
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
       - name: Spotify version
