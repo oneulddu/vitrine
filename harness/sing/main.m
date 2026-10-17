@@ -761,17 +761,20 @@ static void checkBoundary(void) {
     SGSingEngineSetOn(engine, true);
     Source source = {tone, 0}, *pulled = &source;
     __block CFAbsoluteTime reported = 0;
-    __block double handed = 0, leadThen = 0, starts = -1, startedBefore = -1, at2 = -1;
+    __block double handed = 0, leadThen = 0, reportedPlayed = 0, starts = -1, startedBefore = -1, at2 = -1;
     play(engine, tone, &source, 1024, 12, ^(double played) {
-        CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
         if (!reported && pulled->pulled >= boundary + kSGSingRate / 10) {
-            reported = now;
+            reported = CFAbsoluteTimeGetCurrent();
+            reportedPlayed = played;
             handed = (double)(pulled->pulled - boundary) / kSGSingRate;
             // Read soon after the report, as Sing.x's tick reads it.
             leadThen = SGSingEngineLeadAt(engine, reported);
         }
         if (!reported) return;
-        double lead = SGSingEngineLeadAt(engine, reported), since = now - reported;
+        // The mock player's clock advances with rendered frames, not play()'s best-effort sleeps.
+        // Keep the real report timestamp only for the engine's real-time lead history: this callback
+        // and rendering share a thread, so that snapshot is taken between renders.
+        double lead = SGSingEngineLeadAt(engine, reported), since = played - reportedPlayed;
         double heard = fmax(0, handed + since - lead), before = fmax(0, handed - lead) + since;
         if (heard > 0 && starts < 0) starts = played;
         if (before > 0 && startedBefore < 0) startedBefore = played;
