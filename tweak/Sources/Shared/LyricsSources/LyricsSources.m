@@ -1,12 +1,11 @@
-// The chain: every source in the order the Lyrics page puts them in, asked one after another, the
-// first with timed lyrics answering for the track.
+// The chain: sources asked in order or all at once, with timed lyrics answering promptly.
 //
 // Stopping at the first answer is what makes the lyrics card under the player appear at all. For a
 // track Spotify has no lyrics of its own for, the card is only offered when the answer to Spotify's
 // lyrics request arrives within about a second of the player building its list of cards; a walk that
 // went on through every source for word timing took three seconds and more, and the card never came.
-// By default the order is the priority. Type first answers just as soon, then keeps looking for
-// finer timing for the lyrics view, keeping the source order for answers with the same timing.
+// Word timing first (the default) answers just as soon, then keeps looking for finer timing,
+// keeping source priority for ties. All at once keeps the first word-timed answer to arrive.
 #import "Core/SGCore.h"
 #import "LyricsSources.h"
 #import "Shared/Lyrics/Lyrics.h"
@@ -260,14 +259,12 @@ static NSArray<NSString *> *fromLegacyKeys(void) {
     return order;
 }
 
-// With nothing stored and nothing to carry over, every source is on: the user's own files first, word
-// timing ahead of line timing, and the two Chinese catalogs after the rest. The newer sources
-// (LyricsPlus, Bugs, Genie, Deezer) join the end, so an install that never reordered keeps asking what it
-// asked before, in the same order, and only reaches them once those have missed. Sources needing a key pass
-// straight on without one.
+// With nothing stored and nothing to carry over, every source is on: the user's own files first,
+// word timing ahead of line timing, and the two Chinese catalogs after the rest.
+// Stored orders are untouched. Sources needing a key pass straight on without one.
 static NSArray<NSString *> *defaultOrder(void) {
-    return @[SGImportedLRCKey, SGSpicyLyricsKey, @"binilyrics", @"musixmatch", @"unison", @"netease", @"lrclib", @"qqmusic", @"kugou",
-             @"lyricsplus", @"bugs", @"genie", @"deezer"];
+    return @[SGImportedLRCKey, SGSpicyLyricsKey, @"binilyrics", @"lyricsplus", @"musixmatch",
+             @"unison", @"deezer", @"netease", @"lrclib", @"bugs", @"genie", @"qqmusic", @"kugou"];
 }
 
 NSArray<NSString *> *SGLyricsOrder(void) {
@@ -521,6 +518,8 @@ void SGLyricsOpenCreditLinks(NSArray<SGLyricsLink *> *links, UIView *from) {
 @property (nonatomic, copy) NSArray<NSString *> *order;
 @property (nonatomic) NSUInteger index;
 @property (nonatomic) BOOL typeFirst;
+@property (nonatomic) BOOL concurrent, finished, instrumental;
+@property (nonatomic, strong) NSMutableSet<NSString *> *started, *inFlight;
 @property (nonatomic) BOOL answered;
 @property (nonatomic, copy) NSArray<NSString *> *originalOrder;
 @property (nonatomic) NSUInteger lineRank, pageRank;
@@ -541,7 +540,8 @@ void SGLyricsOpenCreditLinks(NSArray<SGLyricsLink *> *links, UIView *from) {
 // Musixmatch's community translations are not waited for here: the lines take them as they are kept
 // for the lyrics view (Shared/Lyrics/KaraokeSource.x), whichever source won, Spotify included.
 static void finish(SGLyricsWalk *walk) {
-    if (sg_waiting[walk.query.trackID] != walk.waiting) return;
+    if (walk.finished || sg_waiting[walk.query.trackID] != walk.waiting) return;
+    walk.finished = YES;
     SGLyricsQuery *query = walk.query;
     SGLyricsResult *merged = walk.merged;
     NSString *trackID = query.trackID;
@@ -573,25 +573,14 @@ static void finish(SGLyricsWalk *walk) {
     for (void (^done)(SGLyricsResult *) in waiting) done(lyrics);
 }
 
-static void step(SGLyricsWalk *walk) {
-    if (sg_waiting[walk.query.trackID] != walk.waiting) return;
+// Both schedulers share delivery, filtering, ranking and upgrade publication.
+static BOOL currentWalk(SGLyricsWalk *walk) {
+    return !walk.finished && sg_waiting[walk.query.trackID] == walk.waiting;
+}
+
+static BOOL releaseAnswer(SGLyricsWalk *walk) {
     SGLyricsQuery *query = walk.query;
     SGLyricsResult *merged = walk.merged;
-    // A source that learned the name lets earlier sources search before type first settles a tie.
-    if (walk.typeFirst && walk.passedOver.count && named(query)) {
-        walk.order = [walk.passedOver arrayByAddingObjectsFromArray:
-            [walk.order subarrayWithRange:NSMakeRange(walk.index, walk.order.count - walk.index)]];
-        walk.index = 0;
-        walk.passedOver = [NSMutableArray array];
-    }
-    BOOL earlierPending = walk.index < walk.order.count &&
-        [walk.originalOrder indexOfObject:walk.order[walk.index]] < walk.lineRank;
-    // A source higher in the order has answered with the requested timing: that is the answer.
-    if (merged.synced && merged.texts.count && merged.karaokeLines.count &&
-        (!walk.typeFirst || (SGKaraokeLinesTiming(merged.karaokeLines) == SGKaraokeTimingWords && !earlierPending))) {
-        finish(walk);
-        return;
-    }
     if (walk.typeFirst && !walk.answered && merged.synced && merged.texts.count && merged.karaokeLines.count) {
         // Release the card request now, but keep this array as the walk's identity. A reload or
         // pin still retires it, and requests arriving meanwhile get the best answer kept so far.
@@ -604,8 +593,88 @@ static void step(SGLyricsWalk *walk) {
             done(merged);
         }
         // A waiter may itself have pinned or reloaded the track.
-        if (sg_waiting[query.trackID] != walk.waiting) return;
+        if (!currentWalk(walk)) return NO;
     }
+    return currentWalk(walk);
+}
+
+static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyricsResult *fresh) {
+    if (!currentWalk(walk)) return NO;
+    SGLyricsQuery *query = walk.query;
+    SGLyricsResult *merged = walk.merged;
+    // Even a filtered reply can name the track for a deferred source.
+    learnFrom(query, fresh);
+    SGLyricsTypes allowed = SGLyricsSourceTypes(provider.key);
+    SGKaraokeTiming timing = fresh.karaokeLines.count ? SGKaraokeLinesTiming(fresh.karaokeLines)
+        : fresh.synced ? SGKaraokeTimingLine : SGKaraokeTimingNone;
+    if (![provider.key isEqualToString:SGImportedLRCKey] &&
+        ((allowed == SGLyricsTypesSynced && timing == SGKaraokeTimingNone) ||
+         (allowed == SGLyricsTypesWords && timing != SGKaraokeTimingWords))) return YES;
+    noteCredit(fresh);
+    if (fresh.instrumental) {
+        if (walk.concurrent) {
+            walk.instrumental = YES;
+            return YES;
+        }
+        if (walk.typeFirst && (merged.karaokeLines.count || merged.texts.count)) return YES;
+        SGLog(@"lyrics: %@ is instrumental, by %@", query.trackID, provider.key);
+        merged.instrumental = YES;
+        finish(walk);
+        return NO;
+    }
+    NSUInteger rank = [walk.originalOrder indexOfObject:provider.key];
+    BOOL finer = betterLines(merged, fresh) || (walk.typeFirst && fresh.karaokeLines.count &&
+        timing == SGKaraokeLinesTiming(merged.karaokeLines) && rank < walk.lineRank);
+    // In concurrent mode the first actual word timing wins, regardless of source priority.
+    if (walk.concurrent && merged.karaokeLines.count &&
+        SGKaraokeLinesTiming(merged.karaokeLines) == SGKaraokeTimingWords) finer = NO;
+    // Decide both replacements against the old merged answer, not the newly selected lines.
+    BOOL replaceText = walk.typeFirst ? fresh.texts.count && (!merged.texts.count || timing < walk.pageTiming ||
+        (timing == walk.pageTiming && rank < walk.pageRank)) : betterTexts(merged, fresh);
+    if (finer) {
+        walk.lineRank = rank;
+        merged.karaokeLines = fresh.karaokeLines;
+        merged.wordTimed = timing == SGKaraokeTimingWords;
+        merged.provider = fresh.provider ?: provider.name;
+    }
+    if (replaceText) {
+        walk.pageRank = rank;
+        walk.pageTiming = timing;
+        merged.starts = fresh.starts;
+        merged.texts = fresh.texts;
+        merged.synced = fresh.synced;
+        if (!merged.provider) merged.provider = fresh.provider ?: provider.name;
+        merged.pageProvider = fresh.provider ?: provider.name;
+    }
+    if (walk.answered && finer) {
+        if (sg_kept.count >= kKeptTracks && !sg_kept[query.trackID]) [sg_kept removeAllObjects];
+        sg_kept[query.trackID] = merged;
+        SGLyricsSetCredit(query.trackID, merged.provider);
+        if (!currentWalk(walk)) return NO;
+        SGKaraokeKeepLines(query.trackID, merged.karaokeLines);
+    }
+    return currentWalk(walk);
+}
+
+static void step(SGLyricsWalk *walk) {
+    if (!currentWalk(walk)) return;
+    SGLyricsQuery *query = walk.query;
+    SGLyricsResult *merged = walk.merged;
+    // A source that learned the name lets earlier sources search before type first settles a tie.
+    if (walk.typeFirst && walk.passedOver.count && named(query)) {
+        walk.order = [walk.passedOver arrayByAddingObjectsFromArray:
+            [walk.order subarrayWithRange:NSMakeRange(walk.index, walk.order.count - walk.index)]];
+        walk.index = 0;
+        walk.passedOver = [NSMutableArray array];
+    }
+    BOOL earlierPending = walk.index < walk.order.count &&
+        [walk.originalOrder indexOfObject:walk.order[walk.index]] < walk.lineRank;
+    if (merged.synced && merged.texts.count && merged.karaokeLines.count &&
+        (!walk.typeFirst || (SGKaraokeLinesTiming(merged.karaokeLines) == SGKaraokeTimingWords && !earlierPending))) {
+        finish(walk);
+        return;
+    }
+    if (!releaseAnswer(walk)) return;
     if (walk.index >= walk.order.count) {
         // A source that matches by id named the track partway down: the ones passed over ask now,
         // in the order they came in. Once, since they cannot be passed over again with a name.
@@ -628,59 +697,48 @@ static void step(SGLyricsWalk *walk) {
         return;
     }
     provider.ask(query, ^(SGLyricsResult *fresh) {
-        if (sg_waiting[query.trackID] != walk.waiting) return;
-        learnFrom(query, fresh);
-        SGLyricsTypes allowed = SGLyricsSourceTypes(provider.key);
-        SGKaraokeTiming timing = fresh.karaokeLines.count ? SGKaraokeLinesTiming(fresh.karaokeLines)
-            : fresh.synced ? SGKaraokeTimingLine : SGKaraokeTimingNone;
-        if (![provider.key isEqualToString:SGImportedLRCKey] &&
-            ((allowed == SGLyricsTypesSynced && timing == SGKaraokeTimingNone) ||
-             (allowed == SGLyricsTypesWords && timing != SGKaraokeTimingWords))) {
-            step(walk);
-            return;
-        }
-        noteCredit(fresh);
-        if (fresh.instrumental && walk.typeFirst && (merged.karaokeLines.count || merged.texts.count)) {
-            step(walk);
-            return;
-        }
-        if (fresh.instrumental) {
-            SGLog(@"lyrics: %@ is instrumental, by %@", query.trackID, provider.key);
-            merged.instrumental = YES;
-            finish(walk);
-            return;
-        }
-        NSUInteger rank = [walk.originalOrder indexOfObject:provider.key];
-        BOOL finer = betterLines(merged, fresh) || (walk.typeFirst && fresh.karaokeLines.count &&
-            timing == SGKaraokeLinesTiming(merged.karaokeLines) && rank < walk.lineRank);
-        BOOL replaceText = walk.typeFirst ? fresh.texts.count && (!merged.texts.count || timing < walk.pageTiming ||
-            (timing == walk.pageTiming && rank < walk.pageRank)) : betterTexts(merged, fresh);
-        if (finer) {
-            walk.lineRank = rank;
-            merged.karaokeLines = fresh.karaokeLines;
-            merged.wordTimed = fresh.wordTimed;
-            merged.provider = fresh.provider ?: provider.name;
-        }
-        if (replaceText) {
-            walk.pageRank = rank;
-            walk.pageTiming = timing;
-            merged.starts = fresh.starts;
-            merged.texts = fresh.texts;
-            merged.synced = fresh.synced;
-            if (!merged.provider) merged.provider = fresh.provider ?: provider.name;
-            // Spotify's page names the source of its own text, which can be another than the lines'.
-            merged.pageProvider = fresh.provider ?: provider.name;
-        }
-        if (walk.answered && finer) {
-            // Waiters have already received the synced answer. Hand the upgraded lines and credit
-            // to the lyrics view's existing keeper, without another reply.
-            if (sg_kept.count >= kKeptTracks && !sg_kept[query.trackID]) [sg_kept removeAllObjects];
-            sg_kept[query.trackID] = merged;
-            SGLyricsSetCredit(query.trackID, merged.provider);
-            SGKaraokeKeepLines(query.trackID, merged.karaokeLines);
-        }
-        step(walk);
+        if (acceptReply(walk, provider, fresh)) step(walk);
     });
+}
+
+static void askAll(SGLyricsWalk *walk) {
+    if (!currentWalk(walk)) return;
+    for (NSString *key in walk.originalOrder) {
+        if ([walk.started containsObject:key]) continue;
+        SGLyricsProvider *provider = SGLyricsProviderFor(key);
+        if (provider.needsName && !named(walk.query)) continue;
+        [walk.started addObject:key];
+        [walk.inFlight addObject:key];
+        provider.ask(walk.query, ^(SGLyricsResult *fresh) {
+            // Imported files, missing keys and cached replies may answer synchronously. Every
+            // initial eligible ask must start before any reply can merge or exhaust the walk.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!currentWalk(walk) || ![walk.inFlight containsObject:key]) return;
+                [walk.inFlight removeObject:key];
+                if (acceptReply(walk, provider, fresh)) askAll(walk);
+            });
+        });
+        if (!currentWalk(walk)) return;
+    }
+    SGLyricsResult *merged = walk.merged;
+    if (!releaseAnswer(walk)) return;
+    if (merged.karaokeLines.count && SGKaraokeLinesTiming(merged.karaokeLines) == SGKaraokeTimingWords &&
+        merged.synced && merged.texts.count) {
+        finish(walk);
+        return;
+    }
+    if (walk.inFlight.count) return;
+    // All eligible sources have started. Still-unnamed sources are not a cached miss.
+    for (NSString *key in walk.originalOrder) {
+        if (![walk.started containsObject:key]) [walk.passedOver addObject:key];
+    }
+    if (!merged.karaokeLines.count && !merged.texts.count) merged.instrumental = walk.instrumental;
+    finish(walk);
+}
+
+static void scheduleWalk(SGLyricsWalk *walk) {
+    if (walk.concurrent) askAll(walk);
+    else step(walk);
 }
 
 static void startWalk(NSString *trackID, SGLyricsQuery *query) {
@@ -688,7 +746,11 @@ static void startWalk(NSString *trackID, SGLyricsQuery *query) {
           [SGLyricsOrder() componentsJoinedByString:@", "], trackID, query.title, query.artist, query.album, (long)query.seconds);
     SGLyricsWalk *walk = [SGLyricsWalk new];
     walk.order = SGLyricsOrder();
-    walk.typeFirst = SGFlag(SGKeyLyricsTypeFirst, NO);
+    NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
+    walk.typeFirst = mode != 0;
+    walk.concurrent = mode == 2;
+    walk.started = [NSMutableSet set];
+    walk.inFlight = [NSMutableSet set];
     walk.originalOrder = walk.order;
     walk.lineRank = walk.pageRank = NSNotFound;
     walk.pageTiming = SGKaraokeTimingNone;
@@ -700,13 +762,13 @@ static void startWalk(NSString *trackID, SGLyricsQuery *query) {
     NSNumber *pin = SGLyricsPinnedID(trackID);
     if (pin) {
         SGLrcLibGetID(pin, ^(SGLyricsResult *result) {
-            if (sg_waiting[trackID] != walk.waiting) return;
+            if (!currentWalk(walk)) return;
             if (result.karaokeLines.count || result.instrumental) {
                 walk.merged = result;
                 finish(walk);
-            } else step(walk);
+            } else scheduleWalk(walk);
         });
-    } else step(walk);
+    } else scheduleWalk(walk);
 }
 
 // Starts the walk as soon as the player has named the track, or once it has waited long enough
@@ -837,6 +899,7 @@ void SGLyricsSetCredit(NSString *trackID, NSString *name) {
 // Once, at launch: the keys Musixmatch owned alone become an order, so the Lyrics page opens on what
 // the install was already doing rather than on nothing.
 void SGLyricsMigrateLegacyKeys(void) {
+    SGMigrateKey(SGKeyLyricsTypeFirst, SGKeyLyricsAskMode);
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     if ([defaults objectForKey:SGKeyLyricsProviders]) return;
     NSArray<NSString *> *order = fromLegacyKeys();
@@ -853,7 +916,7 @@ UIViewController *SGLyricsSourcesPage(void) {
         NSString *detail = [provider.key isEqualToString:SGSpicyLyricsKey] ? SGSpicyLyricsStatus() ?: provider.detail : provider.detail;
         [all addObject:[SGSource sourceWithKey:provider.key name:provider.name detail:detail]];
     }
-    return SGSourcesPageMake(SGL(@"settings.lyricssources.title", @"Lyrics sources"), SGL(@"settings.lyricssources.intro", @"Asked top to bottom until one has timed lyrics. Deezer uses your own login cookie when you add it."),
+    return SGSourcesPageMake(SGL(@"settings.lyricssources.title", @"Lyrics sources"), SGL(@"settings.lyricssources.intro", @"Drag to set source priority. Choose how sources are asked in Lyric types. Deezer uses your own login cookie when you add it."),
                              all, ^NSArray<NSString *> * { return SGLyricsOrder(); }, ^(NSArray<NSString *> *keys) { SGLyricsSetOrder(keys); });
 }
 

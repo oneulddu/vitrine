@@ -130,6 +130,12 @@ SGModRow *SGLyricsLanguageRulesRow(void) {
     });
 }
 
+static NSArray<NSString *> *askModeNames(void) {
+    return @[SGL(@"settings.lyrics.ask_mode.order", @"In order"),
+             SGL(@"settings.lyrics.ask_mode.words", @"Word timing first"),
+             SGL(@"settings.lyrics.ask_mode.all", @"All at once")];
+}
+
 UIViewController *SGLyricsTypesPage(void) {
     NSArray *choices = @[SGL(@"settings.lyrics.types.any", @"Any"), SGL(@"settings.lyrics.types.synced", @"Synced only"),
                          SGL(@"settings.lyrics.types.words", @"Word synced only")];
@@ -140,8 +146,16 @@ UIViewController *SGLyricsTypesPage(void) {
         [rows addObject:SGMenuRow(provider.name, choices, ^NSString *{ return choices[SGLyricsSourceTypes(provider.key)]; },
                                  ^(NSInteger index) { SGLyricsSetSourceTypes(provider.key, index); })];
     }
-    SGModRow *first = SGOptionRow(SGL(@"settings.lyrics.types.first.title", @"Type first"),
-        SGL(@"settings.lyrics.types.first.subtitle", @"Looks for word timing first. This can take longer, and the lyrics card may come later."), SGKeyLyricsTypeFirst);
+    NSArray<NSString *> *notes = @[
+        SGL(@"settings.lyrics.ask_mode.order.subtitle", @"Asks in order and stops at the first timed answer."),
+        SGL(@"settings.lyrics.ask_mode.words.subtitle", @"Asks in order, showing timed lines while looking for word timing."),
+        SGL(@"settings.lyrics.ask_mode.all.subtitle", @"Asks every source at once; the first word timing wins. Sends more requests.")];
+    NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
+    SGModRow *first = SGChoiceRow(SGL(@"settings.lyrics.ask_mode.title", @"How sources are asked"),
+        notes[mode >= 0 && mode < (NSInteger)notes.count ? mode : 1], SGKeyLyricsAskMode, askModeNames(), 1);
+    first.choiceNotes = notes;
+    __weak SGModRow *weakFirst = first;
+    first.chosen = ^(NSInteger index) { weakFirst.subtitle = notes[index]; };
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.types.title", @"Lyric types") intro:nil
         sections:@[SGSection(nil, @[first]), SGSection(SGL(@"settings.lyrics.sources.header", @"Sources"), rows)] footer:nil];
 }
@@ -149,8 +163,9 @@ UIViewController *SGLyricsTypesPage(void) {
 SGModRow *SGLyricsTypesRow(void) {
     SGModRow *row = SGPageRow(SGL(@"settings.lyrics.types.title", @"Lyric types"), ^UIViewController *{ return SGLyricsTypesPage(); });
     row.value = ^NSString *{
-        return SGFlag(SGKeyLyricsTypeFirst, NO) ? SGL(@"settings.lyrics.types.first.title", @"Type first")
-            : SGL(@"settings.lyrics.types.default", @"Default");
+        NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
+        NSArray<NSString *> *names = askModeNames();
+        return names[mode >= 0 && mode < (NSInteger)names.count ? mode : 1];
     };
     return row;
 }

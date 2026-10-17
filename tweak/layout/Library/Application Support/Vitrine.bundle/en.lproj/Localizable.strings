@@ -889,6 +889,13 @@
 "settings.lyrics.ai.header" = "AI";
 "settings.lyrics.all_tracks.subtitle" = "Even where Spotify has none";
 "settings.lyrics.all_tracks.title" = "Lyrics for every track";
+"settings.lyrics.ask_mode.all" = "All at once";
+"settings.lyrics.ask_mode.all.subtitle" = "Asks every source at once; the first word timing wins. Sends more requests.";
+"settings.lyrics.ask_mode.order" = "In order";
+"settings.lyrics.ask_mode.order.subtitle" = "Asks in order and stops at the first timed answer.";
+"settings.lyrics.ask_mode.title" = "How sources are asked";
+"settings.lyrics.ask_mode.words" = "Word timing first";
+"settings.lyrics.ask_mode.words.subtitle" = "Asks in order, showing timed lines while looking for word timing.";
 "settings.lyrics.auto_translation.claude" = "Claude";
 "settings.lyrics.auto_translation.claude.note" = "Sends the lyrics to Anthropic on your key";
 "settings.lyrics.auto_translation.deepl" = "DeepL";
@@ -967,9 +974,6 @@
 "settings.lyrics.translation_language.footer" = "A language brings Musixmatch's community translations to lyrics that have none, which sends Musixmatch each song's ID. Any shows the first translation the lyrics come with. It is also the language the lyrics' translate menu translates into, offered only for songs in another one; with Any, the iPhone's own language.";
 "settings.lyrics.translation_language.title" = "Translation language";
 "settings.lyrics.types.any" = "Any";
-"settings.lyrics.types.default" = "Default";
-"settings.lyrics.types.first.subtitle" = "Looks for word timing first. This can take longer, and the lyrics card may come later.";
-"settings.lyrics.types.first.title" = "Type first";
 "settings.lyrics.types.synced" = "Synced only";
 "settings.lyrics.types.title" = "Lyric types";
 "settings.lyrics.types.words" = "Word synced only";
@@ -1012,7 +1016,7 @@
 "settings.lyricssources.genie.subtitle" = "Line timing, Korean catalog";
 "settings.lyricssources.importedlrc.subtitle" = "Your own .lrc files";
 "settings.lyricssources.importedlrc.title" = "Imported LRC";
-"settings.lyricssources.intro" = "Asked top to bottom until one has timed lyrics. Deezer uses your own login cookie when you add it.";
+"settings.lyricssources.intro" = "Drag to set source priority. Choose how sources are asked in Lyric types. Deezer uses your own login cookie when you add it.";
 "settings.lyricssources.kugou.subtitle" = "Word timing, Chinese catalog";
 "settings.lyricssources.lrclib.subtitle" = "Line timing, open fallback";
 "settings.lyricssources.lyricsplus.subtitle" = "Word and line timing, multiple catalogs";

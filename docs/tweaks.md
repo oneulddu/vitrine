@@ -122,7 +122,7 @@ Shared:
                   SGLyricsSimplifiedTitle takes trailing extras off a title ((feat. …), [Remastered], - Live Version,
                   fullwidth brackets and Korean ones too). A line can carry a cultural note (SGKaraokeLine.note). The
                   sync and state features are checked on the Mac by harness/lyrics-sources/state-build.sh
-    LyricsSources/ the sources lyrics come from, asked in the order the Lyrics page puts them in and merged into the
+    LyricsSources/ the sources lyrics come from, asked in order or all at once and merged into the
                   best answer (LyricsSources.m, the list to drag in LyricsSourcesPage.m): Apple Music's TTML from
                   BiniLyrics.m (now lrc.red: first the TTML filed under Spotify's ISRC for the track, from
                   SGSpotifyISRC in Haptics/SystemMusicHaptics.x, else its search by name) and Unison.m, read by SGTTML.m,
@@ -146,9 +146,15 @@ Shared:
                   hand (SGLrcLibSearch, SGLyricsPin), asked by its id before the walk; Automatic (SGLyricsUnpin) drops
                   the pin and everything kept for the track. Each source can be held to the lyric types it gives
                   (SGKeyLyricsSourceTypes: any, synced only, word synced only), an answer it should not give being dropped
-                  before the merge, and Type first (SGKeyLyricsTypeFirst, off) asks every source until one times words,
-                  the finest timing winning and ties going to the order, instead of stopping at the first synced
-                  answer. color-lyrics is answered with whichever won
+                  before the merge. How sources are asked (SGKeyLyricsAskMode) offers In order (0), stopping at
+                  the first timed answer; Word timing first (1, default), asking sequentially for word timing
+                  with ties going to source priority; and All at once (2), sending more requests in parallel
+                  and keeping the first word-timed lines to arrive. Timed lines release the card while finer
+                  timing is sought. All at once waits for synced page text alongside word-timed lines, or
+                  exhaustion, and only accepts instrumental at exhaustion if no lyrics arrived.
+                  The old Type first boolean migrates to 0/1. Stored source orders are unchanged; unset
+                  orders prioritize Imported LRC, Spicy Lyrics, BiniLyrics, LyricsPlus, Musixmatch, Unison,
+                  Deezer, NetEase, LRCLIB, Bugs, Genie, QQ Music and KuGou. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
                   its request sent to a donor track that does, so the reply is a real 200 (a 404 answered as a 200 in the
                   delegate alone never showed the card on 9.1.78); a 404 for a track not seen yet is held until the chain

@@ -406,8 +406,8 @@ static BOOL adFree(void) {
     [_column setCustomSpacing:_note.hidden ? 32 : 12 afterView:_legacy];
     // The tips of the picked look: Split Tabs is the redesign's bar's, and the lyrics preview the redesign's page's.
     _splitTip.hidden = !_redesigned.selected;
-    _lyricsTip.text = [(_redesigned.selected ? @"A live preview of the look, the sources in order, and lyrics even where Spotify has none."
-                                             : @"The sources in order, and lyrics even where Spotify has none.")
+    _lyricsTip.text = [(_redesigned.selected ? @"A live preview of the look, your choice of sources, and lyrics even where Spotify has none."
+                                             : @"Your choice of sources, and lyrics even where Spotify has none.")
                        stringByAppendingString:@"\nMod Settings > Lyrics"];
 }
 

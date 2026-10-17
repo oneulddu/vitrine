@@ -935,9 +935,13 @@
 "settings.lyrics.translation_language.footer" = "특정 언어를 선택하면 번역이 없는 가사에 Musixmatch 커뮤니티 번역이 적용되며, 이 과정에서 Musixmatch로 각 노래의 ID가 전송됩니다. '모두'는 가사와 함께 제공되는 첫 번째 번역을 표시합니다. 또한 가사의 번역 메뉴에서 번역할 대상 언어가 되며, 다른 언어로 된 노래에만 제공됩니다. '모두'로 설정하면 iPhone의 기본 언어로 번역됩니다.";
 "settings.lyrics.translation_language.title" = "번역 언어";
 "settings.lyrics.types.any" = "모두";
-"settings.lyrics.types.default" = "기본";
-"settings.lyrics.types.first.subtitle" = "단어 싱크를 먼저 찾습니다. 더 오래 걸리고 가사 카드가 늦게 나타날 수 있습니다.";
-"settings.lyrics.types.first.title" = "유형 우선";
+"settings.lyrics.ask_mode.title" = "소스 요청 방식";
+"settings.lyrics.ask_mode.order" = "순서대로";
+"settings.lyrics.ask_mode.words" = "단어 타이밍 우선";
+"settings.lyrics.ask_mode.all" = "모두 동시에";
+"settings.lyrics.ask_mode.order.subtitle" = "순서대로 요청하고 타이밍이 있는 첫 가사를 찾으면 멈춥니다.";
+"settings.lyrics.ask_mode.words.subtitle" = "순서대로 요청하며, 단어 타이밍을 찾는 동안 줄 단위 가사를 보여 줍니다.";
+"settings.lyrics.ask_mode.all.subtitle" = "모든 소스에 동시에 요청하며, 먼저 도착한 단어 타이밍을 사용합니다. 더 많은 요청을 보냅니다.";
 "settings.lyrics.types.synced" = "싱크 가사만";
 "settings.lyrics.types.title" = "가사 유형";
 "settings.lyrics.types.words" = "단어 싱크만";
@@ -978,7 +982,7 @@
 "settings.lyricssources.genie.subtitle" = "줄 단위 싱크, 국내 음원";
 "settings.lyricssources.importedlrc.subtitle" = "직접 가져온 .lrc 파일";
 "settings.lyricssources.importedlrc.title" = "가져온 LRC";
-"settings.lyricssources.intro" = "단어 타이밍이 있는 소스를 찾을 때까지 위에서 아래로 요청합니다. 소스에는 트랙 정보만 전달되며 계정 정보는 전달되지 않습니다.";
+"settings.lyricssources.intro" = "드래그하여 소스 우선순위를 정하세요. 가사 유형에서 소스 요청 방식을 선택할 수 있습니다. Deezer는 직접 추가한 로그인 쿠키를 사용합니다.";
 "settings.lyricssources.kugou.subtitle" = "단어 타이밍, 중국 카탈로그";
 "settings.lyricssources.lrclib.subtitle" = "줄 타이밍, 공개 대체 소스";
 "settings.lyricssources.lyricsplus.subtitle" = "단어·줄 단위 싱크, 여러 음원";

@@ -1,5 +1,5 @@
 // Where lyrics come from. Every source answers the same question — what are this track's lines, and
-// how finely are they timed — and the chain asks them in the order the Lyrics page puts them in,
+// how finely are they timed — and the chain asks them in order or all at once,
 // keeping the best answer rather than the first: a source with only plain text does not shut out a
 // later one that times every word.
 //
@@ -9,8 +9,8 @@
 #import <math.h>
 #import "Shared/Lyrics/Lyrics.h"
 
-// The sources in the order they are asked, as their keys. Unset means the order below, so a source
-// added in a later version joins the end of everyone's list instead of shuffling it.
+// The sources in priority order, as their keys. Unset uses the current default order;
+// a stored order, including an empty one, is left alone.
 #define SGKeyLyricsProviders @"spotifyglass.lyricsProviders"
 // Offers the lyrics card on tracks Spotify itself has no lyrics for.
 #define SGKeyLyricsAllTracks @"spotifyglass.lyricsAllTracks"
@@ -21,12 +21,14 @@
 #define SGKeyLyricsTranslationLanguage @"spotifyglass.lyricsTranslationLanguage"
 
 // Each source may answer with any lyrics, timed lines or only timed words. Imported files are
-// always accepted. Type first keeps asking past line timing until a source times the words.
+// always accepted. Word timing first keeps asking past line timing until a source times the words.
 #define SGKeyLyricsSourceTypes @"spotifyglass.lyrics.sourceTypes"
 typedef NS_ENUM(NSInteger, SGLyricsTypes) { SGLyricsTypesAny = 0, SGLyricsTypesSynced, SGLyricsTypesWords };
 SGLyricsTypes SGLyricsSourceTypes(NSString *key);
 void SGLyricsSetSourceTypes(NSString *key, SGLyricsTypes types);
 #define SGKeyLyricsTypeFirst @"spotifyglass.lyrics.typeFirst"
+// 0: in order; 1 (default): word timing first; 2: all at once, first word timing wins.
+#define SGKeyLyricsAskMode @"spotifyglass.lyrics.askMode"
 UIViewController *SGLyricsTypesPage(void);
 SGModRow *SGLyricsTypesRow(void);
 
