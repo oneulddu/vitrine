@@ -57,12 +57,12 @@ jobs:
 
       # pipeline.sh reads the flag table out of the IPA (over a minute) only when the one it finds is
       # for another Spotify version, and rebuilds the Live Activity extension only when its inputs changed.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: tweak/Sources/Shared/Flags/SGFlagList.m
           key: flags-${{ steps.spotify.outputs.version }}-${{ hashFiles('scripts/extract-flags.py') }}
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: out/extension
           key: extension-${{ steps.spotify.outputs.version }}-${{ hashFiles('extension/LiveActivity/**', 'tweak/Sources/Shared/LiveActivity/**', 'scripts/build-extension.sh') }}
@@ -71,7 +71,7 @@ jobs:
 
       - run: ccache --show-stats
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         if: inputs.upload_method != 'filebin'
         with:
           name: vitrine.ipa
