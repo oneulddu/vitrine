@@ -122,6 +122,17 @@ Shared:
                   SGLyricsSimplifiedTitle takes trailing extras off a title ((feat. …), [Remastered], - Live Version,
                   fullwidth brackets and Korean ones too). A line can carry a cultural note (SGKaraokeLine.note). The
                   sync and state features are checked on the Mac by harness/lyrics-sources/state-build.sh
+    LyricsPiP/    opt-in Picture in Picture lyrics over other apps (spotifyglass.lyrics.pip, off, restart
+                  required). Each look owns its entry: the redesign's Lyrics options menu, or a small
+                  native full-screen lyrics corner button. Only a tap starts it; a retained shared engine
+                  draws the current and next lines and the full provider credit into a bounded CPU pixel
+                  buffer pool, following Spotify's clock minus the lyrics delay. Untimed lyrics never
+                  claim a current line. Its 4 Hz timer runs only while PiP is active and playing, and only
+                  changed content is drawn. Closing never pauses Spotify. PiP uses Spotify's existing
+                  audio session unchanged; unsupported/failed starts show an alert. Returning to Spotify
+                  offers linked provider credits. The Live Activity ends while PiP is active and resumes
+                  when enabled and playing, once Spotify is in front (ActivityKit cannot start behind
+                  another app). No automatic start, translation, word highlighting or styling options.
     LyricsSources/ the sources lyrics come from, asked in order or all at once and merged into the
                   best answer (LyricsSources.m, the list to drag in LyricsSourcesPage.m): Apple Music's TTML from
                   BiniLyrics.m (now lrc.red: first the TTML filed under Spotify's ISRC for the track, from

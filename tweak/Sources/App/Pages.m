@@ -18,6 +18,7 @@
 #import "Native/NowPlayingBar/NowPlayingBar.h"
 #import "Native/Player/NowPlaying.h"
 #import "Shared/LiveActivity/LiveActivity.h"
+#import "Shared/LyricsPiP/LyricsPiP.h"
 #import "Shared/Lossless/SGLossless.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Lyrics/LyricsLook.h"
@@ -157,6 +158,7 @@ static UIViewController *translationPage(void) {
 static UIViewController *lyricsPage(void) {
     BOOL redesigned = SGRedesignedUIStored();
     NSMutableArray<SGModRow *> *more = [NSMutableArray arrayWithObject:SGLockScreenLyricsRow()];
+    [more addObject:SGLyricsPiPRow()];
     if (!redesigned) [more insertObject:SGGlassLyricsRow() atIndex:0];
     SGModRow *sing = SGPageRow(SGL(@"settings.lyrics.sing.title", @"Karaoke"), ^UIViewController *{ return SGSingSettingsPage(); });
     sing.value = ^NSString *{ return SGSingSummary(); };

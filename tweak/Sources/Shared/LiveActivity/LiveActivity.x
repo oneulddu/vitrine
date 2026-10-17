@@ -16,6 +16,7 @@
 #import "Shared/Player/SleepTimer.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsPiP/LyricsPiP.h"
 #import "Shared/HeadGestures/HeadGestures.h"
 #import "Shared/Sing/Sing.h"
 #import "LiveActivity.h"
@@ -93,6 +94,8 @@ static NSMutableSet<NSString *> *sg_lookEnded;
 static NSDate *sg_lastStart;
 static NSDate *sg_lastSent;
 static SGLiveActivityTab sg_tab;
+// After PiP, wait for playback before restoring the card; send() already waits for foreground.
+static BOOL sg_pipResumePending;
 
 static void tick(void) API_AVAILABLE(ios(17.0));
 
@@ -275,8 +278,13 @@ static void readArtwork(SPTPlayerState *state, NSString *trackID) {
 }
 
 static void tick(void) API_AVAILABLE(ios(17.0)) {
+    if (SGLyricsPiPActive()) return;
     id<SPTPlayer> player = SGKaraokePlayer();
     SPTPlayerState *state = player.state;
+    if (sg_pipResumePending) {
+        if (!state.isPlaying || state.isPaused) return;
+        sg_pipResumePending = NO;
+    }
     SPTPlayerTrack *track = state.track;
     if (!track.trackTitle.length) return;
     NSString *trackID = SGKaraokePlayingTrack();
@@ -471,7 +479,7 @@ void SGSetLiveActivityEnabled(BOOL on) {
         sg_lastStart = nil;
         // A sleep timer runs on its own clock (SleepTimer.m) and stays set: the shortcut and the control set it
         // with the card off, and a card switched back on shows it from its first tick.
-        if (!on) {
+        if (!on || SGLyricsPiPActive()) {
             [SGLiveActivityBridge end];
             SGLog(@"live activity: off");
             return;
@@ -515,6 +523,12 @@ void SGSetLiveActivityEnabled(BOOL on) {
         SGMigrateKey(SGKeyLiveActivityWas, SGKeyLiveActivity);
         SGMigrateKey(SGKeyLiveActivityViewWas, SGKeyLiveActivityView);
         BOOL on = SGFlag(SGKeyLiveActivity, NO);
+        [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsPiPDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (SGLyricsPiPActive()) sg_pipResumePending = YES;
+                SGSetLiveActivityEnabled(SGFlag(SGKeyLiveActivity, NO));
+            });
+        }];
         // From launch, card on or off, so a look that ends before the card is switched on still counts. Posted on
         // the main queue, so no queue: it is noted before the post returns.
         sg_lookEnded = [NSMutableSet set];

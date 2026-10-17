@@ -18,6 +18,7 @@
 #import "SGRSingButton.h"
 #import "Shared/Sing/Sing.h"
 #import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/LyricsPiP/LyricsPiP.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "AutoTranslation.h"
 #import "TranslationStatusView.h"
@@ -1525,6 +1526,8 @@ typedef struct {
     // A snapshot changed: the note is drawn again, and nothing is asked of any translator from here.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationProgressChanged:) name:SGRAutoTranslationProgressDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(wordTimingChanged) name:SGLyricsWordTimingDidChangeNotification object:nil];
+    if (SGRedesignedUI() && SGLyricsPiPEnabled())
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(offerExtras) name:SGLyricsPiPDidChangeNotification object:nil];
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
     [self addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)]];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionNotification object:nil];
@@ -2149,7 +2152,8 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     BOOL translatable = (_foreign || SGHidden(SGKeyLyricsTranslateEverySong)) && _untranslated && anyTranslator;
     // Sync and Search LRCLIB are there for every song with lines, so the button is too; its glyph says
     // translate only while it has a pronunciation or a translation to offer.
-    BOOL offered = _lines && !_sample && _track.length;
+    BOOL pipOffered = SGRedesignedUI() && SGLyricsPiPEnabled() && !_sample;
+    BOOL offered = (_lines || pipOffered) && !_sample && _track.length;
     BOOL languages = _hasSpoken || _hasTranslation || translatable;
     if (!offered) {
         _extrasBox.hidden = YES;
@@ -2188,6 +2192,14 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         _extras.accessibilityValue = translating ? SGL(@"settings.lyricstools.menu.translating", @"Translating") : nil;
     }
     NSMutableArray<UIMenuElement *> *items = [NSMutableArray array];
+    if (pipOffered) {
+        BOOL close = SGLyricsPiPActive() || SGLyricsPiPStarting();
+        __weak SGRKaraokeView *weakSelf = self;
+        [items addObject:[UIAction actionWithTitle:close ? SGL(@"settings.lyrics.pip.close", @"Close Picture in Picture")
+                                                        : SGL(@"settings.lyrics.pip.show", @"Show in Picture in Picture")
+            image:[UIImage systemImageNamed:close ? @"pip.exit" : @"pip.enter"] identifier:nil
+            handler:^(UIAction *action) { SGLyricsPiPToggle(weakSelf); }]];
+    }
     if (_hasSpoken) {
         BOOL on = SGFlag(SGRKeyLyricsPronunciation, NO);
         [items addObject:[UIAction actionWithTitle:on ? SGL(@"settings.lyricstools.menu.pronunciation.hide", @"Hide Pronunciation")

@@ -16,9 +16,53 @@
 #import "Native/Player/NowPlaying.h"
 #import "Native/Appearance/Repaint.h"
 #import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/LyricsPiP/LyricsPiP.h"
 #import <objc/runtime.h>
 
 static char kPageGlassKey;
+
+// Our own control, below Spotify's header controls, not an arranged subview of an Encore stack.
+@interface SGLyricsPiPButton : UIButton
+@end
+@implementation SGLyricsPiPButton
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame])) return nil;
+    self.backgroundColor = [UIColor.blackColor colorWithAlphaComponent:0.65];
+    self.tintColor = UIColor.whiteColor;
+    self.layer.cornerRadius = 22;
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    [self addTarget:self action:@selector(togglePiP) forControlEvents:UIControlEventTouchUpInside];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(updatePiP) name:SGLyricsPiPDidChangeNotification object:nil];
+    [self updatePiP];
+    return self;
+}
+- (void)updatePiP {
+    BOOL close = SGLyricsPiPActive() || SGLyricsPiPStarting();
+    [self setImage:[UIImage systemImageNamed:close ? @"pip.exit" : @"pip.enter"] forState:UIControlStateNormal];
+    self.accessibilityLabel = close ? SGL(@"settings.lyrics.pip.close", @"Close Picture in Picture")
+                                   : SGL(@"settings.lyrics.pip.show", @"Show in Picture in Picture");
+}
+- (void)togglePiP { SGLyricsPiPToggle(self); }
+- (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
+@end
+
+static char kPiPButtonKey;
+static void addPiPButton(UIView *page) {
+    if (!SGLyricsPiPEnabled() || !page.window) return;
+    SGLyricsPiPButton *button = objc_getAssociatedObject(page, &kPiPButtonKey);
+    if (!button) {
+        button = [[SGLyricsPiPButton alloc] initWithFrame:CGRectZero];
+        button.translatesAutoresizingMaskIntoConstraints = NO;
+        [page addSubview:button];
+        [NSLayoutConstraint activateConstraints:@[
+            [button.trailingAnchor constraintEqualToAnchor:page.safeAreaLayoutGuide.trailingAnchor constant:-16],
+            [button.topAnchor constraintEqualToAnchor:page.safeAreaLayoutGuide.topAnchor constant:64],
+            [button.widthAnchor constraintEqualToConstant:44], [button.heightAnchor constraintEqualToConstant:44]
+        ]];
+        objc_setAssociatedObject(page, &kPiPButtonKey, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    [page bringSubviewToFront:button];
+}
 
 // Up to the presentation: the template views in between paint themselves opaque once, at setup.
 // Only the chain is cleared, not the subtree -- nothing else on the page is painted.
@@ -42,6 +86,7 @@ static UIView *clearAncestors(UIView *view) {
 
 - (void)layoutSubviews {
     %orig;
+    addPiPButton((UIView *)self);
     if (!SGFlag(SGKeyLyricsCard, NO)) return;
     UIView *page = (UIView *)self;
     if (page.bounds.size.height < 200) return;

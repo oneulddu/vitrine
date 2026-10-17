@@ -957,6 +957,15 @@
 "settings.lyrics.meanings.choice.everyone" = "Everyone";
 "settings.lyrics.meanings.footer" = "Explanations from Genius. Tap the bubble after a line, or hold the line.";
 "settings.lyrics.meanings.title" = "Line meanings";
+"settings.lyrics.pip.close" = "Close Picture in Picture";
+"settings.lyrics.pip.credit_links" = "View source credits";
+"settings.lyrics.pip.failed" = "Picture in Picture could not start. This device or Spotify's current playback session may not support it. Keep Spotify in front and try again.";
+"settings.lyrics.pip.instrumental" = "Instrumental";
+"settings.lyrics.pip.no_lyrics" = "No lyrics available";
+"settings.lyrics.pip.show" = "Show in Picture in Picture";
+"settings.lyrics.pip.subtitle" = "Show lyrics over other apps from the lyrics screen. Restart Spotify after changing this.";
+"settings.lyrics.pip.title" = "Picture in Picture lyrics";
+"settings.lyrics.pip.untimed" = "These lyrics are not synced";
 "settings.lyrics.romanized.subtitle" = "Shows Latin-letter readings, or hiragana for Japanese.";
 "settings.lyrics.romanized.title" = "Pronunciation";
 "settings.lyrics.show_source.subtitle" = "Spicy Lyrics is always credited after the last line: its terms ask for it";
