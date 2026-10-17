@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0-beta.16](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.15...v1.0.0-beta.16) (2026-10-17)
+
+
+### Features
+
+* AI 번역 서비스별 설정 페이지와 모델 목록 선택 추가 ([b8a09b0](https://github.com/oneulddu/vitrine/commit/b8a09b0bcfc79411c9a7b035f4a64622933a287c))
+* Mod Settings 구성과 안내 문구 정리 ([ce963bb](https://github.com/oneulddu/vitrine/commit/ce963bb5837e027f77f468797e35cb3dbb811ca5))
+* 가사 제공자 묻는 방식 선택과 동시 요청 추가 ([74772b5](https://github.com/oneulddu/vitrine/commit/74772b564e2cf9a310c506f0fc2b34a3f57fe2f2))
+
 ## [1.0.0-beta.15](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.14...v1.0.0-beta.15) (2026-10-16)
 
 
