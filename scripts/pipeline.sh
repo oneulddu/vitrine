@@ -105,7 +105,17 @@ FILES=("$TWEAK_DEB")
 if xcrun --sdk iphoneos --find swiftc >/dev/null 2>&1; then
   EXT_DIR="$ROOT/out/extension"
   unzip -p "$IN" "${APP_DIR}Info.plist" > "$ROOT/out/.info.plist"
-  "$ROOT/scripts/build-extension.sh" "$ROOT/out/.info.plist" "$EXT_DIR"
+  # Built again only when what it is made from changed: its sources, the host's Info.plist or Xcode.
+  EXT_STAMP="$( { cat "$ROOT/scripts/build-extension.sh" "$ROOT"/extension/LiveActivity/* \
+    "$ROOT"/tweak/Sources/Shared/LiveActivity/*.swift "$ROOT/out/.info.plist"; xcodebuild -version; } | shasum | cut -d' ' -f1)"
+  if [ "$(cat "$EXT_DIR/.stamp" 2>/dev/null)" = "$EXT_STAMP" ] && [ -d "$EXT_DIR/SpotifyGlassLiveActivity.appex" ] \
+     && [ -e "$EXT_DIR/app/Metadata.appintents" ]; then
+    echo "==> SpotifyGlassLiveActivity.appex is up to date"
+  else
+    rm -f "$EXT_DIR/.stamp"
+    "$ROOT/scripts/build-extension.sh" "$ROOT/out/.info.plist" "$EXT_DIR"
+    echo "$EXT_STAMP" > "$EXT_DIR/.stamp"
+  fi
   rm -f "$ROOT/out/.info.plist"
   FILES+=("$EXT_DIR/SpotifyGlassLiveActivity.appex")
 else

@@ -31,18 +31,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: latest-stable
-
-      - uses: actions/checkout@v5
-        with:
-          repository: theos/theos
-          path: theos
-          submodules: recursive
-
-      - name: Install tools
-        run: brew install make dpkg ldid
+      - uses: ./.github/actions/setup-theos
 
       # The flag table is read out of Spotify's binary (make flags), so it comes from a secret
       # instead of an IPA: gzip -9c tweak/Sources/Shared/Flags/SGFlagList.m | base64 | gh secret set SG_FLAG_LIST
@@ -55,3 +44,5 @@ jobs:
 
       - name: Build
         run: env -u MAKELEVEL gmake -C tweak clean package
+
+      - run: ccache --show-stats

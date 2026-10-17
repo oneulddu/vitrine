@@ -24,28 +24,47 @@ jobs:
 
       - uses: levibostian/action-hide-sensitive-inputs@v1
 
-      - uses: maxim-lobanov/setup-xcode@v1
+      - uses: ./.github/actions/setup-theos
         with:
-          xcode-version: latest-stable
+          brew: aria2
 
-      - uses: actions/checkout@v5
-        with:
-          repository: theos/theos
-          path: theos
-          submodules: recursive
-
-      - name: Install tools
-        run: |
-          brew install make dpkg ldid
-          python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
+      - name: Install cyan
+        run: python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
 
       - name: Download IPA
+        env:
+          IPA_URL: ${{ inputs.ipa_url }}
         run: |
           mkdir -p ipa
-          curl -fsSL "${{ inputs.ipa_url }}" -o ipa/spotify.ipa
+          # Many file hosts throttle each connection and drop long transfers, so fetch in
+          # parallel ranges and resume on failure (one connection when ranges aren't served).
+          aria2c --quiet --max-connection-per-server=8 --split=8 --min-split-size=1M \
+            --max-tries=20 --retry-wait=3 --continue=true --allow-overwrite=true \
+            --dir=ipa --out=spotify.ipa "$IPA_URL"
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
+      - name: Spotify version
+        id: spotify
+        run: |
+          app="$(unzip -Z1 ipa/spotify.ipa | grep -oE '^Payload/[^/]+\.app/' | sort -u | head -1)"
+          unzip -p ipa/spotify.ipa "${app}Info.plist" > "$RUNNER_TEMP/Info.plist"
+          echo "version=$(plutil -extract CFBundleShortVersionString raw -o - "$RUNNER_TEMP/Info.plist")" >> "$GITHUB_OUTPUT"
+
+      # pipeline.sh reads the flag table out of the IPA (over a minute) only when the one it finds is
+      # for another Spotify version, and rebuilds the Live Activity extension only when its inputs changed.
+      - uses: actions/cache@v4
+        with:
+          path: tweak/Sources/Shared/Flags/SGFlagList.m
+          key: flags-${{ steps.spotify.outputs.version }}-${{ hashFiles('scripts/extract-flags.py') }}
+
+      - uses: actions/cache@v4
+        with:
+          path: out/extension
+          key: extension-${{ steps.spotify.outputs.version }}-${{ hashFiles('extension/LiveActivity/**', 'tweak/Sources/Shared/LiveActivity/**', 'scripts/build-extension.sh') }}
+
       - run: make release
+
+      - run: ccache --show-stats
 
       - uses: actions/upload-artifact@v5
         if: inputs.upload_method != 'filebin'

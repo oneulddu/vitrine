@@ -1,0 +1,60 @@
+name: Set up Theos
+description: >
+  Xcode, Theos and the build tools for the tweak, with Theos's Swift support tools and the compiler's
+  output (ccache) kept between runs so an unchanged file is not compiled again.
+inputs:
+  brew:
+    description: Extra Homebrew formulae to install
+    default: ""
+runs:
+  using: composite
+  steps:
+    - uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+
+    - uses: actions/checkout@v5
+      with:
+        repository: theos/theos
+        path: theos
+        submodules: recursive
+
+    - id: keys
+      shell: bash
+      run: |
+        echo "theos=$(git -C theos rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        echo "xcode=$(xcodebuild -version | sed -n 's/^Build version //p')" >> "$GITHUB_OUTPUT"
+
+    # Theos rebuilds these only when its own commit changes (bin/swift-bootstrapper.pl's marker).
+    - uses: actions/cache@v4
+      with:
+        path: theos/vendor/swift-support/.theos_build
+        key: swift-support-${{ steps.keys.outputs.theos }}-${{ steps.keys.outputs.xcode }}
+
+    - uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/ccache
+        key: ccache-${{ steps.keys.outputs.xcode }}-${{ github.sha }}
+        restore-keys: ccache-${{ steps.keys.outputs.xcode }}-
+
+    - shell: bash
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+        HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      run: brew install make dpkg ldid ccache ${{ inputs.brew }}
+
+    # Theos takes its compiler from TARGET_CC/TARGET_CXX when they are set. Its modules flags need
+    # ccache's depend mode. The dSYM Theos makes after linking is never shipped, so it is skipped.
+    - shell: bash
+      run: |
+        {
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          echo "CCACHE_DEPEND=1"
+          echo "CCACHE_SLOPPINESS=modules,include_file_mtime,include_file_ctime,time_macros"
+          echo "CCACHE_MAXSIZE=1G"
+          echo "TARGET_CC=ccache $(xcrun -sdk iphoneos -f clang)"
+          echo "TARGET_CXX=ccache $(xcrun -sdk iphoneos -f clang++)"
+          echo "MAKEFLAGS=-- TARGET_DSYMUTIL="
+        } >> "$GITHUB_ENV"
+        CCACHE_DIR="$RUNNER_TEMP/ccache" ccache --zero-stats
