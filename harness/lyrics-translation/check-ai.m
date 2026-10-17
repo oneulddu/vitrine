@@ -169,6 +169,68 @@ static void checkClaudeAndPresets(void) {
     CHECK([claude[@"system"] isEqual:SGLyricsTranslationInstruction()] && [claude[@"messages"][0][@"content"] isEqual:prompt]);
     puts("Claude / presets: multipart and fenced replies, errors, bounds, all five endpoints and stored selection passed");
 }
+static void checkModelLists(void) {
+    NSArray *gemini = SGLyricsAIModelsIn(SGLyricsAIGemini, @{@"models": @[
+        @{@"name": @"models/gemini-2.5-flash", @"displayName": @"Gemini 2.5 Flash", @"supportedGenerationMethods": @[@"generateContent", @"countTokens"]},
+        @{@"name": @"models/text-embedding-004", @"supportedGenerationMethods": @[@"embedContent"]},
+        @{@"name": @"models/gemini-2.5-flash", @"supportedGenerationMethods": @[@"generateContent"]},
+        @{@"name": @42, @"supportedGenerationMethods": @[@"generateContent"]}, @"junk"]});
+    CHECK(([gemini isEqual:@[@{@"id": @"gemini-2.5-flash", @"name": @"Gemini 2.5 Flash"}]]));
+    NSArray *claude = SGLyricsAIModelsIn(SGLyricsAIClaude, @{@"data": @[@{@"id": @"claude-sonnet-5", @"display_name": @"Claude Sonnet 5"},
+                                                                       @{@"id": @"claude-haiku-4-5", @"display_name": @"claude-haiku-4-5"}]});
+    CHECK(([claude isEqual:@[@{@"id": @"claude-sonnet-5", @"name": @"Claude Sonnet 5"}, @{@"id": @"claude-haiku-4-5"}]]));
+    NSArray *openai = SGLyricsAIModelsIn(SGLyricsAIOpenAI, @{@"data": @[@{@"id": @"gpt-4o-mini"}, @{@"id": @"GPT-10"}, @{@"id": @"gpt-9"}, @{@"id": @"  "}, @{@"id": @"bad\nid"}]});
+    CHECK(([[openai valueForKey:@"id"] isEqual:@[@"gpt-4o-mini", @"gpt-9", @"GPT-10"]]));
+    for (id bad in @[NSNull.null, @{}, @{@"data": @{}}, @[]]) CHECK(!SGLyricsAIModelsIn(SGLyricsAIOpenAI, bad));
+    CHECK([SGLyricsAIModelsIn(SGLyricsAIOpenAI, @{@"data": @[]}) isEqual:@[]]);
+    NSMutableArray *many = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 2100; i++) [many addObject:@{@"id": [NSString stringWithFormat:@"m%lu", (unsigned long)i]}];
+    CHECK(SGLyricsAIModelsIn(SGLyricsAIOpenAI, @{@"data": many}).count == 2000);
+
+    CHECK([SGOpenAIModelsURL(@"https://openrouter.ai/api/v1/").absoluteString isEqual:@"https://openrouter.ai/api/v1/models"]);
+    CHECK([SGOpenAIModelsURL(@"https://api.perplexity.ai").absoluteString isEqual:@"https://api.perplexity.ai/models"]);
+    CHECK([SGOpenAIModelsURL(@"http://100.97.8.81:10100/v1").absoluteString isEqual:@"http://100.97.8.81:10100/v1/models"]);
+    CHECK(!SGOpenAIModelsURL(@"http://openrouter.ai/v1") && !SGOpenAIModelsURL(@"invalid"));
+
+    // The checks after this one expect the keys and address checkClaudeAndPresets left.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSSet *keptKeys = testKeys;
+    NSMutableDictionary *keptOpenAIKeys = openAIKeys;
+    id keptBase = [defaults objectForKey:SGKeyLyricsOpenAIBaseURL];
+    [defaults removeObjectForKey:SGKeyLyricsGeminiModel];
+    CHECK([SGLyricsAIModel(SGLyricsAIGemini) isEqual:@"gemini-flash-latest"]);
+    CHECK(SGLyricsAISetModel(SGLyricsAIGemini, @" models/gemini-2.5-pro \n") && [[defaults stringForKey:SGKeyLyricsGeminiModel] isEqual:@"gemini-2.5-pro"]);
+    CHECK(!SGLyricsAISetModel(SGLyricsAIClaude, @"  ") && !SGLyricsAISetModel(SGLyricsAIOpenAI, @"a\tb"));
+    testKeys = [NSSet setWithArray:@[@"Vitrine.Gemini", @"Vitrine.Claude"]];
+    NSString *problem = nil;
+    CHECK([SGGeminiAIRequest(@"system", @"prompt", &problem).URL.absoluteString isEqual:@"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"]);
+    // A typed name stays inside its path segment.
+    CHECK(SGLyricsAISetModel(SGLyricsAIGemini, @"x/../y?z"));
+    CHECK([SGGeminiAIRequest(@"system", @"prompt", &problem).URL.absoluteString isEqual:@"https://generativelanguage.googleapis.com/v1beta/models/x%2F..%2Fy%3Fz:generateContent"]);
+    NSURLRequest *list = SGGeminiModelsRequest(&problem);
+    CHECK([list.URL.absoluteString isEqual:@"https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"] && [[list valueForHTTPHeaderField:@"x-goog-api-key"] isEqual:@"offline-test-key"]);
+    list = SGClaudeModelsRequest(&problem);
+    CHECK([list.URL.absoluteString isEqual:@"https://api.anthropic.com/v1/models?limit=1000"] && [[list valueForHTTPHeaderField:@"x-api-key"] isEqual:@"offline-test-key"]);
+    CHECK([[list valueForHTTPHeaderField:@"anthropic-version"] isEqual:@"2023-06-01"]);
+
+    testKeys = [NSSet setWithObject:@"Vitrine.OpenAI"];
+    [defaults setObject:@"https://openrouter.ai/api/v1" forKey:SGKeyLyricsOpenAIBaseURL];
+    openAIKeys = [@{@"openrouter.ai": [@"router-key" dataUsingEncoding:NSUTF8StringEncoding]} mutableCopy];
+    list = SGOpenAIModelsRequest(&problem);
+    CHECK([list.URL.absoluteString isEqual:@"https://openrouter.ai/api/v1/models"] && [[list valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer router-key"]);
+    openAIKeys = [NSMutableDictionary dictionary];
+    problem = nil;
+    CHECK(!SGOpenAIModelsRequest(&problem) && problem.length);
+    testKeys = [NSSet set]; openAIKeys = nil;
+    problem = nil;
+    CHECK(!SGGeminiModelsRequest(&problem) && problem.length);
+    problem = nil;
+    CHECK(!SGClaudeModelsRequest(&problem) && problem.length);
+    [defaults removeObjectForKey:SGKeyLyricsGeminiModel];
+    if (keptBase) [defaults setObject:keptBase forKey:SGKeyLyricsOpenAIBaseURL]; else [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    testKeys = keptKeys; openAIKeys = keptOpenAIKeys;
+    puts("Model lists: Gemini/Anthropic/OpenAI-compatible replies, bounds, sorting, /models URLs, requests and Gemini's model in its path passed");
+}
 static void checkAIJobs(void) {
     NSArray *texts = @[@"Blue robot", @"", @"♪"];
     for (NSInteger notation = 0; notation < 3; notation++) {
@@ -539,11 +601,12 @@ static void checkGeminiTitleMetadata(void) {
     puts("Gemini title metadata: changed title/artist bypass stale cache; identical source reuses it");
 }
 static void checkNewAI(void) {
-    NSArray *keys = @[SGKeyLyricsOpenAIBaseURL, SGKeyLyricsOpenAIModel, SGKeyLyricsClaudeModel, SGKeyLyricsPronunciationNotation];
+    NSArray *keys = @[SGKeyLyricsOpenAIBaseURL, SGKeyLyricsOpenAIModel, SGKeyLyricsClaudeModel, SGKeyLyricsGeminiModel, SGKeyLyricsPronunciationNotation];
     NSMutableDictionary *before = [NSMutableDictionary dictionary];
     for (NSString *key in keys) before[key] = [NSUserDefaults.standardUserDefaults objectForKey:key] ?: NSNull.null;
     checkOpenAIHostKeys();
     checkClaudeAndPresets();
+    checkModelLists();
     checkAIJobs();
     checkAIStore();
     checkTranslationReplacement();

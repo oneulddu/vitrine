@@ -23,6 +23,108 @@ NSString *SGLyricsAIName(SGLyricsAI service) {
     return SGL(@"settings.translation.ai.custom", @"your AI service");
 }
 
+#pragma mark - models
+
+NSString *SGLyricsAICleanModel(NSString *text) {
+    if (![text isKindOfClass:NSString.class]) return nil;
+    NSString *model = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    return model.length && model.length <= 256 && [model rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound ? model : nil;
+}
+
+NSString *SGLyricsAIModel(SGLyricsAI service) {
+    switch (service) {
+        case SGLyricsAIGemini: return SGGeminiModel();
+        case SGLyricsAIClaude: return SGClaudeModel();
+        case SGLyricsAIOpenAI: return SGOpenAIModel();
+    }
+    return nil;
+}
+
+BOOL SGLyricsAISetModel(SGLyricsAI service, NSString *model) {
+    NSString *clean = SGLyricsAICleanModel(model);
+    // Gemini's list names its models "models/…", and its address takes the name after that.
+    if (clean && service == SGLyricsAIGemini && [clean hasPrefix:@"models/"]) clean = SGLyricsAICleanModel([clean substringFromIndex:7]);
+    if (!clean) return NO;
+    NSString *key = service == SGLyricsAIGemini ? SGKeyLyricsGeminiModel : service == SGLyricsAIClaude ? SGKeyLyricsClaudeModel : SGKeyLyricsOpenAIModel;
+    [NSUserDefaults.standardUserDefaults setObject:clean forKey:key];
+    SGLyricsTranslationServiceSettingsChanged();
+    return YES;
+}
+
+NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsIn(SGLyricsAI service, id root) {
+    if (![root isKindOfClass:NSDictionary.class]) return nil;
+    BOOL gemini = service == SGLyricsAIGemini;
+    id list = root[gemini ? @"models" : @"data"];
+    if (![list isKindOfClass:NSArray.class]) return nil;
+    NSMutableArray *models = [NSMutableArray array];
+    NSMutableSet *seen = [NSMutableSet set];
+    for (id entry in list) {
+        if (models.count >= 2000) break;
+        if (![entry isKindOfClass:NSDictionary.class]) continue;
+        id identifier = entry[gemini ? @"name" : @"id"];
+        id name = entry[gemini ? @"displayName" : service == SGLyricsAIClaude ? @"display_name" : @"name"];
+        if (gemini) {
+            id methods = entry[@"supportedGenerationMethods"];
+            if (![methods isKindOfClass:NSArray.class] || ![methods containsObject:@"generateContent"]) continue;
+            if ([identifier isKindOfClass:NSString.class] && [identifier hasPrefix:@"models/"]) identifier = [identifier substringFromIndex:7];
+        }
+        NSString *model = SGLyricsAICleanModel(identifier);
+        if (!model || [seen containsObject:model]) continue;
+        [seen addObject:model];
+        NSString *label = SGLyricsAICleanModel(name);
+        [models addObject:label && ![label isEqualToString:model] ? @{@"id": model, @"name": label} : @{@"id": model}];
+    }
+    // Gemini and Anthropic list theirs newest first; OpenAI-compatible services in no order of their own.
+    if (service == SGLyricsAIOpenAI) [models sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [a[@"id"] compare:b[@"id"] options:NSCaseInsensitiveSearch | NSNumericSearch];
+    }];
+    return [models copy];
+}
+
+static NSMutableDictionary<NSString *, NSArray *> *sg_modelLists;   // for the launch, by service, address and key
+
+NSURLSessionDataTask *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
+                                            void (^done)(NSArray<NSDictionary<NSString *, NSString *> *> *, NSString *)) {
+    NSString *problem = nil;
+    NSURLRequest *request = nil;
+    switch (service) {
+        case SGLyricsAIGemini: request = SGGeminiModelsRequest(&problem); break;
+        case SGLyricsAIClaude: request = SGClaudeModelsRequest(&problem); break;
+        case SGLyricsAIOpenAI: request = SGOpenAIModelsRequest(&problem); break;
+    }
+    if (!request) { done(nil, problem ?: SGL(@"settings.translation.models.error.nokey", @"Save an API key first, and its models are listed here.")); return nil; }
+    NSString *identity = [NSString stringWithFormat:@"%ld|%@|%@|%@|%@", (long)service, request.URL.absoluteString,
+        [request valueForHTTPHeaderField:@"Authorization"] ?: @"", [request valueForHTTPHeaderField:@"x-api-key"] ?: @"",
+        [request valueForHTTPHeaderField:@"x-goog-api-key"] ?: @""];
+    if (!sg_modelLists) sg_modelLists = [NSMutableDictionary dictionary];
+    NSArray *kept = fresh ? nil : sg_modelLists[identity];
+    if (kept) { done(kept, nil); return nil; }
+    return SGLyricsTranslationSendOnceUpTo(request, 8 * 1024 * 1024, ^(NSData *data, NSInteger status, NSError *error) {
+        NSArray *models = nil;
+        NSString *failure = nil;
+        if (error) failure = SGL(@"settings.translation.models.error.unreachable", @"The service could not be reached.");
+        else if (status == 401 || status == 403 || (service == SGLyricsAIGemini && status == 400))
+            failure = SGL(@"settings.translation.models.error.keyinvalid", @"The service turned the key down. Check the API key.");
+        else if (status == 404 || status == 405)
+            failure = SGL(@"settings.translation.models.error.unlisted", @"This service does not list its models. Enter one by hand.");
+        else if (status == 429 || (status >= 500 && status <= 599))
+            failure = SGL(@"settings.translation.models.error.busy", @"The service is busy right now. Try again in a minute.");
+        else if (status != 200)
+            failure = [NSString stringWithFormat:SGL(@"settings.translation.models.error.status", @"The model list could not be loaded (%ld)."), (long)status];
+        else {
+            id root = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+            models = SGLyricsAIModelsIn(service, root);
+            if (!models) failure = SGL(@"settings.translation.models.error.unreadable", @"The model list could not be read. Enter a model by hand.");
+        }
+        SGLog(@"ai models: %@ %ld, %@", SGLyricsAIName(service), (long)status, models ? (id)@(models.count) : failure);
+        if (models) {
+            if (sg_modelLists.count >= 16) [sg_modelLists removeAllObjects];
+            sg_modelLists[identity] = models;
+        }
+        done(models, failure);
+    });
+}
+
 NSArray<NSString *> *SGLyricsAITexts(NSArray<SGKaraokeLine *> *lines) {
     if (![lines isKindOfClass:NSArray.class] || lines.count > 2000) return nil;
     NSMutableArray *texts = [NSMutableArray array];

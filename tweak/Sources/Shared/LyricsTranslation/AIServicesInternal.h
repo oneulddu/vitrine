@@ -31,3 +31,22 @@ void SGLyricsDeleteSavedTranslations(void);
 
 // One bounded/cancellable attempt for an explicit connection test; unlike translation jobs, no retry.
 NSURLSessionDataTask *SGLyricsTranslationSendOnce(NSURLRequest *request, void (^finished)(NSData *, NSInteger, NSError *));
+// The same with its own reply size limit in bytes, for a model list (OpenRouter's runs past 512 KiB).
+NSURLSessionDataTask *SGLyricsTranslationSendOnceUpTo(NSURLRequest *request, NSUInteger limit, void (^finished)(NSData *, NSInteger, NSError *));
+
+// Model names as a service takes them: trimmed, 1-256 characters, no control characters; else nil.
+NSString *SGLyricsAICleanModel(NSString *text);
+// Each service's model in use: the stored one when it is clean, else the service's default.
+NSString *SGGeminiModel(void);
+NSString *SGClaudeModel(void);
+NSString *SGOpenAIModel(void);
+// GET requests for the service's model list with the saved key (and address), or nil and why not.
+NSURLRequest *SGGeminiModelsRequest(NSString **problem);
+NSURLRequest *SGClaudeModelsRequest(NSString **problem);
+NSURLRequest *SGOpenAIModelsRequest(NSString **problem);
+// The OpenAI-compatible base URL's /models, under the same rules as SGOpenAICompletionURL; else nil.
+NSURL *SGOpenAIModelsURL(NSString *base);
+// A model list reply read: @{@"id", optional @"name"} each, deduplicated, at most 2000. Gemini's keeps only
+// models that generate content, without the "models/" prefix; OpenAI-compatible lists are sorted by ID.
+// Nil for a reply that is not a list.
+NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsIn(SGLyricsAI service, id root);

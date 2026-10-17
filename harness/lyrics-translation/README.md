@@ -39,8 +39,12 @@ The checks cover:
   default/custom-host migration, preserving an existing host key, deleting the old `api-key` item,
   failures and retries, migrating before a preset changes the address, and the ` · no key` row value.
   Lyrics, AI jobs and automatic titles send nothing for a host without a key; requests for configured
-  hosts carry only that host's key. The key alert saves to the host of the URL entered in the alert
-  (the alert itself still needs device verification).
+  hosts carry only that host's key. The key alert saves to the stored address's host, and the address
+  alert migrates the old address's legacy key before it changes (both alerts still need device verification).
+- Model lists: Gemini's generate-content models without the `models/` prefix, Anthropic's and OpenAI-compatible
+  lists with display names, duplicates, wrong types, control characters, the 2000-model cap and the ID sort.
+  `/models` beside each base URL, the three list requests' addresses and headers, no request without a key,
+  stored models cleaned, and Gemini's chosen model percent-encoded inside its path segment.
 - AI pronunciation and cultural notes: JSON-array prompts, all three notations, sound rather than meaning,
   sparse notes, composed-character length limits, strict replies, all three service request shapes and safety
   settings, shared in-flight requests, single main-thread completion, memory/disk reuse and deletion while

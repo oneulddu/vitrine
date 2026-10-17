@@ -8,9 +8,23 @@
 #import "Headers/SPTPlayer.h"
 #import "AIServicesInternal.h"
 
-// gemini-flash-latest follows each Flash release; Google gives two weeks' notice of a breaking change.
-static NSString *const kEndpoint = @"https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
+// The default, gemini-flash-latest, follows each Flash release; Google gives two weeks' notice of a breaking change.
+static NSString *const kModel = @"gemini-flash-latest";
 static NSString *const kService = @"Vitrine.Gemini", *const kAccount = @"api-key";
+
+NSString *SGGeminiModel(void) {
+    id stored = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsGeminiModel];
+    return SGLyricsAICleanModel(stored) ?: kModel;
+}
+
+// The model goes into the path, so anything but unreserved ASCII is percent-encoded and a typed name
+// cannot reach another part of the address.
+static NSURL *geminiEndpoint(void) {
+    NSCharacterSet *unreserved = [NSCharacterSet characterSetWithCharactersInString:
+        @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"];
+    NSString *model = [SGGeminiModel() stringByAddingPercentEncodingWithAllowedCharacters:unreserved];
+    return model ? [NSURL URLWithString:[NSString stringWithFormat:@"https://generativelanguage.googleapis.com/v1beta/models/%@:generateContent", model]] : nil;
+}
 
 #pragma mark - the key
 
@@ -149,8 +163,9 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
     NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
     NSMutableArray<NSString *> *texts = [NSMutableArray arrayWithCapacity:lines.count];
     for (SGKaraokeLine *line in lines) [texts addObject:SGKaraokeLineText(line) ?: @""];
+    NSString *model = SGGeminiModel();
     NSDictionary *cached = trackID ? sg_done[memo] : nil;
-    if ([cached[@"texts"] isEqual:texts]) {
+    if ([cached[@"texts"] isEqual:texts] && [cached[@"model"] isEqual:model]) {
         done(cached[@"answer"], nil);
         return;
     }
@@ -180,7 +195,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
             @"thinkingConfig": @{@"thinkingLevel": @"low"},
         },
     };
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEndpoint]];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:geminiEndpoint()];
     request.HTTPMethod = @"POST";
     request.timeoutInterval = 60;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -197,7 +212,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
         NSArray *translations = SGGeminiTranslationsIn(root, status, error, texts.count, &problem);
         SGLog(@"gemini: %@ lines into %@: %@", @(texts.count), languageTag, translations ? @"translated" : problem);
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (translations && trackID) sg_done[memo] = @{@"texts": texts, @"answer": translations};
+            if (translations && trackID) sg_done[memo] = @{@"texts": texts, @"model": model, @"answer": translations};
             done(translations, problem);
         });
     });
@@ -253,8 +268,17 @@ SGModRow *SGTranslateEverySongRow(void) {
 }
 
 SGModRow *SGGeminiKeyRow(void) {
-    return SGStatActionRow(SGL(@"settings.translation.geminikey.title", @"Gemini API key"), SGL(@"settings.translation.geminikey.subtitle", @"Translate any song from the lyrics' corner menu"),
+    return SGStatActionRow(SGL(@"settings.translation.ai.key.title", @"API key"), nil,
                            ^NSString *{ return SGGeminiKeySet() ? SGL(@"settings.translation.geminikey.status.set", @"Set") : SGL(@"common.off", @"Off"); }, ^{ askForKey(); });
+}
+
+// Up to 1000 models a page, more than Google lists, so one page holds them all.
+NSURLRequest *SGGeminiModelsRequest(NSString **problem) {
+    NSString *key = storedKey();
+    if (!key) { *problem = SGL(@"settings.translation.models.error.nokey", @"Save an API key first, and its models are listed here."); return nil; }
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"]];
+    [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
+    return request;
 }
 
 // Other AI jobs use the same model and filters, with the bounded transport used by the other services.
@@ -265,7 +289,7 @@ NSURLRequest *SGGeminiAIRequest(NSString *system, NSString *prompt, NSString **p
     for (NSString *category in @[@"HARM_CATEGORY_HARASSMENT", @"HARM_CATEGORY_HATE_SPEECH", @"HARM_CATEGORY_SEXUALLY_EXPLICIT", @"HARM_CATEGORY_DANGEROUS_CONTENT"]) {
         [safety addObject:@{@"category": category, @"threshold": @"BLOCK_NONE"}];
     }
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kEndpoint]];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:geminiEndpoint()];
     request.HTTPMethod = @"POST";
     request.timeoutInterval = 60;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];

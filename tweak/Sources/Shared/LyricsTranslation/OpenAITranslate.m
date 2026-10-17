@@ -29,6 +29,15 @@ NSURL *SGOpenAICompletionURL(NSString *base) {
     return parts.URL;
 }
 
+NSURL *SGOpenAIModelsURL(NSString *base) {
+    NSURL *completion = SGOpenAICompletionURL(base);
+    if (!completion) return nil;
+    NSURLComponents *parts = [NSURLComponents componentsWithURL:completion resolvingAgainstBaseURL:NO];
+    NSString *path = parts.percentEncodedPath;
+    parts.percentEncodedPath = [[path substringToIndex:path.length - @"/chat/completions".length] stringByAppendingString:@"/models"];
+    return parts.URL;
+}
+
 NSArray<NSString *> *SGOpenAITranslationsIn(id root, NSUInteger count) {
     if (![root isKindOfClass:NSDictionary.class] || count > 2000) return nil;
     id choices = root[@"choices"];
@@ -151,10 +160,8 @@ static NSString *storedKey(NSString *base) {
     return host ? readKey(host, &status) : nil;
 }
 BOOL SGOpenAIKeySet(void) { return storedKey(setting(SGKeyLyricsOpenAIBaseURL, kBase)) != nil; }
-static NSString *cleanModel(NSString *text) {
-    if (![text isKindOfClass:NSString.class]) return nil;
-    NSString *model = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    return model.length && model.length <= 256 && [model rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound ? model : nil;
+NSString *SGOpenAIModel(void) {
+    return SGLyricsAICleanModel([NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsOpenAIModel]) ?: kModel;
 }
 
 #pragma mark - asking
@@ -167,10 +174,10 @@ void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *li
                                 void (^done)(NSArray<NSString *> *, NSString *)) {
     dispatch_async(dispatch_get_main_queue(), ^{
         NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase);
-        NSString *key = storedKey(base), *model = cleanModel(setting(SGKeyLyricsOpenAIModel, kModel));
+        NSString *key = storedKey(base), *model = SGOpenAIModel();
         NSURL *endpoint = SGOpenAICompletionURL(base);
         if (!key) { done(nil, SGL(@"settings.translation.openai.error.nokey", @"Add an OpenAI-compatible API key on the Lyrics page first.")); return; }
-        if (!endpoint || !model) { done(nil, SGL(@"settings.translation.openai.error.settings", @"Check the translation service's base URL and model on the Lyrics page.")); return; }
+        if (!endpoint) { done(nil, SGL(@"settings.translation.openai.error.settings", @"Check the translation service's base URL and model on the Lyrics page.")); return; }
         if (![languageTag isKindOfClass:NSString.class] || !languageTag.length || languageTag.length > 64 || ![lines isKindOfClass:NSArray.class] || lines.count > 2000) { done(nil, unreadable()); return; }
         NSMutableArray *texts = [NSMutableArray array];
         NSUInteger size = 0;
@@ -223,55 +230,75 @@ void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *li
 
 #pragma mark - the row
 
-static void askForKey(void) {
-    NSString *originalHost = SGOpenAIKeyHost(setting(SGKeyLyricsOpenAIBaseURL, kBase));
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.openaikey.title", @"OpenAI-compatible translation")
-        message:SGL(@"settings.translation.openaikey.message", @"The song's lyrics go to the service at this address, on your own API key. The key stays on this iPhone. Use an HTTPS base URL; HTTP is also allowed for localhost, 127.0.0.1, .local hosts and Tailscale IPv4 addresses (100.64.0.0/10).")
+static void textField(UITextField *field) {
+    field.autocorrectionType = UITextAutocorrectionTypeNo;
+    field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+}
+
+// The address alone: the old one migrates its legacy key first, and the new host keeps a key of its own.
+static void askForBase(void) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.openai.base.title", @"Address")
+        message:SGL(@"settings.translation.openai.base.message", @"The service's base URL, before /chat/completions. Use HTTPS; HTTP is also allowed for localhost, 127.0.0.1, .local hosts and Tailscale IPv4 addresses (100.64.0.0/10). Each host keeps its own key.")
         preferredStyle:UIAlertControllerStyleAlert];
     __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSArray<UITextField *> *fields = weakAlert.textFields;
-        NSString *base = [fields[0].text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        NSString *model = cleanModel(fields[1].text), *key = cleanKey(fields[2].text);
-        if (!SGOpenAICompletionURL(base) || !model || !key.length ||
-            !migrateKey(setting(SGKeyLyricsOpenAIBaseURL, kBase)) || !storeKey(key, SGOpenAIKeyHost(base))) return;
+        NSString *base = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (!SGOpenAICompletionURL(base) || !migrateKey(setting(SGKeyLyricsOpenAIBaseURL, kBase))) return;
         [NSUserDefaults.standardUserDefaults setObject:base forKey:SGKeyLyricsOpenAIBaseURL];
-        [NSUserDefaults.standardUserDefaults setObject:model forKey:SGKeyLyricsOpenAIModel];
+        [sg_done removeAllObjects];
+        SGLyricsTranslationServiceSettingsChanged();
+    }];
+    __weak UIAlertAction *weakSave = save;
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        textField(field);
+        field.placeholder = SGL(@"settings.translation.openaikey.baseurl", @"Base URL");
+        field.text = setting(SGKeyLyricsOpenAIBaseURL, kBase);
+        field.keyboardType = UIKeyboardTypeURL;
+        [field addAction:[UIAction actionWithHandler:^(UIAction *action) {
+            weakSave.enabled = SGOpenAICompletionURL([weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]) != nil;
+        }] forControlEvents:UIControlEventEditingChanged];
+    }];
+    save.enabled = SGOpenAICompletionURL(setting(SGKeyLyricsOpenAIBaseURL, kBase)) != nil;
+    [alert addAction:save];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:alert animated:YES completion:nil];
+}
+SGModRow *SGOpenAIBaseURLRow(void) {
+    return SGStatActionRow(SGL(@"settings.translation.openai.base.title", @"Address"), nil, ^NSString *{
+        return SGOpenAIKeyHost(setting(SGKeyLyricsOpenAIBaseURL, kBase)) ?: SGL(@"settings.translation.openai.base.invalid", @"Check it");
+    }, ^{ askForBase(); });
+}
+
+// The key for the stored address's host; an address that cannot take one is asked for first.
+static void askForKey(void) {
+    NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase), *host = SGOpenAIKeyHost(base);
+    if (!host) { askForBase(); return; }
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.ai.key.title", @"API key")
+        message:[NSString stringWithFormat:SGL(@"settings.translation.openaikey.alert.message", @"The song's lyrics go to %@, on your own API key. The key is kept for that host and stays on this iPhone."), host]
+        preferredStyle:UIAlertControllerStyleAlert];
+    __weak UIAlertController *weakAlert = alert;
+    UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        NSString *key = cleanKey(weakAlert.textFields.firstObject.text);
+        if (!key.length || !migrateKey(base) || !storeKey(key, host)) return;
         SGLyricsTranslationServiceSettingsChanged();
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
-    for (NSUInteger i = 0; i < 3; i++) {
-        [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-            field.autocorrectionType = UITextAutocorrectionTypeNo;
-            field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-            if (i == 0) {
-                field.placeholder = SGL(@"settings.translation.openaikey.baseurl", @"Base URL");
-                field.text = setting(SGKeyLyricsOpenAIBaseURL, kBase);
-                field.keyboardType = UIKeyboardTypeURL;
-            } else if (i == 1) {
-                field.placeholder = SGL(@"settings.translation.openaikey.model", @"Model");
-                field.text = setting(SGKeyLyricsOpenAIModel, kModel);
-            } else {
-                field.placeholder = SGL(@"settings.translation.openaikey.key", @"API key");
-                field.secureTextEntry = YES;
-            }
-            [field addAction:[UIAction actionWithHandler:^(UIAction *action) {
-                NSArray<UITextField *> *fields = weakAlert.textFields;
-                if (fields.count != 3) return;
-                NSString *base = [fields[0].text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-                weakSave.enabled = SGOpenAICompletionURL(base) && cleanModel(fields[1].text) && cleanKey(fields[2].text).length;
-            }] forControlEvents:UIControlEventEditingChanged];
-        }];
-    }
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        textField(field);
+        field.placeholder = SGL(@"settings.translation.openaikey.key", @"API key");
+        field.secureTextEntry = YES;
+        [field addAction:[UIAction actionWithHandler:^(UIAction *action) {
+            weakSave.enabled = cleanKey(weakAlert.textFields.firstObject.text).length > 0;
+        }] forControlEvents:UIControlEventEditingChanged];
+    }];
     [alert addAction:save];
-    if (SGOpenAIKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { if (storeKey(nil, originalHost)) SGLyricsTranslationServiceSettingsChanged(); }]];
+    if (SGOpenAIKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { if (storeKey(nil, host)) SGLyricsTranslationServiceSettingsChanged(); }]];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 SGModRow *SGOpenAIKeyRow(void) {
-    return SGStatActionRow(SGL(@"settings.translation.openaikey.title", @"OpenAI-compatible translation"),
-        SGL(@"settings.translation.openaikey.subtitle", @"Choose a service, model and your own API key"),
+    return SGStatActionRow(SGL(@"settings.translation.ai.key.title", @"API key"), nil,
         ^NSString *{ return SGOpenAIKeySet() ? SGL(@"settings.translation.openaikey.set", @"Set") : SGL(@"common.off", @"Off"); }, ^{ askForKey(); });
 }
 
@@ -312,12 +339,22 @@ SGModRow *SGOpenAIPresetRow(void) {
         });
 }
 
+NSURLRequest *SGOpenAIModelsRequest(NSString **problem) {
+    NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase), *key = storedKey(base);
+    NSURL *endpoint = SGOpenAIModelsURL(base);
+    if (!endpoint) { *problem = SGL(@"settings.translation.openai.error.settings", @"Check the translation service's base URL and model on the Lyrics page."); return nil; }
+    if (!key) { *problem = SGL(@"settings.translation.models.error.nokey", @"Save an API key first, and its models are listed here."); return nil; }
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:endpoint];
+    [request setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
+    return request;
+}
+
 NSURLRequest *SGOpenAIRequest(NSString *system, NSString *prompt, NSString **problem) {
     NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase);
-    NSString *key = storedKey(base), *model = cleanModel(setting(SGKeyLyricsOpenAIModel, kModel));
+    NSString *key = storedKey(base), *model = SGOpenAIModel();
     NSURL *endpoint = SGOpenAICompletionURL(base);
     if (!key) { *problem = SGL(@"settings.translation.openai.error.nokey", @"Add an OpenAI-compatible API key on the Lyrics page first."); return nil; }
-    if (!endpoint || !model) { *problem = SGL(@"settings.translation.openai.error.settings", @"Check the translation service's base URL and model on the Lyrics page."); return nil; }
+    if (!endpoint) { *problem = SGL(@"settings.translation.openai.error.settings", @"Check the translation service's base URL and model on the Lyrics page."); return nil; }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:endpoint];
     request.HTTPMethod = @"POST";
     request.timeoutInterval = 60;

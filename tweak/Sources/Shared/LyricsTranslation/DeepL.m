@@ -3,7 +3,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Shared/Lyrics/Lyrics.h"
-#import "LyricsTranslation.h"
+#import "AIServicesInternal.h"
 
 static NSString *const kService = @"Vitrine.DeepL", *const kAccount = @"api-key";
 static NSMutableDictionary *sg_done;
@@ -74,11 +74,13 @@ NSArray<NSString *> *SGDeepLTranslationsIn(id root, NSUInteger count) {
 
 #pragma mark - bounded requests
 
-// Both providers stop receiving at 512 KiB, including a reply whose length was not announced. A fresh
-// ephemeral session keeps lyrics out of the disk cache, and redirects cannot carry a key to another host.
+// Both providers stop receiving at 512 KiB (`limit`; a model list allows more), including a reply whose length
+// was not announced. A fresh ephemeral session keeps lyrics out of the disk cache, and redirects cannot carry a
+// key to another host.
 @interface SGLyricsTranslationRequest : NSObject <NSURLSessionDataDelegate>
 @property (nonatomic, strong) NSMutableData *data;
 @property (nonatomic) NSInteger status;
+@property (nonatomic) NSUInteger limit;
 @property (nonatomic, copy) void (^finished)(NSData *, NSInteger, NSError *);
 @end
 
@@ -86,10 +88,10 @@ NSArray<NSString *> *SGDeepLTranslationsIn(id root, NSUInteger count) {
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveResponse:(NSURLResponse *)response
  completionHandler:(void (^)(NSURLSessionResponseDisposition))completion {
     self.status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
-    completion(response.expectedContentLength > 512 * 1024 ? NSURLSessionResponseCancel : NSURLSessionResponseAllow);
+    completion(response.expectedContentLength > (long long)self.limit ? NSURLSessionResponseCancel : NSURLSessionResponseAllow);
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
-    if (data.length > 512 * 1024 - self.data.length) { [task cancel]; return; }
+    if (data.length > self.limit - self.data.length) { [task cancel]; return; }
     [self.data appendData:data];
 }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task willPerformHTTPRedirection:(NSHTTPURLResponse *)response
@@ -105,8 +107,12 @@ NSArray<NSString *> *SGDeepLTranslationsIn(id root, NSUInteger count) {
 @end
 
 NSURLSessionDataTask *SGLyricsTranslationSendOnce(NSURLRequest *request, void (^finished)(NSData *, NSInteger, NSError *)) {
+    return SGLyricsTranslationSendOnceUpTo(request, 512 * 1024, finished);
+}
+
+NSURLSessionDataTask *SGLyricsTranslationSendOnceUpTo(NSURLRequest *request, NSUInteger limit, void (^finished)(NSData *, NSInteger, NSError *)) {
     SGLyricsTranslationRequest *receiver = [SGLyricsTranslationRequest new];
-    receiver.data = [NSMutableData data]; receiver.finished = finished;
+    receiver.data = [NSMutableData data]; receiver.finished = finished; receiver.limit = limit;
     NSURLSessionConfiguration *config = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     config.URLCache = nil; config.HTTPCookieStorage = nil; config.URLCredentialStorage = nil;
     config.HTTPShouldSetCookies = NO; config.timeoutIntervalForResource = 20;
@@ -126,6 +132,7 @@ static void sendRequest(NSURLRequest *request, BOOL retryServer, BOOL (^allowed)
     }
     SGLyricsTranslationRequest *receiver = [SGLyricsTranslationRequest new];
     receiver.data = [NSMutableData data];
+    receiver.limit = 512 * 1024;
     receiver.finished = ^(NSData *data, NSInteger status, NSError *error) {
         if (!error && attempt < 3 && (status == 429 || (retryServer && status >= 500 && status <= 599))) {
             double delay = (double)(1 << attempt) * (0.75 + arc4random_uniform(500) / 1000.0);

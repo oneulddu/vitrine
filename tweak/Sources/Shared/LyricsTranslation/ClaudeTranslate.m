@@ -42,14 +42,8 @@ static BOOL storeKey(NSString *key) {
     return status == errSecSuccess;
 }
 BOOL SGClaudeKeySet(void) { return storedKey() != nil; }
-static NSString *setting(NSString *key, NSString *fallback) {
-    id value = [NSUserDefaults.standardUserDefaults objectForKey:key];
-    return [value isKindOfClass:NSString.class] ? value : fallback;
-}
-static NSString *cleanModel(NSString *text) {
-    if (![text isKindOfClass:NSString.class]) return nil;
-    NSString *model = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    return model.length && model.length <= 256 && [model rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound ? model : nil;
+NSString *SGClaudeModel(void) {
+    return SGLyricsAICleanModel([NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsClaudeModel]) ?: kModel;
 }
 
 static NSString *unreadable(void) {
@@ -88,9 +82,8 @@ NSArray<NSString *> *SGClaudeTranslationsIn(id root, NSInteger status, NSError *
 }
 
 NSURLRequest *SGClaudeRequest(NSString *system, NSString *prompt, NSString **problem) {
-    NSString *key = storedKey(), *model = cleanModel(setting(SGKeyLyricsClaudeModel, kModel));
+    NSString *key = storedKey(), *model = SGClaudeModel();
     if (!key) { *problem = SGL(@"settings.translation.claude.error.nokey", @"Add a Claude API key on the Lyrics page first."); return nil; }
-    if (!model) { *problem = SGL(@"settings.translation.claude.error.model", @"Check Claude's model on the Lyrics page."); return nil; }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://api.anthropic.com/v1/messages"]];
     request.HTTPMethod = @"POST";
     request.timeoutInterval = 60;
@@ -109,7 +102,7 @@ void SGLyricsTranslateWithClaude(NSString *trackID, NSArray<SGKaraokeLine *> *li
         NSString *prompt = texts ? SGLyricsTranslationPrompt(texts, languageTag) : nil;
         if (!prompt) { done(nil, unreadable()); return; }
         if (!SGClaudeKeySet()) { done(nil, SGL(@"settings.translation.claude.error.nokey", @"Add a Claude API key on the Lyrics page first.")); return; }
-        NSString *model = setting(SGKeyLyricsClaudeModel, kModel);
+        NSString *model = SGClaudeModel();
         NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
         if (!sg_done) sg_done = [NSMutableDictionary dictionary];
         NSDictionary *cached = trackID ? sg_done[memo] : nil;
@@ -135,27 +128,19 @@ static void askForKey(void) {
         message:SGL(@"settings.translation.claudekey.message", @"The song's lyrics go to Anthropic, on your own API key. The key stays on this iPhone.") preferredStyle:UIAlertControllerStyleAlert];
     __weak UIAlertController *weakAlert = alert;
     UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSArray<UITextField *> *fields = weakAlert.textFields;
-        NSString *model = cleanModel(fields[0].text), *key = cleanKey(fields[1].text);
-        if (!model || !key.length || !storeKey(key)) return;
-        [NSUserDefaults.standardUserDefaults setObject:model forKey:SGKeyLyricsClaudeModel];
+        NSString *key = cleanKey(weakAlert.textFields.firstObject.text);
+        if (!key.length || !storeKey(key)) return;
         SGLyricsTranslationServiceSettingsChanged();
     }];
     save.enabled = NO;
     __weak UIAlertAction *weakSave = save;
-    for (NSUInteger i = 0; i < 2; i++) [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
         field.autocorrectionType = UITextAutocorrectionTypeNo;
         field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        if (i == 0) {
-            field.placeholder = SGL(@"settings.translation.openaikey.model", @"Model");
-            field.text = setting(SGKeyLyricsClaudeModel, kModel);
-        } else {
-            field.placeholder = SGL(@"settings.translation.openaikey.key", @"API key");
-            field.secureTextEntry = YES;
-        }
+        field.placeholder = SGL(@"settings.translation.openaikey.key", @"API key");
+        field.secureTextEntry = YES;
         [field addAction:[UIAction actionWithHandler:^(UIAction *action) {
-            NSArray<UITextField *> *fields = weakAlert.textFields;
-            if (fields.count == 2) weakSave.enabled = cleanModel(fields[0].text) && cleanKey(fields[1].text).length;
+            weakSave.enabled = cleanKey(weakAlert.textFields.firstObject.text).length > 0;
         }] forControlEvents:UIControlEventEditingChanged];
     }];
     [alert addAction:save];
@@ -164,7 +149,16 @@ static void askForKey(void) {
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 SGModRow *SGClaudeKeyRow(void) {
-    return SGStatActionRow(SGL(@"settings.translation.claudekey.title", @"Claude API key"),
-        SGL(@"settings.translation.claudekey.subtitle", @"Translate any song with your own Claude key"),
+    return SGStatActionRow(SGL(@"settings.translation.ai.key.title", @"API key"), nil,
         ^NSString *{ return SGClaudeKeySet() ? SGL(@"settings.translation.openaikey.set", @"Set") : SGL(@"common.off", @"Off"); }, ^{ askForKey(); });
+}
+
+// Anthropic lists up to 1000 models a page, newest first.
+NSURLRequest *SGClaudeModelsRequest(NSString **problem) {
+    NSString *key = storedKey();
+    if (!key) { *problem = SGL(@"settings.translation.models.error.nokey", @"Save an API key first, and its models are listed here."); return nil; }
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://api.anthropic.com/v1/models?limit=1000"]];
+    [request setValue:key forHTTPHeaderField:@"x-api-key"];
+    [request setValue:@"2023-06-01" forHTTPHeaderField:@"anthropic-version"];
+    return request;
 }

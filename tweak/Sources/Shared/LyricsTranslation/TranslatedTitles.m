@@ -76,7 +76,7 @@ static NSArray *titleConfiguration(void) {
     if (SGFlag(SGKeyLyricsBingTranslate, NO)) online = @"bing";
     else if (SGFlag(SGKeyLyricsGoogleTranslate, NO)) online = @"google";
     else if (SGDeepLKeySet()) online = @"deepl";
-    else if (SGGeminiKeySet()) online = @"gemini";
+    else if (SGGeminiKeySet()) { online = @"gemini"; model = SGGeminiModel(); }
     else if (SGClaudeKeySet()) { online = @"claude"; model = [NSUserDefaults.standardUserDefaults stringForKey:SGKeyLyricsClaudeModel] ?: @""; }
     else if (SGOpenAIKeySet()) {
         online = @"openai";

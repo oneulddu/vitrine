@@ -115,6 +115,21 @@ typedef NS_ENUM(NSInteger, SGLyricsAI) { SGLyricsAIGemini = 0, SGLyricsAIClaude,
 NSArray<NSNumber *> *SGLyricsAIAvailable(void);
 NSString *SGLyricsAIName(SGLyricsAI service);
 
+// Gemini's model, picked on its page; gemini-flash-latest until one is.
+#define SGKeyLyricsGeminiModel @"spotifyglass.lyrics.gemini.model"
+// The model each AI service asks, and storing a picked or typed one (NO for a name no service takes). Main queue.
+NSString *SGLyricsAIModel(SGLyricsAI service);
+BOOL SGLyricsAISetModel(SGLyricsAI service, NSString *model);
+// The service's models listed with its saved key, on main: the list, or nil and a message to show. A list is
+// kept for the launch by address and key unless `fresh`. The task can be cancelled; nil when nothing was sent.
+NSURLSessionDataTask *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
+                                            void (^done)(NSArray<NSDictionary<NSString *, NSString *> *> *models, NSString *error));
+// The Translation section's row for each AI service (AIModelsPage.m). Its page holds the key and the model, and
+// for the OpenAI-compatible service the preset, the address and the connection test.
+SGModRow *SGLyricsAIServiceRow(SGLyricsAI service);
+// The OpenAI-compatible service's address, changed on its own; the key stays with the host it was saved for.
+SGModRow *SGOpenAIBaseURLRow(void);
+
 // Pronunciation writes the sound in the translation language's script, Latin letters, or IPA.
 #define SGKeyLyricsPronunciationNotation @"spotifyglass.lyrics.pronunciationNotation"
 SGModRow *SGLyricsPronunciationNotationRow(void);

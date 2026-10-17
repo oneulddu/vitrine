@@ -174,7 +174,13 @@ Shared:
                   switched on: its IG, IID and abuse token read from the page, kept until 30 s before they expire and read
                   again when Bing answers a request with a statusCode) add their items to the same menu, with
                   ClaudeTranslate.m (Anthropic's Messages API, the user's own key and model) and presets for the
-                  OpenAI-compatible service (OpenAI, OpenRouter, Groq, Perplexity, Pollinations or Custom). AIServices.m
+                  OpenAI-compatible service (OpenAI, OpenRouter, Groq, Perplexity, Pollinations or Custom). Gemini, Claude
+                  and the OpenAI-compatible service each take one row of the Translation section, which opens its page
+                  (AIModelsPage.m): the key and the model, and for the OpenAI-compatible service the preset, the address
+                  and Test connection. Model lists what the service offers for the saved key (Gemini's models that
+                  generate content, Anthropic's /v1/models, the base URL's /models; one try, 20 s, 8 MiB), kept for the
+                  launch by address and key, filtered as it is typed, pulled to load again, and Enter a model takes one by
+                  hand for a service with no list. Gemini's model (SGKeyLyricsGeminiModel) defaults to gemini-flash-latest. AIServices.m
                   asks Gemini, Claude or that service for two other jobs, on the user's own key: how each line sounds,
                   in the translation language's letters, Latin letters or IPA (SGKeyLyricsPronunciationNotation), and a
                   one-sentence cultural note for the few lines a listener would miss (SGKeyLyricsCulturalNotes, off);
@@ -205,7 +211,7 @@ Shared:
                   main-thread, generation guarded and bounded to 200 song/language pairs. Display-only changes do
                   not restart work. Only known local failures become connection/key/busy reasons; remote bodies
                   and credentials are never copied into the note.
-                  Test connection, below the OpenAI-compatible key row, sends one fixed short sentence using the
+                  Test connection, on the OpenAI-compatible service's page, sends one fixed short sentence using the
                   saved address, model, key and translation language. It runs only from a tap, with no retries,
                   redirects, cookies or credential storage, a 20 s limit and a 512 KiB response cap. A second tap
                   while testing cancels. Saving a key remains distinct from a successful test. Service/target changes
