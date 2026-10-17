@@ -6,5 +6,6 @@ cd "$(dirname "$0")"
 mkdir -p build
 xcrun clang -fobjc-arc -O2 -Wall -Werror -I stub -I ../../tweak/Sources -framework Foundation \
     main.m ../../tweak/Sources/Shared/Player/SleepTimer.m ../../tweak/Sources/Shared/Player/SpotifySleepTimer.m \
+    ../../tweak/Sources/Core/SGLocalize.m \
     -o build/sleep-timer
 echo "built build/sleep-timer"

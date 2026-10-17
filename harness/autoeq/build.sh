@@ -7,6 +7,7 @@ SRC=../../tweak/Sources
 FX=$SRC/Shared/AudioEffects
 mkdir -p build
 xcrun clang -fobjc-arc -O0 -g -Wall -Werror -target arm64-apple-macos13.0 -I shim -I "$SRC" -I "$FX" \
-    check.m "$FX"/AudioEffectsPresets.m "$FX"/AutoEq.m "$FX"/AudioEffectsSettings.m "$SRC"/Core/SGPrefs.m \
+    check.m "$FX"/AudioEffectsPresets.m "$FX"/AutoEq.m "$FX"/AudioEffectsSettings.m "$FX"/AudioEffectsFiles.m \
+    "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGLocalize.m \
     -framework Foundation -o build/autoeq-check
 echo "built build/autoeq-check"

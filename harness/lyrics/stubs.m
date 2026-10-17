@@ -150,8 +150,8 @@ id SGKaraokeTrackFor(NSString *trackID) {
 #ifndef SG_HARNESS_SETTINGS
 id SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray *choices, NSInteger fallback) { return nil; }
 UIViewController *SGTopController(void) {
-    UIWindowScene *scene = (UIWindowScene *)UIApplication.sharedApplication.connectedScenes.anyObject;
-    UIViewController *top = scene.windows.firstObject.rootViewController;
+    // The harness owns this window; Catalyst may put an auxiliary window first in the scene.
+    UIViewController *top = UIApplication.sharedApplication.delegate.window.rootViewController;
     while (top.presentedViewController) top = top.presentedViewController;
     return top;
 }
