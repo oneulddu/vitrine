@@ -71,25 +71,61 @@ def escape(s):
     return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')
 
 # --- format specifiers, read the way Core/SGLocalize.m reads them -------------------------------------------------
-SPEC = re.compile(r'%(?:(\d+)\$)?[0-9.\-+#*]*([hlqLzjt]*[@dDiuUxXoOfFeEgGaAcCsSp])')
+# A character-by-character port of specifiers() in tweak/Sources/Core/SGLocalize.m, not a pattern: "%" pairs are skipped
+# as they come, a position is only the digits followed by "$", then flags and digits, a length modifier, and a conversion
+# out of a fixed set; every other "%" is text.
+FLAGS = '0123456789.-+#*'
+MODIFIERS = 'hlqLzjt'
+CONVERSIONS = '@dDiuUxXoOfFeEgGaAcCsSp'
+
+def _in(chars, c):
+    """Whether c is a character of the C string `chars`, as the source's strchr() calls see it: a NUL is a member,
+    because strchr() finds the terminator."""
+    return ord(c) < 128 and (c == '\0' or c in chars)
+
+def _nsi(v):
+    """v as an NSInteger: the source's arithmetic is 64-bit and wraps, as it does on the device."""
+    return (v + 2 ** 63) % 2 ** 64 - 2 ** 63
+
 def specifiers(s):
     """{position: type}, '*' for a width or precision read from the arguments; None when one position is read as
-    two types (Core/SGLocalize.m then never uses the translation)."""
+    two types (Core/SGLocalize.m then never uses the translation). Port of Core/SGLocalize.m's own specifiers()."""
     found, nxt = {}, 1
-    s = s.replace('%%', '')
     def read(pos, kind):
-        if found.get(pos, kind) != kind: return False
+        before = found.get(pos)
+        if before is not None and before != kind: return False
         found[pos] = kind
         return True
-    for m in SPEC.finditer(s):
-        stars = m.group(0).count('*')
-        if m.group(1) and stars: return None
-        for _ in range(stars):
-            if not read(nxt, '*'): return None
-            nxt += 1
-        pos = int(m.group(1)) if m.group(1) else nxt
-        if not read(pos, m.group(2)): return None
-        nxt = pos + 1
+    i, length = 0, len(s)
+    while i < length:
+        if s[i] != '%':
+            i += 1; continue
+        j = i + 1
+        if j < length and s[j] == '%':
+            i = j + 1; continue
+        position, digits = 0, j
+        while digits < length and '0' <= s[digits] <= '9':
+            position = _nsi(position * 10 + ord(s[digits]) - ord('0'))
+            digits += 1
+        if digits > j and digits < length and s[digits] == '$': j = digits + 1
+        else: position = 0
+        stars = 0
+        while j < length and _in(FLAGS, s[j]):
+            if s[j] == '*': stars += 1
+            j += 1
+        start = j
+        while j < length and _in(MODIFIERS, s[j]): j += 1
+        if j >= length: i += 1; continue
+        if not _in(CONVERSIONS, s[j]): i += 1; continue
+        if not position:
+            for _ in range(stars):
+                if not read(nxt, '*'): return None
+                nxt = _nsi(nxt + 1)
+        elif stars:
+            return None   # a positional conversion with a * width: nothing uses one, so it is never trusted
+        if not read(position or nxt, s[start:j + 1]): return None
+        nxt = _nsi((position or nxt) + 1)
+        i = j + 1
     return found
 
 # --- .strings ----------------------------------------------------------------------------------------------------
