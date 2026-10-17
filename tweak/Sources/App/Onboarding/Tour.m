@@ -398,7 +398,7 @@ static BOOL adFree(void) {
     } else {
         _noteIcon.image = [UIImage systemImageNamed:@"info.circle.fill"];
         _noteIcon.tintColor = SGGrey();
-        _noteText.text = @"Apple Music style lyrics, the redesigned player and the glass tab bar come with the redesign only.";
+        _noteText.text = SGL(@"settings.onboarding.look.redesigned_only", @"Apple Music style lyrics, the redesigned player and the glass tab bar come with the redesign only.");
     }
     _report.hidden = !untested || !SGRepoURL;
     _note.hidden = _redesigned.selected && !untested;
@@ -413,10 +413,10 @@ static BOOL adFree(void) {
 
 // What people miss in Mod Settings, as pointers only: the tour has no way into a page but holding Home.
 - (UIView *)tipsView {
-    UIStackView *split = cardRow(@"rectangle.split.2x1", @"Split Tabs",
+    UIStackView *split = cardRow(@"rectangle.split.2x1", SGL(@"settings.onboarding.split_tabs.title", @"Split Tabs"),
                                  @"Any tab, Queue for one, on a bar of its own at the trailing end.\nMod Settings > Tab bar > Split Tabs", nil);
     _splitTip = split;
-    UIStackView *lyrics = cardRow(@"quote.bubble", @"Lyrics", @"", nil);
+    UIStackView *lyrics = cardRow(@"quote.bubble", SGL(@"settings.main.lyrics.title", @"Lyrics"), @"", nil);
     // The row's text stack is its last arranged view, the gray line that stack's; updateNote writes the look's.
     _lyricsTip = (UILabel *)((UIStackView *)lyrics.arrangedSubviews.lastObject).arrangedSubviews.lastObject;
     BOOL liveActivity = NO;
@@ -441,7 +441,7 @@ static BOOL adFree(void) {
 
     BOOL glass = SGRedesignAvailable();
     UILabel *heading = [UILabel new];
-    heading.text = @"Pick your look.";
+    heading.text = SGL(@"settings.onboarding.look.heading", @"Pick your look.");
     heading.font = [UIFont systemFontOfSize:30 weight:UIFontWeightBold];
     heading.textColor = UIColor.whiteColor;
     heading.numberOfLines = 0;
@@ -449,7 +449,7 @@ static BOOL adFree(void) {
     NSString *redesign = glass ? @"Looks like Apple Music. Better lyrics, Live Activity."
                                : [NSString stringWithFormat:@"Looks like Apple Music. Untested on iOS %@.", UIDevice.currentDevice.systemVersion];
     _redesigned = [[SGLookCard alloc] initWithSymbol:@"sparkles" title:@"Redesigned" subtitle:redesign];
-    _legacy = [[SGLookCard alloc] initWithSymbol:@"slider.horizontal.3" title:@"Legacy" subtitle:@"More options, still looks like Spotify."];
+    _legacy = [[SGLookCard alloc] initWithSymbol:@"slider.horizontal.3" title:SGL(@"settings.onboarding.look.native", @"Native") subtitle:@"More options, still looks like Spotify."];
     for (SGLookCard *card in @[_redesigned, _legacy]) [card addTarget:self action:@selector(picked:) forControlEvents:UIControlEventTouchUpInside];
     // The first launch offers the redesign where it is at home; below iOS 26 it waits to be asked for.
     // The tour again from the Mod page shows the stored look.
@@ -467,22 +467,22 @@ static BOOL adFree(void) {
                                          subtitle:@"No ads, no Premium upsells, and Premium spoofed." accessory:_ads];
     [_adsCard addTarget:self action:@selector(toggleAds) forControlEvents:UIControlEventTouchUpInside];
     _adsCard.isAccessibilityElement = YES;
-    _adsCard.accessibilityLabel = @"No ads";
-    _adsCard.accessibilityHint = @"No ads, no Premium upsells, and Premium spoofed.";
+    _adsCard.accessibilityLabel = SGL(@"settings.onboarding.ads.title", @"No ads");
+    _adsCard.accessibilityHint = SGL(@"settings.onboarding.ads.subtitle", @"No ads, no Premium upsells, and Premium spoofed.");
     _adsCard.accessibilityValue = _ads.on ? @"On" : @"Off";
     if (@available(iOS 17.0, *)) _adsCard.accessibilityTraits = UIAccessibilityTraitToggleButton;
     else _adsCard.accessibilityTraits = UIAccessibilityTraitButton;
     UILabel *adsText = [UILabel new];
-    adsText.text = @"Three switches of Premium, ads & privacy, applied at the restart; off leaves each as it is. Spoof Premium is "
+    adsText.text = SGL(@"settings.onboarding.ads.note", @"Three switches of Premium, ads & privacy, applied at the restart; off leaves each as it is. Spoof Premium is "
                    @"untested and can end in a forced logout; a Premium account gains nothing from it. Offline, audio quality and "
-                   @"sessions stay the server's.";
+                   @"sessions stay the server's.");
     UIStackView *adsNote = noteLine(SGSymbolView(@"info.circle.fill", 15, UIImageSymbolWeightSemibold, 22), adsText);
     adsNote.arrangedSubviews.firstObject.tintColor = SGGrey();
     adsNote.layoutMargins = UIEdgeInsetsMake(4, 4, 0, 4);
     adsNote.layoutMarginsRelativeArrangement = YES;
 
     UILabel *tipsHeading = [UILabel new];
-    tipsHeading.text = @"Easy to miss";
+    tipsHeading.text = SGL(@"settings.onboarding.tips.heading", @"Easy to miss");
     tipsHeading.font = [UIFont systemFontOfSize:17 weight:UIFontWeightSemibold];
     tipsHeading.textColor = UIColor.whiteColor;
     UIView *tips = [self tipsView];
@@ -508,7 +508,7 @@ static BOOL adFree(void) {
     _primary = SGOnboardingButton(@"Start listening");
     [_primary addTarget:self action:@selector(finish) forControlEvents:UIControlEventTouchUpInside];
     UILabel *footer = [UILabel new];
-    footer.text = @"Hold Home to open settings.";
+    footer.text = SGL(@"settings.onboarding.settings_hint", @"Hold Home to open settings.");
     footer.font = [UIFont systemFontOfSize:13];
     footer.textColor = SGGrey();
     footer.textAlignment = NSTextAlignmentCenter;

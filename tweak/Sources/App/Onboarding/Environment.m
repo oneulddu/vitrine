@@ -81,7 +81,7 @@ static SGProblem appChanges(void) {
 
 static SGProblem fellBack(void) {
     return @[SGL(@"settings.environment.fallback.title", @"The redesign did not start"),
-             [NSString stringWithFormat:SGL(@"settings.environment.fallback.message", @"Spotify did not get going with the redesign on iOS %@, so it is back in Legacy and Redesigned UI is off. Mod Settings can turn it on again."),
+             [NSString stringWithFormat:SGL(@"settings.environment.fallback.message", @"Spotify did not get going with the redesign on iOS %@, so it is back in Native and Redesigned UI is off. Mod Settings can turn it on again."),
                  UIDevice.currentDevice.systemVersion]];
 }
 

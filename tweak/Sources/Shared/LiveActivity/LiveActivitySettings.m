@@ -4,7 +4,6 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
-#import "Shared/Player/SleepTimer.h"
 #import "LiveActivity.h"
 #import "SGLiveActivityPreview.h"
 
@@ -104,11 +103,6 @@ UIViewController *SGLiveActivitySettingsPage(void) {
     SGModRow *colors = menuRow(SGL(@"settings.liveactivity.colors.title", @"Colors"), SGKeyLiveActivityColors, @[SGL(@"settings.liveactivity.colors.choice.spotify", @"Spotify"), SGL(@"settings.liveactivity.colors.choice.artwork", @"Artwork"), SGL(@"settings.liveactivity.colors.choice.plain", @"Plain")], SGLiveActivityColorsSpotify, preview);
     SGModRow *progress = SGSwitchRow(SGL(@"settings.liveactivity.progressbar.title", @"Progress bar"), nil, SGKeyLiveActivityProgressBar);
     progress.changed = switched;
-    // The sleep timer's own: the card's Timer tab, the Sleep Timer shortcut and its control all fade by it, card on or
-    // off, and so does Spotify's own timer from the player's menu (Shared/Player/SpotifySleepTimer.m).
-    NSArray<NSString *> *fades = SGSleepTimerFadeNames();
-    SGModRow *fade = SGMenuRow(SGL(@"settings.liveactivity.fadeout.title", @"Fade out"), fades, ^NSString *{ return fades[(NSUInteger)SGSleepTimerFadeChoice()]; },
-                               ^(NSInteger index) { SGSetInt(SGKeySleepTimerFade, index); });
     SGLiveActivityPage *page = [[SGLiveActivityPage alloc] initWithTitle:SGL(@"settings.liveactivity.title", @"Live Activity") intro:nil sections:@[
         SGSection(nil, @[missingRow(), on, view, without, alignment, translation, size]),
         SGNotedSection(SGL(@"settings.liveactivity.card.header", @"Card"), @[artwork, colors, progress],
@@ -116,8 +110,6 @@ UIViewController *SGLiveActivitySettingsPage(void) {
                        @"and Plain is white on the lock screen's own background. "
                        @"The card also shows on a paired Apple Watch, in its Smart Stack, from iOS 18, and in CarPlay from iOS 26, "
                        @"as a smaller card of the line or the track. A tap there opens Spotify on the iPhone.")),
-        SGNotedSection(SGL(@"settings.liveactivity.sleeptimer.header", @"Sleep timer"), @[fade],
-                       SGL(@"settings.liveactivity.sleeptimer.footer", @"How long the sound fades before a sleep timer pauses Spotify: the one set from the Timer tab, the Sleep Timer shortcut or Control Center, and Spotify's own from the player's ⋯ menu.")),
     ] footer:nil];
     page.preview = preview;
     return page;

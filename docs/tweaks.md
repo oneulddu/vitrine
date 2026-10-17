@@ -342,7 +342,7 @@ Shared:
                   The sleep timer (SleepTimer.m, set from the Live Activity) pauses Spotify at a time, at the end of
                   the track or at the end of the album or playlist, the last track of it found by the tracks to come
                   that are neither queued by hand nor autoplay's (SPTPlayerTrack's provider), or by the next one
-                  having played already when it repeats. Over the last seconds (the Live Activity page's Fade out: Off,
+                  having played already when it repeats. Over the last seconds (the Player page's Fade-out duration: Off,
                   10 s, 30 s, 1 minute or 2 minutes, 30 s unless picked; at the end of a track, over the whole track
                   when it is shorter) it fades the sound 60 dB through a gain of the mod's own, applied by SpeedPitch.x's notify on the music's RemoteIO unit (never the system
                   volume), and puts the gain back a second after the pause. Spotify's own timer, from the player's
@@ -871,9 +871,9 @@ setting by the part of Spotify it changes, so a part's glass, its hide switches 
 one page, the mod's own rows first and Spotify's flags below them or on a sub page named after what
 they change. Its main page groups the rows by what they are, in cards with no headings as Settings has its own,
 under the signing and environment warnings: Redesigned UI, Appearance and Tab bar, with a restart note; Home (Home &
-Library in the native look), Player, Lyrics, Albums and Artists; Karaoke, Spatial voice (where the iPhone reads headphone
-motion), Workshop, Audio effects, AutoMix, Live Activity, AirPods gestures and Listening stats; Lock screen, Vibrations and Premium, ads &
-privacy; Labs and All flags; Mod. It is checked in the simulator
+Library in the native look), Player, Lyrics, Albums and Artists, plus Playlists in the native look; Karaoke, Spatial voice (where the iPhone reads headphone
+motion), Audio effects, AutoMix, Live Activity, AirPods gestures and Listening stats; Lock screen, Vibrations and Premium, ads &
+privacy; Libraries & presets, Labs and All flags; Mod. It is checked in the simulator
 against harness/mod-settings/. The Appearance page has, in the native look, AMOLED (the redesign is always black), then the stored look's Accent color
 preset, a pull-down of Spotify, Apple Music and Custom read off the color stored (a color set before the presets
 existed reads as Custom, Apple Music's red as Apple Music), and Accent color, the hex and a swatch of the color in
@@ -886,7 +886,7 @@ together) added from Files, refused when their faces name more than one family, 
 and registered again at each launch, each weight taken as the family's nearest face, Spotify's font coming back when
 the files are gone. Swiping the row deletes the family. An import from before families (one file under
 spotifyglass.font.file) moves to spotifyglass.font.files and the family name on first use. Free fonts, between More fonts and Your fonts, lists
-the free families on this iPhone and opens the free fonts page (Shared/Fonts/FontLibraryPage.m, also in Workshop): sixteen SIL Open
+the free families on this iPhone and opens the free fonts page (Shared/Fonts/FontLibraryPage.m, also in Libraries & presets): sixteen SIL Open
 Font License families from github.com/google/fonts pinned to one commit, Korean first, each file and its OFL.txt checked against its
 size and SHA-256 (FontLibrary.m) before the family moves from a hidden folder into Application Support/Vitrine/Font Library, one
 download at a time with its progress on the row and a tap stopping it. A family downloaded becomes the app's font
@@ -895,14 +895,15 @@ Spotify's font comes back when its files are gone. Then the App icon. Everything
 first row, is the one switch between the two looks (see Layers): it glows (Settings/SGGlowSwitch), its ⓘ says what
 it changes, and flipping it offers to restart Spotify. The pages show only what the stored look has: a page opened
 after flipping the switch already shows what the restart will bring, and the main page swaps Home & Library for
-Albums and Artists as it is flipped. Workshop collects Vitrine's existing local and open libraries: audio presets,
+Home as it is flipped. Albums and Artists open each look's own pages. Libraries & presets collects Vitrine's existing local and open libraries: audio presets,
 shared as files, public AutoEq headphone corrections, free fonts to download and on-device custom fonts
-under either look, plus visualizer styles and lyric looks when Redesigned UI is selected. Tab bar: the tab editor of the stored look, each with
+under either look, plus visualizer styles when Redesigned UI is selected. Lyrics looks stay on Lyrics. Tab bar: the tab editor of the stored look, each with
 its own list of tabs. Lyrics, on the main page of its own: in the redesign a live preview of the lyrics first, with the presets of their look
 under it and their sliders in a sheet (Text size, Line spacing, Blur, Glow, Wave), applying at once; then Karaoke, then the ordered list of lyrics sources,
 lyrics for every track, naming the source in the redesign, the lock screen, and glass lyrics in the native look; in
-the redesign also which of the lyrics, their pronunciation and their translation is set largest, Romanized lyrics
-(applied at once), and the translation's language. Karaoke, under either look, on the main page and as Lyrics' first row, the row reading out On,
+the redesign also which of the lyrics, their pronunciation and their translation is set largest, Pronunciation
+(applied at once), and a Translation & AI subpage grouped into Automatic translation, Services and Saved translations.
+Request mode & lyric types and Timing remain on Lyrics. Karaoke, under either look, on the main page and as Lyrics' first row, the row reading out On,
 Off or how far the voice model's download has come, kept up to date while the page shows: Karaoke's switch, which turns
 the mic on and off at once, a card at its top (SGSingCard.m: the song, what Karaoke is doing, a tap saying more, the vocals
 and the rest traced live from the engine's loudness, Karaoke running on the playing song while they show even at As sung, still under Reduce Motion, play and pause, and a tall Vocals slider
@@ -913,12 +914,12 @@ saying which, then the switch; its row is on the main page too, under Karaoke's)
 and Light, a checkmark against the chosen one, each with its size; then the chosen model's download, Paused and Checking
 among its states, and its removal; and Remove the other model, with its size, while the one not chosen, or the old
 model with the full one, is on the iPhone), Toggle from lyrics (the redesign's mic, on until switched off, issue #12),
-Ignore heat warnings, and under Advanced Runs on (Automatic: the Neural Engine
-beside the CPU; CPU only) and Prepare after updates, all applying straight away. Lock screen, on the main
+and under Advanced Runs on (Automatic: the Neural Engine
+beside the CPU; CPU only), Prepare after updates, Ignore heat warnings and Ignore memory warnings, all applying straight away. Lock screen, on the main
 page under either look, opens the lock screen widget's page, titled Lock screen: Widget (the line in place of the artist,
 and Spotify's like and dislike buttons' flag, locked off while the star is on) then Artwork (Off, Moving artwork, Lyrics,
 Every song or Moving artwork with lyrics, the lyrics' style, Still or Animated, Switch with the star, the sources and Low Data Mode; below iOS 26
-one row saying why not). Spotify's podcast, audiobook and artwork flags stay in All flags. Player: Gestures and Blocked artists (with the count on the row), which work with either look;
+one row saying why not). Spotify's podcast, audiobook and artwork flags stay in All flags. Player: Gestures, Blocked artists (with the count on the row) and Sleep timer's Fade-out duration, which work with either look, including below iOS 17;
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and
 Spotify's own player screen (artwork background, glass header buttons, Disable Canvas and the sheet,
 header, slider and sticky header flags, the cards under the player and the lyrics preview and player
@@ -980,8 +981,8 @@ turns the effects on, then a card per effect, each opening out into its sliders,
 while its switch is on (Reverb has its Room and its Amount, the amount the player's ⋯ menu also sets), everything
 applying as it changes; the row reads out Off, On or how many effects are on. Home & Library, in the native look only:
 the Gradient page (the wash behind the top of Home in one of eight colors, at three strengths and
-four heights) and the Home flags, the parts of Home to hide including the DJ button and badge, the
-playlist header, buttons and pills to hide, and the Library flags. Then Premium, ads & privacy
+four heights) and the Home flags, the parts of Home to hide including the DJ button and badge, and the
+Library flags. Playlists, Albums and Artists are separate root pages. Then Premium, ads & privacy
 (EeveeSpotify's Hide ads and Hide upsells, in the native look hiding the video carousel in Search, and
 an Ad and upsell flags page under them, every switch there forcing a flag Spotify ships on to off;
 Spoof Premium; Block telemetry; Clean shared links; then what the ad

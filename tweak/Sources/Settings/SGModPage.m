@@ -671,8 +671,38 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     return nil;
 }
 
+// Up the chain of switches a row waits on: the link (the row itself or a switch above it) whose own switch
+// is off, the highest one when several are, or nil when every switch above is on.
+- (SGModRow *)waitingLinkFor:(SGModRow *)row {
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    SGModRow *link = nil;
+    while (row.waitsOn && ![seen containsObject:row.waitsOn]) {
+        [seen addObject:row.waitsOn];
+        SGModRow *parent = [self switchFor:row];
+        if (!SGFlag(row.waitsOn, parent.defaultOn)) link = row;
+        row = parent;
+    }
+    return link;
+}
+
 - (BOOL)isWaiting:(SGModRow *)row {
-    return row.waitsOn && !SGFlag(row.waitsOn, [self switchFor:row].defaultOn);
+    return [self waitingLinkFor:row] != nil;
+}
+
+// The switch to turn on first: the off one highest up the chain the row waits on.
+- (SGModRow *)blockingSwitchFor:(SGModRow *)row {
+    return [self switchFor:[self waitingLinkFor:row]];
+}
+
+// Whether a row waits on the switch with this key, directly or through switches that wait on it.
+- (BOOL)row:(SGModRow *)row waitsOnKey:(NSString *)key {
+    NSMutableSet<NSString *> *seen = [NSMutableSet set];
+    while (row.waitsOn && ![seen containsObject:row.waitsOn]) {
+        if ([row.waitsOn isEqualToString:key]) return YES;
+        [seen addObject:row.waitsOn];
+        row = [self switchFor:row];
+    }
+    return NO;
 }
 
 - (NSIndexPath *)pathOfRow:(SGModRow *)row {
@@ -685,7 +715,7 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
 
 // A tap on a row waiting on a switch: the switch is brought into view if it is not, then nudged.
 - (void)nudgeSwitchFor:(SGModRow *)row {
-    NSIndexPath *path = [self pathOfRow:[self switchFor:row]];
+    NSIndexPath *path = [self pathOfRow:[self blockingSwitchFor:row]];
     if (!path) return;
     UITableView *table = self.tableView;
     CGRect shown = UIEdgeInsetsInsetRect(table.bounds, table.adjustedContentInset);
@@ -875,7 +905,7 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
         SGModSliderCell *cell = [table dequeueReusableCellWithIdentifier:@"slider"] ?: [[SGModSliderCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"slider"];
         cell.backgroundColor = SGCardBackground();
         [cell showRow:row];
-        showWaiting(cell, [self isWaiting:row], [self switchFor:row].title);
+        showWaiting(cell, [self isWaiting:row], [self blockingSwitchFor:row].title);
         return cell;
     }
     // A checked row's cells set their own accessory and traits, which no other row resets.
@@ -936,7 +966,7 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
         cell.accessibilityTraits = UIAccessibilityTraitButton | (checked ? UIAccessibilityTraitSelected : 0);
     }
     BOOL waiting = [self isWaiting:row];
-    showWaiting(cell, waiting, [self switchFor:row].title);
+    showWaiting(cell, waiting, [self blockingSwitchFor:row].title);
     if (waiting) cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
@@ -1036,10 +1066,10 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self.tableView reloadData]; });
     };
     BOOL moved = [self showRowsThen:row.changed ? reload : nil];
-    // The rows waiting on this switch stay where they are and fade to their new state.
+    // The rows waiting on this switch, directly or through another, stay where they are and fade to their new state.
     NSMutableArray<NSIndexPath *> *waiting = [NSMutableArray array];
     for (NSIndexPath *visible in self.tableView.indexPathsForVisibleRows) {
-        if ([[self rowAt:visible].waitsOn isEqualToString:row.key]) [waiting addObject:visible];
+        if ([self row:[self rowAt:visible] waitsOnKey:row.key]) [waiting addObject:visible];
     }
     if (waiting.count) [self.tableView reloadRowsAtIndexPaths:waiting withRowAnimation:UITableViewRowAnimationFade];
     if (row.changed && !moved) reload();

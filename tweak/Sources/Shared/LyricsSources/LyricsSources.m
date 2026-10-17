@@ -269,6 +269,8 @@ static NSArray<NSString *> *defaultOrder(void) {
 
 NSArray<NSString *> *SGLyricsOrder(void) {
     id stored = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeyLyricsProviders];
+    // A reset leaves sources off until the user saves an order, including an explicitly empty one.
+    if (!stored && [NSUserDefaults.standardUserDefaults boolForKey:SGKeyStock]) return @[];
     NSArray *legacy = fromLegacyKeys();
     NSArray *keys = [stored isKindOfClass:NSArray.class] ? stored : legacy.count ? legacy : defaultOrder();
     NSMutableArray<NSString *> *order = [NSMutableArray array];
@@ -916,7 +918,7 @@ UIViewController *SGLyricsSourcesPage(void) {
         NSString *detail = [provider.key isEqualToString:SGSpicyLyricsKey] ? SGSpicyLyricsStatus() ?: provider.detail : provider.detail;
         [all addObject:[SGSource sourceWithKey:provider.key name:provider.name detail:detail]];
     }
-    return SGSourcesPageMake(SGL(@"settings.lyricssources.title", @"Lyrics sources"), SGL(@"settings.lyricssources.intro", @"Drag to set source priority. Choose how sources are asked in Lyric types. Deezer uses your own login cookie when you add it."),
+    return SGSourcesPageMake(SGL(@"settings.lyricssources.title", @"Lyrics sources"), SGL(@"settings.lyricssources.intro", @"Drag to set source priority. Choose how sources are asked in Request mode & lyric types. In All at once mode, the first word-timed answer wins regardless of order. Deezer uses your own login cookie when you add it."),
                              all, ^NSArray<NSString *> * { return SGLyricsOrder(); }, ^(NSArray<NSString *> *keys) { SGLyricsSetOrder(keys); });
 }
 

@@ -7,12 +7,12 @@
 
 NSArray<SGModRow *> *SGRNowPlayingBarRows(void) {
     // The tab bar reads the switch as each scroll goes; a bar minimized when it goes off grows back at once.
-    SGModRow *minimize = SGSwitchRow(SGL(@"settings.nowplayingbar.minimize.title", @"Apple Music style"), SGL(@"settings.nowplayingbar.minimize.subtitle", @"Between two tabs as a page scrolls down"), SGRKeyNavbarMinimize);
+    SGModRow *minimize = SGSwitchRow(SGL(@"settings.nowplayingbar.minimize.title", @"Minimize while scrolling"), SGL(@"settings.nowplayingbar.minimize.subtitle", @"Between two tabs as a page scrolls down"), SGRKeyNavbarMinimize);
     minimize.changed = ^(BOOL on) {
         if (!on) SGRSetTabBarMinimized(NO, NO);
         SGRRefreshTabBar();
     };
-    SGModRow *inlineConnect = SGOptionRow(SGL(@"settings.nowplayingbar.device_button.title", @"Device button"), SGL(@"settings.nowplayingbar.device_button.subtitle", @"Kept on the bar between the tabs"), SGRKeyBarInlineConnect);
+    SGModRow *inlineConnect = SGOptionRow(SGL(@"settings.nowplayingbar.device_button.title", @"Device button when minimized"), SGL(@"settings.nowplayingbar.device_button.subtitle", @"Kept on the bar between the tabs"), SGRKeyBarInlineConnect);
     inlineConnect.waitsOn = SGRKeyNavbarMinimize;
     return @[
         minimize,

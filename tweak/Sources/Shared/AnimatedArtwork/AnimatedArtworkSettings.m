@@ -22,7 +22,7 @@ NSArray *SGLockScreenMotionRows(void) {
                                                        @"With moving artwork, for songs that have none"),
                                       SGKeyLockScreenLyricsStyle, @[SGL(@"settings.lockscreen.lyrics_style.choice.still", @"Still"), SGL(@"settings.lockscreen.lyrics_style.choice.animated", @"Animated")], 0);
         style.visible = ^BOOL { return SGLockArtworkShowsLyrics(SGLockScreenArtwork()); };
-        SGModRow *lowData = SGOptionRow(SGL(@"settings.lockscreen.low_data.title", @"Download in Low Data Mode"), SGL(@"settings.lockscreen.low_data.subtitle", @"Moving artwork, up to about 7 MB a song"), SGKeyMotionLowData);
+        SGModRow *lowData = SGOptionRow(SGL(@"settings.lockscreen.low_data.title", @"Download in Low Data Mode"), SGL(@"settings.lockscreen.low_data.subtitle", @"Moving artwork, up to about 7 MB a song. Applies to animated artwork throughout Vitrine."), SGKeyMotionLowData);
         lowData.visible = ^BOOL {
             SGLockArtwork artwork = SGLockScreenArtwork();
             return artwork == SGLockArtworkMotion || artwork == SGLockArtworkEverySong || artwork == SGLockArtworkMotionLyrics;
@@ -33,12 +33,18 @@ NSArray *SGLockScreenMotionRows(void) {
                                                              @"and back. It takes the place of Spotify's like and dislike buttons"),
                                      SGKeyLockScreenStar);
         star.visible = ^BOOL { return SGLockScreenArtwork() != SGLockArtworkOff; };
-        return @[
-            SGChoiceRow(SGL(@"settings.lockscreen.artwork.title", @"Full-screen artwork"), SGL(@"settings.lockscreen.artwork.subtitle", @"The Canvas or Apple Music's animated cover, or the lyrics a line at a time. "
-                                                 @"Every song puts the cover over a moving blur of it where a song has neither. "
-                                                 @"Moving artwork with lyrics puts the lines over the Canvas or animated cover"),
+        SGModRow *artwork = SGChoiceRow(SGL(@"settings.lockscreen.artwork.title", @"Full-screen artwork"), nil,
                         SGKeyLockScreenArtwork, @[SGL(@"common.off", @"Off"), SGL(@"settings.lockscreen.artwork.choice.moving", @"Moving artwork"), SGL(@"settings.lockscreen.artwork.choice.lyrics", @"Lyrics"), SGL(@"settings.lockscreen.artwork.choice.every_song", @"Every song"), SGL(@"settings.lockscreen.artwork.choice.moving_with_lyrics", @"Moving artwork with lyrics")],
-                        SGLockArtworkOff),
+                        SGLockArtworkOff);
+        artwork.choiceNotes = @[
+            SGL(@"settings.lockscreen.artwork.note.off", @"Leaves Spotify's artwork unchanged."),
+            SGL(@"settings.lockscreen.artwork.note.moving", @"The Canvas or Apple Music's animated cover."),
+            SGL(@"settings.lockscreen.artwork.note.lyrics", @"Lyrics, a line at a time."),
+            SGL(@"settings.lockscreen.artwork.note.every_song", @"Uses moving artwork when available; otherwise puts the cover over a moving blur of it."),
+            SGL(@"settings.lockscreen.artwork.subtitle", @"Puts the lyrics over the Canvas or animated cover."),
+        ];
+        return @[
+            artwork,
             style,
             star,
             sources,

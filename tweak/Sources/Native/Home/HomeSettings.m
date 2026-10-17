@@ -1,9 +1,6 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Home.h"
-#import "Native/Playlist/Playlist.h"
-#import "Native/Artist/Artist.h"
-#import "Native/Album/Album.h"
 
 static SGModRow *choiceRow(NSString *title, NSString *subtitle, SGHomeChoice choice) {
     return SGChoiceRow(title, subtitle, SGHomeChoiceKey(choice), SGHomeChoiceNames(choice),
@@ -24,7 +21,7 @@ UIViewController *SGHomeGradientPage(void) {
 }
 
 static UIViewController *libraryPage(void) {
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.home.library.title", @"Library") intro:nil sections:@[
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.home.library.title", @"Library") intro:SGRestartNote sections:@[
         SGSection(SGL(@"settings.home.library.header", @"Library"), @[
             SGFlagRow(SGL(@"settings.home.library.denser_rows.title", @"Denser rows"), @"ios-feature-yourlibaryx.denser_rows_enabled"),
             SGFlagRow(SGL(@"settings.home.library.sort_playlists_recent.title", @"Sort playlists by recently updated"), @"ios-feature-yourlibaryx.recently_updated_playlists_sort_enabled"),
@@ -47,10 +44,7 @@ UIViewController *SGHomeSettingsPage(void) {
 
     NSArray<SGModSection *> *sections = @[
         SGSection(nil, @[
-            SGWithSymbol(SGPageRow(SGL(@"settings.home.playlists.row.title", @"Playlists"), ^UIViewController *{ return SGPlaylistSettingsPage(); }), @"music.note.list"),
             SGWithSymbol(SGPageRow(SGL(@"settings.home.library.row.title", @"Library"), ^UIViewController *{ return libraryPage(); }), @"books.vertical"),
-            SGWithSymbol(SGPageRow(SGL(@"settings.home.album.row.title", @"Album"), ^UIViewController *{ return SGAlbumSettingsPage(); }), @"square.stack"),
-            SGWithSymbol(SGPageRow(SGL(@"settings.home.artist.row.title", @"Artist"), ^UIViewController *{ return SGArtistSettingsPage(); }), @"music.mic"),
         ]),
         SGSection(SGL(@"settings.home.header", @"Home"), @[
             SGWithSymbol(gradient, @"rectangle.tophalf.inset.filled"),
@@ -66,5 +60,5 @@ UIViewController *SGHomeSettingsPage(void) {
             SGKillRow(SGL(@"settings.home.hide.dj_beta_badge.title", @"DJ beta badge"), @"ios-home-evopage-impl.dj_mdc_beta_badge_enabled"),
         ]),
     ];
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.home.home_and_library.title", @"Home & Library") intro:nil sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.home.home_and_library.title", @"Home & Library") intro:SGRestartNote sections:sections footer:nil];
 }

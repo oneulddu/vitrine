@@ -28,7 +28,7 @@
 #import "Redesigned/Kit/SGRAccent.h"
 
 NSString *SGRedesignedUIInfoText(void) {
-    return SGL(@"settings.redesign.info", @"The newest version of Vitrine, leaning toward Apple Music's style. It is not compatible with the legacy look's settings.\n\nThe legacy look gives you more freedom, yet still looks like Spotify.");
+    return SGL(@"settings.redesign.info", @"Redesigned uses Vitrine's Apple Music-inspired interface. Native keeps Spotify's interface. Appearance settings are separate for each look; shared features work in both. Switching requires a restart.");
 }
 
 // Below iOS 26 the redesign also needs SGKeyRedesignUntested (Core/SGUIMode.h): whoever calls this has
@@ -39,7 +39,7 @@ void SGSetRedesignedUI(BOOL on) {
 }
 
 NSString *SGRedesignUntestedWarning(void) {
-    return [NSString stringWithFormat:SGL(@"settings.redesign.untested.alert.message", @"The redesign is built on iOS 26's Liquid Glass. iOS %@ draws a blur in its place, and nobody has tested the redesign there: pages can be laid out wrongly, and Spotify can freeze as it starts. If Spotify does not start with it, the next launch goes back to Legacy."),
+    return [NSString stringWithFormat:SGL(@"settings.redesign.untested.alert.message", @"The redesign is built on iOS 26's Liquid Glass. iOS %@ draws a blur in its place, and nobody has tested the redesign there: pages can be laid out wrongly, and Spotify can freeze as it starts. If Spotify does not start with it, the next launch goes back to Native."),
             UIDevice.currentDevice.systemVersion];
 }
 
@@ -116,8 +116,6 @@ UIViewController *SGWorkshopPage(void) {
         [sections addObject:SGSection(SGL(@"settings.workshop.look.header", @"Look"), @[
             SGWithTile(SGPageRow(SGL(@"settings.workshop.visualizers.title", @"Visualizers"), ^UIViewController *{ return SGRVisualiserSettingsPage(); }),
                        @"waveform.path", UIColor.systemPurpleColor),
-            SGWithTile(SGPageRow(SGL(@"settings.workshop.lyrics_looks.title", @"Lyrics looks"), ^UIViewController *{ return SGLyricsSettingsPage(); }),
-                       @"textformat.size", UIColor.systemOrangeColor),
         ])];
     }
 
@@ -136,10 +134,23 @@ UIViewController *SGWorkshopPage(void) {
 
     NSString *intro = SGRedesignedUIStored()
         ? SGL(@"settings.workshop.intro.redesigned.v2", @"Built-in and open libraries Vitrine can use without an account. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.")
-        : SGL(@"settings.workshop.intro.native.v2", @"Built-in and open libraries Vitrine can use without an account. Visualizers and lyrics looks appear here when Redesigned UI is selected. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.");
-    SGModPage *page = [[SGModPage alloc] initWithTitle:SGL(@"settings.workshop.title", @"Workshop") intro:intro sections:sections footer:nil];
+        : SGL(@"settings.workshop.intro.native.v2", @"Built-in and open libraries Vitrine can use without an account. Visualizers appear here when Redesigned UI is selected. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.");
+    SGModPage *page = [[SGModPage alloc] initWithTitle:SGL(@"settings.workshop.title", @"Libraries & presets") intro:intro sections:sections footer:nil];
     page.tiles = YES;
     return page;
+}
+
+static UIViewController *translationPage(void) {
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.translation_ai.title", @"Translation & AI") intro:nil sections:@[
+        SGSection(SGL(@"settings.lyrics.translation_ai.automatic.header", @"Automatic translation"),
+                  @[SGLyricsTranslationLanguageRow(), SGRAutoTranslationRow(), SGRAutoTranslationOrderRow(),
+                    SGTranslateEverySongRow(), SGLyricsLanguageRulesRow(), SGTranslateTitlesRow()]),
+        SGNotedSection(SGL(@"settings.lyrics.translation_ai.services.header", @"Services"),
+                       @[SGLyricsAIServiceRow(SGLyricsAIGemini), SGLyricsAIServiceRow(SGLyricsAIClaude), SGLyricsAIServiceRow(SGLyricsAIOpenAI),
+                         SGDeepLKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGLyricsPronunciationNotationRow(), SGLyricsCulturalNotesRow()],
+                       SGL(@"settings.lyrics.ai.footer", @"Write Pronunciation and Explain References in the lyrics' menu use Gemini, Claude or your AI service, on your own key. What they write is kept for the song.")),
+        SGSection(SGL(@"settings.lyrics.translation_ai.saved.header", @"Saved translations"), @[SGSavedTranslationsRow()]),
+    ] footer:nil];
 }
 
 // Pronunciation, romanized lines, translation, word sweeping and line meanings exist only in the redesign's lyrics view.
@@ -156,6 +167,9 @@ static UIViewController *lyricsPage(void) {
                          @"Sync in the lyrics' corner menu adds an offset for one song, and one for the headphones it plays through. Applies at once.")
                    : SGL(@"settings.lyrics.timing.footer", @"Every line shows this much later than the song, for Bluetooth headphones that play a little behind the lyrics. Applies at once."));
     if (redesigned) {
+        SGModRow *translation = SGPageRow(SGL(@"settings.lyrics.translation_ai.title", @"Translation & AI"), ^UIViewController *{ return translationPage(); });
+        // Reuse the language row's value reader, including its fallback for an unset selection.
+        translation.value = SGLyricsTranslationLanguageRow().value;
         [sections addObjectsFromArray:@[
             SGSection(SGL(@"settings.lyrics.display.header", @"Display"), @[SGRLyricsTextSizesRow(), SGLyricsWordTimingRow(), SGLyricsRomanisedRow(),
                 SGLyricsJapaneseReadingRow(), SGLyricsFuriganaRow(), SGRLyricsKeepAwakeRow(),
@@ -164,11 +178,7 @@ static UIViewController *lyricsPage(void) {
                 SGSwitchRow(SGL(@"settings.lyrics.hide_controls.title", @"Hide the controls"), SGL(@"settings.lyrics.hide_controls.subtitle", @"A few seconds after the last touch, the lyrics take the whole player"), SGRKeyLyricsAutoHide),
                 SGSwitchRow(SGL(@"settings.lyrics.landscape.title", @"Landscape lyrics"), SGL(@"settings.lyrics.landscape.subtitle", @"Turn the phone with the lyrics open"), SGRKeyLyricsLandscape)]),
             timing,
-            SGSection(SGL(@"settings.lyrics.translation.header", @"Translation"), @[SGLyricsTranslationLanguageRow(), SGRAutoTranslationRow(), SGRAutoTranslationOrderRow(), SGTranslateEverySongRow(), SGLyricsLanguageRulesRow(), SGTranslateTitlesRow(),
-                SGLyricsAIServiceRow(SGLyricsAIGemini), SGLyricsAIServiceRow(SGLyricsAIClaude), SGLyricsAIServiceRow(SGLyricsAIOpenAI),
-                SGDeepLKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGSavedTranslationsRow()]),
-            SGNotedSection(SGL(@"settings.lyrics.ai.header", @"AI"), @[SGLyricsPronunciationNotationRow(), SGLyricsCulturalNotesRow()],
-                SGL(@"settings.lyrics.ai.footer", @"Write Pronunciation and Explain References in the lyrics' menu use Gemini, Claude or your AI service, on your own key. What they write is kept for the song.")),
+            SGSection(nil, @[translation]),
             SGSection(nil, @[SGLyricsMeaningsRow()]),
         ]];
     } else {
@@ -176,7 +186,7 @@ static UIViewController *lyricsPage(void) {
     }
     [sections addObject:SGSection(nil, more)];
     // The redesign's page leads with its lyrics playing in the look the page sets, and that look's presets.
-    if (redesigned) return SGRLyricsSettingsPage(SGL(@"settings.lyrics.title", @"Lyrics"), SGL(@"settings.lyrics.intro", @"The look applies at once. The settings below apply after you restart Spotify."), sections);
+    if (redesigned) return SGRLyricsSettingsPage(SGL(@"settings.lyrics.title", @"Lyrics"), SGL(@"settings.lyrics.intro", @"The look, romanization, furigana, estimated word timing, delay and automatic translation apply without restarting. Other changes may need a Spotify restart."), sections);
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.title", @"Lyrics") intro:SGRestartNote sections:sections footer:nil];
 }
 
@@ -197,6 +207,7 @@ UIViewController *SGPlayerSettingsPage(void) {
         SGWithTile(SGPageRow(SGL(@"settings.player.gestures.title", @"Gestures"), ^UIViewController *{ return SGGesturesSettingsPage(); }), @"hand.tap", UIColor.systemBlueColor),
         SGWithTile(blocked, @"person.crop.circle.badge.xmark", UIColor.systemRedColor),
     ])];
+    [sections addObject:SGSleepTimerSettingsSection()];
     if (native) {
         [sections addObject:SGSection(nil, @[
             SGWithTile(SGPageRow(SGL(@"settings.player.now_playing_bar.title", @"Now playing bar"), ^UIViewController *{ return SGNowPlayingBarSettingsPage(); }), @"rectangle.bottomthird.inset.filled", UIColor.systemPinkColor),

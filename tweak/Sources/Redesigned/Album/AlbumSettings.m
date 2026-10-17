@@ -9,7 +9,7 @@ UIViewController *SGRAlbumSettingsPage(void) {
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.album.title", @"Albums") intro:SGRestartNote sections:@[
         SGNotedSection(SGL(@"settings.album.apple_music.header", @"Apple Music"), @[
             SGSwitchRow(SGL(@"settings.album.animated_covers.title", @"Animated covers"), SGL(@"settings.album.animated_covers.subtitle", @"At the top of an album that has one, about 5 MB each"), SGRKeyAlbumMotion),
-            SGOptionRow(SGL(@"settings.album.motion_low_data.title", @"Download in Low Data Mode"), nil, SGKeyMotionLowData),
+            SGOptionRow(SGL(@"settings.album.motion_low_data.title", @"Download in Low Data Mode"), SGL(@"settings.album.motion_low_data.subtitle", @"Applies to animated artwork throughout Vitrine."), SGKeyMotionLowData),
         ], SGL(@"settings.album.apple_music.note", @"Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.")),
         SGSection(SGL(@"settings.album.hide_on_page.header", @"Hide on an album's page"), @[
             SGSwitchRow(SGL(@"settings.album.hide_track_artists.title", @"Repeated track artists"), SGL(@"settings.album.hide_track_artists.subtitle", @"The artist under a track when it is the album's own"), SGRKeyAlbumHideTrackArtists),

@@ -24,7 +24,7 @@ static UIViewController *martiniPage(void) {
 }
 
 UIViewController *SGLabsPage(void) {
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.labs.title", @"Labs") intro:SGL(@"settings.labs.intro", @"Unreleased features; some do nothing on your version. Changes apply after you restart Spotify.") sections:@[
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.labs.title", @"Labs") intro:SGL(@"settings.labs.intro", @"Unreleased features; some do nothing on your version. A switch that is on forces the feature on; off leaves it to Spotify, which may still turn it on. Changes apply after you restart Spotify.") sections:@[
         SGSection(nil, @[
             SGWithSymbol(SGPageRow(SGL(@"settings.labs.martini.row.title", @"AI Chat (Martini)"), ^UIViewController *{ return martiniPage(); }), @"bubble.left.and.bubble.right"),
         ]),

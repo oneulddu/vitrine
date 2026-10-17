@@ -274,12 +274,12 @@ UIViewController *SGSingSettingsPage(void) {
     SGModRow *prepare = SGSwitchRow(SGL(@"settings.karaoke.prepareahead.title", @"Prepare after updates"),
                                     SGL(@"settings.karaoke.prepareahead.subtitle", @"Readies the Neural Engine in the background after Vitrine or iOS updates, so Karaoke starts at full speed"), SGKeySingPrepareAhead);
     SGSingPage *made = [[SGSingPage alloc] initWithTitle:SGL(@"settings.karaoke.title", @"Karaoke") intro:nil sections:@[
-        SGSection(nil, @[sing, button, heat, memory]),
+        SGSection(nil, @[sing, button]),
         SGNotedSection(SGL(@"settings.karaoke.model.header", @"Voice model"), @[full, light, model, remove, other],
                        SGL(@"settings.karaoke.model.footer", @"Each model is downloaded and kept on its own, and Karaoke needs only the chosen one. A switch takes effect "
                        @"without restarting Spotify: the model loads in a few seconds, and the song plays as it is until it is in.")),
         SGSection(nil, @[spatial]),
-        SGNotedSection(SGL(@"settings.karaoke.advanced.header", @"Advanced"), @[units, prepare],
+        SGNotedSection(SGL(@"settings.karaoke.advanced.header", @"Advanced"), @[units, prepare, heat, memory],
                        SGL(@"settings.karaoke.advanced.footer", @"Karaoke turns a song's vocals down to sing over, or the rest down to hear the vocals alone, with a voice model that "
                        @"runs only on this iPhone: no audio leaves it. It listens a few seconds ahead of what plays, so the vocals change a "
                        @"few seconds after a song starts or after a seek.")),

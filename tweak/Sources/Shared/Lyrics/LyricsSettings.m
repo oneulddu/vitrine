@@ -56,7 +56,7 @@ SGModRow *SGLyricsTranslationLanguageRow(void) {
 
 // Only the redesign's lyrics view draws it, and every one there is redrawn as the switch flips.
 SGModRow *SGLyricsRomanisedRow(void) {
-    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.romanized.title", @"Romanized lyrics"), SGL(@"settings.lyrics.romanized.subtitle", @"Lines in other alphabets, again in Latin letters"), SGKeyLyricsRomanised);
+    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.romanized.title", @"Pronunciation"), SGL(@"settings.lyrics.romanized.subtitle", @"Shows Latin-letter readings, or hiragana for Japanese."), SGKeyLyricsRomanised);
     row.changed = ^(BOOL on) {
         [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsRomanisedDidChangeNotification object:nil];
     };
@@ -113,9 +113,10 @@ SGModRow *SGSimplifyTitlesRow(void) {
 }
 
 SGModRow *SGLyricsLanguageRulesRow(void) {
-    return SGStatActionRow(SGL(@"settings.lyrics.language_rules.title", @"Rules by song language"), nil, ^NSString *{
+    return SGStatActionRow(SGL(@"settings.lyrics.language_rules.title", @"Clear language rules…"),
+                          SGL(@"settings.lyrics.language_rules.subtitle", @"Rules are made from the lyrics menu."), ^NSString *{
         NSUInteger count = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyLyricsLanguageRules].count;
-        return count ? @(count).stringValue : SGL(@"common.off", @"Off");
+        return count ? @(count).stringValue : SGL(@"settings.lyrics.language_rules.none", @"None saved");
     }, ^{
         if (![NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyLyricsLanguageRules].count) return;
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.lyrics.language_rules.clear.title", @"Clear language rules?")
@@ -151,17 +152,17 @@ UIViewController *SGLyricsTypesPage(void) {
         SGL(@"settings.lyrics.ask_mode.words.subtitle", @"Asks in order, showing timed lines while looking for word timing."),
         SGL(@"settings.lyrics.ask_mode.all.subtitle", @"Asks every source at once; the first word timing wins. Sends more requests.")];
     NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
-    SGModRow *first = SGChoiceRow(SGL(@"settings.lyrics.ask_mode.title", @"How sources are asked"),
+    SGModRow *first = SGChoiceRow(SGL(@"settings.lyrics.ask_mode.title", @"Request mode"),
         notes[mode >= 0 && mode < (NSInteger)notes.count ? mode : 1], SGKeyLyricsAskMode, askModeNames(), 1);
     first.choiceNotes = notes;
     __weak SGModRow *weakFirst = first;
     first.chosen = ^(NSInteger index) { weakFirst.subtitle = notes[index]; };
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.types.title", @"Lyric types") intro:nil
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.types.title", @"Request mode & lyric types") intro:nil
         sections:@[SGSection(nil, @[first]), SGSection(SGL(@"settings.lyrics.sources.header", @"Sources"), rows)] footer:nil];
 }
 
 SGModRow *SGLyricsTypesRow(void) {
-    SGModRow *row = SGPageRow(SGL(@"settings.lyrics.types.title", @"Lyric types"), ^UIViewController *{ return SGLyricsTypesPage(); });
+    SGModRow *row = SGPageRow(SGL(@"settings.lyrics.types.title", @"Request mode & lyric types"), ^UIViewController *{ return SGLyricsTypesPage(); });
     row.value = ^NSString *{
         NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
         NSArray<NSString *> *names = askModeNames();

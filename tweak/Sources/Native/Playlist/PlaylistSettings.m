@@ -3,7 +3,7 @@
 #import "Playlist.h"
 
 UIViewController *SGPlaylistSettingsPage(void) {
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.playlist.title", @"Playlists") intro:nil sections:@[
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.playlist.title", @"Playlists") intro:SGRestartNote sections:@[
         SGSection(SGL(@"settings.playlist.header", @"Header"), @[
             SGOptionRow(SGL(@"settings.playlist.artwork_background.title", @"Artwork background"), nil, SGKeyPlaylistBackdrop),
         ]),

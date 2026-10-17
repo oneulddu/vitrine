@@ -80,6 +80,7 @@
 "settings.album.hide_track_artists.title" = "Repeated track artists";
 "settings.album.hide_under_tracks.header" = "Hide under an album's tracks";
 "settings.album.hide_under_tracks.note" = "Sections are told apart by their English names. With Spotify in another language, Everything else covers them all.";
+"settings.album.motion_low_data.subtitle" = "Applies to animated artwork throughout Vitrine.";
 "settings.album.motion_low_data.title" = "Download in Low Data Mode";
 "settings.album.native.hide_on_page.header" = "Hide on the page";
 "settings.album.native.title" = "Album";
@@ -374,7 +375,7 @@
 "settings.environment.current_version.subtitle" = "This is %@. Tap for what that does";
 "settings.environment.eevee.message" = "Vitrine already blocks ads and brings lyrics, and EeveeSpotify hooks the same parts of Spotify. With both, Spotify can freeze as it starts or show the wrong lyrics. Sign Spotify again without EeveeSpotify.";
 "settings.environment.eevee.title" = "EeveeSpotify is injected too";
-"settings.environment.fallback.message" = "Spotify did not get going with the redesign on iOS %@, so it is back in Legacy and Redesigned UI is off. Mod Settings can turn it on again.";
+"settings.environment.fallback.message" = "Spotify did not get going with the redesign on iOS %@, so it is back in Native and Redesigned UI is off. Mod Settings can turn it on again.";
 "settings.environment.fallback.title" = "The redesign did not start";
 "settings.environment.missing.live_activity" = "the Live Activity is missing";
 "settings.environment.missing.music_haptics" = "iOS does not list Spotify for Music Haptics, which stops vibrations in the background";
@@ -543,8 +544,6 @@
 "settings.headgestures.try.subtitle" = "Listens after the tone and says what it picked up";
 "settings.headgestures.try.title" = "Try it";
 
-"settings.home.album.row.title" = "Album";
-"settings.home.artist.row.title" = "Artist";
 "settings.home.cards_from.title" = "Cards from";
 "settings.home.dj.title" = "DJ";
 "settings.home.gradient.color.title" = "Color";
@@ -756,7 +755,7 @@
 "settings.karaoke.togglebutton.title" = "Toggle from lyrics";
 
 "settings.labs.comments_card.title" = "Comments card";
-"settings.labs.intro" = "Unreleased features; some do nothing on your version. Changes apply after you restart Spotify.";
+"settings.labs.intro" = "Unreleased features; some do nothing on your version. A switch that is on forces the feature on; off leaves it to Spotify, which may still turn it on. Changes apply after you restart Spotify.";
 "settings.labs.library.header" = "Library";
 "settings.labs.local_files.title" = "Local files from the Files app";
 "settings.labs.martini.backend.title" = "Martini behind it";
@@ -797,7 +796,7 @@
 "settings.liveactivity.colors.choice.plain" = "Plain";
 "settings.liveactivity.colors.choice.spotify" = "Spotify";
 "settings.liveactivity.colors.title" = "Colors";
-"settings.liveactivity.fadeout.title" = "Fade out";
+"settings.liveactivity.fadeout.title" = "Fade-out duration";
 "settings.liveactivity.missing.alert.message" = "iOS shows a Live Activity only for an app that says it has one, and only Vitrine's IPA build writes that into Spotify. This Spotify was put together another way, such as with Vitrine's .deb injected by hand, so iOS turns the card down. Build the IPA with Vitrine to get it.";
 "settings.liveactivity.missing.alert.title" = "Live Activity is missing";
 "settings.liveactivity.missing.subtitle" = "Tap for why";
@@ -865,10 +864,14 @@
 "settings.lockscreen.artwork.choice.lyrics" = "Lyrics";
 "settings.lockscreen.artwork.choice.moving" = "Moving artwork";
 "settings.lockscreen.artwork.choice.moving_with_lyrics" = "Moving artwork with lyrics";
+"settings.lockscreen.artwork.note.every_song" = "Uses moving artwork when available; otherwise puts the cover over a moving blur of it.";
+"settings.lockscreen.artwork.note.lyrics" = "Lyrics, a line at a time.";
+"settings.lockscreen.artwork.note.moving" = "The Canvas or Apple Music's animated cover.";
+"settings.lockscreen.artwork.note.off" = "Leaves Spotify's artwork unchanged.";
 "settings.lockscreen.artwork.row.title" = "Full-screen artwork";
-"settings.lockscreen.artwork.subtitle" = "The Canvas or Apple Music's animated cover, or the lyrics a line at a time. Every song puts the cover over a moving blur of it where a song has neither. Moving artwork with lyrics puts the lines over the Canvas or animated cover";
+"settings.lockscreen.artwork.subtitle" = "Puts the lyrics over the Canvas or animated cover.";
 "settings.lockscreen.artwork.title" = "Full-screen artwork";
-"settings.lockscreen.low_data.subtitle" = "Moving artwork, up to about 7 MB a song";
+"settings.lockscreen.low_data.subtitle" = "Moving artwork, up to about 7 MB a song. Applies to animated artwork throughout Vitrine.";
 "settings.lockscreen.low_data.title" = "Download in Low Data Mode";
 "settings.lockscreen.lyrics_style.choice.animated" = "Animated";
 "settings.lockscreen.lyrics_style.choice.still" = "Still";
@@ -886,14 +889,13 @@
 "settings.lossless.header" = "Lossless";
 
 "settings.lyrics.ai.footer" = "Write Pronunciation and Explain References in the lyrics' menu use Gemini, Claude or your AI service, on your own key. What they write is kept for the song.";
-"settings.lyrics.ai.header" = "AI";
 "settings.lyrics.all_tracks.subtitle" = "Even where Spotify has none";
 "settings.lyrics.all_tracks.title" = "Lyrics for every track";
 "settings.lyrics.ask_mode.all" = "All at once";
 "settings.lyrics.ask_mode.all.subtitle" = "Asks every source at once; the first word timing wins. Sends more requests.";
 "settings.lyrics.ask_mode.order" = "In order";
 "settings.lyrics.ask_mode.order.subtitle" = "Asks in order and stops at the first timed answer.";
-"settings.lyrics.ask_mode.title" = "How sources are asked";
+"settings.lyrics.ask_mode.title" = "Request mode";
 "settings.lyrics.ask_mode.words" = "Word timing first";
 "settings.lyrics.ask_mode.words.subtitle" = "Asks in order, showing timed lines while looking for word timing.";
 "settings.lyrics.auto_translation.claude" = "Claude";
@@ -935,7 +937,7 @@
 "settings.lyrics.hide_controls.title" = "Hide the controls";
 "settings.lyrics.imported_lrc.title" = "Imported LRC files";
 "settings.lyrics.imported_lrc.value.none" = "None";
-"settings.lyrics.intro" = "The look applies at once. The settings below apply after you restart Spotify.";
+"settings.lyrics.intro" = "The look, romanization, furigana, estimated word timing, delay and automatic translation apply without restarting. Other changes may need a Spotify restart.";
 "settings.lyrics.japanese_reading.hiragana" = "Hiragana";
 "settings.lyrics.japanese_reading.romaji" = "Romaji";
 "settings.lyrics.japanese_reading.title" = "Japanese reading";
@@ -945,7 +947,9 @@
 "settings.lyrics.landscape.title" = "Landscape lyrics";
 "settings.lyrics.language_rules.clear.message" = "Translation and pronunciation will use your usual settings for every song.";
 "settings.lyrics.language_rules.clear.title" = "Clear language rules?";
-"settings.lyrics.language_rules.title" = "Rules by song language";
+"settings.lyrics.language_rules.none" = "None saved";
+"settings.lyrics.language_rules.subtitle" = "Rules are made from the lyrics menu.";
+"settings.lyrics.language_rules.title" = "Clear language rules…";
 "settings.lyrics.lockscreen_lyrics.subtitle" = "Current line in place of the artist";
 "settings.lyrics.lockscreen_lyrics.title" = "Lock screen lyrics";
 "settings.lyrics.meanings.choice.artist" = "From the artist";
@@ -953,8 +957,8 @@
 "settings.lyrics.meanings.choice.everyone" = "Everyone";
 "settings.lyrics.meanings.footer" = "Explanations from Genius. Tap the bubble after a line, or hold the line.";
 "settings.lyrics.meanings.title" = "Line meanings";
-"settings.lyrics.romanized.subtitle" = "Lines in other alphabets, again in Latin letters";
-"settings.lyrics.romanized.title" = "Romanized lyrics";
+"settings.lyrics.romanized.subtitle" = "Shows Latin-letter readings, or hiragana for Japanese.";
+"settings.lyrics.romanized.title" = "Pronunciation";
 "settings.lyrics.show_source.subtitle" = "Spicy Lyrics is always credited after the last line: its terms ask for it";
 "settings.lyrics.show_source.title" = "Show source";
 "settings.lyrics.simplify_titles.subtitle" = "Without (feat. …), Remastered and the like";
@@ -970,12 +974,15 @@
 "settings.lyrics.timing.footer.redesigned" = "Every line shows this much later than the song, for Bluetooth headphones that play a little behind the lyrics. Sync in the lyrics' corner menu adds an offset for one song, and one for the headphones it plays through. Applies at once.";
 "settings.lyrics.timing.header" = "Timing";
 "settings.lyrics.title" = "Lyrics";
-"settings.lyrics.translation.header" = "Translation";
+"settings.lyrics.translation_ai.automatic.header" = "Automatic translation";
+"settings.lyrics.translation_ai.saved.header" = "Saved translations";
+"settings.lyrics.translation_ai.services.header" = "Services";
+"settings.lyrics.translation_ai.title" = "Translation & AI";
 "settings.lyrics.translation_language.footer" = "A language brings Musixmatch's community translations to lyrics that have none, which sends Musixmatch each song's ID. Any shows the first translation the lyrics come with. It is also the language the lyrics' translate menu translates into, offered only for songs in another one; with Any, the iPhone's own language.";
 "settings.lyrics.translation_language.title" = "Translation language";
 "settings.lyrics.types.any" = "Any";
 "settings.lyrics.types.synced" = "Synced only";
-"settings.lyrics.types.title" = "Lyric types";
+"settings.lyrics.types.title" = "Request mode & lyric types";
 "settings.lyrics.types.words" = "Word synced only";
 "settings.lyrics.use_beside_eevee.subtitle" = "Only if EeveeSpotify's lyrics are really off";
 "settings.lyrics.use_beside_eevee.title" = "Use these sources anyway";
@@ -1016,7 +1023,7 @@
 "settings.lyricssources.genie.subtitle" = "Line timing, Korean catalog";
 "settings.lyricssources.importedlrc.subtitle" = "Your own .lrc files";
 "settings.lyricssources.importedlrc.title" = "Imported LRC";
-"settings.lyricssources.intro" = "Drag to set source priority. Choose how sources are asked in Lyric types. Deezer uses your own login cookie when you add it.";
+"settings.lyricssources.intro" = "Drag to set source priority. Choose how sources are asked in Request mode & lyric types. In All at once mode, the first word-timed answer wins regardless of order. Deezer uses your own login cookie when you add it.";
 "settings.lyricssources.kugou.subtitle" = "Word timing, Chinese catalog";
 "settings.lyricssources.lrclib.subtitle" = "Line timing, open fallback";
 "settings.lyricssources.lyricsplus.subtitle" = "Word and line timing, multiple catalogs";
@@ -1157,7 +1164,7 @@
 "settings.main.spatial_voice.title" = "Spatial voice";
 "settings.main.tabbar.title" = "Tab bar";
 "settings.main.vibrations.title" = "Vibrations";
-"settings.main.workshop.title" = "Workshop";
+"settings.main.workshop.title" = "Libraries & presets";
 
 "settings.mod.backup.action.import_and_restart" = "Import and restart";
 "settings.mod.backup.import_confirm.alert.message" = "Your settings are replaced by the file's, exported from version %@. Anything it does not have goes back to its default, and Spotify restarts.";
@@ -1181,7 +1188,7 @@
 "settings.mod.licenses.voice_model.title" = "Karaoke's voice model";
 "settings.mod.licenses.wdl.subtitle" = "Liveprog's EEL2 · zlib License";
 "settings.mod.reset.action.reset_and_restart" = "Reset and restart";
-"settings.mod.reset.alert.message" = "Every switch goes off, flag overrides and the tab bar layout are cleared, and Spotify restarts as it came, with the mod doing nothing until asked. Spotify's own settings are untouched.";
+"settings.mod.reset.alert.message" = "Every switch and lyrics source turns off, flag overrides and the tab bar layout are cleared, and Spotify restarts as it came, with the mod doing nothing until asked. Spotify settings changed by AutoMix and Lossless are restored.";
 "settings.mod.reset.alert.title" = "Reset all settings?";
 "settings.mod.reset.title" = "Reset all settings";
 "settings.mod.share_diagnostics.subtitle" = "For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show.";
@@ -1225,14 +1232,14 @@
 
 "settings.nowplayingbar.bar_to_cover_animation.title" = "Bar to cover art animation";
 "settings.nowplayingbar.device_button.subtitle" = "Kept on the bar between the tabs";
-"settings.nowplayingbar.device_button.title" = "Device button";
+"settings.nowplayingbar.device_button.title" = "Device button when minimized";
 "settings.nowplayingbar.hide_connect.title" = "Hide the device button";
 "settings.nowplayingbar.hide_device_button.subtitle" = "On the full now playing bar";
 "settings.nowplayingbar.hide_device_button.title" = "Hide the device button";
 "settings.nowplayingbar.hide_like.title" = "Hide the like button";
 "settings.nowplayingbar.hold_drag_resize.title" = "Hold and drag to resize";
 "settings.nowplayingbar.minimize.subtitle" = "Between two tabs as a page scrolls down";
-"settings.nowplayingbar.minimize.title" = "Apple Music style";
+"settings.nowplayingbar.minimize.title" = "Minimize while scrolling";
 "settings.nowplayingbar.miniplayer_transition_animations.title" = "Mini player transition animations";
 "settings.nowplayingbar.queue_badge.title" = "Queue badge";
 "settings.nowplayingbar.save_button.title" = "Save button";
@@ -1240,6 +1247,16 @@
 "settings.nowplayingbar.title" = "Now playing bar";
 "settings.nowplayingbar.two_lines_info.title" = "Two lines of track info";
 "settings.nowplayingbar.video_miniplayer.title" = "Video in the mini player";
+
+"settings.onboarding.ads.note" = "Three switches of Premium, ads & privacy, applied at the restart; off leaves each as it is. Spoof Premium is untested and can end in a forced logout; a Premium account gains nothing from it. Offline, audio quality and sessions stay the server's.";
+"settings.onboarding.ads.subtitle" = "No ads, no Premium upsells, and Premium spoofed.";
+"settings.onboarding.ads.title" = "No ads";
+"settings.onboarding.look.heading" = "Pick your look.";
+"settings.onboarding.look.native" = "Native";
+"settings.onboarding.look.redesigned_only" = "Apple Music style lyrics, the redesigned player and the glass tab bar come with the redesign only.";
+"settings.onboarding.settings_hint" = "Hold Home to open settings.";
+"settings.onboarding.split_tabs.title" = "Split Tabs";
+"settings.onboarding.tips.heading" = "Easy to miss";
 
 "settings.page.info.a11y" = "About this setting";
 "settings.page.locked.alert.message" = "Another switch is forcing this flag, so the row shows what it forces instead of taking a value of its own.";
@@ -1312,7 +1329,7 @@
 "settings.player.lockscreen.title" = "Lock screen";
 "settings.player.mini_player.footer" = "Apple Music style moves the now playing bar in between two tabs as you scroll down.";
 "settings.player.mini_player.header" = "Mini player";
-"settings.player.motion_low_data.subtitle" = "Up to about 7 MB a song";
+"settings.player.motion_low_data.subtitle" = "Up to about 7 MB a song. Applies to animated artwork throughout Vitrine.";
 "settings.player.motion_low_data.title" = "Download in Low Data Mode";
 "settings.player.new_slider.title" = "New progress slider";
 "settings.player.not_playing" = "Not Playing";
@@ -1327,6 +1344,7 @@
 "settings.player.queue_flip.title" = "Queue flip transition";
 "settings.player.redesigned_header.title" = "Redesigned header";
 "settings.player.sheet_style.title" = "Sheet style player";
+"settings.player.sleep_fade.subtitle" = "While Labs' Fade out is forced on, Spotify's own timer fades its own way.";
 "settings.player.title" = "Player";
 "settings.player.visualizer_style.title" = "Visualizer style";
 "settings.player.visualizers.footer" = "The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence and stops in the background, during player transitions, in Low Power Mode or when the device is hot.";
@@ -1412,12 +1430,12 @@
 "settings.redesign.action.turn_on_and_restart" = "Turn On and Restart";
 "settings.redesign.confirm.alert.title" = "Turn on the redesign?";
 "settings.redesign.confirm_restart.alert.message" = "\n\nSpotify restarts to turn it on.";
-"settings.redesign.info" = "The newest version of Vitrine, leaning toward Apple Music's style. It is not compatible with the legacy look's settings.\n\nThe legacy look gives you more freedom, yet still looks like Spotify.";
+"settings.redesign.info" = "Redesigned uses Vitrine's Apple Music-inspired interface. Native keeps Spotify's interface. Appearance settings are separate for each look; shared features work in both. Switching requires a restart.";
 "settings.redesign.restart.alert.title" = "Restart Spotify";
 "settings.redesign.restart_off.alert.message" = "Spotify's own look comes back when Spotify starts again. Spotify closes now; open it again to see it.";
 "settings.redesign.restart_on.alert.message" = "The redesign takes over when Spotify starts again. Spotify closes now; open it again to see it.";
 "settings.redesign.title" = "Redesigned UI";
-"settings.redesign.untested.alert.message" = "The redesign is built on iOS 26's Liquid Glass. iOS %@ draws a blur in its place, and nobody has tested the redesign there: pages can be laid out wrongly, and Spotify can freeze as it starts. If Spotify does not start with it, the next launch goes back to Legacy.";
+"settings.redesign.untested.alert.message" = "The redesign is built on iOS 26's Liquid Glass. iOS %@ draws a blur in its place, and nobody has tested the redesign there: pages can be laid out wrongly, and Spotify can freeze as it starts. If Spotify does not start with it, the next launch goes back to Native.";
 "settings.redesign.untested.subtitle" = "Untested on iOS %@";
 
 "settings.signing.action.copy_bundle_id" = "Copy the bundle id";
@@ -1614,6 +1632,7 @@
 "settings.translation.ai.gemini.footer" = "Translations, pronunciations and notes send the song's lyrics to Google, on your own key from Google AI Studio. The key stays on this iPhone.";
 "settings.translation.ai.gemini.title" = "Gemini";
 "settings.translation.ai.key.title" = "API key";
+"settings.translation.ai.key_required" = "API key required";
 "settings.translation.ai.openai.footer" = "Translations, pronunciations and notes send the song's lyrics to the service at this address, on your own key. A service sets the address and a model; each host keeps its own key on this iPhone.";
 "settings.translation.ai.openai.title" = "OpenAI-compatible";
 "settings.translation.bing.error.busy" = "Bing Translator is busy right now. Try again in a minute.";
@@ -1676,7 +1695,7 @@
 "settings.translation.google.error.unreadable" = "Google Translate's answer could not be read. Try again.";
 "settings.translation.google.subtitle" = "Sends the song's lyrics to Google Translate's public web endpoint";
 "settings.translation.google.title" = "Google Translate";
-"settings.translation.models.current" = "In use: %@";
+"settings.translation.models.current" = "Selected: %@";
 "settings.translation.models.empty" = "The service lists no models";
 "settings.translation.models.error.busy" = "The service is busy right now. Try again in a minute.";
 "settings.translation.models.error.keyinvalid" = "The service turned the key down. Check the API key.";
@@ -1691,6 +1710,7 @@
 "settings.translation.models.manual.message" = "The model's ID, as the service writes it.";
 "settings.translation.models.manual.title" = "Enter a model";
 "settings.translation.models.nomatch" = "No models match";
+"settings.translation.models.openai.footer" = "This is the provider's whole model list. Not every model can translate.";
 "settings.translation.models.retry" = "Try Again";
 "settings.translation.models.search" = "Search models";
 "settings.translation.notes.subtitle" = "An AI service explains references under the lines when asked from the lyrics' menu";
@@ -1781,11 +1801,10 @@
 "settings.workshop.audio_presets.title" = "Audio presets";
 "settings.workshop.free_fonts.title" = "Free fonts";
 "settings.workshop.headphones.title" = "Headphones";
-"settings.workshop.intro.native.v2" = "Built-in and open libraries Vitrine can use without an account. Visualizers and lyrics looks appear here when Redesigned UI is selected. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.";
+"settings.workshop.intro.native.v2" = "Built-in and open libraries Vitrine can use without an account. Visualizers appear here when Redesigned UI is selected. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.";
 "settings.workshop.intro.redesigned.v2" = "Built-in and open libraries Vitrine can use without an account. Headphone corrections come from AutoEq, free fonts from Google Fonts. Presets can be shared as files.";
 "settings.workshop.look.header" = "Look";
-"settings.workshop.lyrics_looks.title" = "Lyrics looks";
 "settings.workshop.sound.header" = "Sound";
-"settings.workshop.title" = "Workshop";
+"settings.workshop.title" = "Libraries & presets";
 "settings.workshop.type.header" = "Type";
 "settings.workshop.visualizers.title" = "Visualizers";

@@ -128,7 +128,10 @@ enum { kManualSection, kListSection };
 
 - (NSString *)footerFor:(NSInteger)section {
     if (section == kManualSection) return SGL(@"settings.translation.models.manual.footer", @"For a model the list leaves out, or a service with no list.");
-    return _state == SGModelListFailed ? _problem : nil;
+    if (_state == SGModelListFailed) return _problem;
+    return _service == SGLyricsAIOpenAI
+        ? SGL(@"settings.translation.models.openai.footer", @"This is the provider's whole model list. Not every model can translate.")
+        : nil;
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
@@ -156,7 +159,7 @@ enum { kManualSection, kListSection };
     NSString *current = SGLyricsAIModel(_service);
     if (path.section == kManualSection) {
         SGFillCell(cell, SGL(@"settings.translation.models.manual.title", @"Enter a model"),
-                   [NSString stringWithFormat:SGL(@"settings.translation.models.current", @"In use: %@"), current ?: @""], nil, @"keyboard");
+                   [NSString stringWithFormat:SGL(@"settings.translation.models.current", @"Selected: %@"), current ?: @""], nil, @"keyboard");
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         cell.accessibilityTraits = UIAccessibilityTraitButton;
         return cell;
@@ -277,7 +280,7 @@ static UIViewController *servicePage(SGLyricsAI service) {
 SGModRow *SGLyricsAIServiceRow(SGLyricsAI service) {
     SGModRow *row = SGPageRow(serviceTitle(service), ^UIViewController *{ return servicePage(service); });
     row.value = ^NSString *{
-        return [SGLyricsAIAvailable() containsObject:@(service)] ? SGLyricsAIModel(service) : SGL(@"common.off", @"Off");
+        return [SGLyricsAIAvailable() containsObject:@(service)] ? SGLyricsAIModel(service) : SGL(@"settings.translation.ai.key_required", @"API key required");
     };
     return row;
 }
