@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.17](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.16...v1.0.0-beta.17) (2026-10-17)
+
+
+### Features
+
+* PiP 가사 첫 버전 추가 ([ac2f9e1](https://github.com/oneulddu/vitrine/commit/ac2f9e1a28c52a40f79b251e5013c4b52997a281))
+
+
+### Fixes
+
+* PiP 가사 건너뛰기 완료 시점과 간주 표시 수정 ([0a1117e](https://github.com/oneulddu/vitrine/commit/0a1117ed68529ce3e5b88c3d22f2d69f9207989f))
+
 ## [1.0.0-beta.16](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.15...v1.0.0-beta.16) (2026-10-17)
 
 
