@@ -321,8 +321,15 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
             current = SGKaraokeLineText(lines.firstObject);
             next = SGL(@"settings.lyrics.pip.untimed", @"These lyrics are not synced");
         } else {
-            NSInteger index = SGKaraokeLeadLine(lines, SGKaraokePositionMs() - SGKaraokeDelayMs());
-            current = index >= 0 ? SGKaraokeLineText(lines[index]) : @"♪";
+            NSInteger positionMs = SGKaraokePositionMs() - SGKaraokeDelayMs();
+            NSInteger index = SGKaraokeLeadLine(lines, positionMs);
+            SGKaraokeLine *line = index >= 0 ? lines[index] : nil;
+            // LeadLine keeps the last line between verses and after the song's final lyric. Only a word-timed
+            // line's end is the source's; a line-timed one's is an estimate (KaraokeTiming.m timedLine) that
+            // can run out mid-note, and its breaks come as their own empty or ♪ lines.
+            NSInteger end = MAX(line.end, line.words.lastObject.end);
+            BOOL over = line.timing == SGKaraokeTimingWords && positionMs > end;
+            current = line && !over ? SGKaraokeLineText(line) : @"♪";
             if (index + 1 < (NSInteger)lines.count) next = SGKaraokeLineText(lines[index + 1]);
             if (!current.length || [current isEqualToString:@"♪"]) current = SGL(@"settings.lyrics.pip.instrumental", @"Instrumental");
         }
@@ -463,10 +470,16 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
     skipByInterval:(CMTime)interval completionHandler:(void (^)(void))completionHandler {
     double delta = CMTimeGetSeconds(interval);
     double duration = [(id<SPTPlayer>)SGKaraokePlayer() state].duration;
-    if (controller == _pip && isfinite(delta) && isfinite(duration) && duration > 0) {
+    if (controller == _pip && _timebase && isfinite(delta) && isfinite(duration) && duration > 0) {
         double target = MIN(duration, MAX(0, SGKaraokePositionMs() / 1000.0 + delta));
+        NSInteger targetMs = (NSInteger)llround(target * 1000);
         [self resetFrames];
-        SGKaraokeSeek((NSInteger)llround(target * 1000));
+        SGKaraokeSeek(targetMs);
+        // PiP reads the clock when completion runs; don't leave it at the pre-seek position
+        // until Spotify reports the seek and the deferred refresh catches up.
+        _position = targetMs / 1000.0;
+        CMTimebaseSetTime(_timebase, CMTimeMake(targetMs, 1000));
+        [_pip invalidatePlaybackState];
         [self scheduleRefresh];
     }
     completionHandler();
