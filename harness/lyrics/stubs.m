@@ -12,6 +12,8 @@ CFTimeInterval SGPlayerTransitionEnds(void) { return 0; }
 
 void SGRPlayFeedback(NSInteger feedback) {}
 void SGPlayFeedback(NSInteger feedback) {}   // the name it has had since Haptics moved to Shared
+// The view is the redesign's (Core/SGUIMode.h).
+BOOL SGRedesignedUI(void) { return YES; }
 // Shared/LyricsPiP: off, as it is until switched on, so the lyrics menu offers no PiP item.
 NSNotificationName const SGLyricsPiPDidChangeNotification = @"spotifyglass.lyricsPiPDidChange";
 BOOL SGLyricsPiPEnabled(void) { return NO; }
