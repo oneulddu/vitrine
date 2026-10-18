@@ -127,8 +127,10 @@ Shared:
                   native full-screen lyrics corner button. Only a tap starts it; a retained shared engine
                   draws the current and next lines and the full provider credit into a bounded CPU pixel
                   buffer pool, following Spotify's clock minus the lyrics delay. Untimed lyrics never
-                  claim a current line. Its 4 Hz timer runs only while PiP is active and playing, and only
-                  changed content is drawn. Closing never pauses Spotify. PiP uses Spotify's existing
+                  claim a current line. Which text shows is decided in LyricsPiPText.m, checked on the Mac
+                  by harness/lyrics-pip/. Its 4 Hz timer runs only while PiP is active and playing, and only
+                  changed content is drawn; a frame the layer or pool turns away is retried every 0.1 s
+                  while starting or active. Closing never pauses Spotify. PiP uses Spotify's existing
                   audio session unchanged; unsupported/failed starts show an alert. Returning to Spotify
                   offers linked provider credits. The Live Activity ends while PiP is active and resumes
                   when enabled and playing, once Spotify is in front (ActivityKit cannot start behind

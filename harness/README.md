@@ -33,6 +33,7 @@ their check executable in the workflow.
 | `local-files/build.sh` | Isolated metadata and imported LRC checks. |
 | `lyrics/translation-check.sh` | Catalyst lyrics-menu assertions, not screenshots alone. |
 | `lyrics-clip/build.sh` | Default synthetic still/animated clips with decode assertions. |
+| `lyrics-pip/build.sh` | Catalyst PiP text decision (`LyricsPiPText.m`) for synthetic lines and positions. |
 | `lyrics-sources/build.sh` | Offline provider/parser/language fixtures. |
 | `lyrics-sources/state-build.sh` | Real keeper and concurrent source walk with fake replies. |
 | `lyrics-translation/build.sh` | Default checks include `check-ai.m`; also `--auto-retry-only`. |
