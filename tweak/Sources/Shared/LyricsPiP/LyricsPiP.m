@@ -35,7 +35,7 @@ static void *kPossibleContext = &kPossibleContext;
 @property (nonatomic, weak) UIWindow *window;
 @property (nonatomic, copy) NSString *track;
 @property (nonatomic, copy) NSArray<NSString *> *shown;
-@property (nonatomic) BOOL active, starting, startRequested, stopping, playing, alertPending, restoreCredit;
+@property (nonatomic) BOOL active, starting, startRequested, stopping, playing, alertPending, restoreCredit, retryPending;
 @property (nonatomic) NSUInteger generation, attempt;
 @property (nonatomic) double duration, position, speed;
 - (void)toggleFrom:(UIView *)from;
@@ -137,6 +137,7 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
 - (void)finish {
     _attempt++;
     _generation++;
+    _retryPending = NO;
     _starting = NO;
     _startRequested = NO;
     _stopping = NO;
@@ -327,15 +328,30 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
     [self startIfPossible];
 }
 
+// A layer that is not ready, or a full pool, would otherwise drop the frame with nothing left to
+// show it: a start waits on _shown, and a paused engine has no repeating refresh.
+- (void)scheduleRetry {
+    if (_retryPending || (!_active && !_starting)) return;
+    _retryPending = YES;
+    NSUInteger attempt = _attempt;
+    __weak SGLyricsPiPEngine *weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SGLyricsPiPEngine *engine = weakSelf;
+        if (engine.attempt != attempt) return; // a stale block must not clear the new attempt's flag
+        engine.retryPending = NO;
+        [engine refresh];
+    });
+}
+
 - (void)enqueue:(NSArray<NSString *> *)content generation:(NSUInteger)generation {
     AVSampleBufferDisplayLayer *layer = self.displayLayer;
-    if (!layer.readyForMoreMediaData) return;
+    if (!layer.readyForMoreMediaData) { [self scheduleRetry]; return; }
     CVPixelBufferRef pixel = NULL;
     // The allocation threshold is a hard bound even if the system retains enqueued frames.
     NSDictionary *aux = @{(__bridge NSString *)kCVPixelBufferPoolAllocationThresholdKey: @3};
     CVReturn result = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, _pool,
                                                                           (__bridge CFDictionaryRef)aux, &pixel);
-    if (result == kCVReturnWouldExceedAllocationThreshold) return;
+    if (result == kCVReturnWouldExceedAllocationThreshold) { [self scheduleRetry]; return; }
     if (result != kCVReturnSuccess) { [self fail:@"pixel buffer allocation failed"]; return; }
     if (CVPixelBufferLockBaseAddress(pixel, 0) != kCVReturnSuccess) {
         CVPixelBufferRelease(pixel);
