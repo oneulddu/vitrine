@@ -1,6 +1,7 @@
 // One CPU-rendered still frame per content change, on Spotify's own playback clock.
 // Never owns an audio session or player. Everything, including rendering, is serialized on main.
 #import "LyricsPiP.h"
+#import "LyricsPiPText.h"
 #import "Core/SGCore.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
@@ -309,30 +310,14 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
     }
     if (track.length && !SGKaraokeLinesForTrack(track)) SGKaraokeRequestLyrics(track);
     NSArray<SGKaraokeLine *> *lines = track.length ? SGKaraokeLinesForTrack(track) : nil;
-    NSString *current = SGL(@"settings.lyrics.pip.no_lyrics", @"No lyrics available"), *next = @"";
-    if (lines && !lines.count) {
+    NSString *current = nil, *next = nil;
+    SGLyricsPiPTextKind kind = SGLyricsPiPTextFor(lines, SGKaraokePositionMs() - SGKaraokeDelayMs(), &current, &next);
+    if (kind == SGLyricsPiPTextNoLyrics) {
+        current = SGL(@"settings.lyrics.pip.no_lyrics", @"No lyrics available");
+    } else if (kind == SGLyricsPiPTextInstrumental) {
         current = SGL(@"settings.lyrics.pip.instrumental", @"Instrumental");
-    } else if (lines.count) {
-        BOOL timed = NO;
-        for (SGKaraokeLine *line in lines) {
-            if (line.start > 0 || line.end > 0) { timed = YES; break; }
-        }
-        if (!timed || SGKaraokeLinesTiming(lines) == SGKaraokeTimingNone) {
-            current = SGKaraokeLineText(lines.firstObject);
-            next = SGL(@"settings.lyrics.pip.untimed", @"These lyrics are not synced");
-        } else {
-            NSInteger positionMs = SGKaraokePositionMs() - SGKaraokeDelayMs();
-            NSInteger index = SGKaraokeLeadLine(lines, positionMs);
-            SGKaraokeLine *line = index >= 0 ? lines[index] : nil;
-            // LeadLine keeps the last line between verses and after the song's final lyric. Only a word-timed
-            // line's end is the source's; a line-timed one's is an estimate (KaraokeTiming.m timedLine) that
-            // can run out mid-note, and its breaks come as their own empty or ♪ lines.
-            NSInteger end = MAX(line.end, line.words.lastObject.end);
-            BOOL over = line.timing == SGKaraokeTimingWords && positionMs > end;
-            current = line && !over ? SGKaraokeLineText(line) : @"♪";
-            if (index + 1 < (NSInteger)lines.count) next = SGKaraokeLineText(lines[index + 1]);
-            if (!current.length || [current isEqualToString:@"♪"]) current = SGL(@"settings.lyrics.pip.instrumental", @"Instrumental");
-        }
+    } else if (kind == SGLyricsPiPTextUntimed) {
+        next = SGL(@"settings.lyrics.pip.untimed", @"These lyrics are not synced");
     }
     NSString *credit = track.length ? SGLyricsCreditFor(track) : nil;
     // Always credit every provider, a stronger rule than SGLyricsCreditRequired: full Spicy

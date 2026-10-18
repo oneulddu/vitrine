@@ -52,6 +52,8 @@ jobs:
             run: sh harness/lyrics/translation-check.sh
           - name: Lyrics clips
             run: sh harness/lyrics-clip/build.sh && harness/lyrics-clip/build/lyrics-clip
+          - name: Lyrics PiP text
+            run: sh harness/lyrics-pip/build.sh && harness/lyrics-pip/build/lyrics-pip
           - name: Lyrics sources
             run: sh harness/lyrics-sources/build.sh
           - name: Lyrics state and concurrent walk
