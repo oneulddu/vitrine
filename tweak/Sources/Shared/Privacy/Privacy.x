@@ -64,11 +64,23 @@ static NSString *labelFor(NSURL *url) {
     NSString *host = url.host.lowercaseString;
     if (!host) return nil;
     NSString *path = url.path ?: @"";
-    for (size_t i = 0; i < kRuleCount; i++) {
-        NSString *domain = @(kRules[i].host);
-        if (![host isEqualToString:domain] && ![host hasSuffix:[@"." stringByAppendingString:domain]]) continue;
-        if (kRules[i].path && ![path containsString:@(kRules[i].path)]) continue;
-        return @(kRules[i].label);
+    // Both protocol admission and loading run this matcher for every request.
+    // The rules never change; convert their C strings and build suffixes only once.
+    static NSArray<NSArray<NSString *> *> *rules;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableArray *built = [NSMutableArray arrayWithCapacity:kRuleCount];
+        for (size_t i = 0; i < kRuleCount; i++) {
+            NSString *domain = @(kRules[i].host);
+            [built addObject:@[domain, [@"." stringByAppendingString:domain],
+                               kRules[i].path ? @(kRules[i].path) : @"", @(kRules[i].label)]];
+        }
+        rules = [built copy];
+    });
+    for (NSArray<NSString *> *rule in rules) {
+        if (![host isEqualToString:rule[0]] && ![host hasSuffix:rule[1]]) continue;
+        if ([rule[2] length] && ![path containsString:rule[2]]) continue;
+        return rule[3];
     }
     return nil;
 }
