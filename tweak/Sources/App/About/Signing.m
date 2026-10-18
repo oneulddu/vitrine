@@ -101,6 +101,7 @@ void SGCheckSigningOnce(void) {
                                                                        queue:nil
                                                                   usingBlock:^(NSNotification *note) {
         [NSNotificationCenter.defaultCenter removeObserver:token];
+        token = nil;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             // The welcome tour has the screen; it shows the fix when it goes.
             if (SGOnboardingShowing()) sg_fixPending = YES;

@@ -247,13 +247,14 @@ static void ask(NSString *url, NSData *body, void (^done)(NSArray<NSDictionary *
         request.HTTPBody = body;
         [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     }
-    NSURLSessionDataTask *task = [[NSURLSession sessionWithConfiguration:configuration]
-        dataTaskWithRequest:request
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:request
           completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
         done(status == 200 ? SGUpdateReleasesFrom(data) : nil, status, error);
     }];
     [task resume];
+    [session finishTasksAndInvalidate];
 }
 
 void SGCheckForUpdate(BOOL force) {

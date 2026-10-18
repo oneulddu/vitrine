@@ -215,6 +215,7 @@ void SGCheckEnvironmentOnce(void) {
                                                                        queue:nil
                                                                   usingBlock:^(NSNotification *note) {
         [NSNotificationCenter.defaultCenter removeObserver:token];
+        token = nil;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSettle * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             if (SGEeveeSpotifyInjected()) SGLog(@"environment: EeveeSpotify is injected too");
             if (otherVersion()) SGLog(@"environment: Spotify %@, made for %@", SGSpotifyVersion(), SGSpotifyMadeFor);

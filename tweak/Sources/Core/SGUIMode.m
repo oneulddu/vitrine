@@ -39,6 +39,7 @@ static BOOL startsUntested(void) {
     __block id token = [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
                                                                   usingBlock:^(NSNotification *note) {
         [NSNotificationCenter.defaultCenter removeObserver:token];
+        token = nil;
         [store removeObjectForKey:kStarting];
     }];
     return YES;
