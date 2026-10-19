@@ -3,6 +3,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Lyrics.h"
+#import "LyricsStore.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Core/SGGlass.h"
 #import "Shared/LocalFiles/LocalLyrics.h"
@@ -10,6 +11,19 @@
 #import "Shared/LyricsSources/LyricsSources.h"
 
 SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
+    SGModRow *offline = SGSwitchRow(SGL(@"settings.lyrics.offline.title", @"Keep lyrics for offline listening"),
+        SGL(@"settings.lyrics.offline.subtitle", @"Saved lyrics play without a connection."), SGKeyLyricsOffline);
+    SGModRow *deleteSaved = SGActionRow(SGL(@"settings.lyrics.offline.delete", @"Delete saved lyrics"),
+        SGL(@"settings.lyrics.offline.none", @"None"), nil);
+    __weak SGModRow *weakDelete = deleteSaved;
+    void (^showSize)(unsigned long long) = ^(unsigned long long bytes) {
+        weakDelete.subtitle = bytes ? [NSByteCountFormatter stringFromByteCount:(long long)bytes countStyle:NSByteCountFormatterCountStyleFile]
+            : SGL(@"settings.lyrics.offline.none", @"None");
+        UIViewController *top = SGTopController();
+        if ([top isKindOfClass:SGModPage.class]) [((SGModPage *)top).tableView reloadData];
+    };
+    SGLyricsStoreSize(showSize);
+    deleteSaved.action = ^{ SGLyricsStoreDeleteAll(showSize); };
     SGModRow *sources = SGPageRow(SGL(@"settings.lyrics.sources.row.title", @"Sources"), ^UIViewController *{ return SGLyricsSourcesPage(); });
     sources.value = ^NSString *{
         // The first one asked and how many follow it, short enough to sit beside the title.
@@ -23,7 +37,7 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
         NSUInteger count = SGImportedLRCFiles().count;
         return count ? @(count).stringValue : SGL(@"settings.lyrics.imported_lrc.value.none", @"None");
     };
-    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources, SGLyricsTypesRow(), imported,
+    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources, SGLyricsTypesRow(), imported, offline, deleteSaved,
         SGSwitchRow(SGL(@"settings.lyrics.all_tracks.title", @"Lyrics for every track"), SGL(@"settings.lyrics.all_tracks.subtitle", @"Even where Spotify has none"), SGKeyLyricsAllTracks), SGSpicyLyricsKeyRow(), SGDeezerARLRow(), nil];
     // Spicy Lyrics' terms ask for its credit wherever its lines show (Shared/LyricsSources/SpicyLyrics.m), so the switch
     // says so, or its credit under the lyrics reads as the switch not working (issue #20).

@@ -5,7 +5,7 @@
 // inside it to be estimated (KaraokeTiming.m) and swept. The lines are read from the color-lyrics
 // response as it arrives, or handed over by Shared/LyricsSources, and the position from the player's
 // state (KaraokeSource.x).
-#import <UIKit/UIKit.h>
+#import <Foundation/Foundation.h>
 
 @class SGModRow, SGModSection;
 // LyricsSettings.m: the Lyrics page's parts (App/Pages.m puts the page together): where lyrics come
@@ -188,6 +188,8 @@ BOOL SGEeveeSpotifyInjected(void);
 BOOL SGEeveeLyricsOn(void);
 // The Lyrics page's "Use these sources anyway", for an EeveeSpotify whose settings read wrong.
 #define SGKeyLyricsBesideEevee @"spotifyglass.lyrics.besideEevee"
+// Keep received lyrics on disk; absent means on. Read at every request/write.
+#define SGKeyLyricsOffline @"spotifyglass.lyrics.offline"
 // SGEeveeLyricsOn, unless the user asked for the mod's sources beside it.
 BOOL SGLyricsStandAsideForEevee(void);
 // The base62 id, a local file's lyrics key (Shared/LocalFiles), nil before the player reported.

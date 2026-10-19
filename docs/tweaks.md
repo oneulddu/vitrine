@@ -102,7 +102,16 @@ Shared:
                   for the lock screen and the Live Activity), a line in another alphabet in Latin letters, offline by Apple's
                   transforms, kanji read the Japanese way in a song with kana (Romanise.m; checked on the simulator by
                   harness/lyrics' -romanise), and the Lyrics page's parts. Lines are kept in time order
-                  whatever order a source lists them in. The Lyrics page's Delay (Timing, 0 to 1000 ms, either look)
+                  whatever order a source lists them in. LyricsStore.m also keeps received non-local lyrics and their
+                  provider in binary versioned plists under Library/Application Support/Vitrine/Lyrics, keyed by
+                  SHA-256 of the track ID and excluded from iCloud backup. The default-on “Keep lyrics for offline
+                  listening” reads these before asking any source, across relaunches and without a connection;
+                  translations and AI pronunciation stay with their own sources/stores. File work runs on one
+                  utility queue. The store caps at 1000 tracks / 30 MiB, pruning oldest-modified entries to 90%
+                  of both caps at most once a minute (hits touch the date; over-budget writes during that minute
+                  are skipped). Pin changes and Reload lyrics delete the old file. Turning the switch off leaves
+                  files intact; “Delete saved lyrics” removes them and shows the remaining size. The codec and
+                  eviction checks run in harness/lyrics-store. The Lyrics page's Delay (Timing, 0 to 1000 ms, either look)
                   shows every line that much later than the song, for Bluetooth headphones: whatever times lines
                   against the position takes it off first (the redesign's lyrics view and its word sweep, the lock
                   screen's line and artwork, the Live Activity, the native look's lyrics page for local files), and a

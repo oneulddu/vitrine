@@ -957,6 +957,10 @@
 "settings.lyrics.meanings.choice.everyone" = "Everyone";
 "settings.lyrics.meanings.footer" = "Explanations from Genius. Tap the bubble after a line, or hold the line.";
 "settings.lyrics.meanings.title" = "Line meanings";
+"settings.lyrics.offline.delete" = "Delete saved lyrics";
+"settings.lyrics.offline.none" = "None";
+"settings.lyrics.offline.subtitle" = "Saved lyrics play without a connection.";
+"settings.lyrics.offline.title" = "Keep lyrics for offline listening";
 "settings.lyrics.pip.close" = "Close Picture in Picture";
 "settings.lyrics.pip.credit_links" = "View source credits";
 "settings.lyrics.pip.failed" = "Picture in Picture could not start. This device or Spotify's current playback session may not support it. Keep Spotify in front and try again.";

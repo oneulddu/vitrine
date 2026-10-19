@@ -36,6 +36,7 @@ their check executable in the workflow.
 | `lyrics-pip/build.sh` | Catalyst PiP text decision (`LyricsPiPText.m`) for synthetic lines and positions, plus frame fitting checks (`LyricsPiPFrame.m`) and sample frame PNGs. |
 | `lyrics-sources/build.sh` | Offline provider/parser/language fixtures. |
 | `lyrics-sources/state-build.sh` | Real keeper and concurrent source walk with fake replies. |
+| `lyrics-store/build.sh` | Foundation codec, isolated disk reads/writes/deletion, and oldest-first count/byte pruning; run `lyrics-store/build/lyrics-store` after building. |
 | `lyrics-translation/build.sh` | Default checks include `check-ai.m`; also `--auto-retry-only`. |
 | `motion/build.sh` | Generated Canvas cuts and synthetic protobuf replies. |
 | `now-playing/build.sh` | Logos setter hooks with system setter replaced, lyrics off/on. |
@@ -50,7 +51,7 @@ their check executable in the workflow.
 
 ## Excluded scripts
 
-This inventory covers all 65 shell scripts, including the 26 included above.
+This inventory covers all 66 shell scripts, including the 27 included above.
 Simulator checks are excluded even when they assert; visual-only simulator
 scenarios are not promoted to CI by merely compiling them.
 

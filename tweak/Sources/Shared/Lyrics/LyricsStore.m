@@ -1,0 +1,247 @@
+#import "LyricsStore.h"
+#import "Lyrics.h"
+#import "Core/SGLog.h"
+#import <CommonCrypto/CommonDigest.h>
+#import <math.h>
+
+// A corrupt/cyclic record cannot exhaust the stack. Real lyrics have at most a few
+// levels (lead, backing, pronunciation).
+static const NSUInteger kStoreDepth = 32;
+
+static NSDictionary *encodeLine(SGKaraokeLine *line, NSUInteger depth) {
+    if (![line isKindOfClass:SGKaraokeLine.class] || depth > kStoreDepth) return nil;
+    NSMutableArray *words = [NSMutableArray array];
+    for (SGKaraokeWord *word in line.words) {
+        if (![word isKindOfClass:SGKaraokeWord.class] || ![word.text isKindOfClass:NSString.class]) return nil;
+        [words addObject:@{@"text": word.text, @"start": @(word.start), @"end": @(word.end), @"joined": @(word.joined)}];
+    }
+    NSMutableDictionary *record = [@{@"words": words, @"start": @(line.start), @"end": @(line.end),
+        @"align": @(line.align), @"timing": @(line.timing), @"pronunciationMade": @(line.pronunciationMade)} mutableCopy];
+    if (line.voice) record[@"voice"] = line.voice;
+    if (line.note) record[@"note"] = line.note;
+    if (line.backing) {
+        NSDictionary *backing = encodeLine(line.backing, depth + 1);
+        if (!backing) return nil;
+        record[@"backing"] = backing;
+    }
+    if (line.pronunciation && !line.pronunciationMade) {
+        NSDictionary *pronunciation = encodeLine(line.pronunciation, depth + 1);
+        if (!pronunciation) return nil;
+        record[@"pronunciation"] = pronunciation;
+    }
+    return record;
+}
+
+NSDictionary *SGLyricsStoreEncode(NSArray<SGKaraokeLine *> *lines, NSString *credit) {
+    if (![lines isKindOfClass:NSArray.class] || !lines.count || (credit && ![credit isKindOfClass:NSString.class])) return nil;
+    NSMutableArray *encoded = [NSMutableArray arrayWithCapacity:lines.count];
+    for (SGKaraokeLine *line in lines) {
+        NSDictionary *record = encodeLine(line, 0);
+        if (!record) return nil;
+        [encoded addObject:record];
+    }
+    NSMutableDictionary *record = [@{@"v": @1, @"lines": encoded} mutableCopy];
+    if (credit) record[@"credit"] = credit;
+    return record;
+}
+
+static BOOL integer(id value, NSInteger minimum, NSInteger maximum) {
+    if (![value isKindOfClass:NSNumber.class]) return NO;
+    double number = [value doubleValue];
+    return isfinite(number) && floor(number) == number
+        && [value compare:@(minimum)] != NSOrderedAscending && [value compare:@(maximum)] != NSOrderedDescending;
+}
+
+static SGKaraokeLine *decodeLine(id record, NSUInteger depth) {
+    if (![record isKindOfClass:NSDictionary.class] || depth > kStoreDepth) return nil;
+    if (![record[@"words"] isKindOfClass:NSArray.class]
+        || !integer(record[@"start"], NSIntegerMin, NSIntegerMax) || !integer(record[@"end"], NSIntegerMin, NSIntegerMax)
+        || !integer(record[@"align"], SGKaraokeAlignLeading, SGKaraokeAlignTrailing)
+        || !integer(record[@"timing"], SGKaraokeTimingWords, SGKaraokeTimingNone)
+        || !integer(record[@"pronunciationMade"], 0, 1)) return nil;
+    for (NSString *key in @[@"voice", @"note"]) {
+        if (record[key] && ![record[key] isKindOfClass:NSString.class]) return nil;
+    }
+    NSMutableArray *words = [NSMutableArray array];
+    for (id item in record[@"words"]) {
+        if (![item isKindOfClass:NSDictionary.class] || ![item[@"text"] isKindOfClass:NSString.class]
+            || !integer(item[@"start"], NSIntegerMin, NSIntegerMax) || !integer(item[@"end"], NSIntegerMin, NSIntegerMax)
+            || !integer(item[@"joined"], 0, 1)) return nil;
+        SGKaraokeWord *word = [SGKaraokeWord new];
+        word.text = item[@"text"]; word.start = [item[@"start"] integerValue]; word.end = [item[@"end"] integerValue];
+        word.joined = [item[@"joined"] boolValue];
+        [words addObject:word];
+    }
+    SGKaraokeLine *line = [SGKaraokeLine new];
+    line.words = words; line.start = [record[@"start"] integerValue]; line.end = [record[@"end"] integerValue];
+    line.align = [record[@"align"] unsignedIntegerValue]; line.timing = [record[@"timing"] unsignedIntegerValue];
+    line.voice = record[@"voice"]; line.note = record[@"note"];
+    line.pronunciationMade = [record[@"pronunciationMade"] boolValue];
+    if (record[@"backing"]) {
+        line.backing = decodeLine(record[@"backing"], depth + 1);
+        if (!line.backing) return nil;
+    }
+    if (record[@"pronunciation"]) {
+        if (line.pronunciationMade) return nil;
+        line.pronunciation = decodeLine(record[@"pronunciation"], depth + 1);
+        if (!line.pronunciation) return nil;
+    }
+    return line;
+}
+
+NSArray<SGKaraokeLine *> *SGLyricsStoreDecode(id record, NSString **credit) {
+    if (credit) *credit = nil;
+    if (![record isKindOfClass:NSDictionary.class] || !integer(record[@"v"], 1, 1)
+        || ![record[@"lines"] isKindOfClass:NSArray.class] || ![record[@"lines"] count]
+        || (record[@"credit"] && ![record[@"credit"] isKindOfClass:NSString.class])) return nil;
+    NSMutableArray *lines = [NSMutableArray array];
+    for (id item in record[@"lines"]) {
+        SGKaraokeLine *line = decodeLine(item, 0);
+        if (!line) return nil;
+        [lines addObject:line];
+    }
+    if (credit) *credit = record[@"credit"];
+    return lines;
+}
+
+static dispatch_queue_t storeQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("app.vitrine.lyrics-store", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+    });
+    return queue;
+}
+
+// These are confined to storeQueue, including directory discovery.
+static NSURL *sg_storeDirectory;
+static NSUInteger sg_countCap = 1000;
+static unsigned long long sg_byteCap = 30 * 1024 * 1024;
+static NSTimeInterval sg_lastPrune, sg_pruneInterval = 60;
+
+static NSURL *directory(void) {
+    if (!sg_storeDirectory) {
+        NSURL *library = [NSFileManager.defaultManager URLsForDirectory:NSLibraryDirectory inDomains:NSUserDomainMask].firstObject;
+        sg_storeDirectory = [library URLByAppendingPathComponent:@"Application Support/Vitrine/Lyrics" isDirectory:YES];
+    }
+    return sg_storeDirectory;
+}
+
+static NSURL *fileFor(NSString *track) {
+    NSData *bytes = [track dataUsingEncoding:NSUTF8StringEncoding];
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(bytes.bytes, (CC_LONG)bytes.length, digest);
+    NSMutableString *key = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
+    for (NSUInteger i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [key appendFormat:@"%02x", digest[i]];
+    return [directory() URLByAppendingPathComponent:[key stringByAppendingPathExtension:@"plist"]];
+}
+
+static NSArray<NSDictionary *> *inventory(unsigned long long *total) {
+    NSMutableArray *files = [NSMutableArray array];
+    *total = 0;
+    NSArray *urls = [NSFileManager.defaultManager contentsOfDirectoryAtURL:directory()
+        includingPropertiesForKeys:@[NSURLFileSizeKey, NSURLContentModificationDateKey, NSURLIsRegularFileKey] options:0 error:nil];
+    for (NSURL *url in urls) {
+        NSDictionary *values = [url resourceValuesForKeys:@[NSURLFileSizeKey, NSURLContentModificationDateKey, NSURLIsRegularFileKey] error:nil];
+        if (![url.pathExtension isEqualToString:@"plist"] || ![values[NSURLIsRegularFileKey] boolValue]) continue;
+        NSNumber *size = values[NSURLFileSizeKey] ?: @0;
+        *total += size.unsignedLongLongValue;
+        [files addObject:@{@"url": url, @"size": size, @"date": values[NSURLContentModificationDateKey] ?: NSDate.distantPast}];
+    }
+    return files;
+}
+
+static void prune(NSArray<NSDictionary *> *files, unsigned long long bytes) {
+    if (files.count <= sg_countCap && bytes <= sg_byteCap) return;
+    sg_lastPrune = NSProcessInfo.processInfo.systemUptime;
+    NSUInteger count = files.count, removed = 0;
+    NSArray *oldest = [files sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [a[@"date"] compare:b[@"date"]];
+    }];
+    for (NSDictionary *file in oldest) {
+        if (count <= sg_countCap * 9 / 10 && bytes <= sg_byteCap * 9 / 10) break;
+        if ([NSFileManager.defaultManager removeItemAtURL:file[@"url"] error:nil]) {
+            bytes -= [file[@"size"] unsignedLongLongValue]; count--; removed++;
+        }
+    }
+    SGLog(@"lyrics store: pruned %lu files", (unsigned long)removed);
+}
+
+void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *credit) {
+    if (!track.length || !lines.count) return;
+    // Snapshot the model before it leaves its caller's queue; translations and generated
+    // pronunciation may subsequently be attached to those same lines.
+    NSDictionary *record = SGLyricsStoreEncode(lines, credit);
+    dispatch_async(storeQueue(), ^{
+        NSError *error;
+        NSData *data = record ? [NSPropertyListSerialization dataWithPropertyList:record format:NSPropertyListBinaryFormat_v1_0 options:0 error:&error] : nil;
+        if (!data) { SGLog(@"lyrics store: write failed (encode): %@", error); return; }
+        // A single oversized track cannot be kept, even in an empty store.
+        if (data.length > sg_byteCap || !sg_countCap) return;
+        NSURL *url = fileFor(track);
+        unsigned long long bytes;
+        NSArray *files = inventory(&bytes);
+        NSUInteger count = files.count + 1;
+        for (NSDictionary *file in files) if ([file[@"url"] isEqual:url]) {
+            bytes -= [file[@"size"] unsignedLongLongValue]; count--; break;
+        }
+        BOOL canPrune = !sg_lastPrune || NSProcessInfo.processInfo.systemUptime - sg_lastPrune >= sg_pruneInterval;
+        // Keep the hard caps even between prune passes. Defer an over-budget save
+        // rather than evicting more often than once a minute.
+        if (!canPrune && (count > sg_countCap || bytes + data.length > sg_byteCap)) return;
+        if (![NSFileManager.defaultManager createDirectoryAtURL:directory() withIntermediateDirectories:YES attributes:nil error:&error]
+            || ![directory() setResourceValue:@YES forKey:NSURLIsExcludedFromBackupKey error:&error]
+            || ![data writeToURL:url options:NSDataWritingAtomic error:&error]) {
+            SGLog(@"lyrics store: write failed: %@", error);
+            return;
+        }
+        if (canPrune) { files = inventory(&bytes); prune(files, bytes); }
+    });
+}
+
+void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *, NSString *)) {
+    dispatch_async(storeQueue(), ^{
+        NSURL *url = track.length ? fileFor(track) : nil;
+        // Bound corrupt files before parsing them.
+        NSNumber *size;
+        [url getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
+        NSData *data = size.unsignedLongLongValue <= sg_byteCap && url ? [NSData dataWithContentsOfURL:url] : nil;
+        id record = data ? [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:nil error:nil] : nil;
+        NSString *credit;
+        NSArray *lines = SGLyricsStoreDecode(record, &credit);
+        if (lines) [NSFileManager.defaultManager setAttributes:@{NSFileModificationDate: NSDate.date} ofItemAtPath:url.path error:nil];
+        dispatch_async(dispatch_get_main_queue(), ^{ done(lines, credit); });
+    });
+}
+
+void SGLyricsStoreDelete(NSString *track) {
+    if (!track.length) return;
+    dispatch_async(storeQueue(), ^{
+        if ([NSFileManager.defaultManager removeItemAtURL:fileFor(track) error:nil]) SGLog(@"lyrics store: deleted track");
+    });
+}
+
+void SGLyricsStoreSize(void (^done)(unsigned long long)) {
+    dispatch_async(storeQueue(), ^{
+        unsigned long long bytes; inventory(&bytes);
+        dispatch_async(dispatch_get_main_queue(), ^{ done(bytes); });
+    });
+}
+
+void SGLyricsStoreDeleteAll(void (^done)(unsigned long long)) {
+    dispatch_async(storeQueue(), ^{
+        NSError *error;
+        BOOL deleted = [NSFileManager.defaultManager removeItemAtURL:directory() error:&error];
+        SGLog(@"lyrics store: delete saved lyrics: %@", deleted ? @"done" : error.localizedDescription);
+        sg_lastPrune = 0;
+        unsigned long long bytes; inventory(&bytes);
+        dispatch_async(dispatch_get_main_queue(), ^{ if (done) done(bytes); });
+    });
+}
+
+void SGLyricsStoreConfigureForTests(NSURL *url, NSUInteger countCap, unsigned long long byteCap) {
+    dispatch_async(storeQueue(), ^{
+        sg_storeDirectory = [url copy]; sg_countCap = countCap; sg_byteCap = byteCap;
+        sg_lastPrune = 0; sg_pruneInterval = 0;
+    });
+}

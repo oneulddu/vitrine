@@ -56,6 +56,8 @@ jobs:
             run: sh harness/lyrics-pip/build.sh && harness/lyrics-pip/build/lyrics-pip
           - name: Lyrics sources
             run: sh harness/lyrics-sources/build.sh
+          - name: Offline lyrics store
+            run: sh harness/lyrics-store/build.sh && harness/lyrics-store/build/lyrics-store
           - name: Lyrics state and concurrent walk
             run: sh harness/lyrics-sources/state-build.sh
           - name: Lyrics translation and AI
