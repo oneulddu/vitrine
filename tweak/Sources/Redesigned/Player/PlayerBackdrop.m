@@ -1,0 +1,260 @@
+// Player redesign: pure black, or a photo of the user's own, behind the player in place of the artwork's field.
+//
+// Either is a view laid over the field, on top of it and as far as its bleed reaches, so the pull that dismisses
+// the player and the bounce at the end of the cards show black too; the field under it is covered and held still
+// (PlayerField.x), and is made as the artwork's last choice, so going back to the artwork needs no restart. The
+// photo fills the screen from its middle, as a wallpaper does, and is darkened the way the Animated artwork's clip
+// is (SGRPlayerClipDim): by how bright it is, so white text over it keeps 4.5:1 (7:1 with Increase Contrast), and a
+// little more, with a blur, behind the lyrics.
+//
+// The photo is picked from the photo library (PHPicker, which needs no permission to the library), drawn at
+// kLongestSide pixels on its longer side at most, and kept as a JPEG in Library/Application Support/Vitrine. It is
+// read once a launch, when first shown. Nothing is uploaded.
+//
+// Threading: main thread only, but for the picked image's scaling and writing.
+#import <PhotosUI/PhotosUI.h>
+#import "Core/SGCore.h"
+#import "Redesigned/Kit/SGRKit.h"
+#import "Player.h"
+
+NSNotificationName const SGRPlayerPhotoDidChangeNotification = @"spotifyglass.redesign.player.photoDidChange";
+static const CGFloat kLongestSide = 2048;
+static char kBackdropKey;
+
+static NSURL *photoURL(void) {
+    NSURL *library = [NSFileManager.defaultManager URLsForDirectory:NSLibraryDirectory inDomains:NSUserDomainMask].firstObject;
+    return [library URLByAppendingPathComponent:@"Application Support/Vitrine/PlayerPhoto.jpg"];
+}
+
+static UIImage *sg_photo;
+static BOOL sg_photoRead;
+static CGFloat sg_photoBright = -1;   // its bright end, measured once per photo
+
+static UIImage *storedPhoto(void) {
+    if (!sg_photoRead) {
+        sg_photoRead = YES;
+        sg_photo = [UIImage imageWithContentsOfFile:photoURL().path];
+    }
+    return sg_photo;
+}
+
+BOOL SGRPlayerHasPhoto(void) {
+    return storedPhoto() != nil;
+}
+
+static CGFloat photoBright(void) {
+    if (sg_photoBright < 0) sg_photoBright = storedPhoto() ? SGRPlayerImageBrightEnd(storedPhoto().CGImage) : 0;
+    return sg_photoBright;
+}
+
+#pragma mark - the view
+
+@interface SGRPlayerBackdropView : UIView
+// The part of the view the screen shows at rest, which the photo fills; the whole bounds when empty.
+@property (nonatomic) CGRect screen;
+// What it draws now, read again by -reload.
+@property (nonatomic, readonly) SGRPlayerBackgroundKind kind;
+- (void)reload;
+- (void)setLyrics:(BOOL)lyrics animated:(BOOL)animated;
+@end
+
+@implementation SGRPlayerBackdropView {
+    UIImageView *_photo;
+    CALayer *_dim;
+    UIVisualEffectView *_blur;
+    BOOL _lyrics;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame])) return nil;
+    self.userInteractionEnabled = NO;
+    self.accessibilityElementsHidden = YES;
+    self.backgroundColor = UIColor.blackColor;
+    self.clipsToBounds = YES;
+    _photo = [UIImageView new];
+    _photo.contentMode = UIViewContentModeScaleAspectFill;
+    _photo.clipsToBounds = YES;
+    [self addSubview:_photo];
+    _dim = [CALayer layer];
+    _dim.backgroundColor = UIColor.blackColor.CGColor;
+    [self.layer addSublayer:_dim];
+    _blur = [[UIVisualEffectView alloc] initWithEffect:nil];
+    _blur.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    [self addSubview:_blur];
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center addObserver:self selector:@selector(reload) name:SGRPlayerPhotoDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(updateDim) name:UIAccessibilityDarkerSystemColorsStatusDidChangeNotification object:nil];
+    [self reload];
+    return self;
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+- (void)reload {
+    _kind = SGRPlayerBackground();
+    _photo.image = _kind == SGRPlayerBackgroundPhoto ? storedPhoto() : nil;
+    [self updateDim];
+    _blur.effect = _lyrics && _photo.image ? [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark] : nil;
+}
+
+- (void)updateDim {
+    CGFloat dim = _photo.image ? SGRPlayerClipDim(photoBright(), UIAccessibilityDarkerSystemColorsEnabled(), _lyrics) : 0;
+    _dim.opacity = (float)dim;
+}
+
+- (void)setLyrics:(BOOL)lyrics animated:(BOOL)animated {
+    _lyrics = lyrics;
+    BOOL blurred = lyrics && _photo.image;
+    [CATransaction begin];
+    [CATransaction setDisableActions:!animated];
+    [CATransaction setAnimationDuration:SGRCrossfade];
+    [self updateDim];
+    [CATransaction commit];
+    void (^apply)(void) = ^{ self->_blur.effect = blurred ? [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark] : nil; };
+    if (animated) SGRAnimate(SGRMotionFade, apply, nil);
+    else apply();
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGRect bounds = self.bounds;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _photo.frame = CGRectIsEmpty(self.screen) ? bounds : self.screen;
+    _dim.frame = bounds;
+    _blur.frame = bounds;
+    [CATransaction commit];
+}
+
+@end
+
+#pragma mark - over the player's field
+
+static __weak SGRPlayerBackdropView *sg_backdrop;
+
+void SGRPlayerBackdropLaidOut(SGRArtworkField *field) {
+    if (!field) return;
+    SGRPlayerBackdropView *view = objc_getAssociatedObject(field, &kBackdropKey);
+    if (SGRPlayerBackgroundFromArtwork(SGRPlayerBackground())) {
+        if (!view) return;
+        [view removeFromSuperview];
+        objc_setAssociatedObject(field, &kBackdropKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        field.covered = NO;
+        SGRPlayerHoldField();
+        SGLog(@"redesign player: black or the photo taken away, the artwork behind the player");
+        return;
+    }
+    BOOL made = !view;
+    if (made) {
+        view = [[SGRPlayerBackdropView alloc] initWithFrame:field.bounds];
+        objc_setAssociatedObject(field, &kBackdropKey, view, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [view setLyrics:SGRPlayerLyricsOpen() animated:NO];
+        SGLog(@"redesign player: %@ behind the player", SGRPlayerBackground() == SGRPlayerBackgroundPhoto ? @"the photo" : @"black");
+    }
+    sg_backdrop = view;
+    if (view.kind != SGRPlayerBackground()) [view reload];   // switched between black and the photo
+    if (view.superview != field || field.subviews.lastObject != view) [field addSubview:view];
+    // The field under it holds still from now on (PlayerField.x's fieldHeld).
+    if (made) SGRPlayerHoldField();
+    UIEdgeInsets bleed = field.bleed;
+    CGSize size = field.bounds.size;
+    CGRect frame = CGRectMake(0, -bleed.top, size.width, size.height + bleed.top + bleed.bottom);
+    if (!CGRectEqualToRect(view.frame, frame)) view.frame = frame;
+    CGFloat screen = field.window.bounds.size.height ?: size.height;
+    CGRect shown = CGRectMake(0, bleed.top, size.width, screen);
+    if (!CGRectEqualToRect(view.screen, shown)) {
+        view.screen = shown;
+        [view setNeedsLayout];
+    }
+    field.covered = YES;
+}
+
+BOOL SGRPlayerBackdropShowing(void) {
+    return sg_backdrop.superview != nil;
+}
+
+void SGRPlayerBackdropLyricsChanged(void) {
+    SGRPlayerBackdropView *view = sg_backdrop;
+    [view setLyrics:SGRPlayerLyricsOpen() animated:view.window != nil];
+}
+
+UIView *SGRPlayerBackdropPreview(void) {
+    if (SGRPlayerBackgroundFromArtwork(SGRPlayerBackground())) return nil;
+    return [[SGRPlayerBackdropView alloc] initWithFrame:CGRectZero];
+}
+
+#pragma mark - picking the photo
+
+// Drawn upright at kLongestSide pixels on its longer side at most, as a JPEG.
+static NSData *jpegOf(UIImage *image) {
+    CGSize pixels = CGSizeMake(image.size.width * image.scale, image.size.height * image.scale);
+    CGFloat longer = MAX(pixels.width, pixels.height);
+    if (longer <= 0) return nil;
+    CGFloat shrink = MIN(1, kLongestSide / longer);
+    CGSize size = CGSizeMake(round(pixels.width * shrink), round(pixels.height * shrink));
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = YES;
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size format:format];
+    return [renderer JPEGDataWithCompressionQuality:0.9 actions:^(UIGraphicsImageRendererContext *context) {
+        [image drawInRect:(CGRect){CGPointZero, size}];
+    }];
+}
+
+@interface SGRPlayerPhotoPicker : NSObject <PHPickerViewControllerDelegate>
+@property (nonatomic, copy) void (^done)(BOOL stored);
+@end
+
+static SGRPlayerPhotoPicker *sg_picker;   // kept while the picker is up; its delegate is weak
+
+@implementation SGRPlayerPhotoPicker
+
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+    void (^done)(BOOL) = self.done;
+    sg_picker = nil;
+    [picker dismissViewControllerAnimated:YES completion:nil];
+    NSItemProvider *provider = results.firstObject.itemProvider;
+    if (![provider canLoadObjectOfClass:UIImage.class]) {
+        if (done) done(NO);
+        return;
+    }
+    [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
+        UIImage *image = [(id)object isKindOfClass:UIImage.class] ? (UIImage *)object : nil;
+        NSData *data = image ? jpegOf(image) : nil;
+        NSURL *url = photoURL();
+        NSError *failure = error;
+        BOOL stored = data && [NSFileManager.defaultManager createDirectoryAtURL:url.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:&failure]
+            && [data writeToURL:url options:NSDataWritingAtomic error:&failure];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (stored) {
+                sg_photoRead = NO;
+                sg_photo = nil;
+                sg_photoBright = -1;
+                SGLog(@"redesign player: a photo of %lu KB stored for behind the player", (unsigned long)(data.length / 1024));
+                [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerPhotoDidChangeNotification object:nil];
+            } else {
+                SGLog(@"redesign player: the picked photo could not be stored: %@", failure);
+            }
+            if (done) done(stored);
+        });
+    }];
+}
+
+@end
+
+void SGRPlayerPickPhoto(UIViewController *from, void (^done)(BOOL stored)) {
+    if (!from) {
+        if (done) done(NO);
+        return;
+    }
+    PHPickerConfiguration *configuration = [PHPickerConfiguration new];
+    configuration.filter = PHPickerFilter.imagesFilter;
+    configuration.selectionLimit = 1;
+    PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:configuration];
+    sg_picker = [SGRPlayerPhotoPicker new];
+    sg_picker.done = done;
+    picker.delegate = sg_picker;
+    [from presentViewController:picker animated:YES completion:nil];
+}

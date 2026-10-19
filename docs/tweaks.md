@@ -662,7 +662,10 @@ Redesigned:
                   the hooks reach, declines while the redesign runs, so the track falls to Spotify's other Free mode,
                   built from the units the redesign styles (PlayerFree.x, read from the binary, not yet seen on a Free
                   account). Animated artwork (PlayerMotion.x)
-                  runs the clip edge to edge from the top over its own last rows drawn on down, with a blur coming in
+                  plays a square clip (Apple Music's square animated cover, no taller than 1.05:1) inside the cover
+                  itself, a subview of the cover on screen that takes its corners, paused shrink and swipe, over the
+                  field as it is; any taller clip
+                  runs edge to edge from the top over its own last rows drawn on down, with a blur coming in
                   from the seam under the controls and over the whole clip behind the lyrics. The clip and the cover
                   cross over as one comes and the other goes, the clip from its poster frame before the video has
                   decoded one, and the Fluid field under a clip holds still and, once the clip has faded in, is hidden
@@ -961,7 +964,12 @@ for Animated while the player has no clip, the card looks the playing track's up
 (SGMotionClipFor, the player's sources, size and Low Data Mode, into the store the player reads), Fluid until it
 is in, then the clip over it, poster first (harness/player/ `preview`);
 under it a segmented control of the five backgrounds (Still, Colors, Fluid, Animated, Visualizer, changing the card at once)
-with a note on what the one picked does; while Visualizer is chosen, its local style menu offers Hills (the default),
+with a note on what the one picked does, and a Behind the Player menu (Artwork, Black, Your Photo) that lays pure
+black or a photo of the user's own over the field instead (PlayerBackdrop.m, kinds 5 and 6 of
+`spotifyglass.redesign.player.background`; Artwork goes back to the last segment, `...background.artwork`). The photo
+comes from PHPicker, is kept as a JPEG of 2048 px at most in Library/Application Support/Vitrine, fills the screen
+from its middle and is dimmed by its brightness as the Animated clip is, more with a blur behind the lyrics; it
+applies at the player's next layout, no restart; while Visualizer is chosen, its local style menu offers Hills (the default),
 mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The selection is stored under the existing
 `spotifyglass.visualizer.shader` key, with invalid or absent values falling back to Hills, and the preview and player update at
 once. Visualizer motion pauses while hidden, backgrounded, in Low Power Mode, under serious heat or during player transitions,

@@ -144,6 +144,24 @@ Rebuilt from behavior-only descriptions; each commit credits the PR's author.
 | 138 | The now playing bar's glass stays on the card in a Jam |
 | 180, 187, 134 | Clean shared links, dead code removed, Mix row fix |
 
+### Chroma 1.0.0-beta.1 and 0.51.0 (described by behavior)
+
+Upstream renamed itself Chroma. A describer read the two release notes, the open issues and chroma.pw (behavior
+only, no code); the notes give no numbers, so the limits below are Vitrine's own.
+
+| Item | Where Vitrine stands |
+|---|---|
+| The player grows out of the mini player and follows the finger | Already done (PlayerMorph.x) |
+| Square animated covers play inside the cover | Done (PlayerMotion.x); device check outstanding |
+| Chroma Settings searchable | Done: search on the Mod Settings page, two pages deep (SGSettingsSearch.m) |
+| KuGou and QQ Music lyrics, pronunciation for most scripts | Already done (QQMusic.m, KuGou.m, Romanise.m, Pronunciation by AI) |
+| Lyrics kept for offline listening | Done (LyricsStore.m): 1000 tracks, 30 MB, oldest first |
+| Your own photo or pure black behind the player | Done (PlayerBackdrop.m); device check outstanding |
+| An automatic accent colour, the accent following the song | Already done (Follow the cover) |
+| A volume slider in the player; the DJ's redesigned player; tinted Home shortcuts | Already done |
+| Album, artist and playlist pages like the Music app; more Appearance options; lock screen styles | Open: the notes and site name them without a behavior to build from |
+| Web Player, Siri and Shortcuts, settings backup, Workshop, sign-in | Leave out: Plus, the chroma.pw account or its server |
+
 ### Before the fork point, or not needed any more
 
 | # | Item |

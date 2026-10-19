@@ -928,6 +928,13 @@
 "settings.lyrics.offline.none" = "없음";
 "settings.search.none" = "결과 없음";
 "settings.search.placeholder" = "검색";
+"settings.player.behind.title" = "플레이어 뒤";
+"settings.player.behind.artwork" = "아트워크";
+"settings.player.behind.black" = "검정";
+"settings.player.behind.photo" = "내 사진";
+"settings.player.bg_desc.black" = "커버 없이 완전한 검정입니다.";
+"settings.player.bg_desc.photo" = "직접 고른 사진입니다. 위의 글자가 잘 읽히도록 어둡게 처리됩니다.";
+"settings.player.photo.choose" = "사진 선택";
 "settings.lyrics.intro" = "모양, 발음 표기, 후리가나, 단어 단위 싱크 추정, 지연 및 자동 번역은 다시 시작하지 않아도 적용됩니다. 그 밖의 변경 사항은 Spotify를 다시 시작해야 적용될 수 있습니다.";
 "settings.lyrics.japanese_reading.hiragana" = "히라가나";
 "settings.lyrics.japanese_reading.romaji" = "로마자";

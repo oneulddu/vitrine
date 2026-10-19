@@ -43,7 +43,14 @@ SGRArtworkField *SGRPlayerField(void) {
 
 SGRPlayerBackgroundKind SGRPlayerBackground(void) {
     NSInteger kind = SGInt(SGRKeyPlayerBackground, SGEnabled(SGRKeyPlayerMotion) ? SGRPlayerBackgroundColours : SGRPlayerBackgroundStill);
-    return kind >= SGRPlayerBackgroundStill && kind <= SGRPlayerBackgroundVisualiser ? kind : SGRPlayerBackgroundColours;
+    return kind >= SGRPlayerBackgroundStill && kind <= SGRPlayerBackgroundPhoto ? kind : SGRPlayerBackgroundColours;
+}
+
+SGRPlayerBackgroundKind SGRPlayerArtworkBackground(void) {
+    SGRPlayerBackgroundKind kind = SGRPlayerBackground();
+    if (SGRPlayerBackgroundFromArtwork(kind)) return kind;
+    NSInteger last = SGInt(SGRKeyPlayerArtworkBackground, SGRPlayerBackgroundColours);
+    return last >= SGRPlayerBackgroundStill && last <= SGRPlayerBackgroundVisualiser ? last : SGRPlayerBackgroundColours;
 }
 
 NSArray<NSString *> *SGRPlayerBackgroundNames(void) {
@@ -56,7 +63,7 @@ NSArray<NSString *> *SGRPlayerBackgroundNames(void) {
 // the field: an animated artwork's clip, which covers it (PlayerMotion.x), or the Visualizer's hills, which are
 // the one thing moving.
 static BOOL fieldHeld(void) {
-    return SGPlayerState().isPaused || SGRPlayerMotionShowing() || SGRPlayerVisualiserShowing();
+    return SGPlayerState().isPaused || SGRPlayerMotionShowing() || SGRPlayerVisualiserShowing() || SGRPlayerBackdropShowing();
 }
 
 void SGRPlayerHoldField(void) {
@@ -97,7 +104,8 @@ static SGRArtworkField *fieldIn(UIView *plane) {
     if (field) return field;
     field = [[SGRArtworkField alloc] initWithFrame:plane.bounds];
     field.showsBackdrop = YES;
-    SGRPlayerBackgroundKind background = SGRPlayerBackground();
+    // Under black or a photo the field is made as the artwork's last choice, so going back to it needs no restart.
+    SGRPlayerBackgroundKind background = SGRPlayerArtworkBackground();
     field.flows = background == SGRPlayerBackgroundColours;
     field.fluid = background >= SGRPlayerBackgroundFluid;
     field.motionHeld = fieldHeld();
@@ -122,6 +130,8 @@ static SGRArtworkField *fieldIn(UIView *plane) {
     if (field.superview != plane) [plane addSubview:field];
     else if (plane.subviews.lastObject != field) [plane bringSubviewToFront:field];
     if (!CGRectEqualToRect(field.frame, plane.bounds)) field.frame = plane.bounds;
+    // Before the clip's: taking black or the photo away uncovers the field, which a clip then covers again.
+    SGRPlayerBackdropLaidOut(field);
     SGRPlayerMotionFieldLaidOut();
     SGRPlayerVisualiserUpdate();
 }

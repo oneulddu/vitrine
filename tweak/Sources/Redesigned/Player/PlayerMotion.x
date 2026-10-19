@@ -33,6 +33,12 @@
 //
 // Spotify's music video (Switch to video) draws in one of three of its units, each told by its video surface
 // as the video comes and goes: while one shows it, the clip goes and the cover comes back, as for Fluid.
+//
+// A square clip (Apple Music's square animated covers, no taller than kCanvasAspect) plays in the cover itself
+// instead, as the Music app plays one: a subview of the cover on screen, so it takes the cover's corners, its
+// paused shrink, its swipe and its hiding for the open's flown cover and the lyrics' thumbnail. The field stays
+// as it is under the player, and the cover is not hidden, so the rest of the player reads it as an ordinary
+// cover (SGRPlayerMotionShowing stays NO). It fades in over the cover's picture, which is its own first frame.
 #import <AVFoundation/AVFoundation.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
@@ -106,8 +112,16 @@ static CGFloat brightEnd(NSData *luminances) {
     return ((const float *)sorted.bytes)[(count - 1) * 3 / 4];
 }
 
+CGFloat SGRPlayerImageBrightEnd(CGImageRef image) {
+    NSMutableData *luminances = [NSMutableData data];
+    addLuminances(image, luminances);
+    return brightEnd(luminances);
+}
+
 @interface SGRPlayerMotionView : UIView <SGPlayerStateObserver>
 @property (nonatomic) CGFloat screenHeight;
+// Plays inside the cover, filling it: no foot, dim or blur. Set before -playFile:poster:.
+@property (nonatomic) BOOL inCover;
 // Runs when the clip has drawn nothing kGiveUp seconds after it was first on screen in front.
 @property (nonatomic, copy) void (^gaveUp)(void);
 - (void)playFile:(NSURL *)file poster:(UIImage *)poster;
@@ -206,6 +220,15 @@ static UIBlurEffect *blurEffect(void) {
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGRect bounds = self.bounds;
+    if (_inCover) {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        _picture.frame = bounds;
+        _still.frame = bounds;
+        _clip.frame = _still.bounds;
+        [CATransaction commit];
+        return;
+    }
     CGFloat width = bounds.size.width, total = MAX(1, bounds.size.height);
     CGFloat screen = _screenHeight > 0 ? _screenHeight : total;
     CGFloat height = round(width * _aspect);
@@ -244,6 +267,12 @@ static UIBlurEffect *blurEffect(void) {
     _clip.player = _player;
     [self setNeedsLayout];
     [self updateMotion];
+    if (_inCover) {
+        // The cover's own picture: nothing over it to keep readable, and nothing under it to fade into.
+        _still.mask = nil;
+        _foot.hidden = _dim.hidden = _seamBlur.hidden = _lyricsBlur.hidden = YES;
+        return;
+    }
     [self measure:file poster:poster];
 }
 
@@ -286,7 +315,7 @@ static UIBlurEffect *blurEffect(void) {
     _picture.alpha = 0;
     void (^apply)(void) = ^{
         self->_picture.alpha = 1;
-        self->_seamBlur.effect = blurEffect();
+        if (!self->_inCover) self->_seamBlur.effect = blurEffect();
     };
     if (animated) {
         SGRAnimate(SGRMotionFade, apply, ^(BOOL finished) {
@@ -355,6 +384,7 @@ static UIBlurEffect *blurEffect(void) {
 @end
 
 static SGRPlayerMotionView *sg_motion;
+static SGRPlayerMotionView *sg_coverClip;   // a square clip, in the cover rather than behind the player
 static NSString *sg_track;   // the track playing
 static NSString *sg_shown;   // the track sg_motion is the clip of
 static NSUInteger sg_begun;   // counts the walks begun, so a poster read for an earlier one is dropped
@@ -452,10 +482,29 @@ void SGRPlayerMotionFieldLaidOut(void) {
     setCoverShown(sg_motion == nil, NO);
 }
 
+static void attachCoverClip(void);
+
 // A clip that came in before the player opened finds no cover to hide at the field's first pass, the covers
 // laying out after it (issue #19: the cover over the clip after a relaunch), so each cover's layout asks too.
 void SGRPlayerMotionCoverLaidOut(void) {
     setCoverShown(sg_motion == nil, NO);
+    attachCoverClip();
+}
+
+// The square clip goes into the cover on screen when it has none to be in: it came in while the player was
+// closed, or Spotify built the covers again. A cover it is in that is still in a window keeps it, so a swipe
+// that shows the next cover a moment does not carry the clip over to it.
+static void attachCoverClip(void) {
+    SGRPlayerMotionView *clip = sg_coverClip;
+    if (!clip) return;
+    UIView *holder = clip.superview;
+    if (!holder.window) {
+        UIView *cover = SGRPlayerShowingCover();
+        if (!cover) return;
+        [cover addSubview:clip];
+        holder = cover;
+    }
+    if (!CGRectEqualToRect(clip.frame, holder.bounds)) clip.frame = holder.bounds;
 }
 
 BOOL SGRPlayerMotionShowing(void) {
@@ -540,11 +589,14 @@ static BOOL seen(UIView *view) {
 
 // The clip fades out over the cover coming back where the player is seen, and goes at once where not.
 static void clear(BOOL animated) {
-    SGRPlayerMotionView *old = sg_motion;
+    SGRPlayerMotionView *old = sg_motion, *inCover = sg_coverClip;
     sg_motion = nil;
+    sg_coverClip = nil;
     sg_shown = nil;
     sg_motionFile = nil;
     sg_motionPoster = nil;
+    if (animated && seen(inCover)) [inCover disappear:^{ [inCover removeFromSuperview]; }];
+    else [inCover removeFromSuperview];
     // Uncovered before the clip starts to fade, so the field is there under it.
     cover(NO);
     holdField();
@@ -554,6 +606,25 @@ static void clear(BOOL animated) {
     else [old removeFromSuperview];
 }
 
+static void showInCover(NSString *track, NSURL *file, UIImage *poster) {
+    SGRPlayerMotionView *clip = [[SGRPlayerMotionView alloc] initWithFrame:CGRectZero];
+    clip.inCover = YES;
+    sg_coverClip = clip;
+    sg_shown = track;
+    __weak SGRPlayerMotionView *weakClip = clip;   // the clip holds the block
+    clip.gaveUp = ^{
+        if (!weakClip || sg_coverClip != weakClip) return;
+        SGLog(@"redesign player: animated artwork %@ drew nothing in %.0f s, given up", file.lastPathComponent, kGiveUp);
+        clear(YES);
+    };
+    [clip playFile:file poster:poster];
+    sg_motionFile = file;
+    sg_motionPoster = poster;
+    attachCoverClip();
+    [clip appear:seen(clip) then:^{}];
+    SGLog(@"redesign player: animated artwork %@ in the cover, %.0fx%.0f", file.lastPathComponent, poster.size.width, poster.size.height);
+}
+
 static void show(NSString *track, NSURL *file) {
     if (!file || ![track isEqualToString:sg_track]) return;
     NSUInteger begun = sg_begun;
@@ -561,11 +632,16 @@ static void show(NSString *track, NSURL *file) {
         // A walk begun while the poster was read (switched off, Spotify's video) has the say.
         if (!poster || poster.size.width <= 0 || begun != sg_begun) return;
         clear(YES);
+        if (poster.size.height / poster.size.width <= kCanvasAspect) {
+            showInCover(track, file, poster);
+            return;
+        }
         sg_motion = [[SGRPlayerMotionView alloc] initWithFrame:CGRectZero];
         sg_shown = track;
         SGRPlayerMotionView *motion = sg_motion;
+        __weak SGRPlayerMotionView *weakMotion = motion;   // the clip holds the block
         motion.gaveUp = ^{
-            if (sg_motion != motion) return;
+            if (!weakMotion || sg_motion != weakMotion) return;
             SGLog(@"redesign player: animated artwork %@ drew nothing in %.0f s, given up", file.lastPathComponent, kGiveUp);
             clear(YES);
         };
@@ -586,6 +662,7 @@ static void show(NSString *track, NSURL *file) {
 
 void SGRPlayerMotionLyricsChanged(void) {
     [sg_motion setBlurred:SGRPlayerLyricsOpen() animated:sg_motion.window != nil];
+    SGRPlayerBackdropLyricsChanged();
 }
 
 static void videoSurface(id unit, BOOL attached) {
@@ -609,14 +686,21 @@ static BOOL beginTrack(NSString *track) {
     // Read on every track, since the ⋯ menu switches it.
     BOOL wanted = SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing() && motionAllowed();
     if (wanted && [track isEqualToString:sg_shown]) return YES;
-    if (!wanted || !seen(sg_motion)) {
+    if (!wanted || !seen(sg_motion ?: sg_coverClip)) {
         clear(YES);
         return wanted;
     }
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kHandOver * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if ([track isEqualToString:sg_track] && sg_motion && ![track isEqualToString:sg_shown]) clear(YES);
+        if ([track isEqualToString:sg_track] && (sg_motion || sg_coverClip) && ![track isEqualToString:sg_shown]) clear(YES);
     });
     return YES;
+}
+
+void SGRPlayerBackgroundDidChange(void) {
+    // A clip left playing under black or a photo would keep the cover masked until the next track.
+    clear(YES);
+    [sg_follower restart];
+    SGRPlayerVisualiserUpdate();
 }
 
 #pragma mark - the ⋯ menu's switch (Shared/Player/SpeedPitch.h)
@@ -624,7 +708,8 @@ static BOOL beginTrack(NSString *track) {
 // Fluid, Animated and the Visualizer share the field, so the menu moves between them without a restart. The
 // other backgrounds are a field of another kind, chosen on the Player page (PlayerSettings.m).
 BOOL SGPlayerMenuOffersAnimatedArtwork(void) {
-    return sg_follower && SGRPlayerBackground() >= SGRPlayerBackgroundFluid;
+    SGRPlayerBackgroundKind kind = SGRPlayerBackground();
+    return sg_follower && kind >= SGRPlayerBackgroundFluid && SGRPlayerBackgroundFromArtwork(kind);
 }
 
 BOOL SGPlayerMenuAnimatedArtwork(void) {
@@ -679,7 +764,8 @@ void SGPlayerMenuSetAnimatedArtwork(BOOL on) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
-    SGRPlayerBackgroundKind background = SGRPlayerBackground();
+    // The artwork's own choice under black or a photo, so going back to Animated finds the follower ready.
+    SGRPlayerBackgroundKind background = SGRPlayerArtworkBackground();
     if (background < SGRPlayerBackgroundFluid) return;
     sg_videos = [NSHashTable weakObjectsHashTable];
     // Here rather than on the clip's view, which is gone while they hold it off: the track is walked again

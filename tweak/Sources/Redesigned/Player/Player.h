@@ -48,11 +48,41 @@ typedef NS_ENUM(NSInteger, SGRPlayerBackgroundKind) {
     SGRPlayerBackgroundFluid,      // the artwork itself blurred and turning (SGRFluid.h)
     SGRPlayerBackgroundAnimated,   // the track's Canvas or Apple Music's animated cover, over Fluid (PlayerMotion.x)
     SGRPlayerBackgroundVisualiser, // a spectrum of the song over Fluid held still (PlayerVisualiser.m)
+    SGRPlayerBackgroundBlack,      // pure black, nothing of the artwork (PlayerBackdrop.m)
+    SGRPlayerBackgroundPhoto,      // a photo of the user's own, darkened for the text over it (PlayerBackdrop.m)
 };
-// The player's ⋯ menu switches between the last three, which share the Fluid field, without a restart.
+// The player's ⋯ menu switches between Fluid, Animated and Visualizer, which share the Fluid field, without a restart.
 SGRPlayerBackgroundKind SGRPlayerBackground(void);
-// The names of the choices, in order.
+// Whether the kind is drawn from the artwork (Still to Visualizer), not black or a photo.
+static inline BOOL SGRPlayerBackgroundFromArtwork(SGRPlayerBackgroundKind kind) {
+    return kind <= SGRPlayerBackgroundVisualiser;
+}
+// The artwork's choice last picked, Still to Visualizer: what the field is made as under black or a photo, and what
+// "Artwork" goes back to. Written by the Player page as a segment is picked.
+#define SGRKeyPlayerArtworkBackground @"spotifyglass.redesign.player.background.artwork"
+SGRPlayerBackgroundKind SGRPlayerArtworkBackground(void);
+// The Player page stored another choice: the clip and the Visualizer follow it at once (PlayerMotion.x).
+void SGRPlayerBackgroundDidChange(void);
+// The names of the artwork's choices, Still to Visualizer, in order: the Player page's segments.
 NSArray<NSString *> *SGRPlayerBackgroundNames(void);
+
+#pragma mark - black or a photo behind the player (PlayerBackdrop.m)
+
+// Posted on the main thread when a new photo was stored.
+extern NSNotificationName const SGRPlayerPhotoDidChangeNotification;
+// Lays black or the photo over the field while the background is one of them, and takes it away otherwise; the
+// field's layout calls it before the clip's (PlayerField.x).
+void SGRPlayerBackdropLaidOut(SGRArtworkField *field);
+// Whether black or a photo lies over the field.
+BOOL SGRPlayerBackdropShowing(void);
+// The lyrics came or went: the photo takes a little more dim and a blur behind them.
+void SGRPlayerBackdropLyricsChanged(void);
+// A view drawing the chosen black or photo, for the Player page's card; nil for the artwork's choices.
+UIView *SGRPlayerBackdropPreview(void);
+BOOL SGRPlayerHasPhoto(void);
+// The photo library over `from`, one image: a picked one is stored, and `done` runs on the main thread with
+// whether it was (NO when canceled).
+void SGRPlayerPickPhoto(UIViewController *from, void (^done)(BOOL stored));
 
 // The field behind the player, nil until the player has laid out once (PlayerField.x).
 SGRArtworkField *SGRPlayerField(void);
@@ -64,6 +94,9 @@ void SGRPlayerHoldField(void);
 
 // The sideways list of covers behind the player, nil until one has laid out.
 UIView *SGRPlayerCoverList(void);
+// The cover on screen itself (its corners clip, its transform is the paused shrink), nil when none has laid out:
+// a square clip plays inside it (PlayerMotion.x).
+UIView *SGRPlayerShowingCover(void);
 // The cover on screen as it is drawn, its paused shrink included, in `host`'s coordinates; CGRectNull
 // when no cover has laid out.
 CGRect SGRPlayerCoverFrameIn(UIView *host);
@@ -158,6 +191,9 @@ UIView *SGRPlayerMotionPreview(void (^arrived)(void));
 // `contrast` (Increase Contrast), when `luminance` is the clip's bright end, its 75th percentile of linear
 // luminance; between 0.10 and 0.80, 0.15 more while the lyrics are up.
 CGFloat SGRPlayerClipDim(CGFloat luminance, BOOL contrast, BOOL lyrics);
+// The bright end of an image's linear luminance (its 75th percentile, read 16 points square), what
+// SGRPlayerClipDim takes. Any thread.
+CGFloat SGRPlayerImageBrightEnd(CGImageRef image);
 
 #pragma mark - the Visualizer (PlayerVisualiser.m)
 

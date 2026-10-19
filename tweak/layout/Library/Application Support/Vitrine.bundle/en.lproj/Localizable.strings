@@ -1287,9 +1287,15 @@
 "settings.player.background.fluid" = "Fluid";
 "settings.player.background.still" = "Still";
 "settings.player.background.visualizer" = "Visualizer";
+"settings.player.behind.artwork" = "Artwork";
+"settings.player.behind.black" = "Black";
+"settings.player.behind.photo" = "Your Photo";
+"settings.player.behind.title" = "Behind the Player";
 "settings.player.bg_desc.animated" = "The song's Canvas or the album's moving cover, else Fluid. The player's ⋯ menu switches between this, Fluid and Visualizer.";
+"settings.player.bg_desc.black" = "Pure black, nothing of the cover.";
 "settings.player.bg_desc.colors" = "The cover's colors, drifting slowly.";
 "settings.player.bg_desc.fluid" = "The cover itself, blurred and slowly turning. It rests while a song is paused.";
+"settings.player.bg_desc.photo" = "A photo of your own, darkened so the words over it stay easy to read.";
 "settings.player.bg_desc.still" = "The cover, blurred and held still.";
 "settings.player.bg_desc.visualizer" = "The song's sound in Hills, Bars, Nebula or Halo, over Fluid held still. Choose a style below; it settles on pause or silence.";
 "settings.player.bg_suffix" = " background";
@@ -1347,6 +1353,7 @@
 "settings.player.new_slider.title" = "New progress slider";
 "settings.player.not_playing" = "Not Playing";
 "settings.player.now_playing_bar.title" = "Now playing bar";
+"settings.player.photo.choose" = "Choose Photo";
 "settings.player.play_next_menu.title" = "Play next in the context menu";
 "settings.player.player_screen.header" = "Player screen";
 "settings.player.preview.a11y" = "Player preview";
