@@ -720,6 +720,13 @@ static NSDictionary<NSString *, SGCommand> *commands(void) {
                     return @{@"png" : [png base64EncodedStringWithOptions:0], @"size" : pair(CGPointMake(key.bounds.size.width * format.scale, key.bounds.size.height * format.scale))};
                 });
             },
+            // A PiP frame drawn to PNG, for checking the layout where PiP cannot start (the simulator):
+            // pip.frame --current X --next Y --credit Z. Pure CoreGraphics, so no main hop is needed.
+            @"pip.frame" : ^NSDictionary *(NSDictionary *p) {
+                NSData *png = SGLyricsPiPFramePNG(@[p[@"current"] ?: @"", p[@"next"] ?: @"", p[@"credit"] ?: @""]);
+                if (!png.length) fail(@"the frame could not be drawn");
+                return @{@"png" : [png base64EncodedStringWithOptions:0]};
+            },
             @"log" : ^NSDictionary *(NSDictionary *p) {
                 uint64_t last = SGLogLastSeq();
                 uint64_t since = p[@"since"] ? (uint64_t)[p[@"since"] longLongValue] : (last > 100 ? last - 100 : 0);
@@ -943,7 +950,7 @@ static NSDictionary<NSString *, SGCommand> *commands(void) {
 }
 
 static NSSet<NSString *> *readOnly(void) {
-    return [NSSet setWithArray:@[@"find", @"state", @"screenshot", @"log", @"wait"]];
+    return [NSSet setWithArray:@[@"find", @"state", @"screenshot", @"log", @"wait", @"pip.frame"]];
 }
 
 BOOL SGDriverHandles(NSString *command) {

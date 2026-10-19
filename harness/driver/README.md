@@ -17,5 +17,5 @@ down arrow and the ⋯ by Spotify's identifiers and a system menu on the ⋯; a 
 `SGDiagnosticsPlayer`; and `SGOpenModSettings` pushing a 40-row list. Each reacts with an `SGLog` line, read
 back through the driver's `log` and `wait --log`, and `proof.py` prints a `PASS` or `FAIL` line per check:
 the button's action, the recognizer, the menu up before the finger lifts, a pick, a scroll, a fling, typing,
-a screenshot, the player's open, ⋯, pick and close, seek/pause/play/next, tabs by title and index, Mod
+a screenshot, a 640-wide PiP frame from `pip.frame`, the player's open, ⋯, pick and close, seek/pause/play/next, tabs by title and index, Mod
 Settings and a row below its fold, and the tree served while a wait runs.

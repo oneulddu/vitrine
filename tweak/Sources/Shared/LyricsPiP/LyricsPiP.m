@@ -1,6 +1,7 @@
 // One CPU-rendered still frame per content change, on Spotify's own playback clock.
 // Never owns an audio session or player. Everything, including rendering, is serialized on main.
 #import "LyricsPiP.h"
+#import "LyricsPiPFrame.h"
 #import "LyricsPiPText.h"
 #import "Core/SGCore.h"
 #import "Shared/Lyrics/Lyrics.h"
@@ -15,7 +16,6 @@
 
 NSNotificationName const SGLyricsPiPDidChangeNotification = @"spotifyglass.lyrics.pip.didChange";
 static BOOL sg_enabled;
-static const size_t kWidth = 640, kHeight = 360;
 static void *kPossibleContext = &kPossibleContext;
 
 @interface SGLyricsPiPHost : UIView
@@ -51,43 +51,6 @@ void SGLyricsPiPToggle(UIView *from) {
     if (!sg_enabled) return;
     if (!sg_engine) sg_engine = [SGLyricsPiPEngine new];
     [sg_engine toggleFrom:from];
-}
-
-// Core Text draws into a bottom-left-origin bitmap. Credits are fitted in full, including the
-// maker/uploader text Spicy Lyrics supplies; they are never governed by the Show source switch.
-static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat size, CGFloat white) {
-    if (!text.length) return;
-    CTTextAlignment alignment = kCTTextAlignmentCenter;
-    CTParagraphStyleSetting setting = {kCTParagraphStyleSpecifierAlignment, sizeof(alignment), &alignment};
-    CTParagraphStyleRef paragraph = CTParagraphStyleCreate(&setting, 1);
-    CGColorSpaceRef space = CGColorSpaceCreateDeviceGray();
-    CGFloat components[] = {white, 1};
-    CGColorRef color = CGColorCreate(space, components);
-    CGColorSpaceRelease(space);
-    CTFramesetterRef setter = NULL;
-    for (;;) {
-        CTFontRef font = CTFontCreateWithName(CFSTR("HelveticaNeue"), size, NULL);
-        NSDictionary *attributes = @{(__bridge NSString *)kCTFontAttributeName: (__bridge id)font,
-            (__bridge NSString *)kCTForegroundColorAttributeName: (__bridge id)color,
-            (__bridge NSString *)kCTParagraphStyleAttributeName: (__bridge id)paragraph};
-        NSAttributedString *string = [[NSAttributedString alloc] initWithString:text attributes:attributes];
-        setter = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)string);
-        CFRelease(font);
-        CGSize needed = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRangeMake(0, 0), NULL,
-                                                                     CGSizeMake(rect.size.width, CGFLOAT_MAX), NULL);
-        if (needed.height <= rect.size.height || size <= 2) break;
-        CFRelease(setter);
-        size = MAX(2, size - 1);
-    }
-    CGPathRef path = CGPathCreateWithRect(rect, NULL);
-    CTFrameRef frame = CTFramesetterCreateFrame(setter, CFRangeMake(0, 0), path, NULL);
-    CGContextSetTextMatrix(context, CGAffineTransformIdentity);
-    CTFrameDraw(frame, context);
-    CFRelease(frame);
-    CGPathRelease(path);
-    CFRelease(setter);
-    CGColorRelease(color);
-    CFRelease(paragraph);
 }
 
 @implementation SGLyricsPiPEngine
@@ -184,7 +147,8 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
     if (!_pip) return NO;
     if (!_pool) {
         NSDictionary *attributes = @{(__bridge NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
-            (__bridge NSString *)kCVPixelBufferWidthKey: @(kWidth), (__bridge NSString *)kCVPixelBufferHeightKey: @(kHeight),
+            (__bridge NSString *)kCVPixelBufferWidthKey: @(SGLyricsPiPFrameWidth),
+            (__bridge NSString *)kCVPixelBufferHeightKey: @(SGLyricsPiPFrameHeight),
             (__bridge NSString *)kCVPixelBufferCGImageCompatibilityKey: @YES,
             (__bridge NSString *)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES,
             (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{}};
@@ -204,9 +168,16 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
     if (_active) { _stopping = YES; [_pip stopPictureInPicture]; return; }
     if (_starting) { _stopping = YES; [_pip stopPictureInPicture]; [self finish]; return; }
     _window = from.window;
-    if (![AVPictureInPictureController isPictureInPictureSupported] || !_window ||
-        UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
-        [self fail:@"unsupported device or no foreground source window"];
+    if (![AVPictureInPictureController isPictureInPictureSupported]) {
+        [self fail:@"PiP is not supported on this device"];
+        return;
+    }
+    if (!_window) {
+        [self fail:@"no source window"];
+        return;
+    }
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) {
+        [self fail:@"Spotify is not in the foreground"];
         return;
     }
     if (![self prepareIn:_window]) { [self fail:@"could not prepare the display layer or pixel buffer pool"]; return; }
@@ -359,15 +330,12 @@ static void drawText(CGContextRef context, NSString *text, CGRect rect, CGFloat 
         return;
     }
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pixel), kWidth, kHeight, 8,
-        CVPixelBufferGetBytesPerRow(pixel), space, kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pixel), SGLyricsPiPFrameWidth,
+        SGLyricsPiPFrameHeight, 8, CVPixelBufferGetBytesPerRow(pixel), space,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
     CGColorSpaceRelease(space);
     if (context) {
-        CGContextSetRGBFillColor(context, 0.04, 0.04, 0.05, 1);
-        CGContextFillRect(context, CGRectMake(0, 0, kWidth, kHeight));
-        drawText(context, content[0], CGRectMake(24, 156, 592, 180), 40, 1);
-        drawText(context, content[1], CGRectMake(24, 76, 592, 76), 26, 0.65);
-        drawText(context, content[2], CGRectMake(24, 10, 592, 58), 17, 0.7);
+        SGLyricsPiPDrawFrame(context, content);
         CGContextRelease(context);
     }
     CVPixelBufferUnlockBaseAddress(pixel, 0);

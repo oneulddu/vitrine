@@ -84,6 +84,15 @@ width, height = struct.unpack(">II", head[16:24])
 check(answer["ok"] and head[:8] == b"\x89PNG\r\n\x1a\n" and width > 1000, f"screenshot: a {width}x{height} PNG came back")
 os.remove(shot)
 
+frame = os.path.join(tempfile.gettempdir(), f"driver-frame-{os.getpid()}.png")
+answer = phone("pip.frame", frame, "--current", "Instrumental", "--next", "Next line")
+with open(frame, "rb") as f:
+    head = f.read(24)
+width, height = struct.unpack(">II", head[16:24])
+check(answer["ok"] and head[:8] == b"\x89PNG\r\n\x1a\n" and width == 640,
+      f"pip.frame: a {width}x{height} PiP frame came back")
+os.remove(frame)
+
 check(phone("player.open")["ok"] and phone("wait", "--id", "Context menu")["ok"], "player.open: the bar opened the player")
 check(phone("player.more")["ok"], "player.more: the ⋯ was tapped")
 check(phone("wait", "--log", "harness: player menu will display", "--timeout", "3")["ok"], "wait --log: the ⋯'s menu came up")

@@ -29,4 +29,6 @@ void SGRPlayerShowLandscape(BOOL show);
 NSDictionary *SGLosslessProbe(NSString *verb, NSDictionary *p, NSString **error);
 // Defined in Shared/AutoMix/AutoMix.x: Spotify's Automix and Crossfade settings, read or written.
 NSDictionary *SGAutoMixProbeCommand(NSDictionary *p, NSString **error);
+// Defined in Shared/LyricsPiP/LyricsPiPFrame.m: a lyrics PiP frame (@[current, next, credit]) as PNG, nil on failure.
+NSData *SGLyricsPiPFramePNG(NSArray<NSString *> *content);
 #endif

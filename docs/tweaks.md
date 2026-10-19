@@ -126,7 +126,12 @@ Shared:
                   required). Each look owns its entry: the redesign's Lyrics options menu, or a small
                   native full-screen lyrics corner button. Only a tap starts it; a retained shared engine
                   draws the current and next lines and the full provider credit into a bounded CPU pixel
-                  buffer pool, following Spotify's clock minus the lyrics delay. Untimed lyrics never
+                  buffer pool, following Spotify's clock minus the lyrics delay. Frame drawing and text
+                  fitting live in LyricsPiPFrame.m (Foundation, CoreGraphics, CoreText, ImageIO only): each
+                  line takes the largest whole-point size that fits its box (current 40 down to 24, next 26
+                  down to 16, credit 17 down to 12), and a line too long even at its minimum is drawn at that
+                  minimum, as many lines as fit, the last ending in an ellipsis (hard breaks included).
+                  Untimed lyrics never
                   claim a current line. Which text shows is decided in LyricsPiPText.m, checked on the Mac
                   by harness/lyrics-pip/. Its 4 Hz timer runs only while PiP is active and playing, and only
                   changed content is drawn; a frame the layer or pool turns away is retried every 0.1 s
@@ -861,6 +866,7 @@ leaves it running:
     scripts/phone.py settings.open | settings.page "Appearance"
     scripts/phone.py wait --id X [--gone 1] | --menu 1 | --log "system menu: the player's menu is up" [--timeout 3]
     scripts/phone.py screenshot out.png
+    scripts/phone.py pip.frame out.png [--current X] [--next Y] [--credit Z]
 
 Views are addressed as the tree prints them: `id=` is the accessibility identifier, `a11y=` the accessibility
 label, the quoted text a label's, and a class with an index counts that class's views in the tree's order.

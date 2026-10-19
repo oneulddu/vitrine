@@ -27,6 +27,7 @@
     scripts/phone.py wait --log "system menu: the player's menu is up" --timeout 3
     scripts/phone.py log [--since N]                   # the app's last SGLog lines; each has a seq
     scripts/phone.py screenshot out.png [--scale 1]
+    scripts/phone.py pip.frame out.png [--current X] [--next Y] [--credit Z]   # a PiP frame drawn to PNG, no PiP needed
 
 Every command prints the app's JSON answer, {"ok": true, ...} or {"ok": false, "error": ...}, and exits 1
 when it is not ok. --label and --text match whole and ignore case; --contains 1 matches a part. Points are
@@ -136,10 +137,10 @@ def run(argv):
         print(fetch("tree", 15), end="")
         return 0
     out = None
-    if command == "screenshot":
+    if command in ("screenshot", "pip.frame"):
         out = params.pop("arg", None)
         if not out:
-            sys.exit("screenshot takes the path to save the PNG to")
+            sys.exit(f"{command} takes the path to save the PNG to")
     if "arg" in params and command in POSITIONAL:
         params[POSITIONAL[command]] = params.pop("arg")
     timeout = float(params.get("timeout", 5)) + float(params.get("duration", 0)) + 15
