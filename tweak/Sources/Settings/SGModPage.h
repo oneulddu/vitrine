@@ -36,6 +36,8 @@
 // The key of a switch row on the same page this row works under: while that switch is off the row stays
 // where it is, grayed out, and a tap on it nudges the switch.
 @property (nonatomic, copy) NSString *waitsOn;
+// A choice row (SGChoiceRow): its page is the list of its choices, not a page of rows of its own.
+@property (nonatomic) BOOL choice;
 // A choice row's: a line under each name in its list, in the same order, and what runs once one is stored.
 @property (nonatomic, copy) NSArray<NSString *> *choiceNotes;
 @property (nonatomic, copy) NSString *choiceFooter;   // under a choice row's list
@@ -67,6 +69,14 @@
 - (void)refreshVisibility;
 // Rows draw their symbol on a colored tile; off, the default, they show none. Mod Settings' main page has them.
 @property (nonatomic) BOOL tiles;
+// The sections as the page was given them, every row whether it shows now or not (SGSettingsSearch reads them).
+@property (nonatomic, readonly) NSArray<SGModSection *> *sections;
+// A search field heads the page and finds rows on it and on the pages its rows open (SGSettingsSearch.m).
+// Set before the page loads; the page's intro, if any, gives way to the field.
+@property (nonatomic) BOOL searchable;
+// The first row showing with this title is scrolled to the middle and lit for a moment: at once when the page is
+// on screen, else as it appears.
+- (void)revealRowTitled:(NSString *)title;
 @end
 
 // The intro of every page whose switches the hooks read at launch. It is a function so localization

@@ -12,7 +12,7 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     "$(dirname "$0")/main.m" "$(dirname "$0")/stubs.m" "$(dirname "$0")/../scene.m" \
     "$SRC"/Shared/Sing/SingSettings.m "$SRC"/Shared/Sing/SGSingCard.m "$SRC"/Shared/Sing/SGSpatialPreview.m "$SRC"/Core/SGGlass.m \
     "$SRC"/Shared/Player/SGLastTrack.m "$SRC"/Settings/SGMarquee.m \
-    "$SRC"/Settings/SGPage.m "$SRC"/Settings/SGPageStyle.m "$SRC"/Settings/SGModPage.m "$SRC"/Settings/SGGlowSwitch.m \
+    "$SRC"/Settings/SGPage.m "$SRC"/Settings/SGPageStyle.m "$SRC"/Settings/SGModPage.m "$SRC"/Settings/SGSettingsSearch.m "$SRC"/Settings/SGGlowSwitch.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGLocalize.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreMotion -framework Foundation \
     -o "$OUT/SpatialPageHarness.app/SpatialPageHarness"

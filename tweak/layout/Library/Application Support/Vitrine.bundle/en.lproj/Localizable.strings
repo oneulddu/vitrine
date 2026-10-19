@@ -1451,6 +1451,9 @@
 "settings.redesign.untested.alert.message" = "The redesign is built on iOS 26's Liquid Glass. iOS %@ draws a blur in its place, and nobody has tested the redesign there: pages can be laid out wrongly, and Spotify can freeze as it starts. If Spotify does not start with it, the next launch goes back to Native.";
 "settings.redesign.untested.subtitle" = "Untested on iOS %@";
 
+"settings.search.none" = "No Results";
+"settings.search.placeholder" = "Search";
+
 "settings.signing.action.copy_bundle_id" = "Copy the bundle id";
 "settings.signing.action.read_more" = "Read more";
 "settings.signing.fix.alert.message" = "Sign Spotify again with the bundle id set to\n\n%@\n\nIn Feather that is the Identifier field; leave PPQ protection off, it appends a random string and breaks this again.\n\nWhy: this build is installed as %@ but signed under the App ID %@. iOS opens the now playing card by the App ID, so it asks for an app that is not there. Nothing else in the mod is affected.";

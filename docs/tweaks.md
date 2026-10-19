@@ -811,6 +811,10 @@ A hook reads its switch when it runs (`SGEnabled`, `SGHidden`, `SGFlag` from Cor
 change shows after Spotify restarts; the tab editor on the Navbar page is the exception and applies as soon as the bar lays
 out again, as are the Home gradient's color, strength and height, but not the switch that turns it on, and Vibrations
 and Live Activity. The root page in `App/ModSettings.x` links the Appearance page and the page of each part of Spotify, and only the stored look's.
+A search field heads it (`Settings/SGSettingsSearch.m`, `SGModPage.searchable`): the first letter typed builds the
+pages its rows open, two levels down, and matches every word against each showing row's title, subtitle and the
+pages above it; a title starting with the query comes first. Picking a row opens its page scrolled to it and lit for
+a moment (`-revealRowTitled:`); a page that is not an `SGModPage` (All flags, Audio effects) is found by its own row only.
 
 ## Lossless
 

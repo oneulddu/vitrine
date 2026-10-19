@@ -2,6 +2,7 @@
 #import "SGModPage.h"
 #import "SGPageStyle.h"
 #import "SGGlowSwitch.h"
+#import "SGSettingsSearch.h"
 #import "Core/SGCore.h"
 
 NSString *SGRestartNoteText(void) {
@@ -182,6 +183,7 @@ SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArra
     SGModRow *row = [SGModRow new];
     row.title = title;
     row.subtitle = subtitle;
+    row.choice = YES;
     row.value = ^NSString *{
         NSInteger index = SGInt(key, fallback);
         return index >= 0 && index < (NSInteger)choices.count ? choices[(NSUInteger)index] : choices.firstObject;
@@ -558,6 +560,16 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     }
 }
 
+// The row's card turns the gray of a pressed row and fades back to its own over `fade`, after `hold`: how a
+// switch to turn on first shows under Reduce Motion, and how a row found by searching shows where it is.
+static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fade) {
+    UIColor *card = cell.backgroundColor;
+    cell.backgroundColor = UIColor.systemGray4Color;
+    [UIView animateWithDuration:fade delay:hold options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionAllowUserInteraction animations:^{
+        cell.backgroundColor = card;
+    } completion:nil];
+}
+
 #pragma mark - the page
 
 @implementation SGModPage {
@@ -568,6 +580,12 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     NSTimer *_ticker;
     BOOL _live;
     NSIndexPath *_nudgeAfterScroll;   // the switch a waiting row's tap is scrolling to
+    NSString *_reveal;                // the title of the row to light once the page appears (-revealRowTitled:)
+    NSIndexPath *_revealed;           // that row, scrolled to as the page appeared, lit once it has
+}
+
+- (NSArray<SGModSection *> *)sections {
+    return _sections;
 }
 
 - (instancetype)initWithTitle:(NSString *)title intro:(NSString *)intro sections:(NSArray<SGModSection *> *)sections footer:(NSString *)footer {
@@ -743,11 +761,7 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     [[[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight] impactOccurred];
     UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, toggle);
     if (UIAccessibilityIsReduceMotionEnabled()) {
-        UIColor *card = cell.backgroundColor;
-        cell.backgroundColor = UIColor.systemGray4Color;
-        [UIView animateWithDuration:0.4 delay:0.1 options:UIViewAnimationOptionCurveEaseOut | UIViewAnimationOptionAllowUserInteraction animations:^{
-            cell.backgroundColor = card;
-        } completion:nil];
+        light(cell, 0.1, 0.4);
         return;
     }
     BOOL rtl = [UIView userInterfaceLayoutDirectionForSemanticContentAttribute:toggle.semanticContentAttribute] == UIUserInterfaceLayoutDirectionRightToLeft;
@@ -775,6 +789,52 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     [super viewDidLoad];
     self.tableView.tableHeaderView = _intro;
     self.tableView.tableFooterView = _footer;
+    if (self.searchable) {
+        _intro = nil;
+        SGSettingsSearchAttach(self);
+    }
+}
+
+- (void)revealRowTitled:(NSString *)title {
+    _reveal = [title copy];
+    if (!self.viewIfLoaded.window) return;
+    // On screen already: the search's results are going away over it, so the row is found once they have.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [self scrollToReveal];
+        [self lightRevealed];
+    });
+}
+
+// The row is put in the middle of the page before the page shows, so the push does not end on a jump.
+- (void)scrollToReveal {
+    NSString *title = _reveal;
+    _reveal = nil;
+    _revealed = nil;
+    if (!title) return;
+    for (NSUInteger section = 0; section < _shown.count && !_revealed; section++) {
+        [_shown[section] enumerateObjectsUsingBlock:^(SGModRow *row, NSUInteger i, BOOL *stop) {
+            if (![row.title isEqualToString:title]) return;
+            self->_revealed = [NSIndexPath indexPathForRow:(NSInteger)i inSection:(NSInteger)section];
+            *stop = YES;
+        }];
+    }
+    if (!_revealed) return;
+    [self.tableView layoutIfNeeded];
+    [self.tableView scrollToRowAtIndexPath:_revealed atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
+}
+
+- (void)lightRevealed {
+    NSIndexPath *path = _revealed;
+    _revealed = nil;
+    UITableViewCell *cell = path ? [self.tableView cellForRowAtIndexPath:path] : nil;
+    if (!cell) return;
+    UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, cell);
+    light(cell, 0.4, 1.0);
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [self lightRevealed];
 }
 
 - (void)viewWillLayoutSubviews {
@@ -794,6 +854,7 @@ static void showWaiting(UITableViewCell *cell, BOOL waiting, NSString *switchTit
     // page it opened, which is gone by the time this one comes back, and may bring rows or take them.
     _shown = [self rowsToShow];
     [self.tableView reloadData];
+    [self scrollToReveal];
     if (!_live) return;
     // The counters climb while the page is open; the labels are written straight into the cells so
     // that a reload never lands under a switch being dragged. A canceled back swipe appears the

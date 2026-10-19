@@ -134,6 +134,7 @@ static UIViewController *modSettingsPage(void) {
     ]];
     SGModPage *page = [[SGModPage alloc] initWithTitle:@"Vitrine" intro:nil sections:sections footer:nil];
     page.tiles = YES;
+    page.searchable = YES;
     return page;
 }
 
