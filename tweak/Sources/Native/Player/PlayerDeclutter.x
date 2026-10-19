@@ -11,6 +11,9 @@
 #import "Shared/AdBlock/AdBlock.h"
 #import "NowPlaying.h"
 
+// Like the other switches, the inline preview setting takes effect at launch.
+static BOOL sg_hideLyricsInline;
+
 #pragma mark - cards and sections
 
 static const struct { __unsafe_unretained NSString *marker, *key; } cards[] = {
@@ -140,20 +143,20 @@ static void finish(UIViewController *unit, BOOL changed) {
 // (issue #77). With the switch off the preview shows and its room is its own.
 %hook _TtC22Lyrics_NPVContainerKit19LyricsContainerView
 - (void)setHidden:(BOOL)hidden {
-    %orig(SGHidden(SGHideLyricsInline) ? YES : hidden);
+    %orig(sg_hideLyricsInline ? YES : hidden);
 }
 - (void)didMoveToWindow {
     %orig;
-    if (SGHidden(SGHideLyricsInline)) ((UIView *)self).hidden = YES;
+    if (sg_hideLyricsInline) ((UIView *)self).hidden = YES;
 }
 - (CGSize)intrinsicContentSize {
-    return SGHidden(SGHideLyricsInline) ? CGSizeZero : %orig;
+    return sg_hideLyricsInline ? CGSizeZero : %orig;
 }
 - (CGSize)sizeThatFits:(CGSize)size {
-    return SGHidden(SGHideLyricsInline) ? CGSizeZero : %orig;
+    return sg_hideLyricsInline ? CGSizeZero : %orig;
 }
 - (void)setFrame:(CGRect)frame {
-    if (SGHidden(SGHideLyricsInline)) frame.size = CGSizeZero;
+    if (sg_hideLyricsInline) frame.size = CGSizeZero;
     %orig(frame);
 }
 %end
@@ -200,7 +203,7 @@ static BOOL inCoverCell(UIView *tilt) {
 %hook _TtC28NowPlaying_ContentLayersImpl16CoverArtCellImpl
 - (void)layoutSubviews {
     %orig;
-    if (!SGHidden(SGHideLyricsInline)) return;
+    if (!sg_hideLyricsInline) return;
     SGForEachView((UIView *)self, ^(UIView *view) {
         if ([view isKindOfClass:tiltClass()]) fillRoom(view);
     });
@@ -213,13 +216,14 @@ static BOOL inCoverCell(UIView *tilt) {
 %hook _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView
 - (void)layoutSubviews {
     UIView *tilt = (UIView *)self;
-    if (SGHidden(SGHideLyricsInline) && inCoverCell(tilt)) fillRoom(tilt);
+    if (sg_hideLyricsInline && inCoverCell(tilt)) fillRoom(tilt);
     %orig;
 }
 %end
 
 %ctor {
     if (!SGNativeUI()) return;
+    sg_hideLyricsInline = SGHidden(SGHideLyricsInline);
     %init;
     SGRequireClasses(@[
         @"_TtC12Element_List18CollectionViewCell",

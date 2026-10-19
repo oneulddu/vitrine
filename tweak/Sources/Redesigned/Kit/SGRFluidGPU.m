@@ -215,6 +215,8 @@ static BOOL mayDraw(void) {
     });
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(update)
         name:UIApplicationDidBecomeActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(update)
+        name:UIApplicationDidEnterBackgroundNotification object:nil];
     return self;
 }
 
@@ -317,6 +319,10 @@ static BOOL mayDraw(void) {
 }
 
 - (void)tick:(CADisplayLink *)link {
+    if (!mayDraw()) {
+        [self update];
+        return;
+    }
     CFTimeInterval now = link.timestamp;
     CFTimeInterval step = _last > 0 ? MIN(0.1, now - _last) : 0;
     _last = now;

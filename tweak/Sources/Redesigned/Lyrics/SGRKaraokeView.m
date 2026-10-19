@@ -1405,6 +1405,7 @@ typedef struct {
 @implementation SGRKaraokeView {
     UIScrollView *_scroll;
     BOOL _browsing;
+    BOOL _inactive;
     // The anchor and the open break as they were when the page was taken by hand, which the stack keeps to
     // until it follows the song again (topOfLine:).
     CGFloat _browseAnchor;
@@ -1546,8 +1547,8 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationsChanged) name:SGLyricsLanguageDidChangeNotification object:nil];
     // A locked phone leaves the card in its window, so the link has to be put down by the app going
     // away rather than by the view going: see scheduleLink.
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(scheduleLink) name:UIApplicationDidBecomeActiveNotification object:nil];
-    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(scheduleLink) name:UIApplicationWillResignActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(becomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(resignActive) name:UIApplicationWillResignActiveNotification object:nil];
     return self;
 }
 
@@ -1815,9 +1816,20 @@ typedef struct {
     else [self performSelector:@selector(startLink) withObject:nil afterDelay:wait + kTransitionSlack inModes:@[NSRunLoopCommonModes]];
 }
 
+- (void)resignActive {
+    // WillResignActive can arrive before UIApplication's state changes.
+    _inactive = YES;
+    [self scheduleLink];
+}
+
+- (void)becomeActive {
+    _inactive = NO;
+    [self scheduleLink];
+}
+
 - (void)startLink {
     if (!self.window || _link) return;
-    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
+    if (_inactive || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
     _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
     _link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
     [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];

@@ -30,9 +30,19 @@ static NSMutableDictionary<NSString *, NSDictionary *> *sg_albumAnswers;
 
 static void keepAlbumAnswer(NSString *key, NSURL *remote) {
     sg_albumAnswers[key] = @{@"url": remote.absoluteString ?: @"", @"at": NSDate.date};
+    // Catalog answers arrive on main. Keep its dictionary there, but serialize
+    // immutable snapshots off main in order so an older write cannot win.
+    NSDictionary *answers = [sg_albumAnswers copy];
     NSURL *file = albumAnswersFile();
-    [NSFileManager.defaultManager createDirectoryAtURL:file.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
-    [sg_albumAnswers writeToURL:file atomically:YES];
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("spotifyglass.motion.albumAnswers", DISPATCH_QUEUE_SERIAL);
+    });
+    dispatch_async(queue, ^{
+        [NSFileManager.defaultManager createDirectoryAtURL:file.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+        [answers writeToURL:file atomically:YES];
+    });
 }
 
 static void setUp(void) {

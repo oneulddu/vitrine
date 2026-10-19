@@ -79,7 +79,7 @@ NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
     if (!text.length || !has(text, @"[\\p{L}&&[^\\p{Latin}]]")) return nil;
     static NSCache<NSString *, NSString *> *kept;
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ kept = [NSCache new]; });
+    dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = 1000; });
     BOOL hiragana = japanese && [NSUserDefaults.standardUserDefaults boolForKey:SGKeyLyricsJapaneseKana];
     NSString *key = [NSString stringWithFormat:@"%@:%@", hiragana ? @"hiragana" : japanese ? @"ja" : @"latin", text];
     NSString *romanised = [kept objectForKey:key];

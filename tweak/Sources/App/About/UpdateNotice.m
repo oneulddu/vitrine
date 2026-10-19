@@ -98,6 +98,7 @@ void SGWatchForUpdates(void) {
                                                                                      queue:NSOperationQueue.mainQueue
                                                                                 usingBlock:^(NSNotification *n) {
                     [NSNotificationCenter.defaultCenter removeObserver:landed];
+                    landed = nil;
                     offerWhenClear(kTries);
                 }];
             }

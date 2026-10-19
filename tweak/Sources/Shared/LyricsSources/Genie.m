@@ -3,8 +3,20 @@
 #import "Core/SGCore.h"
 #import "LyricsSources.h"
 
+static NSRegularExpression *expression(NSString *pattern) {
+    // The same fixed patterns are used for every row, anchor and entity on the search page.
+    static NSCache<NSString *, NSRegularExpression *> *kept;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = 16; });
+    NSRegularExpression *regex = [kept objectForKey:pattern];
+    if (!regex) {
+        regex = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators error:nil];
+        if (regex) [kept setObject:regex forKey:pattern];
+    }
+    return regex;
+}
 static NSArray<NSTextCheckingResult *> *matches(NSString *pattern, NSString *text) {
-    NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:pattern options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators error:nil];
+    NSRegularExpression *regex = expression(pattern);
     return [regex matchesInString:text options:0 range:NSMakeRange(0, text.length)];
 }
 static NSString *capture(NSString *pattern, NSString *text) {
@@ -39,7 +51,7 @@ static NSString *anchor(NSString *row, NSString *kind) {
         NSString *title = capture(@"\\btitle\\s*=\\s*['\"]([^'\"]*)['\"]", tag);
         if ([kind isEqualToString:@"title"] && title.length) return unescape(title);
         NSString *body = capture(@"<a\\b[^>]*>(.*?)</a\\s*>", tag);
-        NSRegularExpression *tags = [NSRegularExpression regularExpressionWithPattern:@"<[^>]*>" options:0 error:nil];
+        NSRegularExpression *tags = expression(@"<[^>]*>");
         return unescape([tags stringByReplacingMatchesInString:body options:0 range:NSMakeRange(0, body.length) withTemplate:@""]);
     }
     return nil;
