@@ -3,10 +3,13 @@ name: Mac harnesses
 on:
   push:
     branches: [main, ci/harness]
-    paths: ['tweak/**', 'harness/**', '.github/workflows/harness.yml']
+    paths: ['tweak/**', 'harness/**', 'vendor/**', 'scripts/harness-plan.py', '.github/**']
   pull_request:
-    paths: ['tweak/**', 'harness/**', '.github/workflows/harness.yml']
+    paths: ['tweak/**', 'harness/**', 'vendor/**', 'scripts/harness-plan.py', '.github/**']
   workflow_dispatch:
+  schedule:
+    # Weekly full run; scheduled events have no changed-file list.
+    - cron: '0 3 * * 1'
 
 permissions:
   contents: read
@@ -16,81 +19,74 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  plan:
+    name: Plan harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      any: ${{ steps.plan.outputs.any }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Select harnesses
+        id: plan
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+          ZERO: '0000000000000000000000000000000000000000'
+        run: |
+          set -u
+          changed=$(mktemp)
+          mode=diff
+          if [ "$EVENT_NAME" = workflow_dispatch ] || [ "$EVENT_NAME" = schedule ]; then
+            mode=all
+          elif [ "$EVENT_NAME" = pull_request ]; then
+            git fetch --no-tags origin "$BASE_REF" >/dev/null 2>&1 || true
+            if ! git diff --no-renames --name-only "origin/$BASE_REF...$SHA" > "$changed"; then
+              echo "pull request diff failed; running everything" >&2
+              mode=all
+            fi
+          elif [ "$EVENT_NAME" = push ]; then
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              echo "no usable before commit; running everything" >&2
+              mode=all
+            elif ! git merge-base --is-ancestor "$BEFORE" "$SHA" 2>/dev/null; then
+              echo "before is not an ancestor (force push); running everything" >&2
+              mode=all
+            elif ! git diff --no-renames --name-only "$BEFORE" "$SHA" > "$changed"; then
+              echo "push diff failed; running everything" >&2
+              mode=all
+            fi
+          else
+            mode=all
+          fi
+          if [ "$mode" = all ]; then
+            python3 scripts/harness-plan.py plan --all --github-output "$GITHUB_OUTPUT"
+          else
+            python3 scripts/harness-plan.py plan --changed-from "$changed" --github-output "$GITHUB_OUTPUT"
+          fi
+
   harness:
-    name: ${{ matrix.name }}
+    name: Harnesses ${{ matrix.shard }}
+    needs: plan
+    if: needs.plan.outputs.any == 'true'
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: Album credits
-            run: sh harness/album-credits/build.sh && harness/album-credits/build/album-credits-check
-          - name: Audio effects routes
-            run: sh harness/audio-effects/build.sh route && harness/audio-effects/build/route-check
-          - name: Audio effects presets
-            run: sh harness/audio-effects/build.sh presets && harness/audio-effects/build/preset-files-check
-          - name: Automatic translation settings
-            run: sh harness/auto-translation-settings/check.sh
-          - name: AutoEq offline
-            run: sh harness/autoeq/build.sh && harness/autoeq/build/autoeq-check
-          - name: Clean links
-            run: sh harness/clean-links/build.sh && harness/clean-links/build/clean-links-check
-          - name: Connection test settings
-            run: sh harness/connection-test-settings/check.sh
-          - name: Fluid clips
-            run: sh harness/fluid-clip/build.sh && harness/fluid-clip/build/fluid-clip
-          - name: Haptic track
-            run: sh harness/haptics/build.sh && harness/haptics/build/track
-          - name: Head gestures
-            run: sh harness/head-gestures/build.sh && harness/head-gestures/build/head-gestures
-          - name: Listening stats
-            run: sh harness/listening-stats/build.sh && harness/listening-stats/build/listening-stats
-          - name: Local files and LRC
-            run: sh harness/local-files/build.sh
-          - name: Lyrics menu translation
-            run: sh harness/lyrics/translation-check.sh
-          - name: Lyrics clips
-            run: sh harness/lyrics-clip/build.sh && harness/lyrics-clip/build/lyrics-clip
-          - name: Lyrics PiP text
-            run: sh harness/lyrics-pip/build.sh && harness/lyrics-pip/build/lyrics-pip
-          - name: Lyrics sources
-            run: sh harness/lyrics-sources/build.sh
-          - name: Offline lyrics store
-            run: sh harness/lyrics-store/build.sh && harness/lyrics-store/build/lyrics-store
-          - name: Lyrics state and concurrent walk
-            run: sh harness/lyrics-sources/state-build.sh
-          - name: Lyrics translation and AI
-            run: sh harness/lyrics-translation/build.sh && harness/lyrics-translation/build/check --auto-retry-only
-          - name: Moving artwork
-            run: sh harness/motion/build.sh && harness/motion/build/motion
-          - name: Now playing
-            theos: true
-            run: sh harness/now-playing/build.sh
-          - name: Palette
-            run: sh harness/palette/build.sh && harness/palette/build/palette-check
-          - name: Pitch
-            run: sh harness/pitch/build.sh && harness/pitch/build/pitch
-          - name: Player title notification
-            theos: true
-            run: sh harness/player/title-notification-check.sh
-          - name: Radio modes
-            run: sh harness/radio-modes/build.sh
-          - name: Sing model-free
-            run: sh harness/sing/build.sh && harness/sing/build/sing spatial
-          - name: Sleep timer
-            run: sh harness/sleep-timer/build.sh && harness/sleep-timer/build/sleep-timer
-          - name: Spicy lyrics
-            run: sh harness/spicy-lyrics/build.sh
-          - name: Visualizer
-            run: sh harness/visualiser/build.sh && harness/visualiser/build/spectrum
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v5
       - name: Set up Theos for Logos hooks only
-        if: matrix.theos == true
+        if: matrix.theos
         uses: ./.github/actions/setup-theos
       - name: Build and assert
         shell: bash
         env:
           THEOS: ${{ github.workspace }}/theos
-        run: ${{ matrix.run }}
+        run: python3 scripts/harness-plan.py run --shard "${{ matrix.shard }}" --names "${{ matrix.harnesses }}"

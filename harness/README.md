@@ -2,11 +2,37 @@
 
 `.github/workflows/harness.yml` runs the offline macOS / Mac Catalyst checks on
 `macos-latest`, on relevant pushes to `main` and `ci/harness`, pull requests,
-and manual dispatch. Each named matrix job builds **and runs** its harness;
-failure does not cancel the other jobs. Jobs have a 15-minute timeout.
+manual dispatch, and a weekly schedule (Monday 03:00 UTC). Each harness builds
+**and runs** its checks; failure does not cancel the other jobs.
+
+CI has two jobs. `plan` (ubuntu) reads the changed files and asks
+`scripts/harness-plan.py` which harnesses a change needs: a change selects a
+harness when it touches `harness/<dir>/` or any file that harness's build
+scripts and sources reach — every repo path named in a build/check script
+(`-I ../autoeq/shim`, `VENDOR=../../vendor/audio`, `$SRC/...`), every file
+under such a directory, plus transitive quoted imports. A new directory a
+build script starts using is picked up without editing the script. Every harness runs when the event is `workflow_dispatch` or
+`schedule`, when the changed list cannot be determined (new branch, force push,
+shallow history), when a change touches `.github/`,
+`scripts/harness-plan.py` or `tweak/Makefile`, or when a changed path is no longer
+in the checkout (a deletion, or a rename's old name: the diff is taken with
+`--no-renames`), since a harness may still use it. A harness with no tweak
+dependency is always selected, with a warning. The selected harnesses are
+packed into at most five shards (all Logos/Theos harnesses in one) and run as
+`Harnesses <shard>` jobs with a 45-minute timeout. Only that Theos shard uses
+the setup-Theos action; its caches contain build tools/output, never
+credentials or test data.
+
+Locally, the same script explains and runs selections from the repo root:
+
+```sh
+python3 scripts/harness-plan.py explain tweak/Sources/Shared/LockScreenLyrics/SGLyricsClip.m
+python3 scripts/harness-plan.py run --names "Pitch" "Palette"
+```
+
+`plan --changed-from <file|->` prints the selection, shards and matrix JSON.
 No simulator, phone, Spotify installation, API credentials or visual review is
-used. Only the two Logos hook checks use the existing setup-Theos action; its
-caches contain build tools/output, never credentials or test data.
+used.
 
 Run the commands in the workflow locally on an Apple Silicon Mac with Xcode.
 The individual READMEs describe assertions and boundaries. Image/video output
