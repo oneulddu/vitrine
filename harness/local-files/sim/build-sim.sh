@@ -14,7 +14,7 @@ rm -rf "$OUT/gen" "$OUT/EditInfoHarness.app"; mkdir -p "$OUT/gen" "$OUT/EditInfo
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O0 -Wall \
     -I"$SRC" -I"$SRC/Shared/LocalFiles" -isysroot "$SDK" -Wno-deprecated-declarations \
-    "$HERE/main.m" "$HERE/../../scene.m" "$OUT/gen/EditInfoMenu.m" "$SRC/Shared/LocalFiles/LocalFiles.m" "$SRC/Core/SGLog.m" \
+    "$HERE/main.m" "$HERE/../../scene.m" "$OUT/gen/EditInfoMenu.m" "$SRC/Shared/LocalFiles/LocalFiles.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGGlass.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework UniformTypeIdentifiers -framework Foundation \
     -o "$OUT/EditInfoHarness.app/EditInfoHarness"
 cat > "$OUT/EditInfoHarness.app/Info.plist" <<'PLIST'

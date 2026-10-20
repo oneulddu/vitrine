@@ -3,6 +3,8 @@
 #import <UIKit/UIKit.h>
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
+#import "Shared/Fonts/Fonts.h"
 
 extern BOOL SGHarnessWarning;
 
@@ -16,6 +18,9 @@ PAGE(SGGesturesSettingsPage) PAGE(SGHeadGesturesSettingsPage) PAGE(SGHomeSetting
 PAGE(SGListeningStatsPage) PAGE(SGLiveActivitySettingsPage) PAGE(SGLockScreenWidgetPage) PAGE(SGNavbarSettingsPage)
 PAGE(SGNowPlayingBarSettingsPage) PAGE(SGQueueSettingsPage) PAGE(SGRAlbumSettingsPage) PAGE(SGRArtistSettingsPage)
 PAGE(SGRNavbarSettingsPage)
+PAGE(SGAlbumSettingsPage) PAGE(SGArtistSettingsPage) PAGE(SGPlaylistSettingsPage)
+PAGE(SGDSPHeadphonesPage) PAGE(SGDSPPresetsPage) PAGE(SGFontLibraryPage)
+PAGE(SGRHomeSettingsPage) PAGE(SGRVisualiserSettingsPage)
 PAGE(SGSingSettingsPage) PAGE(SGSpatialVoiceSettingsPage) PAGE(SGVibrationsSettingsPage)
 UIViewController *SGRPlayerSettingsPage(NSArray *more) { return blank(@"SGRPlayerSettingsPage"); }
 UIViewController *SGRLyricsSettingsPage(NSString *title, NSString *intro, NSArray<SGModSection *> *sections) { return blank(title); }
@@ -23,6 +28,15 @@ UIViewController *SGRLyricsSettingsPage(NSString *title, NSString *intro, NSArra
 #define ROW(name) SGModRow *name(void) { return SGPageRow(@#name, ^UIViewController *{ return nil; }); }
 ROW(SGAppIconRow) ROW(SGGeminiKeyRow) ROW(SGGlassLyricsRow) ROW(SGLockScreenLyricsRow) ROW(SGLyricsMeaningsRow)
 ROW(SGLyricsTranslationLanguageRow) ROW(SGLyricsWordTimingRow) ROW(SGRLyricsTextSizesRow) ROW(SGLyricsDelayRow)
+ROW(SGBingTranslateRow) ROW(SGDeepLKeyRow) ROW(SGGoogleTranslateRow) ROW(SGLyricsCulturalNotesRow)
+ROW(SGLyricsFuriganaRow) ROW(SGLyricsJapaneseReadingRow) ROW(SGLyricsLanguageRulesRow) ROW(SGLyricsPiPRow)
+ROW(SGLyricsPronunciationNotationRow) ROW(SGRAutoTranslationOrderRow) ROW(SGRAutoTranslationRow)
+ROW(SGRLyricsKeepAwakeRow) ROW(SGSavedTranslationsRow) ROW(SGSimplifyTitlesRow) ROW(SGTranslateEverySongRow)
+ROW(SGTranslateTitlesRow)
+NSString *SGLyricsAIName(SGLyricsAI service) { return @[@"Gemini", @"Claude", @"OpenAI"][service]; }
+SGModRow *SGLyricsAIServiceRow(SGLyricsAI service) { return SGPageRow(SGLyricsAIName(service), ^UIViewController *{ return nil; }); }
+SGModSection *SGSleepTimerSettingsSection(void) { return SGSection(nil, @[]); }
+SGAppFont SGAppFontChosen(void) { return SGAppFontSpotify; }
 NSArray<SGModRow *> *SGAppFontRows(void) { return @[]; }
 NSArray<SGModRow *> *SGNativeAppearanceRows(void) { return @[]; }
 NSArray<SGModRow *> *SGRAppearanceRows(void) { return @[]; }

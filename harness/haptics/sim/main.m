@@ -27,6 +27,12 @@
 #import "Shared/Haptics/Haptics.h"
 #import "fakehaptics.h"
 
+// Shared/Player/PlayerState.x's, which SpeedPitch.x reads for its clock away from 1x: no player here.
+@class SPTPlayerState;
+SPTPlayerState *SGPlayerState(void) {
+    return nil;
+}
+
 static atomic_uint_fast64_t sg_frame;
 static double sg_generatorRate;
 

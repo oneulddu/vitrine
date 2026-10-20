@@ -28,6 +28,11 @@ static const float kAmplitude = 0.25f;
 }
 @end
 
+// Shared/Player/PlayerState.x's, which SpeedPitch.x reads for its clock away from 1x: no player here.
+SPTPlayerState *SGPlayerState(void) {
+    return nil;
+}
+
 static atomic_bool sg_mute;
 static atomic_uint_fast64_t sg_phase;
 static double sg_generatorRate;

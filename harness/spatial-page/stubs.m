@@ -40,6 +40,19 @@ void SGSetSingSpatial(BOOL on) {
     SGSetEnabled(SGKeySingSpatial, on);
     NSLog(@"[harness] spatial voice %@", on ? @"on" : @"off");
 }
+// Sing.x's stored spatial values, kept in the defaults the page's sliders write.
+double SGSingSpatialDistance(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialDistance] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialDistance] : 1.5; }
+double SGSingSpatialRoom(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialRoom] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialRoom] : 25; }
+double SGSingSpatialFront(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialFront] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialFront] : 5; }
+double SGSingSpatialWidth(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialWidth] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialWidth] : 110; }
+void SGSetSingSpatialSound(double meters, double roomPercent, double frontSeconds, double widthPercent) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setDouble:meters forKey:SGKeySingSpatialDistance];
+    [defaults setDouble:roomPercent forKey:SGKeySingSpatialRoom];
+    [defaults setDouble:frontSeconds forKey:SGKeySingSpatialFront];
+    [defaults setDouble:widthPercent forKey:SGKeySingSpatialWidth];
+    NSLog(@"[harness] spatial sound %.1f m, room %.0f%%, front %.0f s, width %.0f%%", meters, roomPercent, frontSeconds, widthPercent);
+}
 // From main.m's launch line (chunk=<ms>): what plays moves on in renders this long, as the engine's clock does, a
 // part of a tenth out of step with the wall clock; 0 for a clock that moves smoothly.
 double sg_renderChunk;

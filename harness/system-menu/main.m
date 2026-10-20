@@ -78,6 +78,11 @@ UIView *SGRPinnedMoreRecentButton(void) { return nil; }
 void SGRAnimate(NSInteger motion, void (^animations)(void), void (^completion)(BOOL finished)) {
     [UIView animateWithDuration:0.2 animations:animations completion:completion];
 }
+// The redesign's own panels the menu opens; only their item's presence is checked here. KaraokeSource.x
+// and LyricsTools.m are not built: no track is playing and no lyrics action is offered.
+NSString *SGKaraokePlayingTrack(void) { return nil; }
+void SGPlayerShowSpeedPitchPanel(UIView *from) { NSLog(@"[harness] speed and pitch panel"); }
+UIAction *SGRLyricsSearchAction(NSString *trackID) { return nil; }
 
 // Every action and submenu the menu makes, by its title, so the harness can pick or open one.
 static NSMutableDictionary<NSString *, UIMenuElement *> *sg_elements;

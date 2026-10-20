@@ -70,6 +70,13 @@ typedef struct {
 @end
 
 @implementation SPTPlayerState
+// What SpeedPitch.x asks of the state for the track playing: no track in the harness.
+- (id)track {
+    return nil;
+}
+- (BOOL)isPaused {
+    return NO;
+}
 - (double)playbackSpeed {
     return 1;
 }
@@ -77,6 +84,12 @@ typedef struct {
     return MAX(0, self.positionAsOfTimestamp - self.timestamp.timeIntervalSinceNow * [self playbackSpeed]);
 }
 @end
+
+// Shared/Player/PlayerState.x's, which SpeedPitch.x reads for its clock away from 1x: the last mock report.
+static SPTPlayerState *sg_reportedState;
+SPTPlayerState *SGPlayerState(void) {
+    return sg_reportedState;
+}
 
 static OSStatus decoder(void *refCon, AudioUnitRenderActionFlags *flags, const AudioTimeStamp *timestamp, UInt32 bus,
                         UInt32 frames, AudioBufferList *data) {
@@ -241,6 +254,7 @@ static void expect(NSString *what, double wantA, double wantB) {
     _state = [SPTPlayerState new];
     _state.positionAsOfTimestamp = atomic_load(&sg_decoded) / kRate;
     _state.timestamp = [NSDate date];
+    sg_reportedState = _state;
 }
 
 - (void)after:(double)seconds do:(void (^)(void))block {

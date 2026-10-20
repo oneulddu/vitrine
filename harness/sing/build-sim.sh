@@ -18,7 +18,7 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios18.0-simulator -fobjc-ar
     -I"$SRC" -I"$SING" -I"$SRC/Shared/Player" \
     sim/main.m ../scene.m "$OUT/gen/SpeedPitch.m" "$OUT/gen/Sing.m" "$SRC/Shared/Player/SGTimePitch.m" \
     "$SING/SGSingModel.m" "$SING/SGSingLoader.m" "$SING/SGSingSeparator.m" "$SING/SGSingEngine.m" "$SRC/Shared/AudioEffects/SGDSPReverb.m" \
-    "$SRC/Core/SGRebind.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGPrefs.m" "$SRC/Core/SGUIMode.m" "$SRC/Core/SGFlagForce.m" \
+    "$SRC/Core/SGRebind.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGPrefs.m" "$SRC/Core/SGUIMode.m" "$SRC/Core/SGFlagForce.m" "$SRC/Core/SGLocalize.m" \
     -framework UIKit -framework QuartzCore -framework MediaPlayer -framework AudioToolbox -framework AVFoundation -framework Accelerate -framework CoreML -framework Foundation \
     -o "$OUT/SingHarness.app/SingHarness"
 if [ -n "$VOICE" ]; then cp "$VOICE" "$OUT/SingHarness.app/voice.aiff"; fi

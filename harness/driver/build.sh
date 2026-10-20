@@ -11,7 +11,7 @@ rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/DriverHarness.app"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.4-simulator -fobjc-arc -g -O0 -DSG_DRIVER=1 -DSG_TREE_PORT=${PORT:-8095} \
     -I"$SRC" -I"$SRC/Diagnostics" -isysroot "$SDK" -Wno-deprecated-declarations \
-    "$(dirname "$0")/main.m" "$(dirname "$0")/../scene.m" "$OUT"/gen/*.m "$SRC"/Diagnostics/Driver.m \
+    "$(dirname "$0")/main.m" "$(dirname "$0")/stubs.m" "$(dirname "$0")/../scene.m" "$OUT"/gen/*.m "$SRC"/Diagnostics/Driver.m \
     "$SRC"/Shared/LyricsPiP/LyricsPiPFrame.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGViewTree.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreText -framework ImageIO -framework Foundation \

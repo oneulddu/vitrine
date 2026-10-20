@@ -28,6 +28,10 @@ CGRect SGRPlayerCoverFrameIn(UIView *host) {
 void SGRPlayerSetCoverHidden(BOOL hidden) { sg_cover.alpha = hidden ? 0 : 1; }
 id SGRPlayerField(void) { return nil; }
 BOOL SGRPlayerBackdropShowing(void) { return NO; }
+// PlayerArtwork.x and PlayerMotion.x, which this harness does not build: the cover fills its frame and
+// no motion picture is over it.
+CGFloat SGRPlayerCoverScale(void) { return 1; }
+BOOL SGRPlayerMotionShowing(void) { return NO; }
 UIImage *SGRNowPlayingArtwork(NSString **uri, NSString **identity) { return sg_art; }
 const CGFloat SGRRadiusArtwork = 12;
 BOOL SGRReduceMotion(void) { return NO; }
@@ -44,7 +48,7 @@ void SGRequireClasses(NSArray *names) {}
 
 @interface SPTBarOverlayPresentationTransition : NSObject
 @property (nonatomic, strong) SGHarnessContext *transitioningContext;
-@property (nonatomic, strong) UIView *overlayView, *barSnapshotView, *bottomBarView;
+@property (nonatomic, strong) UIView *overlayView, *barSnapshotView, *tabBarSnapshotView, *bottomBarView;
 @property (nonatomic) CGRect barFrame;
 @property (nonatomic) double progress;
 @property (nonatomic) BOOL presenting;

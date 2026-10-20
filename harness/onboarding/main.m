@@ -12,6 +12,11 @@
 #import "App/Onboarding/Onboarding.h"
 #import "Core/SGPrefs.h"
 
+// Shared/Lyrics/Lyrics.h's SGEeveeSpotifyInjected, from KaraokeSource.x which the harness does not build:
+// nothing is injected, so the environment check reports no EeveeSpotify.
+#import "Shared/Lyrics/Lyrics.h"
+BOOL SGEeveeSpotifyInjected(void) { return NO; }
+
 static BOOL sg_old;
 
 // Core/SGUIMode.m, with the OS the tour believes it runs on taken from the arguments.
@@ -27,6 +32,12 @@ NSString *SGRedesignUntestedWarning(void) {
     return [NSString stringWithFormat:@"The redesign is built on iOS 26's Liquid Glass. iOS %@ draws a blur in its place, and nobody has tested the redesign there: pages can be laid out wrongly, and Spotify can freeze as it starts. If Spotify does not start with it, the next launch goes back to Legacy.", @"17.5"];
 }
 void SGShowSigningFixIfPending(void) {}
+// The environment check's two install questions (Shared/LiveActivity/LiveActivity.h and
+// Shared/Haptics/Haptics.h), which the harness answers for a Spotify that allows both.
+#import "Shared/LiveActivity/LiveActivity.h"
+#import "Shared/Haptics/Haptics.h"
+BOOL SGLiveActivityAllowedByInstall(void) { return YES; }
+BOOL SGMusicHapticsListedByInstall(void) { return YES; }
 // Settings/SGModPage.m, for the Mod Settings rows, which the harness does not show.
 SGModRow *SGWarningRow(NSString *title, NSString *subtitle, void (^action)(void)) { return nil; }
 

@@ -128,36 +128,9 @@ void SGRHarnessPlayFrom(NSInteger ms) { SGKaraokeSeek(ms); }
 void SGLyricsMeaningsFor(NSString *trackID, NSArray<SGKaraokeLine *> *lines,
                          void (^done)(NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *byLine)) {}
 
-// Gemini translation and the settings framework's top controller: not part of the harness.
+// Apple's on-device translation (OnDeviceTranslation.swift, not built here) and the settings framework's
+// top controller: not part of the harness. The Gemini provider and saved translations are real files now.
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
-BOOL SGGeminiKeySet(void) { return NO; }
-NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
-NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"harness.lyricsTranslationsDidChange";
-NSString *SGLyricsSongName(NSString *trackID) { return @"Harness song"; }
-void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
-void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
-static NSMutableDictionary *sg_translationJobs;
-static NSUInteger sg_nextTranslationJob;
-NSUInteger SGLyricsBeginTranslation(NSString *track, NSString *language) {
-    if (!track || !language) return 0;
-    if (!sg_translationJobs) sg_translationJobs = [NSMutableDictionary dictionary];
-    NSUInteger token = ++sg_nextTranslationJob;
-    sg_translationJobs[@[track, language]] = @(token);
-    return token;
-}
-BOOL SGLyricsTranslationIsCurrent(NSString *track, NSString *language, NSUInteger token) {
-    return token && track && language && [sg_translationJobs[@[track, language]] unsignedIntegerValue] == token;
-}
-void SGLyricsEndTranslation(NSString *track, NSString *language, NSUInteger token) {
-    if (SGLyricsTranslationIsCurrent(track, language, token)) [sg_translationJobs removeObjectForKey:@[track, language]];
-}
-void SGLyricsDeleteTranslation(NSString *track, NSString *language) {
-    if (track && language) [sg_translationJobs removeObjectForKey:@[track, language]];
-}
-
-void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
-                                 void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
-
 @implementation SGOnDeviceTranslation
 + (BOOL)translationAvailable { return NO; }
 + (BOOL)appleIntelligenceAvailable:(NSString *)language { return NO; }
@@ -173,6 +146,74 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 NSNotificationName const SGLocalFileEditsDidChangeNotification = @"harness.localFileEditsDidChange";
 NSString *SGLocalFileCoverInURL(NSString *url) { return nil; }
 UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track) { return nil; }
+
+// The lyrics source chain and its settings page (LyricsSources.m): no provider is asked here, the
+// harness feeds SGRKaraokeView its lines itself.
+#import "Shared/LyricsSources/LyricsSources.h"
+NSNotificationName const SGLyricsDidReloadNotification = @"harness.lyricsDidReload";
+NSNotificationName const SGLyricsOffsetsDidChangeNotification = @"harness.lyricsOffsetsDidChange";
+NSNotificationName const SGLyricsPinDidChangeNotification = @"harness.lyricsPinDidChange";
+NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) { return @[]; }
+SGLyricsProvider *SGLyricsProviderFor(NSString *key) { return nil; }
+NSArray<NSString *> *SGLyricsOrder(void) { return @[]; }
+SGLyricsTypes SGLyricsSourceTypes(NSString *key) { return SGLyricsTypesAny; }
+void SGLyricsSetSourceTypes(NSString *key, SGLyricsTypes types) {}
+NSArray<NSString *> *SGLyricsTranslationLanguageNames(void) { return @[]; }
+NSString *SGLyricsTranslationLanguage(void) { return @""; }
+void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *headers, NSData *body,
+                           void (^done)(NSData *data, NSInteger status)) {
+    if (done) done(nil, 0);
+}
+SGKaraokeLine *SGLyricsPronunciation(NSArray<SGKaraokeWord *> *words, NSString *plain, SGKaraokeLine *of) { return nil; }
+BOOL SGLyricsPin(NSString *trackID, NSDictionary *record) { return NO; }
+void SGLyricsUnpin(NSString *trackID) {}
+NSNumber *SGLyricsPinnedID(NSString *trackID) { return nil; }
+UIViewController *SGLyricsSourcesPage(void) { return nil; }
+SGModRow *SGDeezerARLRow(void) { return nil; }
+SGModRow *SGSpicyLyricsKeyRow(void) { return nil; }
+void SGLrcLibSearch(NSString *title, NSString *artist, NSInteger seconds, void (^done)(NSArray<NSDictionary *> *records)) {
+    if (done) done(nil);
+}
+
+// Imported LRC files (LocalLyrics.m): none in the harness.
+#import "Shared/LocalFiles/LocalLyrics.h"
+NSString *const SGImportedLRCKey = @"importedLRC";
+NSArray<NSString *> *SGImportedLRCFiles(void) { return @[]; }
+UIViewController *SGImportedLRCPage(void) { return nil; }
+SGLyricsAsk SGImportedLRCAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) { if (done) done(nil); };
+NSDictionary<NSString *, id> *SGLocalFileInfo(NSString *uri) { return nil; }
+
+// Lyrics in picture in picture (LyricsPiP.m): off, and the tap does nothing.
+#import "Shared/LyricsPiP/LyricsPiP.h"
+NSNotificationName const SGLyricsPiPDidChangeNotification = @"harness.lyricsPiPDidChange";
+BOOL SGLyricsPiPEnabled(void) { return NO; }
+BOOL SGLyricsPiPActive(void) { return NO; }
+BOOL SGLyricsPiPStarting(void) { return NO; }
+void SGLyricsPiPToggle(UIView *from) {}
+
+// The lyrics store (LyricsStore.m): empty.
+#import "Shared/Lyrics/LyricsStore.h"
+void SGLyricsStoreSize(void (^done)(unsigned long long bytes)) { if (done) done(0); }
+void SGLyricsStoreDeleteAll(void (^done)(unsigned long long remainingBytes)) { if (done) done(0); }
+
+// KaraokeSource.x's settings the harness does not build: no Eevee, one offset of none.
+BOOL SGEeveeLyricsOn(void) { return NO; }
+NSInteger SGLyricsTrackOffsetMs(NSString *trackID) { return 0; }
+void SGLyricsSetTrackOffsetMs(NSString *trackID, NSInteger ms) {}
+NSString *SGLyricsRouteName(void) { return nil; }
+NSInteger SGLyricsRouteOffsetMs(void) { return 0; }
+void SGLyricsSetRouteOffsetMs(NSInteger ms) {}
+void SGLyricsReload(NSString *trackID) {
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsDidReloadNotification object:nil userInfo:trackID ? @{@"track": trackID} : nil];
+}
+
+// PlayerTitle.x's engine: the title as the metadata has it.
+#import "Redesigned/Player/Player.h"
+NSString *SGRShownTitle(NSString *trackID, NSString *title, NSString *artist, NSString **shownArtist) {
+    if (shownArtist) *shownArtist = artist;
+    return title;
+}
+void SGRShownTitleWatch(UIView *unit) {}
 
 // Speed and pitch: a number the harness keeps, with no audio behind it.
 static double sg_speed = 1;
