@@ -91,6 +91,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 // Saved translations and their jobs, kept in memory for the run as SavedTranslations.m keeps them: the lines made
 // here by their text, for a song and language, and one token a song and language that a newer job or a delete ends.
 NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";
+NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
 NSMutableDictionary<NSString *, NSDictionary<NSString *, NSString *> *> *SGHarnessSavedTranslations;
 static NSMutableDictionary<NSString *, NSNumber *> *sg_jobTokens;
 static NSUInteger sg_lastToken;

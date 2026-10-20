@@ -12,6 +12,8 @@
 
 static const NSUInteger kKept = 200;
 
+NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
+
 static NSURL *cacheRoot(void) {
 #ifdef SG_LYRICS_TEST_STORE
     // The offline harness owns an isolated folder and never trims the user's saved songs.
@@ -155,6 +157,9 @@ void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKara
         rememberUnsaved(file, written ? nil : saved);
         if (written) trim(folder());
     });
+    // After the write is queued, so a reader's SGLyricsSyncSavedTranslation (on main, which drains the queue) sees it.
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationSavedNotification object:track
+                                                      userInfo:@{@"language": language}];
 }
 
 static NSString *summary(void) {

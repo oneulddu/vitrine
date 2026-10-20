@@ -15,6 +15,7 @@
 #import "SGLyricsClip.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/Player/NowPlayingExtras.h"
 #import "Shared/Player/PlayerState.h"
 
@@ -28,7 +29,7 @@ static const double kShortest = 2, kLongest = 8;
 
 // What a line's artwork shows, kept by its request blocks.
 @interface SGLockLine : NSObject
-@property (nonatomic, copy) NSString *previous, *line, *next;   // nil for none
+@property (nonatomic, copy) NSString *previous, *line, *translation, *next;   // nil for none
 @property (nonatomic) UIImage *cover;
 @property (nonatomic) SGLyricsClipStyle style;
 @property (nonatomic) NSURL *motion;          // the moving artwork under the words, nil for the blurred cover
@@ -117,11 +118,11 @@ static UIImage *previewFor(NSString *artworkID, SGLockLine *line, CGSize size) {
     UIImage *preview = [sg_previews objectForKey:artworkID];
     if (preview) return preview;
     BOOL tryMotion = line.motion && !motionFailed(line.motion);
-    CGImageRef frame = tryMotion ? SGLyricsClipMotionFrame(line.motion, line.previous, line.line, line.next, line.from) : NULL;
+    CGImageRef frame = tryMotion ? SGLyricsClipMotionFrame(line.motion, line.previous, line.line, line.translation, line.next, line.from) : NULL;
     if (tryMotion && !frame) markMotionFailed(line.motion, artworkID);
     if (!frame) {
         CGImageRef backdrop = copyBackdropFor(line.cover, size);
-        frame = SGLyricsClipFrame(backdrop, line.line, line.next, size);
+        frame = SGLyricsClipFrame(backdrop, line.line, line.translation, line.next, size);
         CGImageRelease(backdrop);
     }
     if (frame) [sg_previews setObject:(preview = [UIImage imageWithCGImage:frame]) forKey:artworkID];
@@ -136,12 +137,12 @@ static BOOL writeClip(NSString *artworkID, SGLockLine *line, CGSize size) {
     if ([NSFileManager.defaultManager fileExistsAtPath:file.path]) return YES;
     CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
     BOOL tryMotion = line.motion && !motionFailed(line.motion);
-    BOOL over = tryMotion && SGLyricsClipWriteOverMotion(file, line.motion, line.previous, line.line, line.next, line.from, line.seconds);
+    BOOL over = tryMotion && SGLyricsClipWriteOverMotion(file, line.motion, line.previous, line.line, line.translation, line.next, line.from, line.seconds);
     if (tryMotion && !over) markMotionFailed(line.motion, artworkID);
     BOOL ok = over;
     if (!ok) {
         CGImageRef backdrop = copyBackdropFor(line.cover, size);
-        ok = SGLyricsClipWrite(file, backdrop, line.line, line.next, size, line.style);
+        ok = SGLyricsClipWrite(file, backdrop, line.line, line.translation, line.next, size, line.style);
         CGImageRelease(backdrop);
     }
     // The first few of a launch of each kind, and any that fails: one a line would fill the log.
@@ -203,6 +204,23 @@ static NSString *textAt(NSArray<SGKaraokeLine *> *lines, NSInteger index) {
     return index >= 0 && index < (NSInteger)lines.count ? SGKaraokeLineText(lines[index]) : nil;
 }
 
+// The translation the artwork shows under the line, nil when the line has none, is resting or the switch is off.
+static NSString *translationAt(NSArray<SGKaraokeLine *> *lines, NSInteger index, BOOL resting) {
+    if (resting || index < 0 || index >= (NSInteger)lines.count) return nil;
+    if (!textAt(lines, index).length || !SGFlag(SGKeyLockScreenTranslation, NO)) return nil;
+    return lines[index].translation;
+}
+
+// The translation's part of an artwork ID: nothing without one, else t and a short hex of its hash, the same
+// for a translation that has not changed, so a clip drawn ahead is found instead of drawn again.
+static NSString *translationTag(NSString *translation) {
+    if (!translation.length) return @"";
+    uint32_t hash = 2166136261u;
+    const char *bytes = translation.UTF8String;
+    for (size_t i = 0; bytes[i]; i++) hash = (hash ^ (uint8_t)bytes[i]) * 16777619u;
+    return [NSString stringWithFormat:@"t%08x", hash];
+}
+
 void SGLyricsArtworkSetMotion(NSString *uri, NSURL *file) {
     @synchronized (sg_failedMotion) {
         if (file) [sg_failedMotion removeObject:file.path];
@@ -218,6 +236,7 @@ static SGLockLine *lineAt(NSArray<SGKaraokeLine *> *lines, NSInteger index, BOOL
     SGLockLine *shown = [SGLockLine new];
     // Resting, the line sung is let go and the one coming shows alone.
     shown.line = resting ? nil : textAt(lines, index);
+    shown.translation = translationAt(lines, index, resting);
     shown.next = textAt(lines, index + 1);
     shown.previous = motion && !resting ? textAt(lines, index - 1) : nil;
     shown.cover = cover;
@@ -265,6 +284,26 @@ static void tick(void) {
         if (position < 0) return;
         position -= SGKaraokeDelayMs();
         NSInteger index = SGKaraokeLeadLine(lines, position);
+        BOOL translationOn = SGFlag(SGKeyLockScreenTranslation, NO);
+        // Translations wanted here: the switch on and the lines on the lock screen at all. Asked once a track and
+        // language, not every tick; the call syncs saved ones first and de-duplicates one already running.
+        static NSString *translatedTrack, *translatedLanguage;
+        static NSArray<SGKaraokeLine *> *translatedLines;
+        if (!translationOn) {
+            translatedTrack = nil;
+        } else {
+            NSString *language = SGLyricsGeminiLanguage();
+            // A refined source hands over a new array for the same track: it needs the saved translations too.
+            if (![translatedTrack isEqualToString:trackID] || ![translatedLanguage isEqualToString:language] || translatedLines != lines) {
+                translatedTrack = trackID;
+                translatedLanguage = language;
+                translatedLines = lines;
+                SGRAutoTranslateWithoutView(trackID, lines, ^BOOL {
+                    return [trackID isEqualToString:SGKaraokePlayingTrack()] && SGFlag(SGKeyLockScreenTranslation, NO)
+                        && SGLockArtworkShowsLyrics(SGLockScreenArtwork());
+                });
+            }
+        }
         BOOL nextFarOff = index + 1 == (NSInteger)lines.count || lines[index + 1].start - position > kBreakMs;
         BOOL resting = index < 0 || (position > SGKaraokeSungEnd(lines[index]) + kBreakMs && nextFarOff);
         SGLyricsClipStyle style = (SGLyricsClipStyle)SGInt(SGKeyLockScreenLyricsStyle, SGLyricsClipStill);
@@ -280,7 +319,8 @@ static void tick(void) {
             motion = nil;
         }
         NSString *look = SGLyricsClipLook(motion, style);
-        NSString *artworkID = [NSString stringWithFormat:@"%@-%ld%@-%@", trackID, (long)index, resting ? @"r" : @"", look];
+        NSString *artworkID = [NSString stringWithFormat:@"%@-%ld%@%@-%@", trackID, (long)index, resting ? @"r" : @"",
+                               translationTag(translationAt(lines, index, resting)), look];
         if ([artworkID isEqualToString:sg_shownID]) return;
         // Spotify's request block for its cover, read on main and kept once it is this track's.
         if (!sg_cover) {
@@ -298,7 +338,8 @@ static void tick(void) {
                                                artworkFor(artworkID, lineAt(lines, index, resting, motion, sg_cover, style))},
                               state.track.trackTitle);
         if (index + 1 < (NSInteger)lines.count) {
-            NSString *ahead = [NSString stringWithFormat:@"%@-%ld-%@", trackID, (long)index + 1, look];
+            NSString *ahead = [NSString stringWithFormat:@"%@-%ld%@-%@", trackID, (long)index + 1,
+                               translationTag(translationAt(lines, index + 1, NO)), look];
             drawAhead(ahead, lineAt(lines, index + 1, NO, motion, sg_cover, style));
         }
     }
@@ -356,6 +397,18 @@ static void setTicking(BOOL on) {
         // Heard on the writing thread and handed to main without waiting (AGENTS.md).
         static SGLockArtwork choice;
         choice = SGLockScreenArtwork();
+        // A translation saved while the player is paused has no tick to pick it up (Shared/LyricsTranslation).
+        [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsTranslationSavedNotification object:nil queue:nil
+                                                    usingBlock:^(NSNotification *note) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                NSString *track = note.object;
+                if (![track isEqualToString:SGKaraokePlayingTrack()] || !SGLockArtworkShowsLyrics(SGLockScreenArtwork())
+                    || !SGFlag(SGKeyLockScreenTranslation, NO)) return;
+                NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(track);
+                SGLyricsSyncSavedTranslation(track, note.userInfo[@"language"], lines);
+                tick();
+            });
+        }];
         [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
                                                     usingBlock:^(NSNotification *note) {
             dispatch_async(dispatch_get_main_queue(), ^{

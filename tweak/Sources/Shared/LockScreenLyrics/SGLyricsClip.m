@@ -18,6 +18,8 @@ static const CGFloat kFont = 0.05;
 static const CGFloat kSmallest = 0.6;
 static const CGFloat kTallest = 0.4;
 static const CGFloat kNextAlpha = 0.4;
+// A translation sits close under its line, in the regular weight at this share of the line's size and this white.
+static const CGFloat kTranslationScale = 0.62, kTranslationAlpha = 0.8, kTranslationGap = 0.15;
 // A still is one frame held this long; an animated clip breathes once over kLoopSeconds, which is all it
 // plays before the lock screen loops it.
 static const int32_t kStillSeconds = 2;
@@ -84,30 +86,67 @@ CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) {
     return backdrop;
 }
 
-static NSAttributedString *wordsAt(NSString *previous, NSString *line, NSString *next, CGFloat fontSize, CGFloat dimAlpha) {
+static BOOL isHangul(unichar c) {
+    return (c >= 0xAC00 && c <= 0xD7A3) || (c >= 0x1100 && c <= 0x11FF) || (c >= 0x3130 && c <= 0x318F);
+}
+
+// Core Text breaks Korean inside a word, whatever language the text is tagged with; Korean breaks between words. A
+// word joiner between two Hangul letters keeps each word whole, so its lines break at the spaces. A word wider than
+// the column is still broken, as Core Text breaks any word that does not fit.
+static NSString *keptWhole(NSString *text) {
+    if (![text containsString:@" "]) return text;
+    NSMutableString *kept = [NSMutableString stringWithCapacity:text.length + text.length / 2];
+    for (NSUInteger i = 0; i < text.length; i++) {
+        unichar c = [text characterAtIndex:i];
+        if (i && isHangul(c) && isHangul([text characterAtIndex:i - 1])) [kept appendString:@"\u2060"];
+        [kept appendFormat:@"%C", c];
+    }
+    return kept;
+}
+
+// The line sung last (dimmed), the line, its translation, and the next line (dimmed), each its own paragraph.
+// The translation goes only with the line it belongs to.
+static NSAttributedString *wordsAt(NSString *previous, NSString *line, NSString *translation, NSString *next,
+                                   CGFloat fontSize, CGFloat dimAlpha) {
+    if (!line.length) translation = nil;
     CTFontRef font = CTFontCreateUIFontForLanguage(kCTFontUIFontEmphasizedSystem, fontSize, NULL);
-    CGFloat spacing = fontSize * 0.6;
+    CTFontRef small = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize * kTranslationScale, NULL);
+    CGFloat spacing = fontSize * 0.6, gap = fontSize * kTranslationGap, tall = round(fontSize * kTranslationScale * 1.3);
     CTParagraphStyleSetting settings[] = {
         {kCTParagraphStyleSpecifierParagraphSpacingBefore, sizeof(spacing), &spacing},
     };
-    CTParagraphStyleRef paragraph = CTParagraphStyleCreate(settings, 1);
+    // A fallback font for its script (Korean's, Japanese's) sets the lines further apart than the line's own: held
+    // to the line's spacing.
+    CTParagraphStyleSetting under[] = {
+        {kCTParagraphStyleSpecifierParagraphSpacingBefore, sizeof(gap), &gap},
+        {kCTParagraphStyleSpecifierMaximumLineHeight, sizeof(tall), &tall},
+        {kCTParagraphStyleSpecifierMinimumLineHeight, sizeof(tall), &tall},
+    };
+    CTParagraphStyleRef paragraph = CTParagraphStyleCreate(settings, 1), close = CTParagraphStyleCreate(under, 3);
+    translation = keptWhole(translation);
     CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGFloat white[] = {1, 1, 1, 1}, dim[] = {1, 1, 1, dimAlpha};
-    CGColorRef lit = CGColorCreate(space, white), unlit = CGColorCreate(space, dim);
+    CGFloat white[] = {1, 1, 1, 1}, dim[] = {1, 1, 1, dimAlpha}, soft[] = {1, 1, 1, kTranslationAlpha};
+    CGColorRef lit = CGColorCreate(space, white), unlit = CGColorCreate(space, dim), told = CGColorCreate(space, soft);
     NSMutableAttributedString *words = [NSMutableAttributedString new];
-    NSDictionary *base = @{(id)kCTFontAttributeName: (__bridge id)font, (id)kCTParagraphStyleAttributeName: (__bridge id)paragraph};
-    NSString *texts[] = {previous, line, next};
-    for (int i = 0; i < 3; i++) {
+    NSString *texts[] = {previous, line, translation, next};
+    for (int i = 0; i < 4; i++) {
         if (!texts[i].length) continue;
-        NSMutableDictionary *attributes = [base mutableCopy];
-        attributes[(id)kCTForegroundColorAttributeName] = (__bridge id)(i == 1 ? lit : unlit);
+        BOOL isTranslation = i == 2;
+        NSMutableDictionary *attributes = [@{
+            (id)kCTFontAttributeName: (__bridge id)(isTranslation ? small : font),
+            (id)kCTParagraphStyleAttributeName: (__bridge id)(isTranslation ? close : paragraph),
+            (id)kCTForegroundColorAttributeName: (__bridge id)(i == 1 ? lit : isTranslation ? told : unlit),
+        } mutableCopy];
         NSString *text = words.length ? [@"\n" stringByAppendingString:texts[i]] : texts[i];
         [words appendAttributedString:[[NSAttributedString alloc] initWithString:text attributes:attributes]];
     }
     CFRelease(font);
+    CFRelease(small);
     CFRelease(paragraph);
+    CFRelease(close);
     CGColorRelease(lit);
     CGColorRelease(unlit);
+    CGColorRelease(told);
     CGColorSpaceRelease(space);
     return words;
 }
@@ -115,7 +154,8 @@ static NSAttributedString *wordsAt(NSString *previous, NSString *line, NSString 
 // The words alone on a clear image the size of the clip, nil when there are none. Over moving artwork they
 // carry a shadow, the dimmed lines are less dim, and the image is only the words' box, which `drawn` gets
 // the place of in the clip.
-static CGImageRef newWords(NSString *previous, NSString *line, NSString *next, CGSize size, CGRect *drawn) CF_RETURNS_RETAINED {
+static CGImageRef newWords(NSString *previous, NSString *line, NSString *translation, NSString *next, CGSize size,
+                           CGRect *drawn) CF_RETURNS_RETAINED {
     if (!previous.length && !line.length && !next.length) return NULL;
     CGFloat width = round(size.width * kColumn);
     CGFloat fontSize = size.width * kFont;
@@ -124,7 +164,8 @@ static CGImageRef newWords(NSString *previous, NSString *line, NSString *next, C
     // A long line is set smaller until the two lines fit; past the smallest size it runs taller.
     for (CGFloat scale = 1; scale >= kSmallest - 0.01; scale -= 0.1) {
         if (setter) CFRelease(setter);
-        setter = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)wordsAt(previous, line, next, fontSize * scale, drawn ? kMotionNextAlpha : kNextAlpha));
+        setter = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)wordsAt(previous, line, translation, next,
+            fontSize * scale, drawn ? kMotionNextAlpha : kNextAlpha));
         fits = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRangeMake(0, 0), NULL, CGSizeMake(width, CGFLOAT_MAX), NULL);
         if (fits.height <= size.height * kTallest) break;
     }
@@ -167,8 +208,8 @@ static void drawFrame(CGContextRef context, CGImageRef backdrop, CGImageRef word
     if (words) CGContextDrawImage(context, bounds, words);
 }
 
-CGImageRef SGLyricsClipFrame(CGImageRef backdrop, NSString *line, NSString *next, CGSize size) {
-    CGImageRef words = newWords(nil, line, next, size, NULL);
+CGImageRef SGLyricsClipFrame(CGImageRef backdrop, NSString *line, NSString *translation, NSString *next, CGSize size) {
+    CGImageRef words = newWords(nil, line, translation, next, size, NULL);
     CGContextRef context = newContext(size, NULL, 0);
     drawFrame(context, backdrop, words, size, 0);
     CGImageRef frame = CGBitmapContextCreateImage(context);
@@ -177,7 +218,8 @@ CGImageRef SGLyricsClipFrame(CGImageRef backdrop, NSString *line, NSString *next
     return frame;
 }
 
-BOOL SGLyricsClipWrite(NSURL *file, CGImageRef backdrop, NSString *line, NSString *next, CGSize size, SGLyricsClipStyle style) {
+BOOL SGLyricsClipWrite(NSURL *file, CGImageRef backdrop, NSString *line, NSString *translation, NSString *next, CGSize size,
+                       SGLyricsClipStyle style) {
     // Written beside the file and moved over it once whole, so a clip cut off halfway is never found.
     NSURL *partial = [file URLByAppendingPathExtension:@"partial"];
     [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
@@ -201,7 +243,7 @@ BOOL SGLyricsClipWrite(NSURL *file, CGImageRef backdrop, NSString *line, NSStrin
     [writer addInput:input];
     if (![writer startWriting]) return NO;
     [writer startSessionAtSourceTime:kCMTimeZero];
-    CGImageRef words = newWords(nil, line, next, size, NULL);
+    CGImageRef words = newWords(nil, line, translation, next, size, NULL);
     BOOL ok = YES;
     for (int32_t i = 0; i < frames && ok; i++) {
         while (!input.readyForMoreMediaData && writer.status == AVAssetWriterStatusWriting) [NSThread sleepForTimeInterval:0.002];
@@ -291,9 +333,9 @@ static CGFloat dimAt(size_t y, size_t height) {
     return kMotionDim + (kBandDim - kMotionDim) * edge;
 }
 
-static Over makeOver(Motion motion, NSString *previous, NSString *line, NSString *next) {
+static Over makeOver(Motion motion, NSString *previous, NSString *line, NSString *translation, NSString *next) {
     Over over = {0};
-    over.words = newWords(previous, line, next, motion.cut, &over.drawn);
+    over.words = newWords(previous, line, translation, next, motion.cut, &over.drawn);
     size_t rows = (size_t)motion.cut.height;
     over.keep = malloc(rows * sizeof(uint16_t));
     for (size_t y = 0; y < rows; y++) over.keep[y] = (uint16_t)round(256 * (1 - dimAt(y, rows)));
@@ -417,12 +459,13 @@ static BOOL eachFrame(AVURLAsset *asset, AVAssetTrack *track, Motion motion, dou
     return YES;
 }
 
-CGImageRef SGLyricsClipMotionFrame(NSURL *motionFile, NSString *previous, NSString *line, NSString *next, double from) {
+CGImageRef SGLyricsClipMotionFrame(NSURL *motionFile, NSString *previous, NSString *line, NSString *translation, NSString *next,
+                                   double from) {
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:motionFile options:nil];
     Motion motion;
     AVAssetTrack *track = motionTrack(asset, &motion);
     if (!track) return NULL;
-    Over over = makeOver(motion, previous, line, next);
+    Over over = makeOver(motion, previous, line, translation, next);
     __block CGImageRef frame = NULL;
     eachFrame(asset, track, motion, from, motion.length, ^BOOL(CMSampleBufferRef sample) {
         CVPixelBufferRef buffer = CMSampleBufferGetImageBuffer(sample);
@@ -440,8 +483,8 @@ CGImageRef SGLyricsClipMotionFrame(NSURL *motionFile, NSString *previous, NSStri
     return frame;
 }
 
-BOOL SGLyricsClipWriteOverMotion(NSURL *file, NSURL *motionFile, NSString *previous, NSString *line, NSString *next,
-                                 double from, double seconds) {
+BOOL SGLyricsClipWriteOverMotion(NSURL *file, NSURL *motionFile, NSString *previous, NSString *line, NSString *translation,
+                                 NSString *next, double from, double seconds) {
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:motionFile options:nil];
     Motion motion;
     AVAssetTrack *track = motionTrack(asset, &motion);
@@ -463,7 +506,7 @@ BOOL SGLyricsClipWriteOverMotion(NSURL *file, NSURL *motionFile, NSString *previ
     [writer addInput:input];
     if (![writer startWriting]) return NO;
     [writer startSessionAtSourceTime:kCMTimeZero];
-    Over over = makeOver(motion, previous, line, next);
+    Over over = makeOver(motion, previous, line, translation, next);
     __block BOOL ok = YES, any = NO;
     BOOL read = eachFrame(asset, track, motion, from, seconds, ^BOOL(CMSampleBufferRef sample) {
         if (!drawOver(CMSampleBufferGetImageBuffer(sample), motion, over)) {

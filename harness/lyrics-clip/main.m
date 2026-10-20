@@ -136,20 +136,24 @@ int main(int argc, char **argv) {
         CGSize size = SGLyricsClipSize(round(1206 * 0.75));
         CGImageRef backdrop = SGLyricsClipBackdrop(cover, size);
         CGImageRef plain = SGLyricsClipBackdrop(NULL, size);
+        // name, line, its translation, next
         NSArray *cases = @[
-            @[@"short", @"Hold on", @"we're almost there"],
-            @[@"long", @"And every word I never said keeps ringing out across the quiet of the night", @"until the morning finds us"],
-            @[@"cjk", @"夜空に光る星を数えながら", @"君の名前を呼んだ"],
-            @[@"break", @"", @"The first line, coming up"],
-            @[@"last", @"The very last line", @""],
-            @[@"empty", @"", @""],
+            @[@"short", @"Hold on", @"", @"we're almost there"],
+            @[@"long", @"And every word I never said keeps ringing out across the quiet of the night", @"", @"until the morning finds us"],
+            @[@"cjk", @"夜空に光る星を数えながら", @"", @"君の名前を呼んだ"],
+            @[@"translated", @"夜空に光る星を数えながら", @"밤하늘에 빛나는 별을 세면서", @"君の名前を呼んだ"],
+            @[@"translated-long", @"And every word I never said keeps ringing out across the quiet of the night",
+              @"내가 하지 못한 모든 말들이 고요한 밤을 가로질러 계속 울려 퍼져", @"until the morning finds us"],
+            @[@"break", @"", @"번역만 있는 쉼", @"The first line, coming up"],
+            @[@"last", @"The very last line", @"", @""],
+            @[@"empty", @"", @"", @""],
         ];
         for (NSArray *c in cases) {
             for (SGLyricsClipStyle style = SGLyricsClipStill; style <= SGLyricsClipAnimated; style++) {
                 NSString *name = [NSString stringWithFormat:@"%@-%@.mp4", c[0], style == SGLyricsClipStill ? @"still" : @"animated"];
                 NSURL *url = [out URLByAppendingPathComponent:name];
                 CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
-                BOOL written = SGLyricsClipWrite(url, [c[0] isEqual:@"empty"] ? plain : backdrop, c[1], c[2], size, style);
+                BOOL written = SGLyricsClipWrite(url, [c[0] isEqual:@"empty"] ? plain : backdrop, c[1], c[2], c[3], size, style);
                 double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000;
                 printf("%s\n", name.UTF8String);
                 check(written, [NSString stringWithFormat:@"written in %.0f ms", ms]);
@@ -157,10 +161,26 @@ int main(int argc, char **argv) {
                 NSNumber *bytes = nil;
                 [url getResourceValue:&bytes forKey:NSURLFileSizeKey error:nil];
                 printf("  %.0f KB\n", bytes.doubleValue / 1024);
-                verify(url, [c[0] isEqual:@"empty"] ? plain : backdrop, size, style, [c[1] length] || [c[2] length]);
+                verify(url, [c[0] isEqual:@"empty"] ? plain : backdrop, size, style, [c[1] length] || [c[3] length]);
             }
         }
-        CGImageRef preview = SGLyricsClipFrame(backdrop, @"Hold on", @"we're almost there", size);
+        // A translation adds words under the line, and none without the line it belongs to.
+        {
+            CGImageRef bare = SGLyricsClipFrame(backdrop, @"Hold on", nil, @"we're almost there", size);
+            CGImageRef told = SGLyricsClipFrame(backdrop, @"Hold on", @"조금만 버텨", @"we're almost there", size);
+            CGImageRef alone = SGLyricsClipFrame(backdrop, nil, @"조금만 버텨", @"we're almost there", size);
+            CGImageRef next = SGLyricsClipFrame(backdrop, nil, nil, @"we're almost there", size);
+            double without = wordsIn(bare, backdrop, 0.3, 0.7), with = wordsIn(told, backdrop, 0.3, 0.7);
+            check(with > without * 1.15, [NSString stringWithFormat:@"the translation shows under the line (%.2f%% white, %.2f%% without)",
+                                          with * 100, without * 100]);
+            check(fabs(wordsIn(alone, backdrop, 0.3, 0.7) - wordsIn(next, backdrop, 0.3, 0.7)) < 0.0001, @"no translation without its line");
+            savePNG(told, [out URLByAppendingPathComponent:@"preview-translated.png"]);
+            CGImageRelease(bare);
+            CGImageRelease(told);
+            CGImageRelease(alone);
+            CGImageRelease(next);
+        }
+        CGImageRef preview = SGLyricsClipFrame(backdrop, @"Hold on", nil, @"we're almost there", size);
         check(preview && CGImageGetWidth(preview) == size.width && CGImageGetHeight(preview) == size.height, @"the preview frame is the clip's size");
         savePNG(preview, [out URLByAppendingPathComponent:@"preview.png"]);
         CGImageRelease(preview);

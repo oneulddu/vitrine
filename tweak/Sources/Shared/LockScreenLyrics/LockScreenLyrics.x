@@ -8,6 +8,7 @@
 #import "Core/SGCore.h"
 #import "LockScreenLyrics.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Headers/SPTPlayer.h"
 
 static const NSTimeInterval kTick = 0.25;
@@ -54,6 +55,42 @@ static NSArray<NSArray<SGKaraokeWord *> *> *piecesOf(SGKaraokeLine *line) {
     return pieces;
 }
 
+// A translation has no word timing, so it is split into even pieces too: at spaces, or between characters for
+// text without them (CJK).
+static NSArray<NSString *> *translationPieces(NSString *text) {
+    if (!text.length) return @[];
+    NSUInteger count = MAX((text.length + kMaxChars - 1) / kMaxChars, 1);
+    if (count == 1) return @[text];
+    BOOL unspaced = SGKaraokeUnspacedScript(text);
+    NSMutableArray<NSString *> *tokens = [NSMutableArray array];
+    if (unspaced) {
+        [text enumerateSubstringsInRange:NSMakeRange(0, text.length) options:NSStringEnumerationByComposedCharacterSequences
+                              usingBlock:^(NSString *substring, NSRange substringRange, NSRange enclosingRange, BOOL *stop) {
+            if (substring) [tokens addObject:substring];
+        }];
+    } else {
+        // Split on whitespace rather than by words, so a punctuation mark stays with the word before it.
+        NSCharacterSet *spaces = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+        for (NSString *token in [text componentsSeparatedByCharactersInSet:spaces]) {
+            if (token.length) [tokens addObject:token];
+        }
+        if (!tokens.count) [tokens addObject:text];
+    }
+    if (tokens.count <= count) return tokens;
+    NSUInteger target = (tokens.count + count - 1) / count;
+    NSMutableArray<NSString *> *pieces = [NSMutableArray array];
+    NSMutableArray<NSString *> *piece = [NSMutableArray array];
+    for (NSString *token in tokens) {
+        if (piece.count && piece.count + 1 > target && pieces.count + 1 < count) {
+            [pieces addObject:[piece componentsJoinedByString:unspaced ? @"" : @" "]];
+            piece = [NSMutableArray array];
+        }
+        [piece addObject:token];
+    }
+    if (piece.count) [pieces addObject:[piece componentsJoinedByString:unspaced ? @"" : @" "]];
+    return pieces;
+}
+
 // Seconds into the track at `now`, run on from what Spotify last reported. A rate it left out runs at 1, as
 // playingBy counts it: read as 0, every line written pinned the lock screen's time to Spotify's last report.
 static double elapsedAt(NSDictionary *info, CFAbsoluteTime reportedAt, CFAbsoluteTime now) {
@@ -80,8 +117,38 @@ static NSString *lineFor(NSDictionary *info, double elapsed) {
     if (index < 0) return nil;
     BOOL nextFarOff = index + 1 == (NSInteger)lines.count || lines[index + 1].start - position > kBreakMs;
     if (position > lines[index].end + kBreakMs && nextFarOff) return nil;
+    SGKaraokeLine *current = lines[index];
+    BOOL wantTranslation = SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) == SGLockScreenLyricsLineTranslation;
+    // Translations wanted here: asked once a track and language, not every tick. Saved ones are synced first, so
+    // a line that has one shows it even when no automatic translation runs.
+    static NSString *translatedTrack, *translatedLanguage;
+    static NSArray<SGKaraokeLine *> *translatedLines;
+    if (wantTranslation) {
+        NSString *language = SGLyricsGeminiLanguage();
+        // A refined source hands over a new array for the same track: it needs the saved translations too.
+        if (![translatedTrack isEqualToString:trackID] || ![translatedLanguage isEqualToString:language] || translatedLines != lines) {
+            translatedTrack = trackID;
+            translatedLanguage = language;
+            translatedLines = lines;
+            SGRAutoTranslateWithoutView(trackID, lines, ^BOOL {
+                return [trackID isEqualToString:SGKaraokePlayingTrack()]
+                    && SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) == SGLockScreenLyricsLineTranslation;
+            });
+        }
+    } else {
+        translatedTrack = nil;
+    }
+    if (wantTranslation && current.translation.length) {
+        NSArray<NSString *> *pieces = translationPieces(current.translation);
+        NSInteger start = current.start, end = MAX(SGKaraokeSungEnd(current), start);
+        NSUInteger shownIndex = 0;
+        for (NSUInteger i = 0; i < pieces.count; i++) {
+            if (start + (NSInteger)i * (end - start) / (NSInteger)pieces.count <= position) shownIndex = i;
+        }
+        return pieces[shownIndex];
+    }
     NSString *shown = nil;
-    for (NSArray<SGKaraokeWord *> *piece in piecesOf(lines[index])) {
+    for (NSArray<SGKaraokeWord *> *piece in piecesOf(current)) {
         if (!shown || piece.firstObject.start <= position) shown = textOf(piece);
     }
     return shown;
@@ -187,6 +254,19 @@ static BOOL playingBy(NSDictionary *info) {
     if (!SGFlag(SGKeyLockScreenLyrics, NO)) return;
     sg_lock = [NSObject new];
     %init;
+    // A translation saved while the player is paused has no tick to pick it up (Shared/LyricsTranslation).
+    // Heard on the writing thread and handed to main without waiting (AGENTS.md).
+    [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsTranslationSavedNotification object:nil queue:nil
+                                                usingBlock:^(NSNotification *note) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSString *track = note.object;
+            if (![track isEqualToString:SGKaraokePlayingTrack()]
+                || SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) != SGLockScreenLyricsLineTranslation) return;
+            SGLyricsSyncSavedTranslation(track, note.userInfo[@"language"], SGKaraokeLinesForTrack(track));
+            sg_shownLine = nil;
+            tick();
+        });
+    }];
     // The timer waits for Spotify to report a playing track; nothing before that has a line to show.
     SGLog(@"lock screen lyrics: on");
 }

@@ -4,6 +4,7 @@
 #import "PlayerSettings.h"
 #import "SleepTimer.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "Shared/Lyrics/Lyrics.h"
 
 // The sleep timer's fade, under either look and on every iOS: the Live Activity's Timer tab, the Sleep Timer
@@ -25,8 +26,11 @@ SGModSection *SGSleepTimerSettingsSection(void) {
 UIViewController *SGLockScreenWidgetPage(void) {
     SGModRow *likes = SGFlagRow(SGL(@"settings.player.like_dislike.title", @"Like and dislike buttons"), @"ios-feature-lockscreen.like_dislike_enabled");
     likes.subtitle = SGL(@"settings.player.like_dislike.subtitle", @"Off and locked while Switch with the star is on: the star takes their place");
+    SGModRow *line = SGChoiceRow(SGL(@"settings.player.lyrics_line.title", @"Lyrics line"), SGL(@"settings.player.lyrics_line.subtitle", @"A line without a translation shows the original"),
+                                 SGKeyLockScreenLyricsLine, @[SGL(@"settings.player.lyrics_line.choice.original", @"Original"), SGL(@"settings.player.lyrics_line.choice.translation", @"Translation")], SGLockScreenLyricsLineOriginal);
+    line.visible = ^BOOL { return SGFlag(SGKeyLockScreenLyrics, NO); };
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.player.lockscreen.title", @"Lock screen") intro:SGRestartNote sections:@[
-        SGSection(SGL(@"settings.player.widget.header", @"Widget"), @[SGLockScreenLyricsRow(), likes]),
+        SGSection(SGL(@"settings.player.widget.header", @"Widget"), @[SGLockScreenLyricsRow(), line, likes]),
         SGSection(SGL(@"settings.player.artwork.header", @"Artwork"), SGLockScreenMotionRows()),
     ] footer:nil];
 }

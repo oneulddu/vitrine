@@ -241,7 +241,7 @@ int motionMain(NSURL *out, int argc, char **argv) {
         CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
         BOOL ok = !strcmp(argv[0], "one")
             ? SGLyricsClipWriteOverMotion([out URLByAppendingPathComponent:@"one.mp4"], video, @"(And I turn into a stalker)",
-                                          @"I stare at the moon", @"When nighttime comes", 1, 4.5)
+                                          @"I stare at the moon", nil, @"When nighttime comes", 1, 4.5)
             : SGMotionClipShape(video, 0.75, [out URLByAppendingPathComponent:@"one-cut.mp4"]);
         printf("%s %s in %.0f ms; footprint now %.1f MB, peak %.1f MB\n", argv[0], ok ? "written" : "FAILED",
                (CFAbsoluteTimeGetCurrent() - start) * 1000, footprintMB(NO), footprintMB(YES));
@@ -273,9 +273,9 @@ int motionMain(NSURL *out, int argc, char **argv) {
     for (NSURL *bad in @[gone, cutShort]) {
         NSURL *clip = [out URLByAppendingPathComponent:[@"from-" stringByAppendingString:bad.lastPathComponent]];
         CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
-        BOOL written = SGLyricsClipWriteOverMotion(clip, bad, nil, @"A line", @"the next", 1, 3);
+        BOOL written = SGLyricsClipWriteOverMotion(clip, bad, nil, @"A line", nil, @"the next", 1, 3);
         double ms = (CFAbsoluteTimeGetCurrent() - started) * 1000;
-        CGImageRef preview = SGLyricsClipMotionFrame(bad, nil, @"A line", @"the next", 1);
+        CGImageRef preview = SGLyricsClipMotionFrame(bad, nil, @"A line", nil, @"the next", 1);
         check(!written && !preview && ![NSFileManager.defaultManager fileExistsAtPath:clip.path],
               [NSString stringWithFormat:@"%@: not written (in %.0f ms) and no preview", bad.lastPathComponent, ms]);
         CGImageRelease(preview);
@@ -287,14 +287,15 @@ int motionMain(NSURL *out, int argc, char **argv) {
     // The lyrics clip as it is, Animated, for the Mac-to-phone ratio: the phone wrote 96 such frames in about 4 s.
     CGImageRef plain = SGLyricsClipBackdrop(NULL, SGLyricsClipSize(904));
     CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
-    SGLyricsClipWrite([out URLByAppendingPathComponent:@"animated.mp4"], plain, @"Hold on", @"we're almost there", SGLyricsClipSize(904), SGLyricsClipAnimated);
+    SGLyricsClipWrite([out URLByAppendingPathComponent:@"animated.mp4"], plain, @"Hold on", nil, @"we're almost there", SGLyricsClipSize(904), SGLyricsClipAnimated);
     double animatedMs = (CFAbsoluteTimeGetCurrent() - start) * 1000;
     CGImageRelease(plain);
     printf("the Animated lyrics clip, 60 frames at 896x1200: %.0f ms, %.1f ms a frame\n", animatedMs, animatedMs / 60);
 
     NSArray *cases = @[
-        // name, previous, line, next, from, seconds
+        // name, previous, line, next, from, seconds[, the line's translation]
         @[@"line", @"(And I turn into a stalker)", @"I stare at the moon", @"When nighttime comes", @1.0, @3.5],
+        @[@"translated", @"(And I turn into a stalker)", @"I stare at the moon", @"When nighttime comes", @1.0, @3.5, @"나는 달을 바라봐"],
         @[@"long", @"Hold on", @"And every word I never said keeps ringing out across the quiet of the night", @"until the morning finds us", @2.0, @5.0],
         @[@"wrap", @"", @"Round the end of the video", @"and on from its start", @-1.5, @3.0],
         @[@"whole", @"Before", @"A line longer than the video", @"", @3.0, @20.0],
@@ -337,11 +338,12 @@ int motionMain(NSURL *out, int argc, char **argv) {
         for (NSArray *c in cases) @autoreleasepool {
             double from = [c[4] doubleValue] < 0 ? length + [c[4] doubleValue] : [c[4] doubleValue], seconds = [c[5] doubleValue];
             double wanted = MIN(seconds, length);
+            NSString *translation = c.count > 6 ? c[6] : nil;
             NSURL *url = [out URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@.mp4", name, c[0]]];
             start = CFAbsoluteTimeGetCurrent();
-            BOOL written = SGLyricsClipWriteOverMotion(url, video, c[1], c[2], c[3], from, seconds);
+            BOOL written = SGLyricsClipWriteOverMotion(url, video, c[1], c[2], translation, c[3], from, seconds);
             if (!matches) {
-                CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], c[3], from);
+                CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from);
                 check(!written && !preview && ![NSFileManager.defaultManager fileExistsAtPath:url.path],
                       @"not written and no preview, so the line falls back to the cover rather than showing without its words");
                 CGImageRelease(preview);
@@ -371,10 +373,11 @@ int motionMain(NSURL *out, int argc, char **argv) {
             check(whiteIn(first, 0, 0.15, 225) < 0.0005 && whiteIn(first, 0.85, 1, 225) < 0.0005, @"nothing white under the clock or the controls");
             double moved = differ(first, middle);
             check(moved > 2, [NSString stringWithFormat:@"the picture moves (%.1f of 255 between the start and the middle)", moved]);
-            CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], c[3], from);
+            CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from);
             double off = preview ? differ(preview, first) : 255;
             check(off < 10, [NSString stringWithFormat:@"the preview is the first frame (%.1f of 255 apart, the encode's loss)", off]);
-            if (preview && [c[0] isEqual:@"line"]) savePNG(preview, [out URLByAppendingPathComponent:[name stringByAppendingString:@"-preview.png"]]);
+            if (preview && ([c[0] isEqual:@"line"] || translation))
+                savePNG(preview, [out URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@-preview.png", name, c[0]]]);
             CGImageRelease(preview);
             if ([c[0] isEqual:@"bare"]) {
                 // The picture under the words, as dimmed: white on its brightest 5%, and the dimmed lines' 40% white over it.

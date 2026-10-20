@@ -1,8 +1,10 @@
 # Lyrics clip harness
 
 `SGLyricsClip.m`, the clips the lock screen shows a line of lyrics in, run on the Mac. It renders a
-short line, a long one, a CJK one, a break (the next line only), the last line and an empty clip, each
-as a Still and as Animated, over a stand-in cover or the image given. Every file is read back with
+short line, a long one, a CJK one, two with a translation under the line, a break (the next line only, a
+translation without its line left out), the last line and an empty clip, each as a Still and as Animated,
+over a stand-in cover or the image given. It checks that a translation adds words under its line and none
+without it, and saves that preview as `preview-translated.png`. Every file is read back with
 AVFoundation and checked: its length (2 s for a still, 4 s for an animated loop), its 3:4 size, H.264,
 how many frames it holds (1 or 60), white words in the middle band and none under the clock or the
 controls, and the words the same at the end as at the start. It prints how long each clip took to
@@ -14,7 +16,8 @@ The clips land in `build/clips/`.
 
 `motion` renders Moving artwork with lyrics (`SGLyricsClipWriteOverMotion`, `motion.m`) over two stand-ins
 it makes, a bright busy flag (720x1280, 30 fps, a Canvas's shape) and a dark field (904x1206, 24 fps, an
-Apple Music cover's), and over any videos given: a line with the one before and after, a long line, a
+Apple Music cover's), and over any videos given: a line with the one before and after, the same with its
+translation (its preview saved as `<video>-translated-preview.png`), a long line, a
 stretch round the video's end, one longer than the video (written whole), a break and no words. Each is
 read back and checked: length, the 3:4 cut's size, H.264, frames at up to 30 fps, words in the middle and
 nothing white under the clock or the controls, the picture moving, and the preview the same as the first

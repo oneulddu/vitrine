@@ -28,6 +28,9 @@ static inline BOOL SGLockArtworkShowsLyrics(SGLockArtwork artwork) {
 }
 // How the lyrics are drawn, stored as the index of SGLyricsClipStyle (Still unless changed).
 #define SGKeyLockScreenLyricsStyle @"spotifyglass.lockscreen.lyricsStyle"
+// Off until switched on: the line's translation, where the lyrics have one (or automatic translation makes
+// one), shows smaller under the line. Read on each tick, so a change applies at once.
+#define SGKeyLockScreenTranslation @"spotifyglass.lockscreen.translation"
 // Off until switched on: the lock screen widget's star switches the choice between a choice with lyrics and
 // one without (LockScreenStar.x), and takes the place of Spotify's like and dislike buttons. StarBack is the
 // choice the star left, to go back to.

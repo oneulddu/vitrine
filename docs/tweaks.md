@@ -287,7 +287,15 @@ Shared:
                   store), which is remembered for the launch and tried again only when handed over again. A track with
                   no synced lines, or whose lines are not in yet, shows its moving artwork plain, as Moving artwork does:
                   LyricsArtwork.x says so (SGLockMotionShowPlain) and LockScreenMotion.x shows it and takes it off for
-                  the lyrics' clips. Rendered on the Mac against harness/lyrics-clip/ (`motion`, over a
+                  the lyrics' clips. Translations (spotifyglass.lockscreen.translation, off) put the line's translation
+                  under it, in the regular weight at 0.62 of its size, a word joiner between Hangul letters so Korean
+                  breaks at its spaces; the ID carries t and an FNV-1a hash of it, so a translation coming in re-offers
+                  the line. The artist row's Lyrics line (spotifyglass.lockScreenLyrics.line: Original, or Translation
+                  where the line has one) splits a long translation into even pieces over the line's time. Either one
+                  asks SGRAutoTranslateWithoutView (declared in LockScreenLyrics.h, defined in Redesigned/Lyrics/
+                  AutoTranslation.m) once a track and language: the saved translation is synced onto the lines, then
+                  automatic translation runs on the lyrics view's terms and job ledger, without a view or the app in
+                  front. Rendered on the Mac against harness/lyrics-clip/ (`motion`, over a
                   bright busy, a dark and any given videos). What reaches the
                   system's now playing through this hook and Player/NowPlayingExtras.x is checked by harness/now-playing/
     AnimatedArtwork/ moving artwork (AnimatedArtwork.h): the track's Canvas, else Apple Music's animated album cover
@@ -955,8 +963,9 @@ model with the full one, is on the iPhone), Toggle from lyrics (the redesign's m
 and under Advanced Runs on (Automatic: the Neural Engine
 beside the CPU; CPU only), Prepare after updates, Ignore heat warnings and Ignore memory warnings, all applying straight away. Lock screen, on the main
 page under either look, opens the lock screen widget's page, titled Lock screen: Widget (the line in place of the artist,
-and Spotify's like and dislike buttons' flag, locked off while the star is on) then Artwork (Off, Moving artwork, Lyrics,
-Every song or Moving artwork with lyrics, the lyrics' style, Still or Animated, Switch with the star, the sources and Low Data Mode; below iOS 26
+its Lyrics line, Original or Translation, and Spotify's like and dislike buttons' flag, locked off while the star is on) then
+Artwork (Off, Moving artwork, Lyrics, Every song or Moving artwork with lyrics, the lyrics' style, Still or Animated,
+Translations, Switch with the star, the sources and Low Data Mode; below iOS 26
 one row saying why not). Spotify's podcast, audiobook and artwork flags stay in All flags. Player: Gestures, Blocked artists (with the count on the row) and Sleep timer's Fade-out duration, which work with either look, including below iOS 17;
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and
 Spotify's own player screen (artwork background, glass header buttons, Disable Canvas and the sheet,

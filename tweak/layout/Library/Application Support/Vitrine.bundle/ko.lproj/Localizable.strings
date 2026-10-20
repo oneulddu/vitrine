@@ -876,6 +876,8 @@
 "settings.lockscreen.needs_ios26.status" = "iOS 26 필요";
 "settings.lockscreen.star_switch.subtitle" = "잠금 화면 위젯의 별으로 움직이는 아트워크와 가사를 서로 전환합니다. Spotify의 좋아요 및 싫어요 버튼을 대체합니다";
 "settings.lockscreen.star_switch.title" = "별로 전환";
+"settings.lockscreen.translations.subtitle" = "가사에 번역이 있거나 자동 번역이 만들면 줄 아래에 표시";
+"settings.lockscreen.translations.title" = "번역";
 "settings.lossless.files.subtitle" = "Spotify 스트림 대신 소장 중인 FLAC 재생";
 "settings.lossless.files.title" = "무손실 파일";
 "settings.lossless.footer" = "FLAC 또는 ALAC 파일을 파일 앱 › Spotify › Lossless에 넣으십시오. 노래 제목과 길이가 일치하고 사운드가 Spotify에서 재생되는 내용과 일치하면 노래가 시작되거나 탐색한 지 약 4초 후부터 해당 파일이 재생됩니다. 다음 곡에 파일이 있는 동안에도 Spotify는 자체 음원을 최저 음질로 계속 스트리밍합니다. 노래방 및 1x 이외의 속도에서는 Spotify의 사운드가 유지됩니다. Spotify를 다시 시작한 후에 적용됩니다.";
@@ -1310,6 +1312,10 @@
 "settings.player.like_dislike.subtitle" = "'별로 전환'이 켜져 있으면 끔으로 고정되며 별이 이 자리를 대신합니다";
 "settings.player.like_dislike.title" = "좋아요 및 싫어요 버튼";
 "settings.player.lockscreen.title" = "잠금 화면";
+"settings.player.lyrics_line.choice.original" = "원문";
+"settings.player.lyrics_line.choice.translation" = "번역";
+"settings.player.lyrics_line.subtitle" = "번역이 없는 줄은 원문으로 표시합니다";
+"settings.player.lyrics_line.title" = "가사 줄";
 "settings.player.mini_player.footer" = "Apple Music 스타일은 아래로 스크롤할 때 재생 중 막대를 두 탭 사이로 이동시킵니다.";
 "settings.player.mini_player.header" = "미니 플레이어";
 "settings.player.motion_low_data.subtitle" = "노래당 최대 약 7MB. Vitrine 전체의 움직이는 아트워크에 적용됩니다.";

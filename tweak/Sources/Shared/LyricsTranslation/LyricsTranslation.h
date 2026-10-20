@@ -9,6 +9,9 @@ BOOL SGGeminiKeySet(void);
 // Posted on the main thread when the saved translations are deleted or Translate any song changes: the lyrics
 // page syncs its song again and redraws.
 extern NSNotificationName const SGLyricsTranslationsDidChangeNotification;
+// Posted on the main thread after SGLyricsSaveTranslation queues a save, object the track ID and userInfo
+// @{@"language": language}: a reader with no lyrics view (the lock screen) syncs and redraws at once.
+extern NSNotificationName const SGLyricsTranslationSavedNotification;
 
 // On: the translate menu is offered for every song, not only those found in another language.
 #define SGKeyLyricsTranslateEverySong @"spotifyglass.lyrics.translateEverySong"

@@ -22,6 +22,8 @@ NSArray *SGLockScreenMotionRows(void) {
                                                        @"With moving artwork, for songs that have none"),
                                       SGKeyLockScreenLyricsStyle, @[SGL(@"settings.lockscreen.lyrics_style.choice.still", @"Still"), SGL(@"settings.lockscreen.lyrics_style.choice.animated", @"Animated")], 0);
         style.visible = ^BOOL { return SGLockArtworkShowsLyrics(SGLockScreenArtwork()); };
+        SGModRow *translation = SGOptionRow(SGL(@"settings.lockscreen.translations.title", @"Translations"), SGL(@"settings.lockscreen.translations.subtitle", @"Under the line, when the lyrics have one or automatic translation makes one"), SGKeyLockScreenTranslation);
+        translation.visible = style.visible;
         SGModRow *lowData = SGOptionRow(SGL(@"settings.lockscreen.low_data.title", @"Download in Low Data Mode"), SGL(@"settings.lockscreen.low_data.subtitle", @"Moving artwork, up to about 7 MB a song. Applies to animated artwork throughout Vitrine."), SGKeyMotionLowData);
         lowData.visible = ^BOOL {
             SGLockArtwork artwork = SGLockScreenArtwork();
@@ -46,6 +48,7 @@ NSArray *SGLockScreenMotionRows(void) {
         return @[
             artwork,
             style,
+            translation,
             star,
             sources,
             lowData,

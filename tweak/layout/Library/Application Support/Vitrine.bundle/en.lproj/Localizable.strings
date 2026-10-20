@@ -882,6 +882,8 @@
 "settings.lockscreen.needs_ios26.status" = "Needs iOS 26";
 "settings.lockscreen.star_switch.subtitle" = "The lock screen widget's star swaps the moving artwork for the lyrics and back. It takes the place of Spotify's like and dislike buttons";
 "settings.lockscreen.star_switch.title" = "Switch with the star";
+"settings.lockscreen.translations.subtitle" = "Under the line, when the lyrics have one or automatic translation makes one";
+"settings.lockscreen.translations.title" = "Translations";
 
 "settings.lossless.files.subtitle" = "Your own FLACs in place of Spotify's stream";
 "settings.lossless.files.title" = "Lossless files";
@@ -1346,6 +1348,10 @@
 "settings.player.like_dislike.subtitle" = "Off and locked while Switch with the star is on: the star takes their place";
 "settings.player.like_dislike.title" = "Like and dislike buttons";
 "settings.player.lockscreen.title" = "Lock screen";
+"settings.player.lyrics_line.choice.original" = "Original";
+"settings.player.lyrics_line.choice.translation" = "Translation";
+"settings.player.lyrics_line.subtitle" = "A line without a translation shows the original";
+"settings.player.lyrics_line.title" = "Lyrics line";
 "settings.player.mini_player.footer" = "Apple Music style moves the now playing bar in between two tabs as you scroll down.";
 "settings.player.mini_player.header" = "Mini player";
 "settings.player.motion_low_data.subtitle" = "Up to about 7 MB a song. Applies to animated artwork throughout Vitrine.";

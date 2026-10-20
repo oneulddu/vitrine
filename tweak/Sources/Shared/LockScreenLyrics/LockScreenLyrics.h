@@ -4,7 +4,24 @@
 #import <Foundation/Foundation.h>
 
 #define SGKeyLockScreenLyrics @"spotifyglass.lockScreenLyrics"
+// Which line the artist row shows, as the index of SGKeyLockScreenLyricsLine choices: 0 the original,
+// 1 the translation where the line has one. Read on each tick.
+#define SGKeyLockScreenLyricsLine @"spotifyglass.lockScreenLyrics.line"
+typedef NS_ENUM(NSInteger, SGLockScreenLyricsLine) {
+    SGLockScreenLyricsLineOriginal = 0,
+    SGLockScreenLyricsLineTranslation,
+};
 
+// Automatic translation for a reader with no lyrics view on screen (the lock screen), on the main queue; declared
+// here and defined high, in Redesigned/Lyrics/AutoTranslation.m (AGENTS.md, Where code goes). The lyrics view's
+// conditions and ledger: no new request unless automatic translation is on, the song is one to translate (another
+// language than SGLyricsGeminiLanguage(), or Translate any song, and its language rule allows translation), a
+// service is available, and no job for the track and language runs or was tried this session. The saved
+// translation is synced onto `lines` first, even with automatic translation off; the translations made go into
+// `lines`, are saved and are posted to the lyrics views as theirs are. No view or foreground is required.
+// `mayContinue` is asked before each service is started, NO to stop (an answer already on its way is still saved).
+@class SGKaraokeLine;
+void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void));
 // Moving artwork with lyrics: the moving artwork clip found for the track `uri`, a local file, which
 // LyricsArtwork.x draws the lines over while that track plays. Main queue.
 void SGLyricsArtworkSetMotion(NSString *uri, NSURL *file);

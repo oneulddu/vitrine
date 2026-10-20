@@ -1,4 +1,4 @@
-// Automatic requests belong to the redesigned lyrics view; translators and saved results stay shared.
+// Translation jobs shared by the redesigned lyrics view and headless readers.
 #import <Foundation/Foundation.h>
 @class SGModRow, SGKaraokeLine;
 #define SGRKeyLyricsAutoTranslation @"spotifyglass.redesign.lyrics.autoTranslation"
@@ -29,8 +29,25 @@ void SGRAutoTranslationSuppress(NSString *track, NSString *language);
 void SGRAutoTranslationRegister(NSString *track, NSString *language, NSUInteger token);
 void SGRAutoTranslationFinish(NSString *track, NSString *language, NSUInteger token);
 typedef void (^SGRAutoTranslated)(NSArray<NSString *> *lines, NSString *error);
+typedef void (^SGRTranslator)(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *language,
+                             SGRAutoTranslated progress, SGRAutoTranslated done);
+// Main-queue manual/automatic job machinery. A live answer is saved before `done`; stale answers are ignored.
+// `started` runs after the start notification, before invoking the translator. Either callback may be nil.
+BOOL SGRTranslationJobRunning(NSString *track, NSString *language);
+void SGRTranslateLyrics(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *language,
+                        NSUInteger automaticRevision, SGRTranslator translator, dispatch_block_t started, SGRAutoTranslated done);
+void SGRForgetTranslationJob(NSString *track, NSString *language);
+extern NSNotificationName const SGRTranslationNotification;
+extern NSString *const kTranslationLines, *const kTranslationRemoved, *const kTranslationLanguage;
+void SGRTranslationChanged(NSString *track, NSString *language, NSString *what);
+BOOL SGRLyricsHasWords(SGKaraokeLine *line);
+BOOL SGRLyricsInAnotherLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language);
+BOOL SGRLyricsShouldTranslate(BOOL foreign);
+BOOL SGRLyricsTranslationAllowed(NSString *track, NSArray<SGKaraokeLine *> *lines);
 void SGRAutoTranslateInOrder(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *language,
                              NSUInteger revision, BOOL (^mayContinue)(void), SGRAutoTranslated progress, SGRAutoTranslated done);
+// SGRAutoTranslateWithoutView, for the lock screen, is declared low in Shared/LockScreenLyrics/LockScreenLyrics.h and
+// defined in AutoTranslation.m.
 
 // Main-thread snapshots for the current song, never persisted or attributed to restored cache entries.
 typedef NS_ENUM(NSInteger, SGRAutoTranslationPhase) {
