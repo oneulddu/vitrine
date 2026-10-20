@@ -116,7 +116,10 @@ Shared:
                   against the position takes it off first (the redesign's lyrics view and its word sweep, the lock
                   screen's line and artwork, the Live Activity, the native look's lyrics page for local files), and a
                   tap on a line seeks to its start plus the delay. Karaoke's audio, the scrubber and the lyrics preview
-                  are left alone. It is read at every use, so a change applies at once (checked by harness/lyrics' -check). With EeveeSpotify injected (SGEeveeSpotifyInjected), its lyrics
+                  are left alone. It is read at every use, so a change applies at once (checked by harness/lyrics' -check).
+                  The redesign's lyrics view asks its display link for 80 to 120 Hz, and drops it to 10 to 15 Hz once a
+                  paused song has been still for a second, while the page is not scrolled by hand and no tapped line is
+                  gliding, logging each change as “karaoke: frame rate idle (paused)” and “frame rate full”. With EeveeSpotify injected (SGEeveeSpotifyInjected), its lyrics
                   answer Spotify's requests and the mod's sources and its own requests stand aside. On top of the Delay, an
                   offset per song (SGLyricsTrackOffsetMs, the newest 500) and one per output (SGLyricsRouteOffsetMs, by the
                   port's UID, none for the iPhone's own speaker), each -5000 to 5000 ms and set from the redesign's Sync

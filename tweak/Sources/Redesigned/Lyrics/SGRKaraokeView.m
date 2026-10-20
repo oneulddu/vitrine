@@ -122,6 +122,9 @@ static const double kBreakOut = 0.35, kBreakSwell = 1.2, kBreakSwellShare = 0.35
 static const double kBreakSlack = 0.03;
 // A position that has not moved for this long is a paused player, not two frames between readings.
 static const CFTimeInterval kStillFor = 0.1;
+// A song paused this long leaves nothing moving on the page, so its link drops to a few frames a second
+// until the song or the page is touched again.
+static const CFTimeInterval kIdleAfterPause = 1.0;
 
 @interface CAFilter : NSObject
 + (instancetype)filterWithType:(NSString *)type;
@@ -1411,6 +1414,7 @@ typedef struct {
     CGFloat _browseAnchor;
     NSInteger _browseBreak;
     CADisplayLink *_link;
+    BOOL _idleRate;   // whether the link is at the paused rate, so it is only asked for when that changes
     NSString *_track;
     NSArray<SGKaraokeLine *> *_lines;
     // The song is placed from its lines' heights alone; views exist for the lines in and near sight.
@@ -1720,6 +1724,7 @@ typedef struct {
         _browseBreak = _openBreak;
     }
     _browsing = YES;
+    [self updateFrameRate];   // a scroll is drawn at full rate from its first frame, not from the next tick
     if (self.browsingBegan) self.browsingBegan();
     for (SGRKaraokeLineView *view in _shown.allValues) view.blur = 0;
 }
@@ -1767,6 +1772,7 @@ typedef struct {
 - (void)glideTo:(NSInteger)ms {
     _seekTo = ms;
     _seekAt = CACurrentMediaTime();
+    [self updateFrameRate];   // the glide to the tapped line needs every frame
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
     if (_browsing) {
         _browsing = NO;
@@ -1832,6 +1838,7 @@ typedef struct {
     if (_inactive || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
     _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
     _link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+    _idleRate = NO;   // a new link starts full, whatever the last one was left at
     [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     [self queueAutomaticTranslation];
 }
@@ -2970,7 +2977,22 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     _clock = raw < 0 || fabs(error) > kClockSnapMs ? reported : predicted + error * kClockPull;
     _reported = raw;
     _clockTime = shown;
+    [self updateFrameRate];
     return _clock;
+}
+
+// A paused song stops the sweep and the dots settle, so the page has nothing more to draw than a still
+// picture: a few frames a second are enough then, and the phone spends less of its battery on the link.
+// Anything that moves the page again puts it back to full at once, so nothing looks late.
+- (void)updateFrameRate {
+    if (!_link) return;
+    BOOL idle = !_sample && !_browsing && !_seekAt && _stillSince
+        && _link.targetTimestamp - _stillSince >= kIdleAfterPause;
+    if (idle == _idleRate) return;
+    _idleRate = idle;
+    _link.preferredFrameRateRange = idle ? CAFrameRateRangeMake(10, 15, 15) : CAFrameRateRangeMake(80, 120, 120);
+    if (idle) SGLog(@"karaoke: frame rate idle (paused)");
+    else SGLog(@"karaoke: frame rate full");
 }
 
 - (void)tick {
@@ -2982,6 +3004,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
         _passedOver = nil;
         _builtWidth = 0;
         _stillSince = 0;   // the last song's pause says nothing of this one's
+        [self updateFrameRate];   // a new song is drawn at full rate, paused or not
         [self creditTo:nil];
         [self dropLineViews];
         [self offerExtras];
