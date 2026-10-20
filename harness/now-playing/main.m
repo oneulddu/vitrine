@@ -62,6 +62,13 @@ NSString *SGKaraokePlayingTrack(void) { return @"track"; }
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) { return sg_lines; }
 void SGKaraokeRequestLyrics(NSString *trackID) {}
 NSInteger SGKaraokeDelayMs(void) { return [NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsDelay]; }
+// The artist row's translation (LockScreenLyrics.x): the Lyrics line choice stays Original, so the line checked here is
+// the one sung, and nothing is translated.
+NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
+void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
+void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void)) {}
+NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
 
 static SGKaraokeLine *lineOf(NSString *text, NSInteger start, NSInteger end) {
     SGKaraokeWord *word = [SGKaraokeWord new];
