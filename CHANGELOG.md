@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.0.0-beta.17](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.16...v1.0.0-beta.17) (2026-10-20)
+
+
+### Features
+
+* Mod Settings에 설정 검색 추가 ([3f527a9](https://github.com/oneulddu/vitrine/commit/3f527a93ae2d07b0a5c9f4b8332c8371af530471))
+* PiP 가사 첫 버전 추가 ([ac2f9e1](https://github.com/oneulddu/vitrine/commit/ac2f9e1a28c52a40f79b251e5013c4b52997a281))
+* PiP 가사 프레임에 최소 글자 크기와 말줄임, PNG 확인 명령 추가 ([004150d](https://github.com/oneulddu/vitrine/commit/004150d5aeb7d9c1e5511bcb15959c1a26f736ae))
+* 오프라인 감상용 가사 저장 추가 ([9b9ec1c](https://github.com/oneulddu/vitrine/commit/9b9ec1c936a87affad8c35b09876a445d3f796e5))
+* 잠금화면 가사 번역 표시와 자동 번역 추가 ([81f573b](https://github.com/oneulddu/vitrine/commit/81f573ba1cab3bf09fba73da643f47fda9302704))
+* 커버 안 정사각형 애니메이션과 검정·내 사진 플레이어 배경 추가 ([5983a34](https://github.com/oneulddu/vitrine/commit/5983a34974eee30318851eb9f738f0b92a598879))
+
+
+### Fixes
+
+* PiP 가사 건너뛰기 완료 시점과 간주 표시 수정 ([0a1117e](https://github.com/oneulddu/vitrine/commit/0a1117ed68529ce3e5b88c3d22f2d69f9207989f))
+* PiP 시작 시 첫 프레임을 다시 시도 ([77baa0e](https://github.com/oneulddu/vitrine/commit/77baa0eaddd5c59a942444a45c5d7d18a7f1df86))
+* 백그라운드 디스플레이 링크와 NetEase 응답 크래시, 세션·옵저버 누수 수정 ([d0be8f3](https://github.com/oneulddu/vitrine/commit/d0be8f3520d17895171aacf76278c41605d5afba))
+
+
+### Performance
+
+* 메인 스레드 plist 쓰기와 반복 설정 읽기, 정규식·규칙 재생성 줄이기 ([86f6ad1](https://github.com/oneulddu/vitrine/commit/86f6ad13af2555ae144be8764049a1ee062f9277))
+* 일시정지 중 가사 화면 갱신 빈도 낮추기 ([5a53f18](https://github.com/oneulddu/vitrine/commit/5a53f18f5171c41fbcfd28ad06e41f770894c67c))
+
 ## [1.0.0-beta.16](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.15...v1.0.0-beta.16) (2026-10-17)
 
 
