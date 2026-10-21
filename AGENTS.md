@@ -68,6 +68,10 @@ Rules:
 
 - Build: `make install` (signs and pushes to the phone), `make quick` (a tweak-only change, in seconds), `make release` (IPA only). Tweak only:
   `env -u MAKELEVEL gmake -C tweak clean package`.
+- Handing over an IPA: upload it with `rclone copy out/vitrine-<version>.ipa dropbox:Vitrine/`, confirm it with
+  `rclone check out/vitrine-<version>.ipa dropbox:Vitrine/ --one-way`, and give the `rclone link` URL with `dl=0`
+  changed to `dl=1`. Then delete that IPA from `out/` (leave `out/extension/`, the extension build cache). Never
+  print `rclone config` output or the config file: it holds the Dropbox tokens.
 - Look at Spotify's views through recorded trees (`make session` records clean ones into
   `trees/clean/`) before hooking anything. Prove every class and selector against the tree or the binary.
 - Device log: `make log` (`[spotifyglass]` lines).
