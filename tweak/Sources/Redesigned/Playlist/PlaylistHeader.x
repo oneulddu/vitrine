@@ -43,6 +43,7 @@ static const CGFloat kMinHero = 120, kMinCover = 80;
 static char kCoverKey, kMetaKey, kPlayKey, kLayoutKey, kToolbarKey, kScrimKey, kBarScrimKey;
 static char kShuffleKey, kAddKey, kDownloadKey, kInfoKey, kBlockHeightKey, kBlockWatchedKey;
 static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kSortKey;
+static char kIndependentActionsKey;
 
 #pragma mark - finding things
 
@@ -310,23 +311,9 @@ static NSString *lengthIn(UIView *block) {
     return firstText(SGRFindByIdentifier(block, @"Components.Header.UI.Metadata", &kMetaKey), nil);
 }
 
-// Someone else's playlist shows save until it is in the library, and then download in its place, as the
-// Music app turns add into download once a playlist is added; taking it out of the library again is
-// Spotify's own Remove from Your Library in the ⋯ menu. Download only where Spotify has put its own
-// download button in the row and left it enabled, so an account that cannot download keeps save (and its
-// checkmark) and nothing is offered that Spotify does not offer: the button fires Spotify's. A playlist
-// already downloading or downloaded shows download whatever save says.
-static BOOL showsDownload(UIView *save, UIView *download) {
-    if (![download isKindOfClass:UIControl.class] || !((UIControl *)download).enabled) return NO;
-    BOOL added = NO;
-    SGRDownloadState state = SGRDownloadNone;
-    return (SGRReadAddTo(save, &added) && added) || (SGRReadDownload(download, &state, NULL) && state != SGRDownloadNone);
-}
-
 // What the playlist's header shows: the name and the description from the page's model, the creator and the
-// length from Spotify's concealed labels, and on Play's right save for someone else's playlist (download once
-// it is saved, showsDownload), download for one's own and for Liked Songs, which Spotify reports as neither
-// owned nor unsaved (isOwnedBySelf NO, formatListType liked-songs).
+// length from Spotify's concealed labels. Save and download each keep their own button when both exist.
+// One's own playlists and Liked Songs keep their existing row with download alone.
 static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id model) {
     NSString *title = modelString(model, @"playlistName") ?: firstText(block, nil);
     [info showTitle:title creator:creatorIn(block) length:lengthIn(block)
@@ -338,10 +325,20 @@ static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id mo
     UIView *play = SGRFindByIdentifier(root, @"header-play-button", &kPlayKey);
     UIView *save = own ? nil : SGRFindByIdentifier(block, @"Components.UI.AddToButton", &kAddKey);
     UIView *download = SGRFindByIdentifier(block, @"DownloadButton.Granular*", &kDownloadKey);
-    if (save && showsDownload(save, download)) save = nil;
-    if (save) download = nil;
-    [info showShuffle:shuffle play:play trailing:save ?: download
-     trailingFallback:[UIImage systemImageNamed:save ? @"plus" : @"arrow.down"] playColor:SGRPlaylistFieldColor(info)];
+    // The title and cover do not determine which actions a playlist supports. Whenever Spotify
+    // supplies both save and download, give each its own glass button. Keep that row's layout
+    // through transient model updates; a missing source hides only its own button.
+    BOOL independent = [objc_getAssociatedObject(info, &kIndependentActionsKey) boolValue];
+    if (!independent && save && download) {
+        independent = YES;
+        objc_setAssociatedObject(info, &kIndependentActionsKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (independent) {
+        [info showAlbumShuffle:shuffle play:play download:download add:save playColor:SGRPlaylistFieldColor(info)];
+    } else {
+        [info showShuffle:shuffle play:play trailing:save ?: download
+         trailingFallback:[UIImage systemImageNamed:save ? @"plus" : @"arrow.down"] playColor:SGRPlaylistFieldColor(info)];
+    }
     // Only what the button draws goes: a concealed layer still sends the actions the capsule fires.
     conceal(play);
 

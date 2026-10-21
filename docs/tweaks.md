@@ -1085,6 +1085,9 @@ cyan copies every `.bundle` of a .deb into the app, so the IPA has it beside Spo
 and the English it stands for. The language is Spotify's own (the iPhone's, or the one set for Spotify in Settings);
 one without a table, a missing bundle or key, and a translation whose format specifiers read differently from the
 English all give the English, so an English iPhone sees exactly the text in the sources. `NSBundle` is left alone.
+Pixie's companion uses `SAPL(@"settings.pixie.<what>", @"English")` in `NativeDownloads/src/`.
+It resolves Vitrine's `SGL` export at runtime and uses these same resources, falling back to
+English when Vitrine is not loaded. `scripts/check-strings.py` includes both source trees.
 
 What is not translated: preference keys and `spotifyglass.*` values, logs, URLs, file names, Spotify's own words,
 track and artist names, and the names Vitrine, Spotify, AutoMix, AutoEq, Gemini and the like. A text that is also

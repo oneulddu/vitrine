@@ -27,3 +27,5 @@ notes/
 .zsign_cache/
 .phone.env
 .claude/worktrees/
+NativeDownloads/build/
+NativeDownloads/outputs/

@@ -44,6 +44,10 @@ extern const CGFloat SGRHeaderInfoTitleRise;  // 56, of the content over the pic
 // has no image to copy. `playColor` is the color of the capsule's glyph and word.
 - (void)showShuffle:(UIView *)shuffle play:(UIView *)play trailing:(UIView *)trailing
    trailingFallback:(UIImage *)trailingFallback playColor:(UIColor *)playColor;
+// Album and playlist row: Play at the trailing edge, the independent shuffle, download
+// and add controls at the leading edge. Narrow widths scroll only that group.
+- (void)showAlbumShuffle:(UIView *)shuffle play:(UIView *)play download:(UIView *)download
+                    add:(UIView *)add playColor:(UIColor *)playColor;
 // A picture drawn in the title's place, such as an artist's logo; the title stays its spoken name. nil
 // draws the title again.
 - (void)showTitleImage:(UIImage *)image;

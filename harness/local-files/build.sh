@@ -16,3 +16,8 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -ifr
     "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
     -framework UIKit -framework CoreGraphics -framework Foundation -o "$HERE/build/lrc"
 CFFIXED_USER_HOME="$HERE/build/home" "$HERE/build/lrc"
+# Cover fallback, including the malformed image URI that crashed Spotify 9.1.90.
+xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
+    -fobjc-arc -g -Wall -Werror -I"$SRC" "$HERE/cover.m" "$SRC/Shared/LocalFiles/LocalCover.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
+    -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Foundation -o "$HERE/build/cover"
+CFFIXED_USER_HOME="$HERE/build/home" "$HERE/build/cover"

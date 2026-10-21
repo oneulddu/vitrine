@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the spotifyglass tweak and injects it (plus FLEX) into a decrypted Spotify IPA.
 #
-#   scripts/pipeline.sh <decrypted.ipa> [-o out.ipa] [--no-flex] [--install] [--name N] [--icon P.png] [--keep-watch]
+#   scripts/pipeline.sh <decrypted.ipa> [-o out.ipa] [--no-flex] [--pixie] [--install] [--name N] [--icon P.png] [--keep-watch]
 #   (or: make build / make install)
 #
 # --keep-watch keeps Spotify's Apple Watch app, untested. Only its arm64 build is decrypted in an IPA dumped on an
@@ -31,15 +31,15 @@ FLEX_DEB="$ROOT/vendor/com.hopeless.autoflex_0.0.1_iphoneos-arm.deb"
 # exist and nothing opens. Set BUNDLE_ID only if you know it matches your App ID; scripts/install.sh
 # reads that App ID out of the profile and can do it safely.
 BUNDLE_ID="${BUNDLE_ID:-}"
-mkdir -p "$ROOT/out"
 
-IN="" OUT="" WITH_FLEX=1 INSTALL=0 NAME="" ICON="" KEEP_WATCH=""
+IN="" OUT="" WITH_FLEX=1 INSTALL=0 NAME="" ICON="" KEEP_WATCH="" PIXIE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -o) OUT="$2"; shift 2 ;;
     --name) NAME="$2"; shift 2 ;;
     --icon) ICON="$2"; shift 2 ;;
     --no-flex) WITH_FLEX=0; shift ;;
+    --pixie) PIXIE=1; shift ;;
     --install) INSTALL=1; shift ;;
     --keep-watch) KEEP_WATCH=1; shift ;;
     -h|--help) sed -n '2,11p' "$0"; exit 0 ;;
@@ -48,6 +48,13 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$IN" ] || { echo "no IPA: put a decrypted Spotify .ipa in ipa/, or pass one (make build IPA=path.ipa)" >&2; exit 1; }
 [ -f "$IN" ] || { echo "no such file: $IN" >&2; exit 1; }
+
+# Fail closed before flag generation, tweak compilation or any output mutation.
+# This accepts the original decrypted IPA; the overlay later requires Vitrine too.
+if [ "$PIXIE" = 1 ]; then
+  python3 -B "$ROOT/NativeDownloads/tools/build_vitrine_9190.py" "$IN" --check-input ${OUT:+--output "$OUT"}
+fi
+mkdir -p "$ROOT/out"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "missing $1 -> $2" >&2; exit 1; }; }
 need gmake "brew install make"
@@ -73,8 +80,26 @@ rm -f "$ROOT/out/.info.plist"
 # a fork left behind by a release is named for the version it really is.
 MOD_VERSION="$(cat "$ROOT/version.txt" 2>/dev/null || true)"
 : "${MOD_VERSION:=0.0.0}"
-OUT="${OUT:-$ROOT/out/vitrine-$MOD_VERSION.ipa}"
+PIXIE_SUFFIX=""
+[ "$PIXIE" = 1 ] && PIXIE_SUFFIX="-pixie"
+OUT="${OUT:-$ROOT/out/vitrine-$MOD_VERSION$PIXIE_SUFFIX.ipa}"
 echo "==> Vitrine $MOD_VERSION on Spotify $SPOTIFY_VERSION -> $OUT"
+
+if [ "$PIXIE" = 1 ]; then
+  python3 -B - "$ROOT/NativeDownloads/tools" "$IN" "$OUT" <<'PY'
+import sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from build_vitrine_9190 import require_separate_output
+require_separate_output(Path(sys.argv[2]).resolve(), Path(sys.argv[3]).resolve())
+PY
+  # Keep the last complete output intact even if cyan or a later overlay fails.
+  FINAL_OUT="$OUT"
+  mkdir -p "$(dirname "$FINAL_OUT")"
+  PIXIE_WORK="$(mktemp -d "$(dirname "$FINAL_OUT")/.pixie-build.XXXXXX")"
+  trap 'rm -rf "$PIXIE_WORK"' EXIT
+  OUT="$PIXIE_WORK/vitrine-base.ipa"
+fi
 
 # The flag table is generated rather than committed, so it always matches the IPA being built: again whenever
 # the Spotify it was read from (its first line) is not this one.
@@ -214,6 +239,14 @@ fi
 if [ -n "${EXT_DIR:-}" ]; then
   echo "==> adding the Live Activity intents to Spotify's App Intents metadata"
   "$ROOT/scripts/merge-appintents.py" "$OUT" "$APP_DIR" "$EXT_DIR/app/Metadata.appintents"
+fi
+
+if [ "$PIXIE" = 1 ]; then
+  echo "==> adding the guarded Pixie companion"
+  python3 -B "$ROOT/NativeDownloads/tools/build_vitrine_9190.py" "$OUT" --output "$FINAL_OUT"
+  OUT="$FINAL_OUT"
+  rm -rf "$PIXIE_WORK"
+  trap - EXIT
 fi
 
 echo "==> done: $OUT"

@@ -19,6 +19,13 @@ a rename's key and gone with a delete, and the match by title and artist, folded
 It does not cover the hooks in `LocalFileInfo.x`, the lyrics engine asking for the new key
 (`Shared/Lyrics/KaraokeSource.x`) or the Imported LRC files page.
 
+`cover.m` also exercises the real fallback-cover resolver against a stand-in for Spotify 9.1.90's
+unchecked `spt_localFileImagePath`. Before the fix, a one-part metadata URL reproduces the recorded
+`NSRangeException` (index 2 in an array of one). It checks malformed and unrelated URLs, valid absolute
+paths/file URLs/escaped local-image URIs, the next metadata field, Now Playing fallback and an edited
+cover taking precedence. The resolver must never call the unchecked parser. These are resolver tests,
+not a full Spotify playback test on an iPhone.
+
 ## Edit info in the simulator
 
 `sim/build-sim.sh <udid>` builds `EditInfoMenu.x` and `LocalFiles.m` as the tweak compiles them into an

@@ -4,6 +4,48 @@
 #import <objc/runtime.h>
 #import <AVFoundation/AVFoundation.h>
 #import "../download-mock.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
+#import "Redesigned/Kit/SGRActionRow.h"
+#include <assert.h>
+
+static void verifyAlbumActions(UIView *root) {
+    NSMutableArray *pending=[NSMutableArray arrayWithObject:root];SGRHeaderInfo *info=nil;
+    while(pending.count){UIView *v=pending.lastObject;[pending removeLastObject];
+        if([v isKindOfClass:SGRHeaderInfo.class]){info=(id)v;break;}[pending addObjectsFromArray:v.subviews];}
+    assert(info);
+    SGRMirrorButton *download=[info valueForKey:@"albumDownload"];
+    SGRMirrorButton *shuffle=[info valueForKey:@"shuffle"],*add=[info valueForKey:@"trailing"];
+    SGRPlayCapsule *play=[info valueForKey:@"play"];
+    UIScrollView *group=[info valueForKey:@"albumControls"];
+    assert(download && !download.hidden && download.source && add.source && !add.hidden);
+    CGRect original=info.frame;
+    for(NSNumber *width in @[@430,@390,@320]){
+        CGRect frame=original;frame.size.width=width.doubleValue;info.frame=frame;
+        [info setNeedsLayout];[info layoutIfNeeded];
+        assert(fabs(CGRectGetMaxX(play.frame)-(width.doubleValue-20))<1);
+        assert(CGRectGetMaxX(group.frame)+15<=CGRectGetMinX(play.frame));
+        assert(!CGRectIntersectsRect(shuffle.frame,download.frame));
+        assert(!CGRectIntersectsRect(download.frame,add.frame));
+        assert(fabs(CGRectGetMaxX(add.frame)-group.contentSize.width)<1);
+        if(width.intValue==320)assert(group.scrollEnabled);
+    }
+    info.frame=original;[info setNeedsLayout];[info layoutIfNeeded];
+    UIControl *source=(UIControl *)download.source;__block NSUInteger fired=0;
+    UIAction *action=[UIAction actionWithTitle:@"verify" image:nil identifier:@"verify-album-download" handler:^(UIAction *a){fired++;}];
+    [source addAction:action forControlEvents:UIControlEventTouchUpInside];
+    [download sendActionsForControlEvents:UIControlEventTouchUpInside];
+    [source removeActionForIdentifier:@"verify-album-download" forControlEvents:UIControlEventTouchUpInside];
+    assert(fired==1);
+    SGRHeaderInfo *ordinary=[[SGRHeaderInfo alloc]initWithFrame:CGRectMake(0,0,430,400)];
+    [ordinary showShuffle:shuffle.source play:play.source trailing:add.source trailingFallback:nil playColor:nil];
+    [ordinary setNeedsLayout];[ordinary layoutIfNeeded];
+    UIView *ordinaryPlay=[ordinary valueForKey:@"play"];
+    assert([ordinary valueForKey:@"albumControls"]==nil && fabs(CGRectGetMidX(ordinaryPlay.frame)-215)<1);
+    NSDictionary *result=@{@"passed":@YES,@"album_download_and_add_visible":@YES,@"native_download_action_calls":@(fired),@"checked_widths":@[@430,@390,@320],@"default_layout_unchanged":@YES};
+    NSString *path=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"album-actions-verification.json"];
+    [[NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted error:nil]writeToFile:path atomically:YES];
+    NSLog(@"[harness] PASS album controls: both buttons, native action once, Play right, 430/390/320 widths, default layout unchanged");
+}
 
 #pragma mark - Spotify's classes, by name
 
@@ -656,6 +698,8 @@ static NSString *trailingLabel(UIView *root) {
         NSLog(@"[harness] Spotify's own frames put back; the redesign answered with title stack %@, action row %@",
               NSStringFromCGRect(self->_titleStack.frame), NSStringFromCGRect(self->_actionRow.frame));
     });
+    if([NSProcessInfo.processInfo.arguments containsObject:@"verify-actions"])
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{verifyAlbumActions(root.view);});
     return YES;
 }
 

@@ -44,8 +44,10 @@ class Binary:
             if m:
                 self.keys[BASE + int(m.group(1), 16)] = m.group(2)
         self.thunks = []
-        for line in subprocess.run(['nm', '-n', path], capture_output=True, text=True).stdout.splitlines():
-            m = re.match(r'^([0-9a-f]+) [tT] -\[\S+ initWithConfigurationProvider:\]$', line)
+        # Read ObjC IMPs directly. nm's synthesized symbol listing on a large
+        # stripped Spotify image can spend minutes sorting unrelated symbols.
+        for line in subprocess.run(['xcrun', 'dyld_info', '-objc', path], check=True, capture_output=True, text=True).stdout.splitlines():
+            m = re.match(r'\s+0x([0-9a-fA-F]+)\s+-\[\S+ initWithConfigurationProvider:\]$', line)
             if m:
                 self.thunks.append(int(m.group(1), 16))
 

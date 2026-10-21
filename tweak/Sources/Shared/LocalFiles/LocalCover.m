@@ -6,7 +6,6 @@
 // Threading: main thread. A picture found is kept per track; a miss is tried again after a second, since
 // the now playing info may not have caught up with the track yet.
 #import <MediaPlayer/MediaPlayer.h>
-#import <objc/message.h>
 #import "Core/SGCore.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Player/PlayerState.h"
@@ -19,18 +18,21 @@ static const CGFloat kSide = 1200;
 static NSMutableDictionary<NSString *, UIImage *> *sg_found;
 static NSMutableDictionary<NSString *, NSDate *> *sg_missed;
 
-// A file URL, an absolute path, or Spotify's own reading of a value (-[NSURL spt_localFileImagePath],
-// asked only when the object answers it as a getter of an object).
+// Only local paths and Spotify's local-image URI carry a file to read. In 9.1.90,
+// spt_localFileImagePath blindly indexes spotifyURIComponents[2]; NSURL answering
+// that selector does not make an arbitrary metadata URL safe to pass to it.
+// Decode the known URI here, without entering that unchecked Spotify parser.
 static NSString *pathIn(id value) {
     if ([value isKindOfClass:NSString.class] && [value hasPrefix:@"/"]) return value;
     NSURL *url = [value isKindOfClass:NSURL.class] ? value : [value isKindOfClass:NSString.class] ? [NSURL URLWithString:value] : nil;
     if (url.isFileURL) return url.path;
-    SEL getter = NSSelectorFromString(@"spt_localFileImagePath");
-    if (![url respondsToSelector:getter]) return nil;
-    NSMethodSignature *signature = [url methodSignatureForSelector:getter];
-    if (signature.numberOfArguments != 2 || signature.methodReturnType[0] != '@') return nil;
-    id path = ((id (*)(id, SEL))objc_msgSend)(url, getter);
-    return [path isKindOfClass:NSString.class] && [path length] ? path : nil;
+    NSString *prefix = @"spotify:localfileimage:", *address = url.absoluteString;
+    if (![address hasPrefix:prefix]) return nil;
+    NSString *encoded = [address substringFromIndex:prefix.length];
+    // The path is one URI component: any ':' belonging to it must be escaped.
+    if (!encoded.length || [encoded containsString:@":"]) return nil;
+    NSString *path = encoded.stringByRemovingPercentEncoding;
+    return [path hasPrefix:@"/"] ? path : nil;
 }
 
 static UIImage *fromMetadata(NSDictionary *metadata) {

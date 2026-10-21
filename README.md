@@ -80,6 +80,58 @@ Watch. `make install` does not do that yet.
 
 The first build spends a minute reading Spotify's flags out of your IPA. `make flags` regenerates it.
 
+### Optional Pixie native downloads
+
+    make release PIXIE=1 IPA=ipa/Spotify-9.1.90.ipa
+
+This produces `out/vitrine-<version>-pixie.ipa`, separately from the input and ordinary
+Vitrine output. `make build PIXIE=1` and `make install PIXIE=1` use the same overlay
+(the latter also signs and installs). Direct pipeline usage accepts `--pixie`.
+Without `PIXIE=1`, builds are unchanged; `make quick` does not build the overlay.
+
+Pixie supports **only** decrypted Spotify **9.1.90**, thin ARM64 UUID
+`fbce22c17e1b3e0d9be866ff9291943e`. Version, UUID, instruction windows, import bindings
+and unused executable padding are checked before the base build; mismatches fail closed.
+The finished Vitrine IPA is checked again and overlaid after App Intents merging, before
+any installation. The companion build needs Xcode's iPhoneOS SDK and `ldid`; application
+entitlements are preserved and the complete ZIP is verified before atomic publication.
+
+Settings → Vitrine reuses Pixie's existing runtime attachment for **Pixie Download Manager**
+and **Send log**. Music stays in Spotify's offline storage, not exported audio files.
+Release builds enforce `SAP_ENABLE_WAV_CAPTURE=0`. Diagnostics default off; enabling them
+persists across launches. Action recording also respects this switch. Reports can contain
+track URIs, device identifiers and listening/download history: inspect before sharing.
+Unstructured Eevee debug logs are excluded because their credential safety is unknown.
+Existing About diagnostics remain available and are included through `SGWriteDiagnosticsFile`.
+Pixie's `SAPL` uses Vitrine's localization keys and Korean/English resources, following the
+app's language with the same checked English fallback. `scripts/check-strings.py` also checks
+Pixie's keys and placeholders. Long-term offline licence renewal remains unverified.
+
+`NativeDownloads/` imports the sources, tests, patch tools and assets from
+[Glongq/Vitrine-Pixie](https://github.com/Glongq/Vitrine-Pixie) at exact commit
+[`0e00970f5ad2decc2aa7ed87286c96f2013785ed`](https://github.com/Glongq/Vitrine-Pixie/tree/0e00970f5ad2decc2aa7ed87286c96f2013785ed/NativeDownloads),
+under GPL-3.0 with existing notices retained. Upstream credits Pixie development/integration
+to OpenAI Codex under Glongq's direction, and device testing/feedback to Glongq; earlier
+work comes from Glongq/EeveeSpotifyReincarnated. Its Vitrine overlay patch was **not** applied.
+Local adaptations add preflight/atomic build integration, entitlement preservation,
+init-family ownership safety, nonblocking diagnostic notifications and diagnostics privacy guards. Jailbreak sources/tools are
+retained for completeness only; jailbreak packaging and testing are not supported here.
+
+Focused checks on an Apple Silicon Mac (no installation):
+
+    python3 -B NativeDownloads/tests/build_guard.py ipa/Spotify-9.1.90.ipa
+    python3 -B NativeDownloads/tools/test.py
+    SPOTIFY_TEST_IPA="$PWD/ipa/Spotify-9.1.90.ipa" python3 -B NativeDownloads/tools/test_native_restrictions.py
+
+The component suite's optional Eevee reminder check requires a different, Eevee-injected
+fixture: do not set `SPOTIFY_TEST_IPA` to the clean input for `tools/test.py`.
+The optional UI fixtures need an already booted iPhone simulator:
+`python3 NativeDownloads/tools/test_settings_ui.py` (iOS 26 or newer) and
+`python3 NativeDownloads/tools/test_vitrine_init.py` (Vitrine root rows and init ownership).
+`python3 NativeDownloads/tools/test_trace_platform.py` exercises the production notification
+observers for nonblocking background posts and disabled/stale-generation delivery.
+After simulator checks, run `xcrun simctl shutdown all` and `osascript -e 'tell application "Simulator" to quit'`.
+
 ### Signing
 
 Sign with a bundle id matching your certificate's App ID. If it doesn't match, the app still works

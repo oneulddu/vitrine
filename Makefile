@@ -6,6 +6,8 @@ IPA ?= $(firstword $(wildcard ipa/*.ipa))
 # take --flex; make would read that as an option of its own.)
 FLEX ?= 0
 FLEX_ARG := $(if $(filter 0,$(FLEX)),--no-flex,)
+PIXIE ?= 0
+PIXIE_ARG := $(if $(filter 1,$(PIXIE)),--pixie,)
 
 # A local install is renamed and re-iconed so it is told apart from the released app on the home
 # screen.
@@ -14,11 +16,11 @@ DEV_ICON ?= docs/icon.png
 
 .PHONY: build release install quick trees session log flags
 build:    ## FLEX + glass IPA into out/
-	./scripts/pipeline.sh $(IPA)
+	./scripts/pipeline.sh $(IPA) $(PIXIE_ARG)
 release:  ## glass only, no FLEX
-	./scripts/pipeline.sh $(IPA) --no-flex
+	./scripts/pipeline.sh $(IPA) --no-flex $(PIXIE_ARG)
 install:  ## build, sign with your certificate, push to the phone on USB (FLEX=1 to take FLEX too)
-	./scripts/pipeline.sh $(IPA) --install $(FLEX_ARG) --name "$(DEV_NAME)" --icon "$(DEV_ICON)" -o out/spoti.dev.ipa
+	./scripts/pipeline.sh $(IPA) --install $(FLEX_ARG) $(PIXIE_ARG) --name "$(DEV_NAME)" --icon "$(DEV_ICON)" -o out/spoti.dev.ipa
 quick:    ## a tweak-only change into the app the last build made: rebuild, sign, install in seconds
 	./scripts/quick.sh
 trees:    ## record per-screen view trees into trees/ (needs a FLEX build on the phone)

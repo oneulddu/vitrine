@@ -475,9 +475,8 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     UIView *play = floatingIn(page, @"header-play-button", &kPlayKey);
     UIView *shuffle = floatingIn(page, @"Components.UI.ShuffleButton", &kShuffleKey);
     UIView *add = SGRFindByIdentifier(header, @"Components.UI.AddToButton", &kAddKey);
-    UIView *download = add ? nil : SGRFindByIdentifier(header, @"DownloadButton.Granular*", &kDownloadKey);
-    [info showShuffle:shuffle play:play trailing:add ?: download
-     trailingFallback:[UIImage systemImageNamed:add ? @"plus" : @"arrow.down"] playColor:SGRAlbumFieldColor(header)];
+    UIView *download = SGRFindByIdentifier(header, @"DownloadButton.Granular*", &kDownloadKey);
+    [info showAlbumShuffle:shuffle play:play download:download add:add playColor:SGRAlbumFieldColor(header)];
     // Only what the two floating buttons draw goes: a concealed layer still sends the actions the row fires.
     if (play) conceal(wrapperFor(play, page));
     if (shuffle) conceal(wrapperFor(shuffle, page));

@@ -2,7 +2,7 @@
 """Keeps the mod's translations in step with its sources (docs/tweaks.md, Localization).
 
   scripts/check-strings.py          check, exit 1 on a problem
-  scripts/check-strings.py --sync   also rewrite en.lproj from the SGL(...) calls in tweak/Sources
+  scripts/check-strings.py --sync   also rewrite en.lproj from Vitrine's SGL(...) and Pixie's SAPL(...) calls
 
 Checks: every SGL(@"key", @"English") key is well formed and stands for one English text; en.lproj holds exactly
 those keys and texts; every other .lproj has the same keys, and each translation reads the same format specifiers
@@ -13,6 +13,7 @@ import os, re, subprocess, sys, shutil
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 SOURCES = os.path.join(ROOT, 'tweak', 'Sources')
+PIXIE_SOURCES = os.path.join(ROOT, 'NativeDownloads', 'src')
 BUNDLE = os.path.join(ROOT, 'tweak', 'layout', 'Library', 'Application Support', 'Vitrine.bundle')
 ALLOW = os.path.join(ROOT, 'scripts', 'strings-allow.txt')
 KEY = re.compile(r'^[a-z0-9]+(\.[a-z0-9_]+)+$')
@@ -156,7 +157,7 @@ def write_strings(path, table, header):
     open(path, 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
 
 # --- sources -----------------------------------------------------------------------------------------------------
-SGL_HEAD = re.compile(r'SGL\(\s*@"([^"\\]*)"\s*,\s*$')
+LOCALIZE_CALL = re.compile(r'\b(?:SGL|SAPL)\(\s*$')
 ROW_CALL = re.compile(r'\bSG(?:Switch|Hide|Shown|Option|Unstable|Flag|Kill|Stat|Action|Warning|Page|Choice|Slider|Menu|Link|StatAction)Row\(|\bSG(?:Noted)?Section\(|SGModPage alloc')
 UI_BEFORE = re.compile(
     r'(?:\bSG\w*Row\(|\bSG(?:Noted)?Section\(|\b(?:choice|menu|page|switch|option|hide|flag|kill|stat|action)Row\(|'
@@ -165,37 +166,47 @@ UI_BEFORE = re.compile(
     r'accessibilityValue|prompt)\s*=)\s*$')
 LIST_BEFORE = re.compile(r'(?:@\[|,)\s*$')
 LIST_LINE = re.compile(r'Row\(|choiceNotes|\.menu\s*=|SGNotedSection')
+PIXIE_UI_BEFORE = re.compile(
+    r'(?:\bSAPSettingsCell\([^,\n]+,|\bSAP(?:Download)?Message\(|\bslotMessage:|'
+    r'\b(?:title|subtitle|message)\s*=)\s*$')
+PIXIE_LIST_LINE = re.compile(r'\b(?:titles|title)\s*=')
 
 def source_files():
-    for base, _, names in os.walk(SOURCES):
-        for name in names:
-            if name.endswith(('.m', '.x', '.xm', '.mm')):
-                yield os.path.join(base, name)
+    for root in (SOURCES, PIXIE_SOURCES):
+        for base, _, names in os.walk(root):
+            for name in names:
+                if name.endswith(('.m', '.x', '.xm', '.mm')):
+                    yield os.path.join(base, name)
 
 def scan_sources():
     used, ui = {}, []
     for path in sorted(source_files()):
         text = open(path, encoding='utf-8').read()
-        rel = os.path.relpath(path, SOURCES)
-        settings = 'SGL(' in text or ROW_CALL.search(text)
-        for s, e, raw in literals(text):
+        pixie = os.path.commonpath((path, PIXIE_SOURCES)) == PIXIE_SOURCES
+        rel = os.path.relpath(path, ROOT if pixie else SOURCES)
+        settings = pixie or 'SGL(' in text or ROW_CALL.search(text)
+        units = literals(text)
+        for index, (s, e, raw) in enumerate(units):
             before = text[max(0, s - 200):s]
-            head = SGL_HEAD.search(before)
-            if head:
-                key, english = head.group(1), unescape(raw)
+            previous = units[index - 1] if index else None
+            if previous and text[previous[1]:s].strip() == ',' and \
+               LOCALIZE_CALL.search(text[max(0, previous[0] - 200):previous[0]]):
+                key, english = unescape(previous[2]), unescape(raw)
                 if not KEY.match(key): problem(f'{rel}: badly formed key {key!r}')
                 prev = used.get(key)
                 if prev and prev[0] != english:
                     problem(f'{rel}: {key} stands for two texts: {prev[0]!r} ({prev[1]}) and {english!r}')
                 used.setdefault(key, (english, rel))
                 continue
-            if re.search(r'SGL\(\s*$', before): continue   # the key itself
+            if LOCALIZE_CALL.search(before): continue   # the key itself
             if not settings: continue
             line_start = text.rfind('\n', 0, s) + 1
             line = text[line_start:text.find('\n', s) if text.find('\n', s) >= 0 else len(text)]
             if re.search(r'SGLog\(|NSLog\(', line): continue
             if UI_BEFORE.search(before) or (LIST_BEFORE.search(before) and LIST_LINE.search(line)) or \
-               (re.search(r'\)\s*,\s*$', before) and 'Row(' in line):
+               (re.search(r'\)\s*,\s*$', before) and 'Row(' in line) or \
+               (pixie and (PIXIE_UI_BEFORE.search(before) or
+                           (LIST_BEFORE.search(before) and PIXIE_LIST_LINE.search(line)))):
                 text_ = unescape(raw)
                 # Words, not identifiers: a space, or a capital first. Flag keys and symbol names have neither.
                 if len(re.findall(r'[A-Za-z]', text_)) >= 2 and (' ' in text_.strip() or text_[:1].isupper()):
@@ -208,7 +219,7 @@ def main():
     en_path = os.path.join(BUNDLE, 'en.lproj', 'Localizable.strings')
     english = {k: v[0] for k, v in used.items()}
     if sync:
-        write_strings(en_path, english, '/* Vitrine\'s English, written by scripts/check-strings.py --sync from the SGL(...) calls in tweak/Sources. */')
+        write_strings(en_path, english, '/* Vitrine\'s English, written by scripts/check-strings.py --sync from SGL(...) and SAPL(...) source calls. */')
     en = read_strings(en_path) if os.path.exists(en_path) else {}
     for k in sorted(set(english) - set(en)): problem(f'en.lproj lacks {k} (run scripts/check-strings.py --sync)')
     for k in sorted(set(en) - set(english)): problem(f'en.lproj has {k}, which no SGL(...) uses (run --sync)')

@@ -3,6 +3,52 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "../download-mock.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
+#import "Redesigned/Kit/SGRActionRow.h"
+#include <assert.h>
+
+static void verifyMixActions(UIView *root, BOOL independent) {
+    NSMutableArray *pending = [NSMutableArray arrayWithObject:root];
+    SGRHeaderInfo *info = nil;
+    while (pending.count) {
+        UIView *view = pending.lastObject;
+        [pending removeLastObject];
+        if ([view isKindOfClass:SGRHeaderInfo.class]) { info = (id)view; break; }
+        [pending addObjectsFromArray:view.subviews];
+    }
+    assert(info);
+    UIScrollView *group = [info valueForKey:@"albumControls"];
+    SGRPlayCapsule *play = [info valueForKey:@"play"];
+    if (independent) {
+        SGRMirrorButton *download = [info valueForKey:@"albumDownload"];
+        SGRMirrorButton *save = [info valueForKey:@"trailing"];
+        assert(group && download.source && !download.hidden && save.source && !save.hidden);
+        CGRect original = info.frame;
+        for (NSNumber *width in @[@430, @390, @320]) {
+            CGRect frame = original; frame.size.width = width.doubleValue; info.frame = frame;
+            [info setNeedsLayout]; [info layoutIfNeeded];
+            assert(fabs(CGRectGetMaxX(play.frame) - (width.doubleValue - 20)) < 1);
+            assert(CGRectGetMaxX(group.frame) + 15 <= CGRectGetMinX(play.frame));
+            assert(!CGRectIntersectsRect(download.frame, save.frame));
+            if (width.intValue == 320) assert(group.scrollEnabled);
+        }
+        info.frame = original; [info setNeedsLayout]; [info layoutIfNeeded];
+        UIControl *source = (id)download.source;
+        __block NSUInteger fired = 0;
+        [source addAction:[UIAction actionWithHandler:^(UIAction *action) { fired++; }]
+            forControlEvents:UIControlEventTouchUpInside];
+        [download sendActionsForControlEvents:UIControlEventTouchUpInside];
+        assert(fired == 1);
+    } else {
+        assert(!group && fabs(CGRectGetMidX(play.frame) - info.bounds.size.width / 2) < 1);
+    }
+    NSDictionary *result = @{@"passed": @YES, @"independent_actions": @(independent), @"native_action_and_layout_verified": @YES};
+    NSString *path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
+        stringByAppendingPathComponent:@"playlist-actions-verification.json"];
+    [[NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted error:nil]
+        writeToFile:path atomically:YES];
+    NSLog(@"[harness] PASS %@ action row", independent ? @"independent" : @"centered");
+}
 
 #pragma mark - Spotify's classes, by name
 
@@ -692,7 +738,8 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
     }
     // Drawn by Lottie, its state in its identifier and in the Encore object behind it (issue #65).
     UIView *downloadAction = box(actions, UIView.class, CGRectMake(106, 0, 48, 48), nil);
-    mockDownloadButton(box(downloadAction, UIView.class, downloadAction.bounds, nil));
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"no-download"])
+        mockDownloadButton(box(downloadAction, UIView.class, downloadAction.bounds, nil));
     actionButton(actions, CGRectMake(154, 2, 44, 44), @"Components.UI.ContextMenuButton", @"More options");
 
     UIView *mixShuffle = box(container, UIView.class, CGRectMake(container.bounds.size.width - 124, 0, 124, 48), nil);
@@ -934,6 +981,12 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
               gradient.hidden, gradient.layer.mask != nil, playButton.hidden, playButton.layer.mask != nil,
               cover.hidden, cover.layer.mask != nil);
     });
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"verify-actions"])
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            BOOL independent = (mix || [NSProcessInfo.processInfo.arguments containsObject:@"other"]) &&
+                ![NSProcessInfo.processInfo.arguments containsObject:@"no-download"];
+            verifyMixActions(page.view, independent);
+        });
     return YES;
 }
 

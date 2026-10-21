@@ -52,7 +52,7 @@ void SGExportSettings(void) {
     [top presentViewController:sheet animated:YES completion:nil];
 }
 
-void SGShareDiagnostics(void) {
+NSURL *SGWriteDiagnosticsFile(void) {
     NSMutableString *text = [NSMutableString string];
     struct utsname machine;
     uname(&machine);
@@ -90,6 +90,11 @@ void SGShareDiagnostics(void) {
 
     NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-diagnostics.txt"]];
     [text writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    return url;
+}
+
+void SGShareDiagnostics(void) {
+    NSURL *url = SGWriteDiagnosticsFile();
     UIViewController *top = SGTopController();
     UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
     sheet.popoverPresentationController.sourceView = top.view;

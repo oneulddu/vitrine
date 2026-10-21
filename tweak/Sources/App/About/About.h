@@ -76,5 +76,7 @@ void SGImportSettings(void);
 // log lines and the config Spotify's server last sent (Shared/AdBlock/Premium.m). No account details or settings
 // values beyond the switches named; the log can name songs played.
 void SGShareDiagnostics(void);
+// The same report without presenting a share sheet, for Pixie's combined diagnostic export.
+NSURL *SGWriteDiagnosticsFile(void);
 
 UIViewController *SGAboutPage(void);   // the Mod page
