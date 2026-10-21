@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0-beta.18](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.17...v1.0.0-beta.18) (2026-10-21)
+
+
+### Features
+
+* Pixie 다운로드 매니저와 한국어 현지화 통합 ([d987209](https://github.com/oneulddu/vitrine/commit/d9872092acaef184415a55a094560a5d1fc6cf90))
+
 ## [1.0.0-beta.17](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.16...v1.0.0-beta.17) (2026-10-20)
 
 
