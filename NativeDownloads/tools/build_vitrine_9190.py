@@ -20,7 +20,7 @@ SOURCE_FILES = [
     "AudioProbe.c", "Diagnostics.m", "Localization.m", "CaptureRing.c",
     "AVAudioHooks.m", "SourceGraph.c", "OfflineFlags.m", "WireProto.m",
     "OfflineConfig.m", "TrackJournal.m", "NativeErrorLog.m", "PlayerTrace.m",
-    "NativeOffline.m", "TrackDownload.m", "AudioProbeUI.m", "DownloadSettingsUI.m",
+    "NativeOffline.m", "TrackDownload.m", "TrackLibrary.m", "TrackMenu.m", "AudioProbeUI.m", "DownloadSettingsUI.m",
     "EncodedAudio.m", "AlbumMetadata.m", "SupportLog.m", "DownloadCompatibility.m", "OfflineDevices.m",
     "DiagnosticTrace.m", "TracePlatform.m", "NativeKeyTrace.m",
 ]

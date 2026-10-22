@@ -232,7 +232,7 @@ static UITableViewCell *SAPSettingsCell(UITableView *table,NSString *title,NSStr
 - (void)viewDidLoad {[super viewDidLoad];self.title=SAPL(@"settings.pixie.manager.title",@"Pixie Download Manager");}
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)table {return 5;}
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
-    if(section==0)return [self.snapshot[@"download_active"]boolValue]?4:3;
+    if(section==0)return [self.snapshot[@"download_active"]boolValue]?5:4;
     if(section==1)return 4;
     if(section==2)return 1;
     return 2;
@@ -254,9 +254,18 @@ static UITableViewCell *SAPSettingsCell(UITableView *table,NSString *title,NSStr
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)index {
     NSString *title,*subtitle=nil,*symbol;UIColor *color;BOOL chevron=NO;
     if(index.section==0) {
+        if(index.row==3) {
+            UITableViewCell *cell=SAPSettingsCell(table,SAPL(@"settings.pixie.auto_like.title",@"Add single-track downloads to Liked Songs"),SAPL(@"settings.pixie.auto_like.subtitle",@"Also add tracks downloaded individually to Liked Songs so you can find them in Your Library. Canceling or removing a download does not remove the like."),@"heart.circle.fill",UIColor.systemPinkColor,NO);
+            cell.selectionStyle=UITableViewCellSelectionStyleNone;
+            UISwitch *toggle=[UISwitch new];toggle.on=[self.snapshot[@"auto_like_downloads"]boolValue];
+            toggle.accessibilityLabel=SAPL(@"settings.pixie.auto_like.title",@"Add single-track downloads to Liked Songs");
+            toggle.accessibilityIdentifier=@"SpotifyAutoLikeDownloadsSwitch";
+            [toggle addTarget:self action:@selector(autoLikeChanged:) forControlEvents:UIControlEventValueChanged];cell.accessoryView=toggle;
+            return cell;
+        }
         NSArray *titles=@[[self.snapshot[@"download_active"]boolValue]?SAPL(@"settings.pixie.action.track_status",@"Track download status"):SAPL(@"settings.pixie.action.download_current_track",@"Download current track"),SAPL(@"settings.pixie.action.download_current_album",@"Download current track's album"),SAPL(@"settings.pixie.action.verify_current_track",@"Check current track"),SAPL(@"settings.pixie.action.cancel_download",@"Cancel download")];
-        title=titles[index.row];symbol=@[@"arrow.down.circle.fill",@"square.stack.fill",@"checkmark.circle.fill",@"xmark.circle.fill"][index.row];
-        color=index.row==3?UIColor.systemOrangeColor:UIColor.systemGreenColor;
+        title=index.row==4?titles[3]:titles[index.row];symbol=@[@"arrow.down.circle.fill",@"square.stack.fill",@"checkmark.circle.fill",@"xmark.circle.fill"][index.row==4?3:index.row];
+        color=index.row==4?UIColor.systemOrangeColor:UIColor.systemGreenColor;
     }else if(index.section==1) {
         NSDictionary *mode=self.snapshot[@"key_request_mode"];
         if(index.row==2)return SAPSettingsCell(table,SAPL(@"settings.pixie.row.manage_slots.title",@"Manage offline device slots"),SAPL(@"settings.pixie.row.manage_slots.subtitle",@"Troubleshooting only · may disable old copies' offline access"),@"externaldrive.badge.person.crop",UIColor.systemOrangeColor,YES);
@@ -299,6 +308,12 @@ static UITableViewCell *SAPSettingsCell(UITableView *table,NSString *title,NSStr
     return cell;
 }
 - (void)diagnosticsChanged:(UISwitch *)toggle {BOOL before=SAPDiagnosticsEnabled();SAPDiagnosticsSetEnabled(toggle.on);SAPJournalNoteAction(@"diagnostics_changed",@{@"before":@(before),@"after":@(SAPDiagnosticsEnabled())});[self refresh];}
+// Preference only: no download starts and no Like changes here. The setting is
+// read per request by TrackDownload, so it applies without a restart.
+- (void)autoLikeChanged:(UISwitch *)toggle {
+    [SAPSettingsActions setAutoLikeDownloadsEnabled:toggle.on];
+    [self refresh];
+}
 - (void)slotMessage:(NSString *)title message:(NSString *)message {
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:SAPL(@"common.ok",@"OK") style:UIAlertActionStyleCancel handler:nil]];
@@ -389,7 +404,10 @@ static UITableViewCell *SAPSettingsCell(UITableView *table,NSString *title,NSStr
         [self.navigationController pushViewController:page animated:YES];return;
     }
     SAPSettingsAction action;
-    if(index.section==0)action=index.row==0?SAPSettingsDownload:(index.row==1?SAPSettingsDownloadAlbum:(index.row==2?SAPSettingsVerify:SAPSettingsCancelDownload));
+    if(index.section==0) {
+        if(index.row==3)return; // The auto-like switch row is not an action.
+        action=index.row==0?SAPSettingsDownload:(index.row==1?SAPSettingsDownloadAlbum:(index.row==2?SAPSettingsVerify:SAPSettingsCancelDownload));
+    }
     else return;
     [SAPSettingsActions perform:action];
     if(action==SAPSettingsCancelDownload)[self refresh];

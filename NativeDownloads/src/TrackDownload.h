@@ -1,6 +1,11 @@
 #pragma once
 #import <Foundation/Foundation.h>
 void SAPInstallTrackDownloader(void);
+BOOL SAPAutoLikeDownloadsEnabled(void);
+void SAPSetAutoLikeDownloadsEnabled(BOOL enabled);
+BOOL SAPIsMusicTrackURI(NSString *uri);
+// Captures immutable identity before enqueueing. Never substitutes now playing.
+void SAPDownloadTrack(NSString *uri, NSString *title, void (^message)(NSString *));
 void SAPDownloadCurrentTrack(void (^message)(NSString *));
 void SAPDownloadCurrentAlbum(void (^message)(NSString *));
 void SAPCancelTrackDownload(void);

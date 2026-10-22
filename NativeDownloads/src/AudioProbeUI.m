@@ -276,7 +276,7 @@ static NSDictionary *SAPCompleteDiagnosticSnapshot(NSDictionary *native) {
         @"diagnostics":SAPL(@"settings.pixie.diagnostics.disabled_hint",@"Diagnostics are off. Enable Diagnostics to collect data."),
         @"journal_summary":SAPL(@"settings.pixie.journal.disabled_hint",@"Diagnostics are off. The log is not updated. You can still check the current track separately."),
         @"download_active":@(SAPTrackDownloadActive()),@"key_request_mode":SAPKeyRequestModeReport(),@"recording":@(SAPRecording()),
-        @"last_wav_available":@(SAPLastWAVAvailable())};
+        @"last_wav_available":@(SAPLastWAVAvailable()),@"auto_like_downloads":@(SAPAutoLikeDownloadsEnabled())};
 }
 + (NSDictionary *)snapshotForDetails:(BOOL)journal {
     if(!SAPDiagnosticsEnabled())return [self snapshot];
@@ -336,7 +336,7 @@ static NSDictionary *SAPCompleteDiagnosticSnapshot(NSDictionary *native) {
         (unsigned long long)s.mutedCallbacks, SAPRecording() ? SAPL(@"settings.pixie.probe.recording_indicator",@"\n● Recording WAV") : @""];
     return @{ @"report":report, @"diagnostics":message, @"journal_summary":@"",
         @"download_active":@(SAPTrackDownloadActive()), @"key_request_mode":SAPKeyRequestModeReport(), @"recording":@(SAPRecording()),
-        @"last_wav_available":@(SAPLastWAVAvailable()) };
+        @"last_wav_available":@(SAPLastWAVAvailable()), @"auto_like_downloads":@(SAPAutoLikeDownloadsEnabled()) };
 }
 + (void)setKeyRequestMode:(NSInteger)mode completion:(void (^)(BOOL,NSString *))completion {
     SAPSetKeyRequestMode(mode,completion);
@@ -347,6 +347,8 @@ static NSDictionary *SAPCompleteDiagnosticSnapshot(NSDictionary *native) {
 + (void)previewOfflineDeviceSlots:(void (^)(NSDictionary *,NSString *))completion {SAPPreviewOfflineDeviceSlots(completion);}
 + (void)releaseOfflineDeviceSlots:(NSString *)planID cacheIDs:(NSArray *)cacheIDs completion:(void (^)(NSDictionary *,NSString *))completion {SAPReleaseOfflineDeviceSlots(planID,cacheIDs,completion);}
 + (void)enableOfflineOnCurrentDevice:(void (^)(NSDictionary *,NSString *))completion {SAPEnableOfflineOnCurrentDevice(completion);}
++ (BOOL)autoLikeDownloadsEnabled {return SAPAutoLikeDownloadsEnabled();}
++ (void)setAutoLikeDownloadsEnabled:(BOOL)enabled {SAPSetAutoLikeDownloadsEnabled(enabled);}
 + (void)perform:(SAPSettingsAction)action {
     if(!SAPTraceIsActive()){[self performObserved:action];return;}
     SAPTraceID operation=SAPTraceBegin(@"settings_action",@"pixie_ui",@{@"action_number":@(action)});

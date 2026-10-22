@@ -84,7 +84,7 @@ else:
     print("SKIP: real-IPA reminder check (set SPOTIFY_TEST_IPA to enable)")
 
 run("xcrun", "clang", "-arch", "arm64", "-fobjc-arc", "-std=gnu11", "-O1", "-g", "-Isrc", "-DSAP_TESTING",
-    "-fsanitize=address,undefined", "src/WireProto.m", "src/PlayerTrace.m", "src/TrackDownload.m", "tests/track_download.m", "-framework", "Foundation",
+    "-fsanitize=address,undefined", "src/WireProto.m", "src/PlayerTrace.m", "src/TrackDownload.m", "src/TrackLibrary.m", "src/TrackMenu.m", "tests/track_download.m", "-framework", "Foundation",
     "src/Diagnostics.m", "src/Localization.m", "-o", build / "track_download")
 run(build / "track_download", "-AppleLanguages", "(ru)")
 run(build / "track_download", "-AppleLanguages", "(en)")

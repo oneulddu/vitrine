@@ -16,7 +16,7 @@ def run(*args):
 
 with tempfile.TemporaryDirectory(prefix="backend-localization-", dir=build) as temporary:
     for name, sources in [
-        ("track_download", ["src/TrackDownload.m"]),
+        ("track_download", ["src/TrackDownload.m", "src/TrackLibrary.m", "src/TrackMenu.m"]),
         ("track_journal", ["src/TrackJournal.m", "src/NativeErrorLog.m"]),
     ]:
         contents = Path(temporary) / (name + ".app") / "Contents"

@@ -1,5 +1,7 @@
 #import "Localization.h"
 #import "TrackDownload.h"
+#import "TrackLibrary.h"
+#import "TrackMenu.h"
 #import "NativeOffline.h"
 #import "TrackJournal.h"
 #import "WireProto.h"
@@ -47,6 +49,26 @@ static BOOL itemFound, polling, sentRequest, watchItems, existingDownload;
 static void (^notify)(NSString *);
 static atomic_bool active;
 static SAPTraceID jobTraceOperation;
+@interface SAPTrackLikeIntent : NSObject {
+@public
+    atomic_bool cancelled;
+}
+@end
+@implementation SAPTrackLikeIntent
+- (instancetype)init { if ((self = [super init])) atomic_init(&cancelled, false); return self; }
+@end
+static SAPTrackLikeIntent *likeIntent;
+static BOOL autoLikeRequested, likeStarted;
+static NSString *likeStatus = @"off", *likeDetail;
+static NSString *const autoLikeKey = @"spotifyglass.pixie.autoLikeDownloads";
+BOOL SAPAutoLikeDownloadsEnabled(void) { return [NSUserDefaults.standardUserDefaults boolForKey:autoLikeKey]; }
+void SAPSetAutoLikeDownloadsEnabled(BOOL enabled) { [NSUserDefaults.standardUserDefaults setBool:enabled forKey:autoLikeKey]; }
+BOOL SAPIsMusicTrackURI(NSString *uri) {
+    if (![uri isKindOfClass:NSString.class] || ![uri hasPrefix:@"spotify:track:"] || uri.length != 36) return NO;
+    NSCharacterSet *invalid = [NSCharacterSet characterSetWithCharactersInString:
+        @"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"].invertedSet;
+    return [[uri substringFromIndex:14] rangeOfCharacterFromSet:invalid].location == NSNotFound;
+}
 #ifdef SAP_TESTING
 static double pollSeconds = 0.01, startTimeoutSeconds = 0.12, totalTimeoutSeconds = 1;
 static double candidateTimeoutSeconds = 0.03;
@@ -319,7 +341,8 @@ static NSString *errorName(uint64_t code) {
 static void publishActivity(BOOL isActive) {
     if(isActive&&!jobTraceOperation&&SAPTraceIsActive())jobTraceOperation=SAPTraceBegin(@"download_seen_after_diagnostics_enabled",@"pixie_monitor",@{@"started_before_trace":@YES,@"uri":jobURL.absoluteString?:@""});
     NSDictionary *report = @{@"phase": phase, @"detail": detail, @"track_uri": jobURL.absoluteString ?: @"",
-        @"track_title": title ?: @"", @"api": @"Offline.AddDownload", @"item_state": @(nativeState),
+        @"track_title": title ?: @"", @"download_generation":@(generation),
+        @"api": @"Offline.AddDownload", @"item_state": @(nativeState),
         @"sync_progress": @(progress), @"item_found": @(itemFound), @"status_checks": @(polls),
         @"response_error": responseCode ?: NSNull.null, @"response_error_name": responseCode ? errorName(responseCode.unsignedLongLongValue) : @"NO_RESPONSE",
         @"offline_playback_allowed": offlineAllowed ?: NSNull.null, @"offline_stream_error": streamError ?: NSNull.null,
@@ -328,6 +351,7 @@ static void publishActivity(BOOL isActive) {
         @"transport_candidate": @(candidateIndex), @"transport_candidates": @(jobCandidates.count),
         @"transport_verified": @(routeVerified), @"exception_name": exceptionName ?: NSNull.null,
         @"active": @(isActive),@"offline_audio_playback_tested":@NO,
+        @"like_status":likeStatus, @"like_detail":likeDetail ?: @"",
         @"completion_evidence":[phase isEqual:@"completed"]?@"Spotify GetItems reported DOWNLOADED twice":@"No completed download confirmed by this monitor"};
     NSMutableDictionary *value=[report mutableCopy];
     SAP_TRACE("download","monitor_state",jobTraceOperation,report);
@@ -353,8 +377,52 @@ static void sendMessage(NSString *message) {
     void (^callback)(NSString *) = notify;
     if (callback) dispatch_async(dispatch_get_main_queue(), ^{ callback(message); });
 }
+static void likeAcceptedTrack(void) {
+    if (!autoLikeRequested || likeStarted) return;
+    likeStarted = YES; likeStatus = @"pending";
+    SAPTrackLikeIntent *intent = likeIntent;
+    NSUInteger expected = generation;
+    NSString *uri = [jobURL.absoluteString copy];
+    NSString *trackTitle = [title copy];
+    void (^callback)(NSString *) = [notify copy];
+    SAPAddTrackToLikedSongs(uri, ^BOOL { return !atomic_load(&intent->cancelled); },
+        ^(NSString *status, NSString *message) {
+            dispatch_async(worker, ^{
+                if (atomic_load(&intent->cancelled)) return;
+                SAPJournalNoteAction(@"single_track_like_finished", @{
+                    @"track_uri":uri, @"track_title":trackTitle, @"download_generation":@(expected),
+                    @"like_status":status, @"like_detail":message ?: @""});
+                // A library result must not finish, replace, or re-publish the
+                // download outcome. A finished job still owns its pending like;
+                // only the current snapshot is restricted by generation.
+                os_unfair_lock_lock(&reportLock);
+                if (generation == expected) {
+                    likeStatus = status; likeDetail = message;
+                    NSMutableDictionary *report = [reportSnapshot mutableCopy];
+                    report[@"like_status"] = status; report[@"like_detail"] = message ?: @"";
+                    reportSnapshot = [report copy];
+                }
+                NSMutableArray *recent = [history mutableCopy];
+                for (NSUInteger index = 0; index < recent.count; index++) {
+                    if ([recent[index][@"download_generation"] unsignedIntegerValue] != expected) continue;
+                    NSMutableDictionary *report = [recent[index] mutableCopy];
+                    report[@"like_status"] = status; report[@"like_detail"] = message ?: @"";
+                    recent[index] = [report copy];
+                }
+                history = [recent copy];
+                os_unfair_lock_unlock(&reportLock);
+                if (message && callback) dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!atomic_load(&intent->cancelled))
+                        callback([NSString stringWithFormat:SAPL(@"settings.pixie.like.track_message_format",@"“%@”: %@"),
+                            trackTitle, message]);
+                });
+            });
+        });
+}
 static void finish(NSString *newPhase, NSString *message) {
     phase = newPhase; detail = message;
+    if (autoLikeRequested && !likeStarted && [likeStatus isEqual:@"waiting_for_download"])
+        likeStatus = @"not_requested";
     SAPJournalNoteAction(@"single_track_finished",@{@"track_uri":jobURL.absoluteString?:@"",
         @"phase":newPhase?:@"",@"detail":message?:@"",
         @"request_sent":@(sentRequest),@"response_code":responseCode?:NSNull.null,
@@ -517,6 +585,7 @@ static void addDownload(void) {
             finish(@"rejected", [NSString stringWithFormat:SAPL(@"settings.pixie.track.add_download_code_format",@"Offline.AddDownload returned %@ (%@). This is the actual downloader code; the track has not been marked as downloaded."), errorName(responseCode.unsignedLongLongValue), responseCode]); return;
         }
         watchItems = YES; phase = @"accepted"; detail = SAPL(@"settings.pixie.track.add_download_success",@"Offline.AddDownload returned SUCCESS. Checking that the track is fully downloaded");
+        likeAcceptedTrack();
         publish(); sendMessage(detail); queryItem();
     });
 }
@@ -553,6 +622,7 @@ static void startRequest(void) {
         existingDownload = YES; watchItems = YES;
         consecutiveComplete = nativeState == 3 ? 1 : 0;
         phase = @"checking_existing"; detail = SAPL(@"settings.pixie.track.already_downloaded",@"The track is already downloaded or downloading. Checking its status without sending another command");
+        likeAcceptedTrack();
         publish();
     } else addDownload();
 }
@@ -573,6 +643,8 @@ static void selectNextCandidate(void) {
 void SAPInstallTrackDownloader(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
+        SAPInstallTrackLibrary();
+        SAPInstallTrackMenu();
         detail=SAPL(@"settings.pixie.track.not_started",@"No download started");
         worker = dispatch_queue_create("SpotifyAudioProbe.native-download",
             dispatch_queue_attr_make_with_autorelease_frequency(DISPATCH_QUEUE_SERIAL, DISPATCH_AUTORELEASE_FREQUENCY_WORK_ITEM));
@@ -706,18 +778,29 @@ void SAPInstallTrackDownloader(void) {
 }
 void SAPDownloadCurrentTrack(void (^message)(NSString *)) {
     SAPInstallTrackDownloader();
-    SAPTraceID trace=SAPTraceCurrentOperation();if(!trace&&SAPTraceIsActive())trace=SAPTraceBegin(@"download_current_track",@"pixie_api",@{});
-    if(SAPDiagnosticsEnabled())SAPJournalRefresh(@"download button");
-    if (atomic_load(&active)) { if (message) message(SAPTrackDownloadSummary()); return; }
     id state = object(player, @"state"), track = object(state, @"track"), uri = object(track, @"URI");
     NSString *urlString = [uri isKindOfClass:NSURL.class] ? [uri absoluteString] : [uri isKindOfClass:NSString.class] ? uri : nil;
     NSString *trackTitle = object(track, @"trackTitle");
-    NSString *identifier = [urlString hasPrefix:@"spotify:track:"] ? [urlString substringFromIndex:14] : nil;
-    NSCharacterSet *invalid = [NSCharacterSet characterSetWithCharactersInString:@"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"].invertedSet;
-    if (identifier.length != 22 || [identifier rangeOfCharacterFromSet:invalid].location != NSNotFound) {
+    if (!SAPIsMusicTrackURI(urlString)) {
         SAPJournalNoteAction(@"single_track_rejected",@{@"reason":@"current_track_uri_unavailable"});
         if (message) message(SAPL(@"settings.pixie.track.cannot_identify_current",@"Could not identify the current music track. Start it on this iPhone and try again.")); return;
     }
+    SAPDownloadTrack(urlString, trackTitle, message);
+}
+void SAPDownloadTrack(NSString *uri, NSString *trackName, void (^message)(NSString *)) {
+    SAPInstallTrackDownloader();
+    if (!SAPIsMusicTrackURI(uri)) {
+        SAPJournalNoteAction(@"single_track_rejected",@{@"reason":@"selected_track_uri_unavailable"});
+        if (message) message(SAPL(@"settings.pixie.track.cannot_identify_selected",@"Could not identify the selected music track. No download was started."));
+        return;
+    }
+    NSString *urlString = [uri copy];
+    NSString *trackTitle = [trackName isKindOfClass:NSString.class] ? [trackName copy] : nil;
+    NSString *identifier = [urlString substringFromIndex:14];
+    BOOL autoLike = SAPAutoLikeDownloadsEnabled();
+    SAPTraceID trace=SAPTraceCurrentOperation();if(!trace&&SAPTraceIsActive())trace=SAPTraceBegin(@"download_single_track",@"pixie_api",@{@"track_uri":urlString});
+    if(SAPDiagnosticsEnabled())SAPJournalRefresh(@"download button");
+    if (atomic_load(&active)) { if (message) message(SAPTrackDownloadSummary()); return; }
     NSArray *available = transportCandidates(); id currentTransport = available.firstObject; Method method;
     if (!signature(object_getClass(currentTransport), NSSelectorFromString(@"callSingle:method:payload:onResponse:"), 6, '@', &method)) {
         SAPJournalNoteAction(@"single_track_rejected",@{@"track_uri":urlString,@"reason":@"spotify_transport_unavailable"});
@@ -726,6 +809,9 @@ void SAPDownloadCurrentTrack(void (^message)(NSString *)) {
     SAPJournalNoteAction(@"single_track_requested",@{@"track_uri":urlString,@"transport_available":@YES});
     dispatch_async(worker, ^{
         if (atomic_load(&active)) return;
+        likeIntent = [SAPTrackLikeIntent new];
+        autoLikeRequested = autoLike; likeStarted = NO;
+        likeStatus = autoLike ? @"waiting_for_download" : @"off"; likeDetail = nil;
         jobTraceOperation=trace;
         generation++; jobCandidates = available; candidateIndex = 0; routeVerified = NO; exceptionName = nil;
         jobURL = [NSURL URLWithString:urlString];
@@ -884,6 +970,8 @@ void SAPCancelTrackDownload(void) {
     if (!worker) return;
     dispatch_async(worker, ^{
         if (!atomic_load(&active)) return;
+        if (likeIntent) atomic_store(&likeIntent->cancelled, true);
+        if ([likeStatus isEqual:@"pending"] || [likeStatus isEqual:@"waiting_for_download"]) likeStatus = @"cancelled";
         SAPJournalNoteAction(@"single_track_cancel_requested",@{@"track_uri":jobURL.absoluteString?:@"",
             @"add_acknowledged":@(sentRequest&&responseCode&&responseCode.unsignedLongLongValue==0)});
         // RemoveDownload has the exact same DownloadRequest schema. It is only

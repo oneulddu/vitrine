@@ -18,5 +18,14 @@ typedef NS_ENUM(NSInteger, SAPSettingsAction) {
 + (void)previewOfflineDeviceSlots:(void (^)(NSDictionary *,NSString *))completion;
 + (void)releaseOfflineDeviceSlots:(NSString *)planID cacheIDs:(NSArray *)cacheIDs completion:(void (^)(NSDictionary *,NSString *))completion;
 + (void)enableOfflineOnCurrentDevice:(void (^)(NSDictionary *,NSString *))completion;
+// Thin forwarding to TrackDownload's preference. Nothing is persisted here.
++ (BOOL)autoLikeDownloadsEnabled;
++ (void)setAutoLikeDownloadsEnabled:(BOOL)enabled;
 @end
 void SAPInstallDownloadSettings(void);
+#ifdef SAP_UI_FIXTURE
+// Fixture-only helpers defined by tests/SettingsFixtureActions.m.
+BOOL SAPFixtureAutoLikeEnabled(void);
+void SAPFixtureSetDownloadActive(BOOL active);
+NSInteger SAPFixtureActionCount(void);
+#endif

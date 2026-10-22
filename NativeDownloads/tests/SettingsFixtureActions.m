@@ -1,13 +1,23 @@
 #import <UIKit/UIKit.h>
 #import "AudioProbeUI.h"
 #import "Localization.h"
+// Fixture-only preference store and action counter. The shipping bridge forwards
+// to TrackDownload's spotifyglass.pixie.autoLikeDownloads preference.
+static BOOL SAPFixtureAutoLike=NO;
+static BOOL SAPFixtureDownloadActive=NO;
+static NSInteger SAPFixtureActionsPerformed=0;
+BOOL SAPFixtureAutoLikeEnabled(void) {return SAPFixtureAutoLike;}
+void SAPFixtureSetDownloadActive(BOOL active) {SAPFixtureDownloadActive=active;}
+NSInteger SAPFixtureActionCount(void) {return SAPFixtureActionsPerformed;}
 @implementation SAPSettingsActions
 + (NSDictionary *)snapshot {
- return @{@"report":@{},@"diagnostics":SAPL(@"settings.pixie.diagnostics.disabled_hint",@"Diagnostics are off. Enable Diagnostics to collect data."),@"journal_summary":SAPL(@"settings.pixie.journal.disabled_hint",@"Diagnostics are off. The log is not updated. You can still check the current track separately."),@"download_active":@NO,@"recording":@NO,@"last_wav_available":@NO,@"key_request_mode":@{@"selected_mode":@0,@"configured_mode":@0,@"last_selector_returned_mode":@(-1),@"runtime_selection_supported":@YES,@"restart_required":@NO,@"detail":SAPL(@"settings.pixie.keymode.detail.preference_only",@"Only restoring a confirmed mode 1 to mode 0 is allowed. A saved preference alone is not confirmation.")}};
+ return @{@"report":@{},@"diagnostics":SAPL(@"settings.pixie.diagnostics.disabled_hint",@"Diagnostics are off. Enable Diagnostics to collect data."),@"journal_summary":SAPL(@"settings.pixie.journal.disabled_hint",@"Diagnostics are off. The log is not updated. You can still check the current track separately."),@"download_active":@(SAPFixtureDownloadActive),@"auto_like_downloads":@(SAPFixtureAutoLike),@"recording":@NO,@"last_wav_available":@NO,@"key_request_mode":@{@"selected_mode":@0,@"configured_mode":@0,@"last_selector_returned_mode":@(-1),@"runtime_selection_supported":@YES,@"restart_required":@NO,@"detail":SAPL(@"settings.pixie.keymode.detail.preference_only",@"Only restoring a confirmed mode 1 to mode 0 is allowed. A saved preference alone is not confirmation.")}};
 }
++ (BOOL)autoLikeDownloadsEnabled {return SAPFixtureAutoLike;}
++ (void)setAutoLikeDownloadsEnabled:(BOOL)enabled {SAPFixtureAutoLike=enabled;}
 + (NSDictionary *)snapshotForDetails:(BOOL)journal {return [self snapshot];}
 + (void)loadDetails:(BOOL)journal completion:(void (^)(NSDictionary *))completion {dispatch_async(dispatch_get_main_queue(),^{completion([self snapshot]);});}
-+ (void)perform:(SAPSettingsAction)action { }
++ (void)perform:(SAPSettingsAction)action { SAPFixtureActionsPerformed++; }
 + (void)setKeyRequestMode:(NSInteger)mode completion:(void (^)(BOOL,NSString *))completion {NSCAssert(mode==0,@"Selecting mode 1 must not be offered");if(completion)completion(NO,@"Spotify reports 0 free device-license slots. Mode was not changed.");}
 + (void)refreshDownloadCompatibility:(void (^)(NSDictionary *))completion {if(completion)completion(@{@"status":@"complete"});}
 + (void)previewOfflineDeviceSlots:(void (^)(NSDictionary *,NSString *))completion {completion(nil,@"fixture: no mutation performed");}

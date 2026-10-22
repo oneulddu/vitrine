@@ -98,6 +98,14 @@ entitlements are preserved and the complete ZIP is verified before atomic public
 
 Settings → Vitrine reuses Pixie's existing runtime attachment for **Pixie Download Manager**
 and **Send log**. Music stays in Spotify's offline storage, not exported audio files.
+Music-track context menus gain **Download**, bound to the selected track rather than
+the currently playing one. The manager's **Add single-track downloads to Liked Songs**
+switch defaults off and applies to subsequent individual downloads, including the
+current-track action. When enabled, an accepted or already-present download also
+requests an add to Liked Songs; album downloads do not. Canceling or removing a
+download never removes a like. Library-add errors are reported separately from
+download status. Menu routing and library changes still need real-device acceptance;
+the host regressions check captured track identity and the verified 9.1.90 API.
 Release builds enforce `SAP_ENABLE_WAV_CAPTURE=0`. Diagnostics default off; enabling them
 persists across launches. Action recording also respects this switch. Reports can contain
 track URIs, device identifiers and listening/download history: inspect before sharing.
@@ -120,6 +128,8 @@ retained for completeness only; jailbreak packaging and testing are not supporte
 Focused checks on an Apple Silicon Mac (no installation):
 
     python3 -B NativeDownloads/tests/build_guard.py ipa/Spotify-9.1.90.ipa
+    python3 -B NativeDownloads/tests/track_api_binary.py
+    python3 -B NativeDownloads/tools/test_single_track.py
     python3 -B NativeDownloads/tools/test.py
     SPOTIFY_TEST_IPA="$PWD/ipa/Spotify-9.1.90.ipa" python3 -B NativeDownloads/tools/test_native_restrictions.py
 

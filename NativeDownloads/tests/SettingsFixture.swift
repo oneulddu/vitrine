@@ -139,6 +139,43 @@ class ChromeHost:UIViewController {
        precondition(!(content.text ?? "").contains("Export") && !(content.text ?? "").contains("Send log"),"duplicate log export row")
       }
      }}
+     // Section 0 keeps the auto-like switch at index 3; Cancel joins at index 4
+     // only while a download is active.
+     let autoLikeTitle=expectedText("Add single-track downloads to Liked Songs")
+     let autoLikeSubtitle=expectedText("Also add tracks downloaded individually to Liked Songs so you can find them in Your Library. Canceling or removing a download does not remove the like.")
+     func autoLikeCell()->UITableViewCell{page.tableView.dataSource!.tableView(page.tableView,cellForRowAt:IndexPath(row:3,section:0))}
+     precondition(page.tableView.numberOfRows(inSection:0)==4,"idle download section must have four rows")
+     let idleAutoLike=autoLikeCell()
+     let autoLikeContent=idleAutoLike.contentConfiguration as? UIListContentConfiguration
+     precondition(autoLikeContent?.text==autoLikeTitle,"auto-like title must be localized")
+     precondition(autoLikeContent?.secondaryText==autoLikeSubtitle,"auto-like subtitle must be localized")
+     precondition(autoLikeContent?.secondaryTextProperties.numberOfLines==0 && autoLikeContent?.textProperties.numberOfLines==0,"auto-like labels must wrap at accessibility sizes")
+     precondition(idleAutoLike.selectionStyle == .none,"the auto-like switch row is not an action")
+     guard let autoLikeSwitch=idleAutoLike.accessoryView as? UISwitch else {preconditionFailure("auto-like switch missing")}
+     precondition(autoLikeSwitch.accessibilityLabel==autoLikeTitle,"auto-like switch needs a localized VoiceOver label")
+     precondition(!autoLikeSwitch.isOn && !SAPFixtureAutoLikeEnabled(),"auto-like downloads must default OFF")
+     let beforeToggle=SAPFixtureActionCount()
+     autoLikeSwitch.isOn=true;autoLikeSwitch.sendActions(for:.valueChanged)
+     precondition(SAPFixtureAutoLikeEnabled(),"toggling must persist the preference")
+     precondition((autoLikeCell().accessoryView as? UISwitch)?.isOn==true,"switch must render the stored preference")
+     precondition(SAPFixtureActionCount()==beforeToggle,"toggling must not start a download")
+     page.tableView.delegate?.tableView?(page.tableView,didSelectRowAt:IndexPath(row:3,section:0))
+     precondition(SAPFixtureActionCount()==beforeToggle,"selecting the switch row must not run an action")
+     if let toggle=autoLikeCell().accessoryView as? UISwitch {toggle.isOn=false;toggle.sendActions(for:.valueChanged)}
+     precondition(!SAPFixtureAutoLikeEnabled(),"toggle must turn the preference back off")
+     SAPFixtureSetDownloadActive(true)
+     NotificationCenter.default.post(name:NSNotification.Name("SAPDownloadSettingsChanged"),object:nil)
+     RunLoop.current.run(until:Date().addingTimeInterval(0.3))
+     precondition(page.tableView.numberOfRows(inSection:0)==5,"active download must add the cancel row")
+     precondition((autoLikeCell().contentConfiguration as? UIListContentConfiguration)?.text==autoLikeTitle,"switch stays at index 3 while a download is active")
+     let cancelCell=page.tableView.dataSource!.tableView(page.tableView,cellForRowAt:IndexPath(row:4,section:0))
+     precondition((cancelCell.contentConfiguration as? UIListContentConfiguration)?.text==expectedText("Cancel download"),"cancel row must move to index 4")
+     SAPFixtureSetDownloadActive(false)
+     NotificationCenter.default.post(name:NSNotification.Name("SAPDownloadSettingsChanged"),object:nil)
+     RunLoop.current.run(until:Date().addingTimeInterval(0.3))
+     precondition(page.tableView.numberOfRows(inSection:0)==4,"cancel row must disappear when idle")
+     self.write("PASS: auto-like switch defaults OFF, persists, starts no download, and Cancel maps to index 4 only while active")
+
      page.tableView.scrollToRow(at:IndexPath(row:0,section:3),at:.middle,animated:false)
      DispatchQueue.main.asyncAfter(deadline:.now()+0.5){
       let togglePath=IndexPath(row:0,section:3)

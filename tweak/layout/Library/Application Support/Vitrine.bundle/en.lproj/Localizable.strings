@@ -1317,6 +1317,8 @@
 "settings.pixie.alert.restore_mode_0.action" = "Restore mode 0";
 "settings.pixie.alert.restore_mode_0.message" = "The verified selector was observed returning 1. This action only restores mode 0, after a fresh quota and license check. It does not guarantee that downloading will work.";
 "settings.pixie.alert.restore_mode_0.title" = "Restore mode 0?";
+"settings.pixie.auto_like.subtitle" = "Also add tracks downloaded individually to Liked Songs so you can find them in Your Library. Canceling or removing a download does not remove the like.";
+"settings.pixie.auto_like.title" = "Add single-track downloads to Liked Songs";
 "settings.pixie.compat.not_checked" = "Not checked.";
 "settings.pixie.compat.not_checked_detail" = "No explicit quota and license check has completed this launch.";
 "settings.pixie.compat.permitted_not_guaranteed" = "The checks permit changing the configured mode; downloading is not guaranteed.";
@@ -1420,7 +1422,11 @@
 "settings.pixie.keymode.reason.no_confirmed_mode_one" = "A verified executing mode-1 selector was not confirmed. No change was made.";
 "settings.pixie.keymode.reason.only_restore_zero" = "Only restoring a confirmed mode 1 to mode 0 is allowed.";
 "settings.pixie.keymode.reason.selector_changed" = "The installed selector changed during the check.";
+"settings.pixie.like.failed" = "Could not add this track to Liked Songs. Try adding it manually; download status is shown separately.";
+"settings.pixie.like.track_message_format" = "“%@”: %@";
+"settings.pixie.like.unavailable" = "Adding this track to Liked Songs is unavailable. Add it manually; download status is shown separately.";
 "settings.pixie.manager.title" = "Pixie Download Manager";
+"settings.pixie.menu.download" = "Download";
 "settings.pixie.native.manager_not_available" = "The native download manager is not available yet. Start playback and try again.";
 "settings.pixie.native.manager_shut_down" = "The native manager has shut down, or this Spotify build does not match the verified 9.1.90.";
 "settings.pixie.native.preparation_cancelled" = "Preparation cancelled.";
@@ -1471,6 +1477,7 @@
 "settings.pixie.track.add_download_timeout" = "Offline.AddDownload did not reply within 30 seconds. The reason is unknown; downloading is not confirmed.";
 "settings.pixie.track.already_downloaded" = "The track is already downloaded or downloading. Checking its status without sending another command";
 "settings.pixie.track.cannot_identify_current" = "Could not identify the current music track. Start it on this iPhone and try again.";
+"settings.pixie.track.cannot_identify_selected" = "Could not identify the selected music track. No download was started.";
 "settings.pixie.track.checking_access" = "Checking downloader access through GetItems";
 "settings.pixie.track.checking_again" = "Spotify reported the track as downloaded. Checking its status again";
 "settings.pixie.track.completion_timeout" = "Completion was not confirmed within 10 minutes. Monitoring stopped.";
