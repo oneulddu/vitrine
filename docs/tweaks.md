@@ -149,6 +149,11 @@ Shared:
                   have size/weight controls; defaults are 40/semibold and 26/regular for both supplements.
                   Text wraps and shrinks within its own box, with visible ellipsis when it still cannot fit.
                   The native Layout/Text/Background settings page previews the production renderer.
+                  Font and per-role size/weight pages keep that sample pinned above the settings while
+                  editing; the weight menu stays on the page. The sample respects the lyrics screen's
+                  translation/pronunciation switches without changing them or sending requests, and
+                  a supplement's page explains when its line is hidden. Reset keeps background and
+                  display switches intact.
                   Display/language rules govern supplements; opening PiP starts no translation or AI request.
                   Layout and typography changes update paused frames and resize the pool when needed.
                   Untimed lyrics never

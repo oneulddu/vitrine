@@ -6,10 +6,23 @@
 #import "LyricsPiPFrame.h"
 #import "Shared/Fonts/FontLibrary.h"
 
-// SGModPage remains the native grouped settings page; its header is a real CPU-rendered frame.
+// SGModPage remains the native grouped settings page; its preview is a real CPU-rendered frame from the
+// production renderer. The main page carries it as a scrolling header. The font and role pages pin it above
+// their rows, so it stays in view while a family, size or weight changes, and cap the whole pinned header so
+// the rows keep most of the screen at any text size, even on a small phone held sideways. Explanations scroll
+// with the rows, in a note at their top, rather than being shrunk or clipped.
 @interface SGLyricsPiPSettingsPage : SGModPage
+@property (nonatomic) BOOL pinned;
+// 1 or 2 on the pronunciation or translation page: says when that line is hidden by the lyrics screen.
+@property (nonatomic) NSUInteger role;
+@property (nonatomic, strong) UIView *header;
 @property (nonatomic, strong) UIImageView *preview;
 @property (nonatomic, strong) UILabel *sampleLabel;
+@property (nonatomic, strong) UIView *noteView;
+@property (nonatomic, strong) UILabel *noteLabel;
+@property (nonatomic, copy) NSString *hiddenNote;
+@property (nonatomic) CGSize raster;
+@property (nonatomic) BOOL refreshQueued;
 @end
 @implementation SGLyricsPiPSettingsPage
 - (void)viewDidLoad {
@@ -17,15 +30,27 @@
     self.preview = [UIImageView new];
     self.preview.contentMode = UIViewContentModeScaleAspectFit;
     self.preview.isAccessibilityElement = YES;
-    self.preview.accessibilityLabel = SGL(@"settings.lyrics.pip.preview", @"Sample preview");
+    self.preview.accessibilityTraits = UIAccessibilityTraitImage;
     self.sampleLabel = [UILabel new];
-    self.sampleLabel.text = self.preview.accessibilityLabel;
     self.sampleLabel.textColor = UIColor.secondaryLabelColor;
     self.sampleLabel.font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+    self.sampleLabel.adjustsFontForContentSizeCategory = YES;
+    self.sampleLabel.numberOfLines = 0;
     self.sampleLabel.textAlignment = NSTextAlignmentCenter;
-    UIView *header = [UIView new];
-    [header addSubview:self.preview]; [header addSubview:self.sampleLabel];
-    self.tableView.tableHeaderView = header;
+    self.sampleLabel.accessibilityElementsHidden = YES; // the preview reads the same text out
+    self.header = [UIView new];
+    [self.header addSubview:self.preview]; [self.header addSubview:self.sampleLabel];
+    if (self.pinned) {
+        self.header.backgroundColor = self.tableView.backgroundColor; // rows scroll under it
+        [self.tableView addSubview:self.header];
+        self.noteLabel = [UILabel new];
+        self.noteLabel.textColor = UIColor.secondaryLabelColor;
+        self.noteLabel.numberOfLines = 0;
+        self.noteView = [UIView new];
+        [self.noteView addSubview:self.noteLabel];
+    } else {
+        self.tableView.tableHeaderView = self.header;
+    }
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(previewChanged:)
         name:NSUserDefaultsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(previewChanged:)
@@ -33,30 +58,113 @@
     [self updatePreview];
 }
 - (void)previewChanged:(NSNotification *)note {
-    dispatch_async(dispatch_get_main_queue(), ^{ [self updatePreview]; [self refreshVisibility]; });
+    // Defaults may post off main and several times for one change (a reset removes ten keys): one render per burst.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.refreshQueued) return;
+        self.refreshQueued = YES;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.refreshQueued = NO;
+            [self updatePreview];
+            [self refreshVisibility];
+        });
+    });
 }
 - (void)updatePreview {
-    NSArray *sample = @[SGL(@"settings.lyrics.pip.sample.original", @"별빛을 따라 걸어요"),
+    // The lyrics screen's effective switches, read exactly as LyricsPiP.m reads them for its frames. Only
+    // read: the sample never writes them, and nothing here asks for a translation or pronunciation.
+    BOOL pronunciation = SGFlag(@"spotifyglass.redesign.lyricsPronunciation", NO);
+    BOOL translation = SGFlag(@"spotifyglass.redesign.lyricsTranslation", NO);
+    NSArray<NSString *> *sample = @[SGL(@"settings.lyrics.pip.sample.original", @"별빛을 따라 걸어요"),
         SGL(@"settings.lyrics.pip.sample.next", @"A new day is on its way"),
         SGL(@"settings.lyrics.pip.sample.credit", @"Sample lyrics · Vitrine"),
-        @"Byeolbicheul ttara georeoyo", @"We walk beneath the stars",
+        pronunciation ? @"Byeolbicheul ttara georeoyo" : @"", translation ? @"We walk beneath the stars" : @"",
         SGL(@"settings.lyrics.pip.sample.song", @"A song for the night"), @"Vitrine"];
+    NSString *label = SGL(@"settings.lyrics.pip.preview", @"Sample preview");
+    NSString *hidden = self.role == 1 && !pronunciation ?
+            SGL(@"settings.lyrics.pip.preview.hidden.pronunciation", @"Pronunciation is off on the lyrics screen, so it is hidden.") :
+        self.role == 2 && !translation ?
+            SGL(@"settings.lyrics.pip.preview.hidden.translation", @"Translation is off on the lyrics screen, so it is hidden.") : nil;
+    self.sampleLabel.text = label;
+    self.hiddenNote = hidden;
+    self.preview.accessibilityLabel = label;
+    // Read in the order the frame shows them: song, artist, then the lyric lines, the next line and the credit.
+    NSMutableArray<NSString *> *spoken = [NSMutableArray array];
+    for (NSNumber *slot in @[@5, @6, @0, @3, @4, @1, @2])
+        if (sample[slot.unsignedIntegerValue].length) [spoken addObject:sample[slot.unsignedIntegerValue]];
+    self.preview.accessibilityValue = [spoken componentsJoinedByString:@", "];
+    self.raster = SGLyricsPiPReadStyle().raster;
     self.preview.image = [UIImage imageWithData:SGLyricsPiPFramePNG(sample)];
+    [self.view setNeedsLayout];
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    UIView *header = self.tableView.tableHeaderView;
-    CGFloat width = self.tableView.bounds.size.width;
-    if (!header || width <= 0) return;
-    self.preview.frame = CGRectMake(20, 8, MAX(0, width - 40), 220);
-    self.sampleLabel.frame = CGRectMake(20, 232, MAX(0, width - 40), 24);
-    if (header.frame.size.height != 268 || header.frame.size.width != width) {
-        header.frame = CGRectMake(0, 0, width, 268);
-        self.tableView.tableHeaderView = header;
+    UITableView *table = self.tableView;
+    CGFloat width = table.bounds.size.width;
+    if (!self.header || width <= 0 || self.raster.width <= 0) return;
+    CGFloat x = table.layoutMargins.left, inner = MAX(0, width - x - table.layoutMargins.right);
+    UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1 compatibleWithTraitCollection:self.traitCollection];
+    if (![self.sampleLabel.font isEqual:font]) self.sampleLabel.font = font; // scrolling lays out every frame
+    CGFloat label = ceil([self.sampleLabel sizeThatFits:CGSizeMake(inner, CGFLOAT_MAX)].height);
+    CGFloat image = MIN(220, floor(inner * self.raster.height / self.raster.width));
+    if (!self.pinned) {
+        CGFloat height = 8 + image + 4 + label + 8;
+        self.preview.frame = CGRectMake(x, 8, inner, image);
+        self.sampleLabel.frame = CGRectMake(x, 12 + image, inner, label);
+        if (self.header.frame.size.height != height || self.header.frame.size.width != width) {
+            self.header.frame = CGRectMake(0, 0, width, height);
+            table.tableHeaderView = self.header;
+        }
+        return;
     }
+    // The whole pinned header, caption and padding included, takes at most 42% of the room between the bars.
+    // A caption that would leave the frame under 48 pt moves into the scrolling note instead; the preview
+    // still reads it out. Under any tighter room the frame alone shrinks, to nothing if it must.
+    CGFloat visible = table.bounds.size.height - table.safeAreaInsets.top - table.safeAreaInsets.bottom - table.contentInset.bottom;
+    CGFloat cap = MAX(0, floor(visible * .42));
+    BOOL captioned = cap - label - 20 >= 48;
+    image = MAX(0, MIN(image, captioned ? cap - label - 20 : cap - 16));
+    CGFloat height = captioned ? image + label + 20 : MIN(cap, image + 16);
+    self.preview.frame = CGRectMake(x, 8, inner, image);
+    self.sampleLabel.hidden = !captioned;
+    self.sampleLabel.frame = CGRectMake(x, 12 + image, inner, captioned ? label : 0);
+    NSMutableArray<NSString *> *note = [NSMutableArray array];
+    if (!captioned) [note addObject:self.sampleLabel.text];
+    if (self.hiddenNote) [note addObject:self.hiddenNote];
+    if (!note.count) {
+        if (table.tableHeaderView) table.tableHeaderView = nil;
+    } else {
+        NSString *text = [note componentsJoinedByString:@"\n"];
+        if (![self.noteLabel.font isEqual:font]) self.noteLabel.font = font;
+        if (![self.noteLabel.text isEqual:text]) self.noteLabel.text = text;
+        CGFloat lines = ceil([self.noteLabel sizeThatFits:CGSizeMake(inner, CGFLOAT_MAX)].height);
+        self.noteLabel.frame = CGRectMake(x, 8, inner, lines);
+        CGSize size = CGSizeMake(width, lines + 16);
+        if (table.tableHeaderView != self.noteView || !CGSizeEqualToSize(self.noteView.bounds.size, size)) {
+            self.noteView.frame = (CGRect){CGPointZero, size};
+            table.tableHeaderView = self.noteView;
+        }
+    }
+    UIEdgeInsets insets = table.contentInset;
+    if (insets.top != height) {
+        BOOL top = table.contentOffset.y <= 0.5 - table.adjustedContentInset.top;
+        insets.top = height;
+        table.contentInset = insets;
+        table.verticalScrollIndicatorInsets = insets;
+        if (top) table.contentOffset = CGPointMake(table.contentOffset.x, -table.adjustedContentInset.top);
+    }
+    // Scrolling lays the table out again, so the preview stays at the top of what is visible.
+    self.header.frame = CGRectMake(0, table.contentOffset.y + table.adjustedContentInset.top - height, width, height);
+    [table bringSubviewToFront:self.header];
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 @end
+
+static SGLyricsPiPSettingsPage *previewPage(NSString *title, NSArray<SGModSection *> *sections, NSString *footer, NSUInteger role) {
+    SGLyricsPiPSettingsPage *page = [[SGLyricsPiPSettingsPage alloc] initWithTitle:title intro:nil sections:sections footer:footer];
+    page.pinned = YES;
+    page.role = role;
+    return page;
+}
 
 static NSArray *weights(void) {
     return @[SGL(@"settings.lyrics.pip.weight.regular", @"Regular"),
@@ -76,9 +184,8 @@ static SGModRow *fontRow(void) {
             };
             [rows addObject:choice];
         }
-        return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.pip.font", @"Font") intro:nil
-            sections:@[SGSection(nil, rows)]
-            footer:SGL(@"settings.lyrics.pip.font.note", @"Uses installed fonts, including your imported and downloaded families. Add fonts in Appearance → Font. Unavailable fonts fall back to the system font. This does not change the app font.")];
+        return previewPage(SGL(@"settings.lyrics.pip.font", @"Font"), @[SGSection(nil, rows)],
+            SGL(@"settings.lyrics.pip.font.note", @"Uses installed fonts, including your imported and downloaded families. Add fonts in Appearance → Font. Unavailable fonts fall back to the system font. This does not change the app font."), 0);
     });
     row.value = ^NSString *{
         return SGLyricsPiPFontName([NSUserDefaults.standardUserDefaults stringForKey:SGKeyPiPFont] ?: @"app");
@@ -92,10 +199,12 @@ static SGModRow *roleRow(NSUInteger role, NSString *title) {
             ^double { return SGLyricsPiPReadStyle().sizes[role].doubleValue; },
             ^(double value) { [NSUserDefaults.standardUserDefaults setDouble:value forKey:SGLyricsPiPRoleKey(role, @"size")]; },
             ^NSString *(double value) { return [NSString stringWithFormat:@"%.0f", value]; });
-        SGModRow *weight = SGChoiceRow(SGL(@"settings.lyrics.pip.weight", @"Weight"), nil,
-            SGLyricsPiPRoleKey(role, @"weight"), weights(), role == 0 ? 2 : 0);
-        return [[SGModPage alloc] initWithTitle:title intro:nil sections:@[SGSection(nil, @[size, weight])]
-            footer:SGL(@"settings.lyrics.pip.fit.note", @"Sizes are maximums in the rendered frame. Long text wraps and shrinks to fit; an ellipsis marks text that still cannot fit.")];
+        // Picked on the page itself, not a list pushed over it, so the pinned preview shows each weight.
+        SGModRow *weight = SGMenuRow(SGL(@"settings.lyrics.pip.weight", @"Weight"), weights(),
+            ^NSString *{ return weights()[SGLyricsPiPReadStyle().weights[role].unsignedIntegerValue]; },
+            ^(NSInteger index) { [NSUserDefaults.standardUserDefaults setInteger:index forKey:SGLyricsPiPRoleKey(role, @"weight")]; });
+        return previewPage(title, @[SGSection(nil, @[size, weight])],
+            SGL(@"settings.lyrics.pip.fit.note", @"Sizes are maximums in the rendered frame. Long text wraps and shrinks to fit; an ellipsis marks text that still cannot fit."), role);
     });
 }
 

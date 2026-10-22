@@ -4,7 +4,9 @@
 #import "Shared/LyricsPiP/LyricsPiP.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
 #import "Shared/LyricsPiP/LyricsPiPStyle.h"
+#import "Shared/LyricsPiP/LyricsPiPFrame.h"
 #import "Shared/Fonts/Fonts.h"
+#import "Shared/Fonts/FontLibrary.h"
 @implementation SGPage
 @end
 @implementation SGModRow
@@ -39,8 +41,93 @@ SGModRow *SGSliderRow(NSString *title, NSString *subtitle, double min, double ma
 SGModRow *SGStatActionRow(NSString *title, NSString *subtitle, NSString *(^value)(void), void (^action)(void)) {
     SGModRow *row = [SGModRow new]; row.title = title; row.subtitle = subtitle; row.value = value; row.action = action; return row;
 }
+SGModRow *SGMenuRow(NSString *title, NSArray<NSString *> *choices, NSString *(^value)(void), void (^chosen)(NSInteger index)) {
+    SGModRow *row = [SGModRow new]; row.title = title; row.menu = choices; row.value = value; row.chosen = chosen; return row;
+}
 void SGPickColor(NSString *title, NSInteger initial, void (^picked)(NSInteger)) { picked(0x123456); }
 UIColor *SGColorRGB(NSInteger rgb) { return UIColor.blackColor; }
+
+// The preview is found the way VoiceOver finds it, by its label, and compared by decoded pixels with an
+// independently built sample drawn by the production renderer.
+static UIImageView *findPreview(UIView *view) {
+    if ([view isKindOfClass:UIImageView.class] && [view.accessibilityLabel hasPrefix:@"Sample preview"]) return (id)view;
+    for (UIView *sub in view.subviews) { UIImageView *found = findPreview(sub); if (found) return found; }
+    return nil;
+}
+static UIImageView *previewIn(UIViewController *controller, CGSize size) {
+    controller.overrideUserInterfaceStyle = UIUserInterfaceStyleDark; // as SGPage does
+    controller.view.frame = (CGRect){CGPointZero, size};
+    [controller.view setNeedsLayout];
+    [controller.view layoutIfNeeded];
+    return findPreview(controller.view);
+}
+static NSData *pixels(UIImage *image) {
+    return image.CGImage ? CFBridgingRelease(CGDataProviderCopyData(CGImageGetDataProvider(image.CGImage))) : nil;
+}
+static NSArray *sample(BOOL pronunciation, BOOL translation) {
+    return @[@"별빛을 따라 걸어요", @"A new day is on its way", @"Sample lyrics · Vitrine",
+        pronunciation ? @"Byeolbicheul ttara georeoyo" : @"", translation ? @"We walk beneath the stars" : @"",
+        @"A song for the night", @"Vitrine"];
+}
+static BOOL shows(UIImageView *preview, NSArray *content) {
+    NSData *got = pixels(preview.image);
+    return got && [got isEqual:pixels([UIImage imageWithData:SGLyricsPiPFramePNG(content)])];
+}
+static BOOL same(id a, id b) { return a == b || [a isEqual:b]; }
+static UILabel *labelIn(UIView *view) {
+    for (UIView *sub in view.subviews) if ([sub isKindOfClass:UILabel.class]) return (id)sub;
+    return nil;
+}
+static BOOL unclipped(UILabel *label, UIView *in) {
+    CGFloat needed = ceil([label sizeThatFits:CGSizeMake(label.bounds.size.width, CGFLOAT_MAX)].height);
+    return label.text.length && label.bounds.size.height >= needed && CGRectContainsRect(in.bounds, label.frame);
+}
+// Small phones both ways, a common size and an extreme short window, at the default and the largest accessibility
+// text size: the whole pinned header stays within 42% of the visible room and at the top of it while the rows scroll;
+// its caption is never clipped, and whatever does not fit pinned (the caption, the hidden-line explanation) is an
+// unclipped, accessible note at the top of the scrolling content.
+static void pinnedLayout(UIViewController *controller, UIImageView *preview, NSString *name, NSString *explanation) {
+    UITableView *table = ((UITableViewController *)controller).tableView;
+    BOOL moved = NO;
+    for (UIContentSizeCategory category in @[UIContentSizeCategoryLarge, UIContentSizeCategoryAccessibilityExtraExtraExtraLarge])
+    for (NSValue *value in @[[NSValue valueWithCGSize:CGSizeMake(568, 320)], [NSValue valueWithCGSize:CGSizeMake(320, 568)],
+            [NSValue valueWithCGSize:CGSizeMake(667, 375)], [NSValue valueWithCGSize:CGSizeMake(390, 844)],
+            [NSValue valueWithCGSize:CGSizeMake(568, 160)]]) {
+        CGSize size = value.CGSizeValue;
+        NSString *where = [NSString stringWithFormat:@"%@ page at %.0f×%.0f, %@", name, size.width, size.height, category];
+        controller.traitOverrides.preferredContentSizeCategory = category;
+        previewIn(controller, size);
+        table.contentOffset = CGPointMake(0, -table.adjustedContentInset.top);
+        [controller.view layoutIfNeeded];
+        UIView *header = preview.superview, *noteView = table.tableHeaderView;
+        UILabel *caption = labelIn(header), *note = labelIn(noteView);
+        CGFloat visible = size.height - table.safeAreaInsets.top - table.safeAreaInsets.bottom - table.contentInset.bottom;
+        BOOL captioned = !caption.hidden;
+        moved |= !captioned;
+        SGTestAssert(caption.font.pointSize == [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1
+            compatibleWithTraitCollection:[UITraitCollection traitCollectionWithPreferredContentSizeCategory:category]].pointSize,
+            [@"caption follows the page's text size: " stringByAppendingString:where]);
+        SGTestAssert(header.bounds.size.height <= floor(visible * .42) && table.contentInset.top == header.bounds.size.height &&
+            CGRectContainsRect(header.bounds, preview.frame) && (!captioned || unclipped(caption, header)),
+            [@"whole pinned header, caption included, stays within its share and unclipped: " stringByAppendingString:where]);
+        SGTestAssert([preview.accessibilityLabel isEqual:@"Sample preview"] &&
+            (captioned ? [caption.text isEqual:@"Sample preview"] : [note.text hasPrefix:@"Sample preview"]),
+            [@"the sample stays labeled, pinned or in the note: " stringByAppendingString:where]);
+        BOOL wantNote = !captioned || explanation;
+        SGTestAssert(wantNote ? noteView != header && noteView.superview == table && unclipped(note, noteView) &&
+                !note.accessibilityElementsHidden && (!explanation || [note.text hasSuffix:explanation]) &&
+                fabs(CGRectGetMinY(noteView.frame) - table.contentOffset.y - table.adjustedContentInset.top) < .5 :
+                noteView == nil,
+            [@"explanations scroll as an unclipped accessible note right under the preview: " stringByAppendingString:where]);
+        table.contentOffset = CGPointMake(0, 240 - table.adjustedContentInset.top);
+        [controller.view layoutIfNeeded];
+        SGTestAssert(header.superview == table && fabs(CGRectGetMinY(header.frame) - table.contentOffset.y - table.safeAreaInsets.top) < .5,
+            [@"preview stays pinned above scrolled rows: " stringByAppendingString:where]);
+    }
+    SGTestAssert(moved, [name stringByAppendingString:@" page's caption moves into the note where the pinned share cannot hold it"]);
+    controller.traitOverrides.preferredContentSizeCategory = UIContentSizeCategoryLarge;
+    previewIn(controller, CGSizeMake(390, 844));
+}
 
 void SGTestSettings(void) {
     SGModRow *link = SGLyricsPiPRow();
@@ -57,7 +144,8 @@ void SGTestSettings(void) {
         @"aspect choices and default-on metadata control are discoverable");
     SGModPage *role = (id)page.sections[2].rows[2].page();
     SGTestAssert(role.sections[0].rows[0].minimum == 24 && role.sections[0].rows[0].maximum == 64 &&
-        [role.sections[0].rows[1].key isEqual:SGLyricsPiPRoleKey(0, @"weight")], @"original settings use bounded role-specific controls");
+        role.sections[0].rows[1].menu.count == 4 && [role.sections[0].rows[1].value() isEqual:@"Semibold"],
+        @"original settings use bounded role-specific controls with an on-page weight menu");
     role = (id)page.sections[2].rows[3].page();
     SGTestAssert(role.sections[0].rows[0].minimum == 16 && role.sections[0].rows[0].maximum == 48,
         @"secondary role settings have smaller bounded range");
@@ -80,21 +168,71 @@ void SGTestSettings(void) {
         && SGLyricsBackgroundRead(@"spotifyglass.lockscreen.background").darkness == .8,
         @"production slider/color writes never change lockscreen preferences");
     id appFont = [defaults objectForKey:SGKeyAppFont] ?: @0;
+    // The lyrics screen's switches, as the user left them there: both off, in the volatile test domain.
+    NSString *pronunciationKey = @"spotifyglass.redesign.lyricsPronunciation", *translationKey = @"spotifyglass.redesign.lyricsTranslation";
+    SGTestSetting(pronunciationKey, @NO);
+    SGTestSetting(translationKey, @NO);
     SGModPage *fonts = (id)page.sections[2].rows[1].page();
+    UIImageView *fontPreview = previewIn(fonts, CGSizeMake(667, 375));
+    SGTestAssert(fontPreview && shows(fontPreview, sample(NO, NO)) && [fontPreview.accessibilityLabel isEqual:@"Sample preview"] &&
+        [fontPreview.accessibilityValue containsString:@"별빛을 따라 걸어요"] && ![fontPreview.accessibilityValue containsString:@"Byeolbicheul"] &&
+        ![fontPreview.accessibilityValue containsString:@"beneath"], @"font page shows a labeled production sample without switched-off supplements");
+    pinnedLayout(fonts, fontPreview, @"font", nil);
+    NSData *before = pixels(fontPreview.image);
     for (SGModRow *choice in fonts.sections[0].rows) if ([choice.title isEqual:@"Georgia"]) choice.action();
     SGTestAssert([SGLyricsPiPReadStyle().font isEqual:@"Georgia"] &&
         [appFont isEqual:[defaults objectForKey:SGKeyAppFont] ?: @0], @"PiP font picker changes only the PiP font");
+    SGTestAssert(SGTestPump(^BOOL { return shows(fontPreview, sample(NO, NO)); }) && ![pixels(fontPreview.image) isEqual:before],
+        @"choosing a family redraws the pinned preview at once");
+    SGTestSetting(translationKey, @YES);
+    [NSNotificationCenter.defaultCenter postNotificationName:NSUserDefaultsDidChangeNotification object:defaults];
+    SGTestAssert(SGTestPump(^BOOL { return shows(fontPreview, sample(NO, YES)); }) &&
+        [fontPreview.accessibilityValue containsString:@"We walk beneath the stars"] && ![fontPreview.accessibilityValue containsString:@"Byeolbicheul"],
+        @"switching translation on in lyrics shows only translation in the preview");
+    SGModPage *pronunciation = (id)page.sections[2].rows[3].page();
+    UIImageView *pronunciationPreview = previewIn(pronunciation, CGSizeMake(320, 568));
+    SGModPage *translation = (id)page.sections[2].rows[4].page();
+    UIImageView *translationPreview = previewIn(translation, CGSizeMake(320, 568));
+    NSString *hiddenNote = @"Pronunciation is off on the lyrics screen, so it is hidden.";
+    SGTestAssert(shows(pronunciationPreview, sample(NO, YES)) && [labelIn(pronunciation.tableView.tableHeaderView).text isEqual:hiddenNote] &&
+        shows(translationPreview, sample(NO, YES)) && !translation.tableView.tableHeaderView,
+        @"supplement pages say when their line is hidden and stay quiet when it shows");
+    pinnedLayout(pronunciation, pronunciationPreview, @"pronunciation", hiddenNote);
+    NSDictionary *now = [defaults persistentDomainForName:domain];
+    SGTestAssert(same(now[pronunciationKey], saved[pronunciationKey]) && same(now[translationKey], saved[translationKey]),
+        @"previews never write the lyrics screen's switches");
     SGModPage *original = (id)page.sections[2].rows[2].page();
+    UIImageView *originalPreview = previewIn(original, CGSizeMake(375, 667));
+    pinnedLayout(original, originalPreview, @"original", nil);
     original.sections[0].rows[0].setNumber(64);
     SGTestAssert(SGLyricsPiPReadStyle().sizes[0].doubleValue == 64, @"role size setter reaches production style");
+    SGTestAssert(SGTestPump(^BOOL { return shows(originalPreview, sample(NO, YES)); }), @"size slider redraws the pinned preview while dragged");
+    before = pixels(originalPreview.image);
+    original.sections[0].rows[1].chosen(0);
+    SGTestAssert(SGLyricsPiPReadStyle().weights[0].integerValue == 0 && [original.sections[0].rows[1].value() isEqual:@"Regular"],
+        @"weight menu stores the role weight");
+    SGTestAssert(SGTestPump(^BOOL { return shows(originalPreview, sample(NO, YES)); }) && ![pixels(originalPreview.image) isEqual:before],
+        @"weight menu redraws the pinned preview");
+    originalPreview.image = nil;
+    [NSNotificationCenter.defaultCenter postNotificationName:SGFontLibraryChangedNotification object:nil];
+    SGTestAssert(SGTestPump(^BOOL { return shows(originalPreview, sample(NO, YES)); }), @"font library changes redraw the preview");
+    UIImageView *mainPreview = previewIn(page, CGSizeMake(375, 667));
+    SGTestAssert(mainPreview.superview == page.tableView.tableHeaderView && shows(mainPreview, sample(NO, YES)),
+        @"main page keeps its scrolling sample header with the same supplement rule");
+    [defaults setBool:YES forKey:pronunciationKey]; // a stored lyrics-screen choice the reset must keep
     page.sections[2].rows[5].action();
-    SGTestAssert(SGLyricsPiPReadStyle().sizes[0].doubleValue == 40 &&
-        ![defaults objectForKey:SGKeyPiPFont] && rows[1].number() == 33,
-        @"reset restores layout/text defaults without changing background");
+    SGTestAssert(SGLyricsPiPReadStyle().sizes[0].doubleValue == 40 && SGLyricsPiPReadStyle().weights[0].integerValue == 2 &&
+        ![defaults objectForKey:SGKeyPiPFont] && rows[1].number() == 33 && [[defaults persistentDomainForName:domain][pronunciationKey] boolValue],
+        @"reset restores layout/text defaults without changing background or lyrics switches");
+    SGTestAssert(SGTestPump(^BOOL { return shows(mainPreview, sample(NO, YES)) && shows(originalPreview, sample(NO, YES)); }),
+        @"reset redraws open previews with the default style");
     [defaults setPersistentDomain:saved forName:domain];
     // These keys were created only by this host test when Foundation uses its executable domain.
-    for (NSString *key in @[darkness, blur, color, SGKeyPiPFont, SGLyricsPiPRoleKey(0, @"size")])
+    for (NSString *key in @[darkness, blur, color, SGKeyPiPFont, SGLyricsPiPRoleKey(0, @"size"), SGLyricsPiPRoleKey(0, @"weight"),
+            pronunciationKey])
         if (!saved[key]) [defaults removeObjectForKey:key]; else [defaults setObject:saved[key] forKey:key];
+    SGTestSetting(pronunciationKey, nil);
+    SGTestSetting(translationKey, nil);
     SGTestSetting(darkness, @45);
     SGTestSetting(@"spotifyglass.lyrics.pip.background.mode", @2);
     SGTestAssert(rows[2].visible() && !rows[3].visible(), @"blur control shown only in blur mode");

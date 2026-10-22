@@ -1017,6 +1017,8 @@
 "settings.lyrics.pip.live" = "Layout, text and background apply live, even while paused. Only the enable switch requires restarting Spotify.";
 "settings.lyrics.pip.extras.note" = "Shows available pronunciation and translation using your lyrics display and language rules. Opening Picture in Picture never starts translation or AI.";
 "settings.lyrics.pip.preview" = "Sample preview";
+"settings.lyrics.pip.preview.hidden.pronunciation" = "Pronunciation is off on the lyrics screen, so it is hidden.";
+"settings.lyrics.pip.preview.hidden.translation" = "Translation is off on the lyrics screen, so it is hidden.";
 "settings.lyrics.pip.sample.original" = "별빛을 따라 걸어요";
 "settings.lyrics.pip.sample.next" = "A new day is on its way";
 "settings.lyrics.pip.sample.credit" = "Sample lyrics · Vitrine";

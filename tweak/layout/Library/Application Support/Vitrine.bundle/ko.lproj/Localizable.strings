@@ -40,6 +40,8 @@
 "settings.lyrics.pip.live" = "일시정지 중에도 레이아웃, 텍스트, 배경 변경이 즉시 적용됩니다. 활성화 설정을 변경할 때만 Spotify를 다시 시작해야 합니다.";
 "settings.lyrics.pip.extras.note" = "가사 표시 설정과 언어별 규칙에 따라 사용 가능한 발음과 번역을 표시합니다. 화면 속 화면을 열어도 번역이나 AI 작업을 시작하지 않습니다.";
 "settings.lyrics.pip.preview" = "예시 미리보기";
+"settings.lyrics.pip.preview.hidden.pronunciation" = "가사 화면에서 발음이 꺼져 있어 표시되지 않습니다.";
+"settings.lyrics.pip.preview.hidden.translation" = "가사 화면에서 번역이 꺼져 있어 표시되지 않습니다.";
 "settings.lyrics.pip.sample.original" = "별빛을 따라 걸어요";
 "settings.lyrics.pip.sample.next" = "새로운 하루가 다가와요";
 "settings.lyrics.pip.sample.credit" = "예시 가사 · Vitrine";
