@@ -25,9 +25,14 @@
   the User-Agent and lookup of a pinned id through the bounded source transport;
 - Japanese reading: `君の名前を呼ぶ` becomes `きみのなまえをよぶ`, a kana-only line returns nil,
   Latin and particles stay as written, and changing between romaji and hiragana changes the cache key.
+- LRCLIB's Lyricsfile (`Lyricsfile.m`): the spec's example and LRCLIB's own way of writing it read as word
+  timed lines, segments run together into words, a file timed only by the line left to the LRC, a broken
+  or unknown file refused whole, and the LRCLIB ask taking the words over the LRC and a record with words
+  over a closer one without.
 
-`./build.sh krc.json qq.json` also reads real replies saved from `lyrics.kugou.com/download` and QQ's
-`GetPlayLyricInfo`, and prints how many lines each has. None are kept here, since they are real lyrics.
+`./build.sh krc.json qq.json lrclib.json` also reads real replies saved from `lyrics.kugou.com/download`,
+QQ's `GetPlayLyricInfo` and LRCLIB's `/api/get/<id>`, and prints how many lines each has; an LRCLIB record
+must read as word timed exactly when it says `hasWordSync`. None are kept here, since they are real lyrics.
 
 A successful run ends with:
 
