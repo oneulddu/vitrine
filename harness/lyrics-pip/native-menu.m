@@ -47,6 +47,8 @@ static void tap(UIButton *button, SGSpeedPitchView *block) {
     for (NSString *action in actions) ((void (*)(id, SEL))objc_msgSend)(block, NSSelectorFromString(action));
 }
 void SGTestNativeMenu(void) {
+    // The disabled-guidance case must not inherit the preceding suite's enable gate.
+    SGTestPiPState(NO, NO, NO);
     UIViewController *nonplayer = sheet(NO);
     install(nonplayer);
     SGTestAssert(((UITableView *)nonplayer.view).tableHeaderView == nil, @"album/track context without existing player marker has no row");

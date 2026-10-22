@@ -399,4 +399,8 @@ void SGTestIntent(void) {
         [engine finish];
     }
     testLines = nil;
+    // finish closes the session, not the launch-time enable gate. Restore the fixture too.
+    SGTestPiPState(NO, NO, NO);
+    SGTestAssert(!SGLyricsPiPEnabled() && !SGLyricsPiPActive() && !SGLyricsPiPStarting(),
+        @"intent fixture restores disabled idle state before menu tests");
 }
