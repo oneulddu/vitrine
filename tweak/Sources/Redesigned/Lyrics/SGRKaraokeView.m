@@ -2753,6 +2753,10 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 // through any later answer: they are dropped as on a change of track, and the next tick takes the new ones.
 - (void)sourceChosen:(NSNotification *)note {
     if (_sample || ![note.object isEqual:_track]) return;
+    [self dropLines];
+}
+
+- (void)dropLines {
     _lines = nil;
     _passedOver = nil;
     _builtWidth = 0;
@@ -3067,14 +3071,9 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     if (!(track == _track || [track isEqualToString:_track])) {
         SGLog(@"karaoke: page shows track %@, lyrics %@", track, [self linesFor:track] ? @"captured" : @"not captured yet");
         _track = track;
-        _lines = nil;
-        _passedOver = nil;
-        _builtWidth = 0;
         _stillSince = 0;   // the last song's pause says nothing of this one's
         [self updateFrameRate];   // a new song is drawn at full rate, paused or not
-        [self creditTo:nil];
-        [self dropLineViews];
-        [self offerExtras];
+        [self dropLines];
     }
     NSArray<SGKaraokeLine *> *kept = _lines && track ? [self linesFor:track] : nil;
     if (kept && kept != _lines && kept != _passedOver) {
