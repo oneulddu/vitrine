@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.0-beta.20](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.19...v1.0.0-beta.20) (2026-10-22)
+
+
+### Features
+
+* PiP 번역과 글꼴 설정을 추가하고 이동 동작 개선 ([49a1ad1](https://github.com/oneulddu/vitrine/commit/49a1ad1e7d688f871b7693ae4ae166b35e9b11a9))
+
+
+### Fixes
+
+* Tailscale AI 연결 정책과 오류 진단 보완 ([7468c66](https://github.com/oneulddu/vitrine/commit/7468c66718bf7d4a28ca8e815700d2c9a2c1be68))
+* 잠금화면 표지 자리표시자와 늦은 갱신 수정 ([76f221d](https://github.com/oneulddu/vitrine/commit/76f221d08fd85fbd6dbe1694a6dc08ebf7ccd3e9))
+
 ## [1.0.0-beta.19](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.18...v1.0.0-beta.19) (2026-10-22)
 
 
