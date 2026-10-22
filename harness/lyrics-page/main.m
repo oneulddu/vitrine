@@ -6,9 +6,16 @@
 //   -sheet S    opens the sliders' sheet S seconds in, as a tap on its button would
 //   -check 1    asserts the page's behavior (see runChecks), prints PASS and FAIL lines and quits with the
 //               number of failures
+//   -textCheck 1 asserts the Text sizes page and each text's look (see runTextChecks) the same way
+//   -textPage N opens the Text sizes page, then text N's own page (0 lyrics, 1 pronunciation, 2 translation),
+//               for a screenshot; -textLook 1 stores 130%, regular and 140% for it first
 #import <UIKit/UIKit.h>
+#import <objc/message.h>
+#import <objc/runtime.h>
 #import "Settings/SGModPage.h"
+#import "Settings/SGPage.h"
 #import "Redesigned/Lyrics/LyricsLook.h"
+#import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 
 static int sg_failures;
@@ -98,6 +105,212 @@ static void runChecks(UIViewController *page) {
     });
 }
 
+#pragma mark - the Text sizes page
+
+// The view's private style, made as the view makes it: 30 pt, the stored order, every text shown.
+static id styleNow(BOOL romanised) {
+    return ((id (*)(id, SEL, CGFloat, NSArray *, BOOL, BOOL, BOOL))objc_msgSend)([NSClassFromString(@"SGRKaraokeStyle") alloc],
+        NSSelectorFromString(@"initWithSize:order:pronunciation:translation:romanised:"), 30, SGRLyricsTextOrder(), YES, YES, romanised);
+}
+
+static UIFontWeight weightOf(UIFont *font) {
+    return [[font.fontDescriptor objectForKey:UIFontDescriptorTraitsAttribute][UIFontWeightTrait] doubleValue];
+}
+
+static BOOL near(CGFloat a, CGFloat b) {
+    return fabs(a - b) < 0.001;
+}
+
+// The view's _style ivar: "style" by key value coding answers a number of UIView's own instead.
+static id styleOf(SGRKaraokeView *view) {
+    return object_getIvar(view, class_getInstanceVariable(SGRKaraokeView.class, "_style"));
+}
+
+static void clearTextLooks(void) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    for (NSString *key in store.dictionaryRepresentation.allKeys)
+        if ([key hasPrefix:SGRKeyLyricsTextLook]) [store removeObjectForKey:key];
+    [store removeObjectForKey:SGRKeyLyricsTextOrder];
+}
+
+static NSString *fontText(UIFont *font) {
+    return [NSString stringWithFormat:@"%.0f pt %.2f", font.pointSize, weightOf(font)];
+}
+
+static void runTextChecks(UINavigationController *nav) {
+    clearTextLooks();
+    // Nothing stored is the look there always was: 30, 20 and 16 pt, bold, bold and semibold, the usual brightness.
+    id style = styleNow(YES);
+    UIFont *lyrics = [style valueForKey:@"lyrics"], *spoken = [style valueForKey:@"pronunciation"], *translation = [style valueForKey:@"translation"];
+    UIFont *romanised = [style valueForKey:@"romanised"];
+    expect(lyrics.pointSize == 30 && spoken.pointSize == 20 && translation.pointSize == 16 && romanised.pointSize == 20,
+           [NSString stringWithFormat:@"unset sizes stay 30, 20, 16 and the romanized 20 (%@, %@, %@, %@)", fontText(lyrics), fontText(spoken), fontText(translation), fontText(romanised)]);
+    expect(near(weightOf(lyrics), weightOf([UIFont systemFontOfSize:30 weight:UIFontWeightBold]))
+           && near(weightOf(spoken), weightOf([UIFont systemFontOfSize:20 weight:UIFontWeightBold]))
+           && near(weightOf(translation), weightOf([UIFont systemFontOfSize:16 weight:UIFontWeightSemibold]))
+           && near(weightOf(romanised), weightOf([UIFont systemFontOfSize:20 weight:UIFontWeightSemibold])),
+           @"unset weights stay bold, bold, semibold and the romanized semibold");
+    expect(near([[style valueForKey:@"translationDim"] doubleValue], 0.3) && near([[style valueForKey:@"translationLit"] doubleValue], 0.6)
+           && near([[style valueForKey:@"spokenDim"] doubleValue], 0.3) && near([[style valueForKey:@"spokenLit"] doubleValue], 0.6)
+           && near([[style valueForKey:@"spokenSung"] doubleValue], 1) && near([[style valueForKey:@"noteDim"] doubleValue], 0.22)
+           && near([[style valueForKey:@"noteLit"] doubleValue], 0.6), @"unset brightness stays 0.3 waiting, 0.6 sung, the note 0.22");
+    UIFont *note = ((id (*)(id, SEL, CGFloat))objc_msgSend)(style, NSSelectorFromString(@"noteAt:"), 14);
+    UIFont *furigana = ((id (*)(id, SEL, CGFloat))objc_msgSend)(style, NSSelectorFromString(@"furiganaAt:"), 11);
+    expect(note.pointSize == 14 && near(weightOf(note), weightOf([UIFont systemFontOfSize:14 weight:UIFontWeightMedium]))
+           && furigana.pointSize == 11 && near(weightOf(furigana), weightOf([UIFont systemFontOfSize:11 weight:UIFontWeightSemibold])),
+           [NSString stringWithFormat:@"unset note and furigana stay medium 14 and semibold 11 (%@, %@)", fontText(note), fontText(furigana)]);
+    id backing = [style valueForKey:@"backing"];
+    expect([[backing valueForKey:@"lyrics"] pointSize] == 19 && [[backing valueForKey:@"pronunciation"] pointSize] == 12,
+           @"the backing row stays at 62% of its line");
+
+    // The translation at 115%, regular and 140%; the lyrics' brightness is not one to store.
+    __block NSUInteger posted = 0;
+    id watcher = [NSNotificationCenter.defaultCenter addObserverForName:SGRLyricsTextDidChangeNotification object:nil queue:nil
+                                                             usingBlock:^(NSNotification *n) { posted++; }];
+    SGRSetLyricsTextLook(SGRLyricsTextTranslation, (SGRLyricsTextLook){115, 0, 140});
+    SGRSetLyricsTextLook(SGRLyricsTextLyrics, (SGRLyricsTextLook){120, 1, 60});
+    style = styleNow(NO);
+    translation = [style valueForKey:@"translation"];
+    lyrics = [style valueForKey:@"lyrics"];
+    expect(posted == 2, @"each change is posted, so every lyrics view sets its lines again");
+    expect(translation.pointSize == 18 && near(weightOf(translation), weightOf([UIFont systemFontOfSize:18 weight:UIFontWeightRegular]))
+           && near([[style valueForKey:@"translationDim"] doubleValue], 0.42) && near([[style valueForKey:@"translationLit"] doubleValue], 0.84)
+           && near([[style valueForKey:@"noteDim"] doubleValue], 0.308),
+           [NSString stringWithFormat:@"the translation at 115%%, regular, 140%% is 18 pt and 0.42 to 0.84, its note after it (%@)", fontText(translation)]);
+    expect(lyrics.pointSize == 36 && near(weightOf(lyrics), weightOf([UIFont systemFontOfSize:36 weight:UIFontWeightSemibold]))
+           && SGRLyricsTextLookOf(SGRLyricsTextLyrics).brightness == 100
+           && ![NSUserDefaults.standardUserDefaults objectForKey:[SGRKeyLyricsTextLook stringByAppendingString:@".lyrics.brightness"]],
+           [NSString stringWithFormat:@"the lyrics at 120%% semibold are 36 pt, their brightness kept at 100%% (%@)", fontText(lyrics)]);
+    backing = [style valueForKey:@"backing"];
+    expect([[backing valueForKey:@"lyrics"] pointSize] == 22 && near(weightOf([backing valueForKey:@"lyrics"]), weightOf([UIFont systemFontOfSize:22 weight:UIFontWeightSemibold])),
+           @"the backing row follows the lyrics' size and weight");
+    SGRSetLyricsTextLook(SGRLyricsTextPronunciation, (SGRLyricsTextLook){100, 2, 140});
+    style = styleNow(NO);
+    expect(near([[style valueForKey:@"spokenSung"] doubleValue], 1) && near([[style valueForKey:@"spokenDim"] doubleValue], 0.42),
+           @"a bright pronunciation never goes past white as it is sung");
+    SGRSetLyricsTextLook(SGRLyricsTextPronunciation, (SGRLyricsTextLook){100, 2, 40});
+    style = styleNow(NO);
+    expect(near([[style valueForKey:@"spokenSung"] doubleValue], 0.4) && near([[style valueForKey:@"spokenDim"] doubleValue], 0.12),
+           @"a dim pronunciation is dimmer waiting and sung");
+    // What a sung word shows is its lit copy over the waiting one still under it: composited, that is the brightness asked for.
+    SGKaraokeWord *(^word)(NSString *, NSInteger, NSInteger) = ^SGKaraokeWord *(NSString *text, NSInteger start, NSInteger end) {
+        SGKaraokeWord *made = [SGKaraokeWord new];
+        made.text = text; made.start = start; made.end = end;
+        return made;
+    };
+    SGKaraokeLine *line = [SGKaraokeLine new];
+    line.words = @[word(@"별빛", 0, 400)];
+    line.start = 0; line.end = 400; line.timing = SGKaraokeTimingWords;
+    SGKaraokeLine *spokenLine = [SGKaraokeLine new];
+    spokenLine.words = @[word(@"byeolbit", 0, 400)];
+    spokenLine.start = 0; spokenLine.end = 400; spokenLine.timing = SGKaraokeTimingWords;
+    line.pronunciation = spokenLine;
+    for (NSNumber *bright in @[@40, @100, @140]) {
+        SGRSetLyricsTextLook(SGRLyricsTextPronunciation, (SGRLyricsTextLook){100, 2, bright.integerValue});
+        id lineStyle = styleNow(NO);
+        UIView *lineView = ((id (*)(id, SEL, id, CGFloat, id, id, BOOL, BOOL))objc_msgSend)([NSClassFromString(@"SGRKaraokeLineView") alloc],
+            NSSelectorFromString(@"initWithLine:width:style:under:blurred:sweepsEstimates:"), line, 300, lineStyle, nil, NO, NO);
+        NSArray<UIView *> *words = [lineView valueForKey:@"words"];
+        CGFloat (^alphaOf)(UIView *) = ^CGFloat(UIView *view) {
+            CGFloat white = 0, alpha = 0;
+            [((UILabel *)view).textColor getWhite:&white alpha:&alpha];
+            return alpha;
+        };
+        UIView *spokenWord = words.lastObject, *lyricWord = words.firstObject;
+        CGFloat under = alphaOf(spokenWord.subviews.firstObject), over = alphaOf([spokenWord valueForKey:@"lit"]);
+        CGFloat shown = over + under * (1 - over);
+        CGFloat lyricShown = alphaOf([lyricWord valueForKey:@"lit"]) + alphaOf(lyricWord.subviews.firstObject) * (1 - alphaOf([lyricWord valueForKey:@"lit"]));
+        CGFloat want = MIN(1, bright.doubleValue / 100);
+        expect(near(shown, want) && near(under, MIN(1, 0.3 * bright.doubleValue / 100)) && near(lyricShown, 1),
+               [NSString stringWithFormat:@"a sung pronunciation at %@%% shows %.3f over its waiting %.3f (wants %.3f), the lyrics 1 (%.3f)",
+                bright, shown, under, want, lyricShown]);
+    }
+
+    // Stored values out of range, off their step or of the wrong kind are the usual ones; the usual ones are not stored.
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    [store setObject:@83 forKey:[SGRKeyLyricsTextLook stringByAppendingString:@".pronunciation.scale"]];
+    [store setObject:@7 forKey:[SGRKeyLyricsTextLook stringByAppendingString:@".pronunciation.weight"]];
+    [store setObject:@"bright" forKey:[SGRKeyLyricsTextLook stringByAppendingString:@".pronunciation.brightness"]];
+    [store setObject:@150 forKey:[SGRKeyLyricsTextLook stringByAppendingString:@".translation.brightness"]];
+    SGRLyricsTextLook bad = SGRLyricsTextLookOf(SGRLyricsTextPronunciation);
+    expect(bad.scale == 100 && bad.weight == 2 && bad.brightness == 100 && SGRLyricsTextLookOf(SGRLyricsTextTranslation).brightness == 100,
+           @"a stored value out of range, off its step or not a number reads as the usual one");
+    SGRSetLyricsTextLook(SGRLyricsTextTranslation, SGRLyricsTextLookDefault(SGRLyricsTextTranslation));
+    BOOL stored = NO;
+    for (NSString *key in store.dictionaryRepresentation.allKeys) stored |= [key hasPrefix:[SGRKeyLyricsTextLook stringByAppendingString:@".translation"]];
+    expect(!stored && SGRLyricsTextLookIsDefault(SGRLyricsTextTranslation), @"setting the usual look back stores nothing for it");
+    [NSNotificationCenter.defaultCenter removeObserver:watcher];
+    clearTextLooks();
+
+    // The page: the order's rows open each text's own page under a preview showing the pronunciation and translation.
+    UITableViewController *order = (UITableViewController *)SGRLyricsTextSizesRow().page();
+    [nav pushViewController:order animated:NO];
+    [order.view layoutIfNeeded];
+    UITableView *table = order.tableView;
+    UITableViewCell *first = [order tableView:table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:2 inSection:0]];
+    NSString *summary = ((UIListContentConfiguration *)first.contentConfiguration).secondaryText;
+    expect([summary containsString:@"100%"] && [summary containsString:@"Semibold"] && [summary containsString:@"Brightness"],
+           [NSString stringWithFormat:@"the translation's row reads its look (%@)", summary]);
+    [order tableView:table didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:2 inSection:0]];
+    after(1.0, ^{
+        UITableViewController *page = (UITableViewController *)nav.topViewController;
+        [page.view layoutIfNeeded];
+        NSArray<UISlider *> *sliders = find(page.tableView, UISlider.class);
+        BOOL opened = [NSStringFromClass(page.class) isEqualToString:@"SGRLyricsTextStylePage"];
+        expect(opened && sliders.count == 2,
+               [NSString stringWithFormat:@"a tap on Translation opens its page with Size and Brightness (%@, %lu sliders)",
+                NSStringFromClass(page.class), (unsigned long)sliders.count]);
+        if (!opened) {
+            printf("%d failed\n", sg_failures);
+            fflush(stdout);
+            exit(sg_failures);
+        }
+        SGRKaraokeView *preview = [page valueForKey:@"preview"];
+        id previewStyle = styleOf(preview);
+        expect([previewStyle valueForKey:@"pronunciation"] && [previewStyle valueForKey:@"translation"],
+               @"the preview shows the pronunciation and the translation whatever the menu has on");
+        UISlider *size = nil, *brightness = nil;
+        for (UISlider *slider in sliders) {
+            if (slider.maximumValue == 130) size = slider;
+            if (slider.maximumValue == 140) brightness = slider;
+        }
+        size.value = 120;
+        [size sendActionsForControlEvents:UIControlEventValueChanged];
+        brightness.value = 70;
+        [brightness sendActionsForControlEvents:UIControlEventValueChanged];
+        SGRLyricsTextLook look = SGRLyricsTextLookOf(SGRLyricsTextTranslation);
+        expect(look.scale == 120 && look.brightness == 70, [NSString stringWithFormat:@"the sliders store 120%% and 70%% (%ld, %ld)", (long)look.scale, (long)look.brightness]);
+        UIView *header = [page valueForKey:@"header"];
+        // The page's view is the table, so the header's frame is in content coordinates: measured from what is visible.
+        UITableView *pageTable = page.tableView;
+        CGFloat onScreen = CGRectGetMinY(header.frame) - pageTable.contentOffset.y;
+        expect(header.bounds.size.height > 0 && fabs(onScreen - pageTable.safeAreaInsets.top) < 0.5
+               && pageTable.contentInset.top == header.bounds.size.height,
+               [NSString stringWithFormat:@"the preview is pinned under the bar and the rows start below it (%.0f pt tall, top %.1f, safe %.1f, inset %.1f)",
+                header.bounds.size.height, onScreen, pageTable.safeAreaInsets.top, pageTable.contentInset.top]);
+        // Scrolled down, it stays where it was.
+        [pageTable setContentOffset:CGPointMake(0, pageTable.contentOffset.y + 120) animated:NO];
+        [pageTable layoutIfNeeded];
+        CGFloat scrolled = CGRectGetMinY(header.frame) - pageTable.contentOffset.y;
+        expect(fabs(scrolled - onScreen) < 0.5, [NSString stringWithFormat:@"scrolling leaves the preview where it was (%.1f)", scrolled]);
+        after(1.0, ^{
+            id restyled = styleOf([page valueForKey:@"preview"]);
+            expect([[restyled valueForKey:@"translation"] pointSize] == 19, @"the preview sets its translation at 120% once restyled");
+            [nav popViewControllerAnimated:NO];
+            [nav pushViewController:SGRLyricsTextLookPage(SGRLyricsTextLyrics) animated:NO];
+            after(0.6, ^{
+                UITableViewController *lyricsPage = (UITableViewController *)nav.topViewController;
+                [lyricsPage.view layoutIfNeeded];
+                expect(find(lyricsPage.tableView, UISlider.class).count == 1, @"the lyrics' page has a Size slider and no Brightness");
+                clearTextLooks();
+                printf("%d failed\n", sg_failures);
+                fflush(stdout);
+                exit(sg_failures);
+            });
+        });
+    });
+}
+
 @interface SGHarnessDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
@@ -121,6 +334,41 @@ static void runChecks(UIViewController *page) {
         });
     }
     if ([args boolForKey:@"check"]) after(2.5, ^{ runChecks(page); });   // the preview measures its lines off the main thread
+    if ([args boolForKey:@"textCheck"]) after(1.5, ^{ runTextChecks(nav); });
+    if ([args objectForKey:@"textPage"]) {
+        SGRLyricsText text = (SGRLyricsText)[args integerForKey:@"textPage"];
+        clearTextLooks();
+        if ([args boolForKey:@"textLook"]) SGRSetLyricsTextLook(text, (SGRLyricsTextLook){130, 0, text == SGRLyricsTextLyrics ? 100 : 140});
+        after(1.0, ^{
+            [nav pushViewController:SGRLyricsTextSizesRow().page() animated:NO];
+            [nav pushViewController:SGRLyricsTextLookPage(text) animated:NO];
+        });
+        // -landscape 1: turned on its side, and the safe area logged so a screenshot can be trusted.
+        if ([args boolForKey:@"landscape"]) after(1.5, ^{
+            // A window made before the scene connected keeps the portrait safe area when turned; one made in the
+            // scene follows it.
+            UIWindowScene *scene = self.window.windowScene;
+            UIWindow *window = [[UIWindow alloc] initWithWindowScene:scene];
+            window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+            UIViewController *root = self.window.rootViewController;
+            self.window.rootViewController = nil;
+            self.window.hidden = YES;
+            window.rootViewController = root;
+            self.window = window;
+            [window makeKeyAndVisible];
+            UIWindowSceneGeometryPreferencesIOS *prefs = [[UIWindowSceneGeometryPreferencesIOS alloc]
+                initWithInterfaceOrientations:UIInterfaceOrientationMaskLandscapeRight];
+            [self.window.windowScene requestGeometryUpdateWithPreferences:prefs errorHandler:^(NSError *error) { NSLog(@"[harness] rotate %@", error); }];
+            [nav.topViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+            after(2.0, ^{
+                UITableView *table = ((UITableViewController *)nav.topViewController).tableView;
+                printf("orientation %ld window %s safe %s header %.0f\n", (long)self.window.windowScene.interfaceOrientation,
+                       NSStringFromCGSize(self.window.bounds.size).UTF8String, NSStringFromUIEdgeInsets(self.window.safeAreaInsets).UTF8String,
+                       table.contentInset.top);
+                fflush(stdout);
+            });
+        });
+    }
     return YES;
 }
 @end

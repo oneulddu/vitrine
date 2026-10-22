@@ -29,6 +29,8 @@ NSInteger SGRLyricsLookPresetIndex(SGRLyricsLook look);
 // they take to come round again.
 NSArray<SGKaraokeLine *> *SGRLyricsSampleLines(void);
 NSInteger SGRLyricsSampleLength(void);
+// The same timing in Korean, each line with a pronunciation and a translation, for the Text sizes page's preview.
+NSArray<SGKaraokeLine *> *SGRLyricsSampleLinesWithExtras(void);
 
 // LyricsLookSettings.m: the Lyrics page in the redesign, leading with the preview, the presets under it
 // and their sliders in a sheet, then `sections`.

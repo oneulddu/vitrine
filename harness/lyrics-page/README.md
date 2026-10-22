@@ -13,6 +13,11 @@ section under them, on the real Settings/ framework. `../lyrics/stubs.m` stands 
 `main.m` lists the arguments. `-check 1` taps the presets, opens the sheet and moves a slider, and checks
 what the preview, the presets and the sliders read after each.
 
+`-textCheck 1` checks the Text sizes page's per-text looks (`LyricsText.m`, `LyricsTextSettings.m`): nothing stored
+keeps the old fonts and brightness, stored values out of range read as the usual ones, a sung pronunciation's
+composited brightness is the one asked for, and a tapped row opens its page with a pinned preview.
+`-textPage N -textLook 1 -landscape 1` opens text N's page for a screenshot, turned on its side.
+
 2026-10-05, iPhone 17 Pro on iOS 27.0: all checks pass; the sheet rests at half height under the preview,
 which plays on undimmed.
 

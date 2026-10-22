@@ -27,6 +27,29 @@ void SGRSetLyricsTextOrder(NSArray<NSNumber *> *order);
 NSString *SGRLyricsTextName(SGRLyricsText text);
 void SGRSetLyricsTextShown(SGRLyricsText text, BOOL shown);
 
+// How each of the three is set on top of its place's size: a share of that size, a weight and, for the
+// pronunciation and the translation, a share of their usual brightness. The lyrics keep theirs, so the sung
+// words stay as bright against the waiting ones as ever. A value not stored, out of its range or off its step
+// is the usual one: 100%, bold for the lyrics and the pronunciation, semibold for the translation.
+typedef struct {
+    NSInteger scale;        // percent of the place's size, 80 to 130 in fives
+    NSInteger weight;       // 0 regular, 1 semibold, 2 bold
+    NSInteger brightness;   // percent of the usual brightness, 40 to 140 in tens; the lyrics' is always 100
+} SGRLyricsTextLook;
+
+// Each part under its own key: SGRKeyLyricsTextLook ".lyrics.scale", ".translation.brightness" and so on.
+#define SGRKeyLyricsTextLook @"spotifyglass.redesign.lyricsTextLook"
+
+SGRLyricsTextLook SGRLyricsTextLookOf(SGRLyricsText text);
+SGRLyricsTextLook SGRLyricsTextLookDefault(SGRLyricsText text);
+BOOL SGRLyricsTextLookIsDefault(SGRLyricsText text);
+// Stores it, a usual value as no value at all, and posts SGRLyricsTextDidChangeNotification.
+void SGRSetLyricsTextLook(SGRLyricsText text, SGRLyricsTextLook look);
+UIFontWeight SGRLyricsTextFontWeight(NSInteger weight);
+NSArray<NSString *> *SGRLyricsTextWeightNames(void);   // by weight, regular first
+
 // LyricsTextSettings.m: the Lyrics page's row for the order, which opens a list of the three to drag.
 @class SGModRow;
 SGModRow *SGRLyricsTextSizesRow(void);
+// The page a row of that list opens: one text's size, weight and brightness under a pinned preview.
+UIViewController *SGRLyricsTextLookPage(SGRLyricsText text);

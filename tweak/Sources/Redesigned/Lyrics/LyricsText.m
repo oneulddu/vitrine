@@ -44,6 +44,60 @@ void SGRSetLyricsTextOrder(NSArray<NSNumber *> *order) {
     [NSNotificationCenter.defaultCenter postNotificationName:SGRLyricsTextDidChangeNotification object:nil];
 }
 
+static NSString *lookKey(SGRLyricsText text, NSString *part) {
+    return [NSString stringWithFormat:@"%@.%@.%@", SGRKeyLyricsTextLook, keyOf(text), part];
+}
+
+SGRLyricsTextLook SGRLyricsTextLookDefault(SGRLyricsText text) {
+    return (SGRLyricsTextLook){100, text == SGRLyricsTextTranslation ? 1 : 2, 100};
+}
+
+// A stored number is taken only within its range and on its step.
+static NSInteger storedPart(NSString *key, NSInteger least, NSInteger most, NSInteger step, NSInteger fallback) {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:key];
+    if (![value isKindOfClass:NSNumber.class]) return fallback;
+    double number = [value doubleValue];
+    if (!(number >= least && number <= most) || fmod(number - least, step) != 0) return fallback;
+    return (NSInteger)number;
+}
+
+SGRLyricsTextLook SGRLyricsTextLookOf(SGRLyricsText text) {
+    SGRLyricsTextLook look = SGRLyricsTextLookDefault(text);
+    if (!keyOf(text)) return look;
+    look.scale = storedPart(lookKey(text, @"scale"), 80, 130, 5, look.scale);
+    look.weight = storedPart(lookKey(text, @"weight"), 0, 2, 1, look.weight);
+    if (text != SGRLyricsTextLyrics) look.brightness = storedPart(lookKey(text, @"brightness"), 40, 140, 10, look.brightness);
+    return look;
+}
+
+BOOL SGRLyricsTextLookIsDefault(SGRLyricsText text) {
+    SGRLyricsTextLook look = SGRLyricsTextLookOf(text), usual = SGRLyricsTextLookDefault(text);
+    return look.scale == usual.scale && look.weight == usual.weight && look.brightness == usual.brightness;
+}
+
+void SGRSetLyricsTextLook(SGRLyricsText text, SGRLyricsTextLook look) {
+    if (!keyOf(text)) return;
+    SGRLyricsTextLook usual = SGRLyricsTextLookDefault(text);
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    void (^put)(NSString *, NSInteger, NSInteger) = ^(NSString *part, NSInteger value, NSInteger fallback) {
+        if (value == fallback) [store removeObjectForKey:lookKey(text, part)];
+        else [store setInteger:value forKey:lookKey(text, part)];
+    };
+    put(@"scale", look.scale, usual.scale);
+    put(@"weight", look.weight, usual.weight);
+    if (text != SGRLyricsTextLyrics) put(@"brightness", look.brightness, usual.brightness);
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRLyricsTextDidChangeNotification object:nil];
+}
+
+UIFontWeight SGRLyricsTextFontWeight(NSInteger weight) {
+    return weight <= 0 ? UIFontWeightRegular : weight == 1 ? UIFontWeightSemibold : UIFontWeightBold;
+}
+
+NSArray<NSString *> *SGRLyricsTextWeightNames(void) {
+    return @[SGL(@"settings.lyricstext.weight.choice.regular", @"Regular"), SGL(@"settings.lyricstext.weight.choice.semibold", @"Semibold"),
+             SGL(@"settings.lyricstext.weight.choice.bold", @"Bold")];
+}
+
 void SGRSetLyricsTextShown(SGRLyricsText text, BOOL shown) {
     SGSetEnabled(text == SGRLyricsTextTranslation ? SGRKeyLyricsTranslation : SGRKeyLyricsPronunciation, shown);
     [NSNotificationCenter.defaultCenter postNotificationName:SGRLyricsTextDidChangeNotification object:nil];

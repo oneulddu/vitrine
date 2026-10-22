@@ -105,6 +105,34 @@ NSArray<SGKaraokeLine *> *SGRLyricsSampleLines(void) {
     return lines;
 }
 
+// Korean lines of the mod's own with a pronunciation timed to their words and an English translation, for the
+// Text sizes page, which shows all three whatever the lyrics menu has switched on. Timed as the lines above.
+NSArray<SGKaraokeLine *> *SGRLyricsSampleLinesWithExtras(void) {
+    static NSArray<SGKaraokeLine *> *lines;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSArray<NSArray *> *song = @[
+            @[@[@[@"별빛을", @600, @1400], @[@"따라", @1400, @2000], @[@"걸어요", @2000, @2900]],
+              @[@[@"byeolbicheul", @600, @1400], @[@"ttara", @1400, @2000], @[@"georeoyo", @2000, @2900]], @"We walk along the starlight"],
+            @[@[@[@"새벽이", @3100, @3800], @[@"오고", @3800, @4300], @[@"있어", @4300, @7200]],
+              @[@[@"saebyeogi", @3100, @3800], @[@"ogo", @3800, @4300], @[@"isseo", @4300, @7200]], @"A new dawn is on its way"],
+            @[@[@[@"함께", @7500, @8300], @[@"노래해요", @8300, @9500]],
+              @[@[@"hamkke", @7500, @8300], @[@"noraehaeyo", @8300, @9500]], @"Let's sing it together"],
+            @[@[@[@"집으로", @9800, @10700], @[@"가는", @10700, @11200], @[@"길", @11200, @12000]],
+              @[@[@"jibeuro", @9800, @10700], @[@"ganeun", @10700, @11200], @[@"gil", @11200, @12000]], @"All the way home"],
+        ];
+        NSMutableArray<SGKaraokeLine *> *made = [NSMutableArray array];
+        for (NSArray *verse in song) {
+            SGKaraokeLine *line = sampleLine(verse[0]);
+            line.pronunciation = sampleLine(verse[1]);
+            line.translation = verse[2];
+            [made addObject:line];
+        }
+        lines = made;
+    });
+    return lines;
+}
+
 NSInteger SGRLyricsSampleLength(void) {
     return 13500;   // a pause after the last line, then the first again
 }
