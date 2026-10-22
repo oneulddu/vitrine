@@ -124,10 +124,15 @@ NSString *SGLyricsAIName(SGLyricsAI service);
 // The model each AI service asks, and storing a picked or typed one (NO for a name no service takes). Main queue.
 NSString *SGLyricsAIModel(SGLyricsAI service);
 BOOL SGLyricsAISetModel(SGLyricsAI service, NSString *model);
+// A model-list load that can span several pages. Cancelling it stops any later page and suppresses its
+// completion; it is nil when no request was sent (a kept list, or no usable key).
+@interface SGLyricsAIModelLoad : NSObject
+- (void)cancel;
+@end
 // The service's models listed with its saved key, on main: the list, or nil and a message to show. A list is
-// kept for the launch by address and key unless `fresh`. The task can be cancelled; nil when nothing was sent.
-NSURLSessionDataTask *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
-                                            void (^done)(NSArray<NSDictionary<NSString *, NSString *> *> *models, NSString *error));
+// kept for the launch by address and key unless `fresh`.
+SGLyricsAIModelLoad *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
+                                           void (^done)(NSArray<NSDictionary<NSString *, NSString *> *> *models, NSString *error));
 // The Translation section's row for each AI service (AIModelsPage.m). Its page holds the key and the model, and
 // for the OpenAI-compatible service the preset, the address and the connection test.
 SGModRow *SGLyricsAIServiceRow(SGLyricsAI service);

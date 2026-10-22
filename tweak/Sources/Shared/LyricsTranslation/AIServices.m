@@ -7,6 +7,15 @@ static NSString *unreadable(void) {
     return SGL(@"settings.translation.ai.error.unreadable", @"The AI service's answer could not be read. Try again.");
 }
 
+static NSString *unreadableModels(void) {
+    return SGL(@"settings.translation.models.error.unreadable", @"The model list could not be read. Enter a model by hand.");
+}
+
+// JSON numbers and JSON booleans share NSNumber; only a real boolean may be read as a pagination flag.
+static BOOL SGLyricsAIJSONBoolean(id value) {
+    return [value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) == CFBooleanGetTypeID();
+}
+
 NSArray<NSNumber *> *SGLyricsAIAvailable(void) {
     NSMutableArray *services = [NSMutableArray array];
     if (SGGeminiKeySet()) [services addObject:@(SGLyricsAIGemini)];
@@ -51,7 +60,9 @@ BOOL SGLyricsAISetModel(SGLyricsAI service, NSString *model) {
     return YES;
 }
 
-NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsIn(SGLyricsAI service, id root) {
+// `limit` bounds the list a single reply may carry; the owned multi-page fetch passes NSUIntegerMax
+// because page count, not entry count, bounds it, and a silently cut list would be cached as complete.
+static NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsCappedIn(SGLyricsAI service, id root, NSUInteger limit) {
     if (![root isKindOfClass:NSDictionary.class]) return nil;
     BOOL gemini = service == SGLyricsAIGemini;
     id list = root[gemini ? @"models" : @"data"];
@@ -59,7 +70,7 @@ NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsIn(SGLyricsAI s
     NSMutableArray *models = [NSMutableArray array];
     NSMutableSet *seen = [NSMutableSet set];
     for (id entry in list) {
-        if (models.count >= 2000) break;
+        if (models.count >= limit) break;
         if (![entry isKindOfClass:NSDictionary.class]) continue;
         id identifier = entry[gemini ? @"name" : @"id"];
         id name = entry[gemini ? @"displayName" : service == SGLyricsAIClaude ? @"display_name" : @"name"];
@@ -79,6 +90,10 @@ NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsIn(SGLyricsAI s
         return [a[@"id"] compare:b[@"id"] options:NSCaseInsensitiveSearch | NSNumericSearch];
     }];
     return [models copy];
+}
+
+NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsIn(SGLyricsAI service, id root) {
+    return SGLyricsAIModelsCappedIn(service, root, 2000);
 }
 
 static NSMutableDictionary<NSString *, NSArray *> *sg_modelLists;   // for the launch, by service, address and key
@@ -110,8 +125,36 @@ NSString *SGLyricsAIConnectionProblem(NSError *error) {
     return SGL(@"settings.translation.models.error.unreachable", @"The service could not be reached.");
 }
 
-NSURLSessionDataTask *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
-                                            void (^done)(NSArray<NSDictionary<NSString *, NSString *> *> *, NSString *)) {
+// How a model list page failed by its transport result, before its JSON is looked at.
+static NSString *modelListFailure(SGLyricsAI service, NSInteger status, NSError *error) {
+    if (error) return SGLyricsAIConnectionProblem(error);
+    if (status == 401 || status == 403 || (service == SGLyricsAIGemini && status == 400))
+        return SGL(@"settings.translation.models.error.keyinvalid", @"The service turned the key down. Check the API key.");
+    if (status == 404 || status == 405)
+        return SGL(@"settings.translation.models.error.unlisted", @"This service does not list its models. Enter one by hand.");
+    if (status == 429 || (status >= 500 && status <= 599))
+        return SGL(@"settings.translation.models.error.busy", @"The service is busy right now. Try again in a minute.");
+    if (status != 200)
+        return [NSString stringWithFormat:SGL(@"settings.translation.models.error.status", @"The model list could not be loaded (%ld)."), (long)status];
+    return nil;
+}
+
+@interface SGLyricsAIModelLoad ()
+@property (nonatomic) BOOL cancelled;
+@property (nonatomic, strong) NSURLSessionDataTask *task;
+@end
+@implementation SGLyricsAIModelLoad
+- (void)cancel {
+    self.cancelled = YES;
+    [self.task cancel];
+    self.task = nil;
+}
+@end
+
+// Gemini and Claude list up to 1000 models a page. Their next-page cursors are followed, at most
+// ten pages in all, and only a complete merged list is ever delivered or kept.
+SGLyricsAIModelLoad *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
+                                           void (^done)(NSArray<NSDictionary<NSString *, NSString *> *> *, NSString *)) {
     NSString *problem = nil;
     NSURLRequest *request = nil;
     switch (service) {
@@ -126,30 +169,88 @@ NSURLSessionDataTask *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
     if (!sg_modelLists) sg_modelLists = [NSMutableDictionary dictionary];
     NSArray *kept = fresh ? nil : sg_modelLists[identity];
     if (kept) { done(kept, nil); return nil; }
-    return SGLyricsTranslationSendOnceUpTo(request, 8 * 1024 * 1024, ^(NSData *data, NSInteger status, NSError *error) {
-        NSArray *models = nil;
-        NSString *failure = nil;
-        if (error) failure = SGLyricsAIConnectionProblem(error);
-        else if (status == 401 || status == 403 || (service == SGLyricsAIGemini && status == 400))
-            failure = SGL(@"settings.translation.models.error.keyinvalid", @"The service turned the key down. Check the API key.");
-        else if (status == 404 || status == 405)
-            failure = SGL(@"settings.translation.models.error.unlisted", @"This service does not list its models. Enter one by hand.");
-        else if (status == 429 || (status >= 500 && status <= 599))
-            failure = SGL(@"settings.translation.models.error.busy", @"The service is busy right now. Try again in a minute.");
-        else if (status != 200)
-            failure = [NSString stringWithFormat:SGL(@"settings.translation.models.error.status", @"The model list could not be loaded (%ld)."), (long)status];
-        else {
+
+    SGLyricsAIModelLoad *load = [SGLyricsAIModelLoad new];
+    NSMutableArray *entries = [NSMutableArray array];
+    NSMutableSet<NSString *> *cursors = [NSMutableSet set];
+    __block NSUInteger pages = 1, lastStatus = 0;
+    __block void (^send)(NSURLRequest *);
+    __block void (^received)(NSData *, NSInteger, NSError *);
+    // `send` and `received` capture each other through their __block cells, and both capture `load`.
+    // Every terminal path drops both so that cycle is broken and the finished load can be freed.
+    received = ^(NSData *data, NSInteger status, NSError *error) {
+        if (load.cancelled) { send = nil; received = nil; return; }
+        lastStatus = status;
+        NSString *failure = modelListFailure(service, status, error);
+        NSArray *page = nil;
+        NSString *next = nil;
+        if (!failure) {
             id root = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-            models = SGLyricsAIModelsIn(service, root);
-            if (!models) failure = SGL(@"settings.translation.models.error.unreadable", @"The model list could not be read. Enter a model by hand.");
+            page = [root isKindOfClass:NSDictionary.class] ? root[service == SGLyricsAIGemini ? @"models" : @"data"] : nil;
+            if (![page isKindOfClass:NSArray.class]) failure = unreadableModels();
+            else if (service == SGLyricsAIClaude) {
+                // Only a JSON boolean is a pagination flag: @"yes", @1 or a dict cannot mean "last page".
+                id more = root[@"has_more"];
+                if (!more || SGLyricsAIJSONBoolean(more)) {
+                    if (more && [more boolValue]) {
+                        id last = root[@"last_id"];
+                        if ([last isKindOfClass:NSString.class] && [last length]) next = last;
+                        else failure = unreadableModels();
+                    }
+                } else failure = unreadableModels();
+            } else if (service == SGLyricsAIGemini) {
+                // Absent, null or "" is the last page; any other non-string cursor is unreadable.
+                id token = root[@"nextPageToken"];
+                if (token && token != NSNull.null) {
+                    if (![token isKindOfClass:NSString.class]) failure = unreadableModels();
+                    else if ([token length]) next = token;
+                }
+            }
         }
-        SGLog(@"ai models: %@ %ld, %@", SGLyricsAIName(service), (long)status, models ? (id)@(models.count) : failure);
+        if (!failure && next) {
+            if (pages >= 10 || [cursors containsObject:next]) {
+                failure = unreadableModels();
+            } else {
+                [cursors addObject:next];
+            }
+        }
+        if (!failure) [entries addObjectsFromArray:page];
+        if (!failure && next) {
+            NSString *reason = nil;
+            NSURLRequest *more = service == SGLyricsAIGemini ? SGGeminiModelsPageRequest(next, &reason)
+                                                             : SGClaudeModelsPageRequest(next, &reason);
+            if (!more) {
+                SGLog(@"ai models: %@ %ld pages=%lu, %@", SGLyricsAIName(service), (long)lastStatus, (unsigned long)pages, reason);
+                done(nil, reason);
+                send = nil; received = nil;
+                return;
+            }
+            pages++;
+            send(more);
+            return;
+        }
+        NSArray *models = nil;
+        if (!failure) {
+            models = SGLyricsAIModelsCappedIn(service, @{service == SGLyricsAIGemini ? @"models" : @"data": entries}, NSUIntegerMax);
+            if (!models) failure = unreadableModels();
+        }
+        SGLog(@"ai models: %@ %ld pages=%lu, %@", SGLyricsAIName(service), (long)lastStatus, (unsigned long)pages,
+              models ? (id)@(models.count) : failure);
         if (models) {
             if (sg_modelLists.count >= 16) [sg_modelLists removeAllObjects];
             sg_modelLists[identity] = models;
         }
         done(models, failure);
-    });
+        send = nil; received = nil;
+    };
+    send = ^(NSURLRequest *next) {
+        if (load.cancelled) { send = nil; received = nil; return; }
+        NSURLSessionDataTask *task = SGLyricsTranslationSendOnceUpTo(next, 8 * 1024 * 1024, received);
+        if (load.cancelled) [task cancel];
+        else load.task = task;
+    };
+    send(request);
+    return load;
 }
 
 NSArray<NSString *> *SGLyricsAITexts(NSArray<SGKaraokeLine *> *lines) {

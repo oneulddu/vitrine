@@ -62,8 +62,11 @@ NSString *SGGeminiModel(void);
 NSString *SGClaudeModel(void);
 NSString *SGOpenAIModel(void);
 // GET requests for the service's model list with the saved key (and address), or nil and why not.
+// The page variants add the service's own next-page cursor: Gemini's pageToken, Claude's after_id.
 NSURLRequest *SGGeminiModelsRequest(NSString **problem);
+NSURLRequest *SGGeminiModelsPageRequest(NSString *pageToken, NSString **problem);
 NSURLRequest *SGClaudeModelsRequest(NSString **problem);
+NSURLRequest *SGClaudeModelsPageRequest(NSString *afterID, NSString **problem);
 NSURLRequest *SGOpenAIModelsRequest(NSString **problem);
 // The OpenAI-compatible base URL's /models, under the same rules as SGOpenAICompletionURL; else nil.
 NSURL *SGOpenAIModelsURL(NSString *base);

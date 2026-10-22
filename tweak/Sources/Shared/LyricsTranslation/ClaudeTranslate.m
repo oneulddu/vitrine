@@ -165,11 +165,21 @@ SGModRow *SGClaudeKeyRow(void) {
 }
 
 // Anthropic lists up to 1000 models a page, newest first.
-NSURLRequest *SGClaudeModelsRequest(NSString **problem) {
+static NSURLRequest *claudeModelsRequest(NSString *afterID, NSString **problem) {
     NSString *key = storedKey();
     if (!key) { *problem = SGL(@"settings.translation.models.error.nokey", @"Save an API key first, and its models are listed here."); return nil; }
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://api.anthropic.com/v1/models?limit=1000"]];
+    NSURLComponents *components = [NSURLComponents componentsWithString:@"https://api.anthropic.com/v1/models"];
+    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray arrayWithObject:[NSURLQueryItem queryItemWithName:@"limit" value:@"1000"]];
+    if (afterID.length) [items addObject:[NSURLQueryItem queryItemWithName:@"after_id" value:afterID]];
+    components.queryItems = items;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:components.URL];
     [request setValue:key forHTTPHeaderField:@"x-api-key"];
     [request setValue:@"2023-06-01" forHTTPHeaderField:@"anthropic-version"];
     return request;
+}
+NSURLRequest *SGClaudeModelsRequest(NSString **problem) {
+    return claudeModelsRequest(nil, problem);
+}
+NSURLRequest *SGClaudeModelsPageRequest(NSString *afterID, NSString **problem) {
+    return claudeModelsRequest(afterID, problem);
 }

@@ -22,7 +22,7 @@ static const NSUInteger kSearchFrom = 8;
     NSArray<NSDictionary<NSString *, NSString *> *> *_models, *_shown;
     NSString *_problem;
     SGModelListState _state;
-    NSURLSessionDataTask *_task;
+    SGLyricsAIModelLoad *_task;
     NSUInteger _asked;   // counts the loads, so a late answer to an earlier one is dropped
     UISearchBar *_search;
 }
@@ -78,7 +78,7 @@ enum { kManualSection, kListSection };
     _state = SGModelListLoading;
     [self.tableView reloadData];
     __weak SGAIModelPage *weakSelf = self;
-    NSURLSessionDataTask *task = SGLyricsAIFetchModels(_service, fresh, ^(NSArray<NSDictionary<NSString *, NSString *> *> *models, NSString *error) {
+    SGLyricsAIModelLoad *task = SGLyricsAIFetchModels(_service, fresh, ^(NSArray<NSDictionary<NSString *, NSString *> *> *models, NSString *error) {
         SGAIModelPage *me = weakSelf;
         if (!me || asked != me->_asked) return;
         me->_task = nil;

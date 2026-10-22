@@ -109,9 +109,38 @@ static void (^beforeAIReply)(void);
 static NSError *modelListFailure;
 // The connection check scripts the same one-shot transport through this block; nil keeps the error-only fake.
 static NSURLSessionDataTask * (^connectionModelTransport)(NSURLRequest *, NSUInteger, void (^)(NSData *, NSInteger, NSError *));
+// A scripted, manually answered transport for the multi-page model list, which holds each page's completion
+// and its task so a test decides the order and can cancel between pages.
+@interface SGModelListFakeTask : NSObject
+@property BOOL cancelled;
+@end
+@implementation SGModelListFakeTask
+- (void)cancel { self.cancelled = YES; }
+@end
+static BOOL modelPageScripted;
+static NSMutableArray<NSURLRequest *> *modelPageRequests;
+static NSMutableArray *modelPageCompletions;
+static NSMutableArray<SGModelListFakeTask *> *modelPageTasks;
+static void modelPageDeliverData(NSUInteger index, NSData *data, NSInteger status, NSError *error) {
+    CHECK(index < modelPageCompletions.count);
+    void (^done)(NSData *, NSInteger, NSError *) = modelPageCompletions[index];
+    modelPageCompletions[index] = [^{} copy];
+    done(data, status, error);
+}
+static void modelPageDeliver(NSUInteger index, id root, NSInteger status, NSError *error) {
+    NSData *data = root ? [NSJSONSerialization dataWithJSONObject:root options:0 error:nil] : nil;
+    modelPageDeliverData(index, data, status, error);
+}
 NSURLSessionDataTask *SGLyricsTranslationSendOnceUpTo(NSURLRequest *request, NSUInteger limit,
                                                       void (^done)(NSData *, NSInteger, NSError *)) {
     CHECK(NSThread.isMainThread && limit == 8 * 1024 * 1024);
+    if (modelPageScripted) {
+        SGModelListFakeTask *task = [SGModelListFakeTask new];
+        [modelPageRequests addObject:request];
+        [modelPageCompletions addObject:[done copy]];
+        [modelPageTasks addObject:task];
+        return (id)task;
+    }
     if (connectionModelTransport) return connectionModelTransport(request, limit, done);
     NSError *failure = modelListFailure;
     dispatch_async(dispatch_get_main_queue(), ^{ done(nil, 0, failure); });
@@ -494,6 +523,7 @@ int main(int argc, const char **argv) {
         checkNewAI();
         checkModelNetworkProblems();
         checkModelFetchErrors();
+        checkModelPagination();
         checkConnection();
         checkAutoRetry();
         puts("lyrics translation: all checks passed");

@@ -292,13 +292,23 @@ SGModRow *SGGeminiKeyRow(void) {
                            ^NSString *{ return SGGeminiKeySet() ? SGL(@"settings.translation.geminikey.status.set", @"Set") : SGL(@"common.off", @"Off"); }, ^{ askForKey(); });
 }
 
-// Up to 1000 models a page, more than Google lists, so one page holds them all.
-NSURLRequest *SGGeminiModelsRequest(NSString **problem) {
+// Up to 1000 models a page; a reply with nextPageToken asks for the following one.
+static NSURLRequest *geminiModelsRequest(NSString *pageToken, NSString **problem) {
     NSString *key = storedKey();
     if (!key) { *problem = SGL(@"settings.translation.models.error.nokey", @"Save an API key first, and its models are listed here."); return nil; }
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000"]];
+    NSURLComponents *components = [NSURLComponents componentsWithString:@"https://generativelanguage.googleapis.com/v1beta/models"];
+    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray arrayWithObject:[NSURLQueryItem queryItemWithName:@"pageSize" value:@"1000"]];
+    if (pageToken.length) [items addObject:[NSURLQueryItem queryItemWithName:@"pageToken" value:pageToken]];
+    components.queryItems = items;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:components.URL];
     [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
     return request;
+}
+NSURLRequest *SGGeminiModelsRequest(NSString **problem) {
+    return geminiModelsRequest(nil, problem);
+}
+NSURLRequest *SGGeminiModelsPageRequest(NSString *pageToken, NSString **problem) {
+    return geminiModelsRequest(pageToken, problem);
 }
 
 // Other AI jobs use the same model and filters, with the bounded transport used by the other services.
