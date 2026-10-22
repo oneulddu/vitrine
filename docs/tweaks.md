@@ -202,7 +202,7 @@ Shared:
                   pronunciation of a line, each keyed to the line by its itunes:key or lrc:key, the pronunciation
                   timed word by word (the translation taken in the Lyrics page's language); Musixmatch.m, matched by
                   Spotify's track id with an anonymous token, word timed where it has richsync; NetEase.m, word timing from yrc for what the others only line time; LrcLib.m, open and
-                  keyless and timed by the line, by the word where a record carries a Lyricsfile (Lyricsfile.m reads its YAML), the floor under the rest. SpicyLyrics.m, Spicy Lyrics' Developer Platform
+                  keyless and timed by the line, by the word where a record carries a Lyricsfile (Lyricsfile.m reads its YAML), the floor under the rest; its search answers with whole songs, so only a record that is the track (SongMatch.m) can win. SpicyLyrics.m, Spicy Lyrics' Developer Platform
                   by track id on the user's own publishable key (Keychain), syllable timed where it has a sync, with
                   its pronunciations and translations; its credit, which its terms require, shows whatever Show source
                   says and opens the uploader's and maker's pages from a tap (both looks), its answers and misses are
@@ -227,7 +227,7 @@ Shared:
                   The old Type first boolean migrates to 0/1. Stored source orders are unchanged; unset
                   orders prioritize Imported LRC, Spicy Lyrics, BiniLyrics, LyricsPlus, Musixmatch, Unison,
                   Deezer, NetEase, LRCLIB, Bugs, Genie, QQ Music, KuGou and Genius. Genius.m, last: untimed words for a track no
-                  other source has, the song found by the line meanings' search (SGGeniusSongIn in LyricsMeanings/Meanings.m)
+                  other source has, the song found by the line meanings' search (SGGeniusSongIn in LyricsMeanings/Meanings.m, the match itself in SongMatch.m, which LRCLIB's search shares)
                   and the words read from its embed script, which is scraping (no API gives the text); checked on
                   the Mac against harness/genius-lyrics/. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
