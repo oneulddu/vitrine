@@ -126,7 +126,7 @@ SGLyricsResult *SGLyricsPlainResult(NSArray<NSString *> *rows) {
     return result;
 }
 
-// wordLines: the record's Lyricsfile as lines, nil when it has none this reads.
+// wordLines: the record's Lyricsfile as lines, nil when it has none that reads.
 static SGLyricsResult *resultFrom(NSDictionary *record, NSArray<SGKaraokeLine *> *wordLines) {
     if (!boundedRecord(record)) return nil;
     SGLyricsResult *result;
@@ -134,10 +134,9 @@ static SGLyricsResult *resultFrom(NSDictionary *record, NSArray<SGKaraokeLine *>
         result = [SGLyricsResult new];
         result.instrumental = YES;
     } else {
-        result = timesWords(record) ? syncedResult(wordLines) : nil;
+        result = syncedResult(wordLines);
         if (result) result.wordTimed = YES;
         else {
-            if ([record[@"hasWordSync"] isEqual:@YES]) SGLog(@"lrclib: record %@ times words in a Lyricsfile this cannot read", record[@"id"]);
             result = SGLyricsLRCResult(record[@"syncedLyrics"]);
         }
         if (!result.karaokeLines.count) result = SGLyricsPlainTextResult(record[@"plainLyrics"], @"LRCLIB");
@@ -153,7 +152,7 @@ SGLyricsResult *SGLrcLibRecordResult(NSDictionary *record) {
 }
 
 // Parse word timing away from the UI; return the result on main.
-static void resultFor(NSDictionary *record, void (^done)(SGLyricsResult *result)) {
+static void resultForRecord(NSDictionary *record, void (^done)(SGLyricsResult *result)) {
     if (!timesWords(record) || ([record[@"instrumental"] isKindOfClass:NSNumber.class] && [record[@"instrumental"] boolValue])) {
         done(resultFrom(record, nil));
         return;
@@ -169,7 +168,7 @@ void SGLrcLibGetID(NSNumber *recordID, void (^done)(SGLyricsResult *result)) {
     NSString *identifier = SGLyricsDecimalID(recordID);
     if (!identifier.length) { done(nil); return; }
     NSURL *url = [NSURL URLWithString:[kGet stringByAppendingFormat:@"/%@", identifier]];
-    getJSON(url, ^(id record) { resultFor(record, done); });
+    getJSON(url, ^(id record) { resultForRecord(record, done); });
 }
 
 // Search is for a person choosing a recording: keep different lengths, and show the closest first
@@ -237,8 +236,8 @@ static BOOL betterRecord(NSDictionary *record, NSDictionary *best, NSInteger sec
 // The search ranks by its own lights, and its first hit is often another song of the artist's or the
 // song by someone else, so a record has to be the track (SongMatch.m) before its timing counts. The
 // artists are written as one name, "A, B" for several.
-static NSDictionary *bestOf(id found, SGLyricsQuery *query) {
-    NSDictionary *best = nil;
+static NSArray<NSDictionary *> *matching(id found, SGLyricsQuery *query) {
+    NSMutableArray<NSDictionary *> *records = [NSMutableArray array];
     NSUInteger read = 0;
     for (NSDictionary *record in [found isKindOfClass:NSArray.class] ? found : @[]) {
         if (read++ >= 100) break;
@@ -247,9 +246,45 @@ static NSDictionary *bestOf(id found, SGLyricsQuery *query) {
         if (query.seconds > 0 && length > 0 && labs(length - query.seconds) > kLengthSlack) continue;
         NSString *artists = [record[@"artistName"] isKindOfClass:NSString.class] ? record[@"artistName"] : @"";
         if (!SGLyricsSongRank(query.title, query.artist, record[@"trackName"], [artists componentsSeparatedByString:@", "])) continue;
-        if (betterRecord(record, best, query.seconds)) best = record;
+        [records addObject:record];
+    }
+    return records;
+}
+
+static NSDictionary *bestOf(NSArray<NSDictionary *> *records, NSInteger seconds) {
+    NSDictionary *best = nil;
+    for (NSDictionary *record in records) {
+        if (betterRecord(record, best, seconds)) best = record;
     }
     return best;
+}
+
+// The best of the records as a result, on the main queue, where it is called. A record's words count only once
+// its Lyricsfile reads, so the best that says it times words is read first, and one whose file cannot be read is
+// weighed again on its LRC alone, until the best is one with words read or one without. A Lyricsfile is read on
+// another queue: a long one takes a good part of a second to read, and the main queue would stall for all of it.
+static void resultFor(NSArray<NSDictionary *> *records, NSInteger seconds, void (^done)(SGLyricsResult *result)) {
+    NSDictionary *best = bestOf(records, seconds);
+    if (!timesWords(best) || ([best[@"instrumental"] isKindOfClass:NSNumber.class] && [best[@"instrumental"] boolValue])) {
+        done(resultFrom(best, nil));
+        return;
+    }
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSMutableArray<NSDictionary *> *left = [records mutableCopy];
+        NSDictionary *top = best;
+        NSArray<SGKaraokeLine *> *worded = nil;
+        while (timesWords(top) && !([top[@"instrumental"] isKindOfClass:NSNumber.class] && [top[@"instrumental"] boolValue])) {
+            worded = SGLyricsfileLines(top[@"lyricsfile"]);
+            if (worded) break;
+            SGLog(@"lrclib: record %@ times words in a Lyricsfile this cannot read", top[@"id"]);
+            NSMutableDictionary *onLines = [top mutableCopy];
+            [onLines removeObjectForKey:@"hasWordSync"];
+            left[[left indexOfObjectIdenticalTo:top]] = onLines;
+            top = bestOf(left, seconds);
+        }
+        NSDictionary *chosen = top;
+        dispatch_async(dispatch_get_main_queue(), ^{ done(resultFrom(chosen, worded)); });
+    });
 }
 
 SGLyricsAsk SGLrcLibAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
@@ -266,7 +301,7 @@ SGLyricsAsk SGLrcLibAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *r
 
     void (^bySearch)(void) = ^{
         getJSON(SGLyricsURL(kSearch, search), ^(id found) {
-            resultFor(bestOf(found, query), ^(SGLyricsResult *result) {
+            resultFor(matching(found, query), query.seconds, ^(SGLyricsResult *result) {
                 SGLog(@"lrclib: search for %@ by %@ gave %@", query.title, query.artist,
                       !result ? @"nothing" : result.instrumental ? @"an instrumental"
                       : result.synced ? [NSString stringWithFormat:@"%lu %@ lines", (unsigned long)result.karaokeLines.count, result.wordTimed ? @"word timed" : @"timed"]
@@ -284,7 +319,7 @@ SGLyricsAsk SGLrcLibAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *r
     NSMutableDictionary<NSString *, NSString *> *exact = [search mutableCopy];
     exact[@"duration"] = @(query.seconds).stringValue;
     getJSON(SGLyricsURL(kGet, exact), ^(id record) {
-        resultFor(record, ^(SGLyricsResult *result) {
+        resultFor([record isKindOfClass:NSDictionary.class] ? @[record] : @[], query.seconds, ^(SGLyricsResult *result) {
             if (!result) {
                 bySearch();
                 return;
