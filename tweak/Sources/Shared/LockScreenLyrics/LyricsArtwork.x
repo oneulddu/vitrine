@@ -19,6 +19,7 @@
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/Player/NowPlayingExtras.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/Player/SGLastTrack.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
 
 static const NSTimeInterval kTick = 0.25;
@@ -66,10 +67,11 @@ static void markMotionFailed(NSURL *file, NSString *artworkID) {
     SGLog(@"lock lyrics: %@ would not draw for %@, the lines go over the cover for it", file.lastPathComponent, artworkID);
 }
 static NSString *sg_track;     // the track the clips are for
-static UIImage *sg_cover;      // its cover, once Spotify's now playing info has one for it
+static UIImage *sg_cover;      // the cover named by this track's metadata, never a system placeholder
+static NSURL *sg_coverURL;     // attempted once per track/source, including a failed load
 static NSString *sg_coverKey;  // content identity, including no-cover, in both disk and preview keys
 static NSUInteger sg_coverGeneration, sg_renderGeneration, sg_settingsRevision;
-static BOOL sg_coverLoading, sg_settingsPending;
+static BOOL sg_settingsPending;
 static NSString *sg_shownID;   // the artwork handed over last, nil for none; read on sg_queue too
 static NSObject *sg_lock;
 static dispatch_queue_t sg_queue;   // writes the clips, one at a time
@@ -233,6 +235,12 @@ static NSString *coverKey(UIImage *cover) {
     return key;
 }
 
+static BOOL currentCoverRequest(NSUInteger generation, NSString *trackID, SGShownTrack *track) {
+    if (generation != sg_coverGeneration || ![trackID isEqual:SGKaraokePlayingTrack()]) return NO;
+    SGShownTrack *now = SGShownTrackNow();
+    return now.current && [now.uri isEqual:track.uri] && [now.artworkURL isEqual:track.artworkURL];
+}
+
 void SGLyricsArtworkSetMotion(NSString *uri, NSURL *file) {
     @synchronized (sg_failedMotion) {
         if (file) [sg_failedMotion removeObject:file.path];
@@ -276,9 +284,9 @@ static void tick(void) {
         if (![trackID isEqualToString:sg_track]) {
             sg_track = trackID;
             sg_cover = nil;
+            sg_coverURL = nil;
             sg_coverKey = @"no-cover";
             sg_coverGeneration++;
-            sg_coverLoading = NO;
             invalidateRenders();
             // The IDs name the track, so the last track's clips are never asked for again.
             dispatch_async(sg_queue, ^{
@@ -341,27 +349,33 @@ static void tick(void) {
             motion = nil;
         }
         NSString *look = SGLyricsClipLook(motion, style);
-        // Spotify's request block for its cover, read on main and kept once it is this track's.
-        if (!sg_cover && !sg_coverLoading) {
-            NSDictionary *info = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
-            MPMediaItemArtwork *artwork = info[MPMediaItemPropertyArtwork];
-            if ([info[MPMediaItemPropertyTitle] isEqual:state.track.trackTitle] && [artwork isKindOfClass:MPMediaItemArtwork.class]) {
-                UIImage *cover = [artwork imageWithSize:CGSizeMake(size.height, size.height)];
-                if (cover) {
-                    sg_coverLoading = YES;
-                    NSUInteger generation = sg_coverGeneration;
+        // A non-nil MPNowPlaying image is not evidence of a cover: it may be Spotify's
+        // placeholder, or the previous same-title track's image. Load the current URI's
+        // metadata through the shared loader instead. Until then the renderer gets nil.
+        SGShownTrack *shown = SGShownTrackNow();
+        NSURL *url = shown.current && [shown.uri isEqual:SGURIString(state.track.URI)] ? shown.artworkURL : nil;
+        if ((url || sg_coverURL) && ![url isEqual:sg_coverURL]) {
+            sg_coverURL = url;
+            // A pending URL does not change a coverless frame. Keep its request blocks
+            // valid until pixels change; otherwise the unchanged ID keeps a cancelled offer.
+            if (sg_cover) invalidateRenders();
+            sg_cover = nil;
+            sg_coverKey = @"no-cover";
+            NSUInteger generation = ++sg_coverGeneration;
+            if (url) {
+                SGShownTrackArtwork(shown, ^(UIImage *cover) {
+                    if (!cover || !currentCoverRequest(generation, trackID, shown)) return;
                     dispatch_async(sg_previewQueue, ^{
                         NSString *key = coverKey(cover);
                         dispatch_async(dispatch_get_main_queue(), ^{
-                            if (generation != sg_coverGeneration) return;
-                            sg_coverLoading = NO;
+                            if (!currentCoverRequest(generation, trackID, shown)) return;
                             sg_cover = cover;
                             sg_coverKey = key;
                             invalidateRenders();
                             tick();
                         });
                     });
-                }
+                });
             }
         }
         NSString *backgroundID = [NSString stringWithFormat:@"%@-%gx%g", SGLyricsBackgroundIdentity(background), size.width, size.height];
@@ -411,6 +425,12 @@ static void setTicking(BOOL on) {
 @end
 
 @implementation SGLyricsArtwork
+// Metadata is absent from PlayerState's change key. A paused track has no timer,
+// so its report-only updates must still pick up a late or revised cover URL.
+- (void)playerStateDidReport:(SPTPlayerState *)state {
+    if (state.isPaused) tick();
+}
+
 // A paused player's line does not move, and the lock screen keeps the clip it was left on. Picked or not is read
 // each time, so a change on the Lock screen page applies at once.
 - (void)playerStateDidChange:(SPTPlayerState *)state {

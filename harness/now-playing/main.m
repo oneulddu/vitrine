@@ -42,10 +42,11 @@ BOOL SGFlag(NSString *key, BOOL fallback) {
 @public
     NSString *_title;
     NSString *_uri;
+    NSDictionary *_metadata;
 }
 - (NSString *)trackTitle { return _title; }
 - (id)URI { return _uri; }
-- (NSDictionary *)metadata { return @{}; }
+- (NSDictionary *)metadata { return _metadata ?: @{}; }
 - (NSString *)artistName { return @"Artist"; }
 @end
 
@@ -116,6 +117,7 @@ SPTPlayerState *harnessState(NSString *uri, NSString *title) {
     return state;
 }
 void harnessLines(NSArray *lines) { sg_lines = lines; }
+void harnessMetadata(NSDictionary *metadata) { sg_player.state.track->_metadata = metadata; }
 NSDictionary *harnessSystem(void) { return sg_system; }
 NSUInteger harnessSets(void) { return sg_sets; }
 

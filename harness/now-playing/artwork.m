@@ -11,6 +11,7 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/NowPlayingExtras.h"
+#import "Shared/Player/SGLastTrack.h"
 
 typedef void (^Preview)(CGSize, void (^)(UIImage *));
 typedef void (^Video)(CGSize, void (^)(NSURL *));
@@ -19,6 +20,24 @@ static NSArray *supported;
 static NSURL *cacheRoot;
 static CGSize lastCoverRequest;
 static CGRect screenBounds(id self, SEL cmd) { return CGRectMake(0, 0, 32, 48); }
+
+// Exercise the real metadata -> SGShownTrack -> URL loader -> decode boundary, not an
+// SGShownTrackArtwork stub. Only the transport is controlled; no network leaves this process.
+static NSMutableDictionary<NSString *, NSURLProtocol *> *coverRequests;
+static NSUInteger coverLoads;
+@interface CoverProtocol : NSURLProtocol
+@end
+@implementation CoverProtocol
++ (BOOL)canInitWithRequest:(NSURLRequest *)request { return [request.URL.host isEqual:@"cover.invalid"]; }
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        coverLoads++;
+        coverRequests[self.request.URL.absoluteString] = self;
+    });
+}
+- (void)stopLoading {}
+@end
 
 // Keep Apple's real object and initializer, but retain the supplied handlers so tests can act as the OS.
 @interface MPMediaItemAnimatedArtwork (Harness)
@@ -50,6 +69,8 @@ static CGRect screenBounds(id self, SEL cmd) { return CGRectMake(0, 0, 32, 48); 
 
 static NSArray *keys(id self, SEL cmd) { return supported ?: @[]; }
 __attribute__((constructor)) static void artworkBoundary(void) {
+    coverRequests = [NSMutableDictionary dictionary];
+    [NSURLProtocol registerClass:CoverProtocol.class];
     char *path = strdup([[NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-artwork.XXXXXX"] fileSystemRepresentation]);
     if (!mkdtemp(path)) abort();
     cacheRoot = [NSURL fileURLWithPath:@(path) isDirectory:YES];
@@ -95,6 +116,7 @@ void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer) {
 }
 NSArray *SGMotionSourceOrder(void) { return @[@"canvas"]; }
 NSURL *SGMotionCanvasIn(NSDictionary *metadata) { return nil; }
+NSString *SGLocalFileCoverInURL(NSString *url) { return nil; }
 BOOL SGMotionCanvasOutranks(NSArray *order, NSString *source) { return YES; }
 void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape,
                      CGFloat pixels, void (^done)(NSURL *, NSString *)) {
@@ -160,7 +182,16 @@ BOOL SGMotionClipShape(NSURL *file, CGFloat ratio, NSURL *out) { return writeFra
 CGImageRef SGFluidClipFrame(CGImageRef cover, CGSize size) { return CGImageRetain(cover); }
 BOOL SGFluidClipWrite(NSURL *file, CGImageRef cover, CGSize size) { return writeFrame(file, cover); }
 
+// PlayerState.publish sends this callback on every accepted report, even when
+// its URI/context/playback key is unchanged and it suppresses DidChange.
+static void reportOnly(void) {
+    for (id<SGPlayerStateObserver> observer in observers.allObjects) {
+        if ([observer respondsToSelector:@selector(playerStateDidReport:)]) [observer playerStateDidReport:state];
+    }
+}
+// Other lifecycle cases explicitly force a change (including simulated lyric seeks).
 static void report(void) {
+    reportOnly();
     for (id<SGPlayerStateObserver> observer in observers.allObjects) [observer playerStateDidChange:state];
 }
 static void choose(SGLockArtwork value) {
@@ -199,6 +230,28 @@ static BOOL await(BOOL (^done)(void)) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2];
     while (!done() && deadline.timeIntervalSinceNow > 0) runFor(0.01);
     return done();
+}
+static NSString *coverURL(NSString *key) {
+    return [@"https://cover.invalid/" stringByAppendingString:key];
+}
+static void coverMetadata(NSString *key) {
+    harnessMetadata(key ? @{@"image_xlarge_url": coverURL(key)} : @{});
+    // Only metadata changed: production does not deliver DidChange, and there
+    // need not be a native now-playing notification to wake the paused lyrics.
+    reportOnly();
+}
+static void finishCover(NSString *key, UIImage *image) {
+    NSString *url = coverURL(key);
+    check(await(^BOOL { return coverRequests[url] != nil; }), @"metadata artwork reaches the real URL loader");
+    NSURLProtocol *request = coverRequests[url];
+    if (!request) return;
+    [coverRequests removeObjectForKey:url];
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:request.request.URL
+        statusCode:image ? 200 : 404 HTTPVersion:@"HTTP/1.1" headerFields:nil];
+    [request.client URLProtocol:request didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    if (image) [request.client URLProtocol:request didLoadData:UIImagePNGRepresentation(image)];
+    [request.client URLProtocolDidFinishLoading:request];
+    runFor(.05);
 }
 static UIImage *preview(id art) {
     Preview block = objc_getAssociatedObject(art, &previewKey);
@@ -444,6 +497,8 @@ void artworkChecks(void) {
     position = 0;
     report();
     nativeInfo(red);
+    coverMetadata(@"lyrics-late-cover");
+    finishCover(@"lyrics-late-cover", red);
     runFor(0.03);
     id covered = artwork();
     check(covered && ![name(covered) isEqual:name(empty)], @"paused late cover changes the current render identity");
@@ -487,4 +542,69 @@ void artworkChecks(void) {
     nativeInfo(nil);
     runFor(0.03);
     check(!artwork(), @"late now-playing info cannot revive disabled lyrics");
+
+    background(@{@"darkness": @0});
+    runFor(.2);
+    // A non-nil native placeholder is not a missing image. The old test supplied nil,
+    // so it never exposed the first-image-wins latch or the title-only identity.
+    UIImage *placeholder = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(24, 32)]
+        imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            [UIColor.blackColor setFill];
+            UIRectFill(CGRectMake(0, 0, 24, 32));
+            [[[UIImage systemImageNamed:@"photo"] imageWithTintColor:UIColor.grayColor
+                renderingMode:UIImageRenderingModeAlwaysOriginal] drawInRect:CGRectMake(0, 4, 24, 24)];
+        }];
+    nativeInfo(placeholder);
+    track(@"source-placeholder", SGLockArtworkLyrics, nil, lines);
+    check(state.isPaused, @"metadata-only artwork regression runs with the lyric timer stopped");
+    coverMetadata(@"source-real");
+    check(await(^BOOL { return coverRequests[coverURL(@"source-real")] != nil; }),
+          @"paused report-only late metadata starts a cover load without a native info update");
+    runFor(.05);
+    id pending = artwork();
+    check(sameImage(preview(pending), safe), @"native placeholder never enters the lyric preview while metadata cover loads");
+    NSURL *pendingFile = video(pending);
+    check(sameImage([UIImage imageWithContentsOfFile:pendingFile.path], safe),
+          @"native placeholder never enters the lyric disk clip");
+    finishCover(@"source-real", red);
+    id resolved = artwork();
+    check(![name(resolved) isEqual:name(pending)] && sameImage(preview(resolved), red),
+          @"metadata real cover replaces fallback even while native artwork remains a placeholder");
+    check(sameImage([UIImage imageWithContentsOfFile:video(resolved).path], red),
+          @"metadata real cover reaches the disk clip");
+    position = 12000;
+    report();
+    check(sameImage(preview(artwork()), red), @"metadata real cover reaches the prefetched next line");
+
+    nativeInfo(red); // Previous track's real cover, same title as the next track.
+    track(@"source-old", SGLockArtworkLyrics, nil, lines);
+    coverMetadata(@"source-old");
+    check(await(^BOOL { return coverRequests[coverURL(@"source-old")] != nil; }), @"old track cover request is held");
+    state = harnessState(@"source-new", @"Song");
+    report();
+    coverMetadata(@"source-new");
+    check(sameImage(preview(artwork()), safe), @"same-title track never inherits native artwork from the previous URI");
+    finishCover(@"source-new", blue);
+    finishCover(@"source-old", red);
+    check(sameImage(preview(artwork()), blue), @"late old-URI completion cannot replace the current cover");
+
+    coverMetadata(@"source-revised-old");
+    check(await(^BOOL { return coverRequests[coverURL(@"source-revised-old")] != nil; }),
+          @"paused report-only revised metadata starts a cover load without a native info update");
+    coverMetadata(@"source-revised-new");
+    finishCover(@"source-revised-new", red);
+    finishCover(@"source-revised-old", blue);
+    check(sameImage(preview(artwork()), red), @"late old-URL completion cannot replace revised metadata for the same URI");
+    coverMetadata(@"source-unavailable");
+    finishCover(@"source-unavailable", nil);
+    check(sameImage(preview(artwork()), safe), @"failed authoritative artwork uses dark fallback, not native placeholder or stale cover");
+    NSUInteger loads = coverLoads;
+    for (NSUInteger i = 0; i < 5; i++) { report(); nativeInfo(placeholder); }
+    runFor(.1);
+    check(coverLoads == loads, @"failed artwork does not trigger a download loop");
+    coverMetadata(@"source-disabled");
+    check(await(^BOOL { return coverRequests[coverURL(@"source-disabled")] != nil; }), @"cover request starts before disabling");
+    choose(SGLockArtworkOff);
+    finishCover(@"source-disabled", red);
+    check(!artwork(), @"late metadata cover cannot revive disabled lyrics");
 }

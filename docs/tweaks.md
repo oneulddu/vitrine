@@ -283,7 +283,10 @@ Shared:
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
                   next one dimmed over the selected background, SGLyricsClip.m) written only when the lock screen asks for it,
                   Still (one frame) or Animated (15 fps). Fallbacks use the screen's native width and the shared
-                  CPU renderer; previews are drawn on a queue apart from the clips, and while the
+                  CPU renderer. Cover backgrounds load the current URI's metadata artwork through
+                  SGShownTrackArtwork, not title-matched system artwork that may be a placeholder or the
+                  previous song's cover. Missing or failed covers use the dark fallback; late results are
+                  guarded by track, source URL and generation. Previews are drawn on a queue apart from the clips, and while the
                   lock screen is asking, the next line's preview and clip are drawn ahead and a ready preview is handed
                   over at once. iOS still shows the plain cover for about half a second at each change of artwork. Picking it or another artwork applies at once.
                   Moving artwork with lyrics (the choice's fifth value, 4) draws each line over the track's moving

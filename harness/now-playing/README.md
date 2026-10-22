@@ -42,3 +42,12 @@ The shared background renderer is real; render/encode stand-ins still isolate li
 An isolated volatile preference domain exercises paused background changes, slider-burst coalescing,
 stale request cancellation, current/prefetched disk identity changes, full-raster cover requests,
 and safe no-cover → real-cover recovery without source downloads.
+
+The lyrics cover checks compile the real `SGLastTrack.m`: track metadata passes through
+`SGShownTrackNow` and `SGShownTrackArtwork`, with only HTTP transport intercepted by an in-process
+`NSURLProtocol`. A non-nil native photo placeholder remains in now-playing info while the metadata
+cover arrives; previews and disk clips must go from dark fallback to the real cover, including the
+prefetched line. Same-title URI changes, same-URI artwork URL revisions, failed loads without retry
+loops, and disabling during a load are also checked. This boundary was missing from the older
+nil → image now-playing tests. Rendering/encoding and the OS remain stand-ins, so these checks do
+not establish the origin of a device's placeholder or validate device video playback.
