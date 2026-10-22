@@ -276,6 +276,14 @@ Shared:
                   main-thread, generation guarded and bounded to 200 song/language pairs. Display-only changes do
                   not restart work. Only known local failures become connection/key/busy reasons; remote bodies
                   and credentials are never copied into the note.
+                  New Gemini, Claude and OpenAI-compatible lyric translations use L0001<TAB>text rows.
+                  Missing, duplicate, reordered or unknown IDs, extra rows and truncated/refused replies
+                  invalidate the whole result instead of shifting translations between timestamps.
+                  Each source entry remains one row: embedded tabs and newline characters become spaces,
+                  with CRLF replaced by one space. Empty source rows must return empty values.
+                  Existing saved translations keep their format and are not regenerated automatically.
+                  Title, pronunciation and cultural-note requests explicitly retain JSON; on-device,
+                  Google, Bing and DeepL translation protocols are unchanged.
                   Check connection, on the OpenAI-compatible service's page, makes one bounded GET /models
                   with an 8 MiB response cap and sends no translation. A readable model list does not prove
                   key validity on a public endpoint or that a selected model can translate. The separate

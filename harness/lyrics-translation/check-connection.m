@@ -19,8 +19,7 @@ NSURLSessionDataTask *SGLyricsTranslationSendOnce(NSURLRequest *request, void (^
     return (id)connectionTask;
 }
 static NSData *connectionData(NSString *text) {
-    NSData *array = [NSJSONSerialization dataWithJSONObject:@[text] options:0 error:nil];
-    return [NSJSONSerialization dataWithJSONObject:chatReply([[NSString alloc] initWithData:array encoding:NSUTF8StringEncoding]) options:0 error:nil];
+    return [NSJSONSerialization dataWithJSONObject:chatReply([@"L0001\t" stringByAppendingString:text]) options:0 error:nil];
 }
 static NSData *connectionModels(NSArray *ids) {
     NSMutableArray *data = [NSMutableArray array];
@@ -300,7 +299,7 @@ static void checkConnection(void) {
         [NSError errorWithDomain:@"connection-fixture-key http://100.97.8.81:10100 upstream detail" code:17 userInfo:nil], NO);
     CHECK([report.diagnostic containsString:@"error=other/17"] && ![report.diagnostic containsString:@"model="]);
     connectionConfigure();
-    for (id root in @[chatReply(@"L0002\t하늘은 파랗다."),
+    for (id root in @[chatReply(@"[\"하늘은 파랗다.\"]"), chatReply(@"L0002\t하늘은 파랗다."),
                       chatReply(@"L0001\t하늘\nL0001\t파랗다."),
                       @{@"choices": @[@{@"message": @{@"content": @"L0001\t하늘은 파랗다."}, @"finish_reason": @"length"}]},
                       @{@"choices": @[@{@"message": @{@"content": @"L0001\t하늘은 파랗다.", @"refusal": @"No"}, @"finish_reason": @"stop"}]}]) {

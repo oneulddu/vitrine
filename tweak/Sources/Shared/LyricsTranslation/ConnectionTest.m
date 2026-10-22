@@ -159,7 +159,7 @@ static BOOL validSample(NSString *text) {
             report.stage = SGConnectionCheckTranslation;
             if (status == 200) {
                 id root = data && data.length <= 512 * 1024 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-                NSArray *answer = SGOpenAITranslationsIn(root, 1);
+                NSArray *answer = SGOpenAIReplyIn(root, 1, SGLyricsReplyIndexed);
                 if (validSample(answer.firstObject)) {
                     report.translated = SGConnectionFactYes;
                 } else {

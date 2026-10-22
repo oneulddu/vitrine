@@ -125,6 +125,7 @@ static NSString *const bingHTML = @"<div data-iid=\"translator.1\"></div><script
 // Exercise Gemini's real job/cache without allowing its NSURLSession to reach the network.
 static NSMutableArray *geminiTitleReplies;
 static NSUInteger geminiTitleRequests;
+static NSURLRequest *lastGeminiRequest;
 @interface SGGeminiTitleProtocol : NSURLProtocol
 @end
 @implementation SGGeminiTitleProtocol
@@ -134,9 +135,24 @@ static NSUInteger geminiTitleRequests;
     dispatch_async(dispatch_get_main_queue(), ^{
         CHECK(geminiTitleReplies.count > 0);
         geminiTitleRequests++;
-        NSString *reply = geminiTitleReplies.firstObject;
+        NSMutableURLRequest *captured = [self.request mutableCopy];
+        if (!captured.HTTPBody) {
+            NSInputStream *stream = self.request.HTTPBodyStream;
+            CHECK(stream);
+            NSMutableData *body = [NSMutableData data];
+            [stream open];
+            uint8_t buffer[4096];
+            NSInteger length;
+            while ((length = [stream read:buffer maxLength:sizeof(buffer)]) > 0) [body appendBytes:buffer length:(NSUInteger)length];
+            CHECK(length == 0 && !stream.streamError);
+            [stream close];
+            captured.HTTPBody = body;
+        }
+        lastGeminiRequest = captured;
+        id reply = geminiTitleReplies.firstObject;
         [geminiTitleReplies removeObjectAtIndex:0];
-        NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": reply}]}, @"finishReason": @"STOP"}]} options:0 error:nil];
+        id root = [reply isKindOfClass:NSString.class] ? @{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": reply}]}, @"finishReason": @"STOP"}]} : reply;
+        NSData *data = [NSJSONSerialization dataWithJSONObject:root options:0 error:nil];
         NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
         [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
         [self.client URLProtocol:self didLoadData:data];
@@ -325,7 +341,7 @@ static id json(NSString *text) {
     return [NSJSONSerialization JSONObjectWithData:[text dataUsingEncoding:NSUTF8StringEncoding] options:NSJSONReadingFragmentsAllowed error:nil];
 }
 static id chatReply(NSString *content) {
-    return @{@"choices": @[@{@"message": @{@"content": content}}]};
+    return @{@"choices": @[@{@"message": @{@"content": content}, @"finish_reason": @"stop"}]};
 }
 static void checkProviders(void) {
     CHECK([SGDeepLTargetLanguage(@"zh-Hans-CN") isEqual:@"ZH-HANS"]);

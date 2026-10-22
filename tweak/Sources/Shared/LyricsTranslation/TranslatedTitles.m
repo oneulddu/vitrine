@@ -101,9 +101,9 @@ static void translateTitle(NSString *track, NSArray<SGKaraokeLine *> *lines, NSS
     if (SGFlag(SGKeyLyricsBingTranslate, NO)) SGLyricsTranslateWithBing(memo, lines, language, done);
     else if (SGFlag(SGKeyLyricsGoogleTranslate, NO)) SGLyricsTranslateWithGoogle(memo, lines, language, done);
     else if (SGDeepLKeySet()) SGLyricsTranslateWithDeepL(memo, lines, language, done);
-    else if (SGGeminiKeySet()) SGLyricsTranslateWithGemini(memo, lines, language, done);
-    else if (SGClaudeKeySet()) SGLyricsTranslateWithClaude(memo, lines, language, done);
-    else if (SGOpenAIKeySet()) SGLyricsTranslateWithOpenAI(memo, lines, language, done);
+    else if (SGGeminiKeySet()) SGLyricsTranslateWithGeminiFormat(memo, lines, language, SGLyricsReplyJSON, done);
+    else if (SGClaudeKeySet()) SGLyricsTranslateWithClaudeFormat(memo, lines, language, SGLyricsReplyJSON, done);
+    else if (SGOpenAIKeySet()) SGLyricsTranslateWithOpenAIFormat(memo, lines, language, SGLyricsReplyJSON, done);
     else done(nil, nil);
 }
 NSString *SGLyricsTranslatedTitle(NSString *trackID, NSString *title, NSString *artist, NSString **artistOut) {

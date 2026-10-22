@@ -45,6 +45,11 @@ The checks cover:
   lists with display names, duplicates, wrong types, control characters, the 2000-model cap and the ID sort.
   `/models` beside each base URL, the three list requests' addresses and headers, no request without a key,
   stored models cleaned, and Gemini's chosen model percent-encoded inside its path segment.
+- Indexed lyric translations across the real OpenAI-compatible, Claude and Gemini entry points:
+  exact `L0001<TAB>text` IDs/order/counts; rejection of missing, duplicated, shifted or extra IDs,
+  extra delimiters, JSON/fenced replies, refusals and truncation; source tab/newline normalization
+  (CRLF is one space); Unicode and size boundaries; empty-row preservation; unchanged saved and
+  memoized results after a rejected answer; explicit JSON title-mode isolation.
 - AI pronunciation and cultural notes: JSON-array prompts, all three notations, sound rather than meaning,
   sparse notes, composed-character length limits, strict replies, all three service request shapes and safety
   settings, shared in-flight requests, single main-thread completion, memory/disk reuse and deletion while
@@ -64,7 +69,7 @@ The checks cover:
   after 200 cached title results. The on-device translator is a harness stand-in.
   A custom NSURLProtocol intercepts Gemini HTTP requests to exercise its actual title fallback and cache:
   changed title/artist text makes a new request, while identical text reuses the answer, with no live API call.
-- OpenAI-compatible replies as strict JSON arrays or single-value objects, with and without a JSON
+- Legacy/generic OpenAI-compatible replies as strict JSON arrays or single-value objects, with and without a JSON
   code fence. Wrong types, malformed fences, excessive sizes and mismatched counts fail. Base URLs
   accept HTTPS, or HTTP for localhost, 127.0.0.1, .local hosts and numeric Tailscale IPv4 addresses
   (100.64.0.0/10), and reject credentials, query strings and fragments. Tailscale checks include both

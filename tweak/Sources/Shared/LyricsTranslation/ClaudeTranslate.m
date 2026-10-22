@@ -51,6 +51,9 @@ static NSString *unreadable(void) {
 }
 
 NSArray<NSString *> *SGClaudeTranslationsIn(id root, NSInteger status, NSError *error, NSUInteger count, NSString **problem) {
+    return SGClaudeReplyIn(root, status, error, count, SGLyricsReplyJSON, problem);
+}
+NSArray<NSString *> *SGClaudeReplyIn(id root, NSInteger status, NSError *error, NSUInteger count, SGLyricsReplyFormat format, NSString **problem) {
     if (problem) *problem = nil;
     NSString *failure = nil;
     NSDictionary *reply = [root isKindOfClass:NSDictionary.class] ? root : nil;
@@ -69,12 +72,17 @@ NSArray<NSString *> *SGClaudeTranslationsIn(id root, NSInteger status, NSError *
         BOOL valid = [content isKindOfClass:NSArray.class] && [content count] <= 2000 && !reply[@"error"];
         if (valid) for (id part in content) {
             if (![part isKindOfClass:NSDictionary.class]) { valid = NO; break; }
-            if (![part[@"type"] isEqual:@"text"]) continue;
+            if (![part[@"type"] isEqual:@"text"]) {
+                if (format == SGLyricsReplyIndexed && ![part[@"type"] isEqual:@"thinking"] && ![part[@"type"] isEqual:@"redacted_thinking"]) { valid = NO; break; }
+                continue;
+            }
             id piece = part[@"text"];
             if (![piece isKindOfClass:NSString.class] || [piece length] > 256000 - text.length) { valid = NO; break; }
             [text appendString:piece];
         }
-        if (valid && ![reply[@"stop_reason"] isEqual:@"max_tokens"]) out = SGLyricsAIArrayIn(text, count);
+        if (format == SGLyricsReplyIndexed) {
+            if (valid && [reply[@"stop_reason"] isEqual:@"end_turn"]) out = SGLyricsIndexedRowsIn(text, count);
+        } else if (valid && ![reply[@"stop_reason"] isEqual:@"max_tokens"]) out = SGLyricsAIArrayIn(text, count);
         if (!out) failure = unreadable();
     }
     if (problem) *problem = failure;
@@ -97,22 +105,25 @@ NSURLRequest *SGClaudeRequest(NSString *system, NSString *prompt, NSString **pro
 
 void SGLyricsTranslateWithClaude(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                  void (^done)(NSArray<NSString *> *, NSString *)) {
+    SGLyricsTranslateWithClaudeFormat(trackID, lines, languageTag, SGLyricsReplyIndexed, done);
+}
+void SGLyricsTranslateWithClaudeFormat(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                      SGLyricsReplyFormat format, void (^done)(NSArray<NSString *> *, NSString *)) {
     dispatch_async(dispatch_get_main_queue(), ^{
         NSArray *texts = SGLyricsAITexts(lines);
-        NSString *prompt = texts ? SGLyricsTranslationPrompt(texts, languageTag) : nil;
+        NSString *prompt = texts ? SGLyricsTranslationPromptForFormat(texts, languageTag, format) : nil;
         if (!prompt) { done(nil, unreadable()); return; }
         if (!SGClaudeKeySet()) { done(nil, SGL(@"settings.translation.claude.error.nokey", @"Add a Claude API key on the Lyrics page first.")); return; }
         NSString *model = SGClaudeModel();
-        NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
+        NSString *memo = [NSString stringWithFormat:@"%@|%@|%ld", trackID, languageTag, (long)format];
         if (!sg_done) sg_done = [NSMutableDictionary dictionary];
         NSDictionary *cached = trackID ? sg_done[memo] : nil;
         if ([cached[@"texts"] isEqual:texts] && [cached[@"model"] isEqual:model]) { done(cached[@"answer"], nil); return; }
         if (![[texts componentsJoinedByString:@""] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) { done(texts, nil); return; }
-        SGLyricsAIAsk(SGLyricsAIClaude, SGLyricsTranslationInstruction(), prompt, texts.count, ^(NSArray *answer, NSString *problem) {
+        SGLyricsAIAskWithFormat(SGLyricsAIClaude, SGLyricsTranslationInstructionForFormat(format), prompt, texts.count, format, ^(NSArray *answer, NSString *problem) {
+            answer = SGLyricsTranslationReply(answer, texts, format);
+            if (!answer && !problem) problem = unreadable();
             if (answer) {
-                NSMutableArray *clean = [answer mutableCopy];
-                for (NSUInteger i = 0; i < texts.count; i++) if (![texts[i] length]) clean[i] = @"";
-                answer = [clean copy];
                 if (trackID) {
                     if (sg_done.count >= 32) [sg_done removeAllObjects];
                     sg_done[memo] = @{@"texts": texts, @"model": model, @"answer": answer};

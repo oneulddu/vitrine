@@ -39,11 +39,24 @@ NSURL *SGOpenAIModelsURL(NSString *base) {
 }
 
 NSArray<NSString *> *SGOpenAITranslationsIn(id root, NSUInteger count) {
+    return SGOpenAIReplyIn(root, count, SGLyricsReplyJSON);
+}
+NSArray<NSString *> *SGOpenAIReplyIn(id root, NSUInteger count, SGLyricsReplyFormat format) {
     if (![root isKindOfClass:NSDictionary.class] || count > 2000) return nil;
     id choices = root[@"choices"];
     id first = [choices isKindOfClass:NSArray.class] && [choices count] ? choices[0] : nil;
     id message = [first isKindOfClass:NSDictionary.class] ? first[@"message"] : nil;
     id content = [message isKindOfClass:NSDictionary.class] ? message[@"content"] : nil;
+    if (format == SGLyricsReplyIndexed) {
+        if (![first isKindOfClass:NSDictionary.class] || ![message isKindOfClass:NSDictionary.class] ||
+            root[@"error"] || ![first[@"finish_reason"] isEqual:@"stop"] ||
+            (message[@"refusal"] && message[@"refusal"] != NSNull.null)) return nil;
+        id tools = message[@"tool_calls"], function = message[@"function_call"];
+        // Optional no-call values vary across compatible servers; only the list field admits [].
+        if (tools && tools != NSNull.null && (![tools isKindOfClass:NSArray.class] || [tools count])) return nil;
+        if (function && function != NSNull.null) return nil;
+        return SGLyricsIndexedRowsIn(content, count);
+    }
     return SGLyricsAIArrayIn(content, count);
 }
 
@@ -172,6 +185,10 @@ static NSString *unreadable(void) {
 
 void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                 void (^done)(NSArray<NSString *> *, NSString *)) {
+    SGLyricsTranslateWithOpenAIFormat(trackID, lines, languageTag, SGLyricsReplyIndexed, done);
+}
+void SGLyricsTranslateWithOpenAIFormat(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                                      SGLyricsReplyFormat format, void (^done)(NSArray<NSString *> *, NSString *)) {
     dispatch_async(dispatch_get_main_queue(), ^{
         NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase);
         NSString *key = storedKey(base), *model = SGOpenAIModel();
@@ -185,6 +202,7 @@ void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *li
         for (id line in lines) {
             if (![line isKindOfClass:SGKaraokeLine.class]) { done(nil, unreadable()); return; }
             NSString *text = SGKaraokeLineText(line) ?: @"";
+            if (text.length > 64000) { done(nil, SGL(@"settings.translation.openai.error.toolong", @"The song is too long to send to the translation service.")); return; }
             size += text.length;
             if (size > 128000) { done(nil, SGL(@"settings.translation.openai.error.toolong", @"The song is too long to send to the translation service.")); return; }
             BOOL blank = ![text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length;
@@ -193,13 +211,13 @@ void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *li
         }
         if (!hasText) { done([texts copy], nil); return; }
         if (!sg_done) sg_done = [NSMutableDictionary dictionary];
-        NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
+        NSString *memo = [NSString stringWithFormat:@"%@|%@|%ld", trackID, languageTag, (long)format];
         NSDictionary *cached = trackID ? sg_done[memo] : nil;
         if ([cached[@"texts"] isEqual:texts] && [cached[@"base"] isEqual:base] && [cached[@"model"] isEqual:model]) { done(cached[@"translations"], nil); return; }
-        NSString *prompt = SGLyricsTranslationPrompt(texts, languageTag);
+        NSString *prompt = SGLyricsTranslationPromptForFormat(texts, languageTag, format);
         if (!prompt) { done(nil, unreadable()); return; }
         NSString *requestProblem = nil;
-        NSURLRequest *request = SGOpenAIRequest(SGLyricsTranslationInstruction(), prompt, &requestProblem);
+        NSURLRequest *request = SGOpenAIRequest(SGLyricsTranslationInstructionForFormat(format), prompt, &requestProblem);
         if (!request || !request.HTTPBody || request.HTTPBody.length > 1024 * 1024) { done(nil, requestProblem ?: unreadable()); return; }
         SGLyricsTranslationSendRequest(request, YES, nil, ^(NSData *data, NSInteger status, NSError *error) {
             NSString *problem = nil;
@@ -209,15 +227,12 @@ void SGLyricsTranslateWithOpenAI(NSString *trackID, NSArray<SGKaraokeLine *> *li
             else if (status == 429 || (status >= 500 && status <= 599)) problem = SGL(@"settings.translation.openai.error.busy", @"The translation service is busy right now. Try again in a minute.");
             else if (status != 200) problem = [NSString stringWithFormat:SGL(@"settings.translation.openai.error.status", @"The service did not translate the song (%ld)."), (long)status];
             else {
-                id root = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-                translated = SGOpenAITranslationsIn(root, texts.count);
+                id root = data && data.length <= 512 * 1024 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+                translated = SGLyricsTranslationReply(SGOpenAIReplyIn(root, texts.count, format), texts, format);
                 if (!translated) problem = unreadable();
             }
             SGLog(@"openai translation: %lu lines, status %ld, %@", (unsigned long)texts.count, (long)status, translated ? @"translated" : @"failed");
             if (translated) {
-                NSMutableArray *clean = [translated mutableCopy];
-                for (NSUInteger i = 0; i < texts.count; i++) if (![texts[i] length]) clean[i] = @"";
-                translated = [clean copy];
                 if (trackID) {
                     if (sg_done.count >= 32) [sg_done removeAllObjects];
                     sg_done[memo] = @{@"texts": [texts copy], @"translations": translated, @"base": base, @"model": model};

@@ -2,6 +2,22 @@
 #import "LyricsTranslation.h"
 
 NSArray<NSString *> *SGLyricsAIArrayIn(id content, NSUInteger count);
+typedef NS_ENUM(NSInteger, SGLyricsReplyFormat) { SGLyricsReplyJSON, SGLyricsReplyIndexed };
+// Only new lyric jobs use indexed rows. Titles and other AI jobs explicitly retain JSON.
+NSString *SGLyricsTranslationInstructionForFormat(SGLyricsReplyFormat format);
+NSString *SGLyricsTranslationPromptForFormat(NSArray<NSString *> *texts, NSString *languageTag, SGLyricsReplyFormat format);
+// One source entry stays one row: CRLF is one space; other newline characters and tabs become spaces.
+NSString *SGLyricsTranslationRowText(NSString *text);
+NSArray<NSString *> *SGLyricsIndexedRowsIn(id content, NSUInteger count);
+NSArray<NSString *> *SGLyricsTranslationReply(NSArray<NSString *> *answer, NSArray<NSString *> *texts, SGLyricsReplyFormat format);
+NSArray<NSString *> *SGOpenAIReplyIn(id root, NSUInteger count, SGLyricsReplyFormat format);
+NSArray<NSString *> *SGClaudeReplyIn(id root, NSInteger status, NSError *error, NSUInteger count, SGLyricsReplyFormat format, NSString **problem);
+NSArray<NSString *> *SGGeminiReplyIn(id root, NSInteger status, NSError *error, NSUInteger count, SGLyricsReplyFormat format, NSString **problem);
+void SGLyricsAIAskWithFormat(SGLyricsAI service, NSString *system, NSString *prompt, NSUInteger count, SGLyricsReplyFormat format,
+                            void (^done)(NSArray<NSString *> *, NSString *));
+void SGLyricsTranslateWithOpenAIFormat(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *language, SGLyricsReplyFormat format, void (^done)(NSArray<NSString *> *, NSString *));
+void SGLyricsTranslateWithClaudeFormat(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *language, SGLyricsReplyFormat format, void (^done)(NSArray<NSString *> *, NSString *));
+void SGLyricsTranslateWithGeminiFormat(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *language, SGLyricsReplyFormat format, void (^done)(NSArray<NSString *> *, NSString *));
 NSString *SGLyricsTranslationInstruction(void);
 NSString *SGLyricsTranslationPrompt(NSArray<NSString *> *texts, NSString *languageTag);
 NSArray<NSString *> *SGLyricsAITexts(NSArray<SGKaraokeLine *> *lines);
@@ -20,6 +36,7 @@ SGOpenAIKeyMigration SGOpenAIKeyMigrationDecision(NSString *base, BOOL legacyExi
 NSURLRequest *SGOpenAIRequest(NSString *system, NSString *prompt, NSString **problem);
 NSURLRequest *SGClaudeRequest(NSString *system, NSString *prompt, NSString **problem);
 NSURLRequest *SGGeminiAIRequest(NSString *system, NSString *prompt, NSString **problem);
+NSURLRequest *SGGeminiAIRequestWithFormat(NSString *system, NSString *prompt, SGLyricsReplyFormat format, NSString **problem);
 NSArray<NSString *> *SGClaudeTranslationsIn(id root, NSInteger status, NSError *error, NSUInteger count, NSString **problem);
 void SGLyricsAIAsk(SGLyricsAI service, NSString *system, NSString *prompt, NSUInteger count,
                    void (^done)(NSArray<NSString *> *, NSString *));

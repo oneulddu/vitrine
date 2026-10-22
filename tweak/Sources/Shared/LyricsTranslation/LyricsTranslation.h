@@ -17,8 +17,9 @@ extern NSNotificationName const SGLyricsTranslationSavedNotification;
 #define SGKeyLyricsTranslateEverySong @"spotifyglass.lyrics.translateEverySong"
 SGModRow *SGTranslateEverySongRow(void);
 
-// One translation per line, in order, or nil and a message to show. Main queue. The same song in the
-// same language is asked once a launch.
+// One translation per line, in order, or nil and a message to show. New remote AI lyric requests use
+// immutable indexed rows; a malformed answer is rejected in full. Saved translations are unchanged.
+// Main queue. The same song in the same language is asked once a launch.
 void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                  void (^done)(NSArray<NSString *> *translations, NSString *error));
 
@@ -28,7 +29,7 @@ NSString *SGLyricsSongName(NSString *trackID);
 // The language a translation is asked in: the Lyrics page's, else the phone's own.
 NSString *SGLyricsGeminiLanguage(void);
 
-// Gemini's reply read: one translation per line when it has exactly `count`, else nil and in `problem`
+// Gemini's legacy JSON reply reader (titles/generic jobs): exactly `count`, else nil and in `problem`
 // why not (the key, the limit, a filter, a recitation stop, a line count that does not match).
 NSArray<NSString *> *SGGeminiTranslationsIn(id root, NSInteger status, NSError *error, NSUInteger count, NSString **problem);
 

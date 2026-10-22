@@ -1,7 +1,9 @@
 // Actual automatic chain + actual OpenAI provider memo/parser; only HTTP and credentials are fixtures.
 static id autoRetryReply(NSArray *values) {
-    NSData *data = [NSJSONSerialization dataWithJSONObject:values options:0 error:nil];
-    return chatReply([[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]);
+    NSMutableArray *rows = [NSMutableArray arrayWithCapacity:values.count];
+    for (NSUInteger i = 0; i < values.count; i++)
+        [rows addObject:[NSString stringWithFormat:@"L%04lu\t%@", (unsigned long)i + 1, values[i]]];
+    return chatReply([rows componentsJoinedByString:@"\n"]);
 }
 static NSArray *autoRetryProvider(NSString *track, NSArray *lines) {
     __block NSUInteger calls = 0; __block NSArray *result;
