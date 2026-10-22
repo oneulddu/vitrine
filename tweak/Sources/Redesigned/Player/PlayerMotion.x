@@ -1,7 +1,7 @@
 // Player redesign: Animated artwork, the track's Canvas or Apple Music's animated cover behind the player,
 // the way the Music app draws it. The clip runs edge to edge from the top, sharp to near its foot, where
-// it dissolves into its own last rows drawn on down to the bottom of the field, so it ends in its own
-// color rather than on the Fluid field. A blur comes in from the seam (from above the controls for a
+// it dissolves into the color of its last rows, drawn on down to the bottom of the field, so it ends in
+// its own color rather than on the Fluid field. A blur comes in from the seam (from above the controls for a
 // Canvas as tall as the screen) and lies under the controls; behind the lyrics the whole clip is blurred.
 // The player's square cover goes while a clip plays, so a track without one keeps its cover over Fluid
 // (PlayerField.x keeps the field Fluid for this choice). The player's ⋯ menu switches between Animated
@@ -34,7 +34,7 @@
 // Spotify's music video (Switch to video) draws in one of three of its units, each told by its video surface
 // as the video comes and goes: while one shows it, the clip goes and the cover comes back, as for Fluid.
 //
-// A square clip (Apple Music's square animated covers, no taller than kCanvasAspect) plays in the cover itself
+// A square clip (Apple Music's square animated covers, no taller than kSquareAspect) plays in the cover itself
 // instead, as the Music app plays one: a subview of the cover on screen, so it takes the cover's corners, its
 // paused shrink, its swipe and its hiding for the open's flown cover and the lyrics' thumbnail. The field stays
 // as it is under the player, and the cover is not hidden, so the rest of the player reads it as an ordinary
@@ -50,11 +50,14 @@
 
 // Where the clip starts dissolving into its foot, as a share of its height.
 static const CGFloat kFootFrom = 0.9;
-// The share of the poster's height, at its bottom, drawn on down as the foot (one pixel row at least).
-static const CGFloat kFootRows = 0.01;
-// A clip this much taller than wide is drawn to the window's full height and centered, cut at its sides: a Canvas
-// (9:16) or Apple Music's tall cover (3:4). A square one keeps its own height, from the top.
-static const CGFloat kCanvasAspect = 1.05;
+// The share of the poster's height, at its bottom, whose mean color the foot is.
+static const CGFloat kFootRows = 0.03;
+// A clip this much taller than wide is a Canvas (9:16), drawn to the window's full height and centered, cut at its
+// sides. Apple Music's tall cover (3:4) keeps its own height from the top, whole, as the Music app draws it
+// (issues #40 and #57: drawn to the window's height it lost two fifths of its width).
+static const CGFloat kCanvasAspect = 1.5;
+// A clip no taller than this is square and plays inside the cover; anything taller plays behind the player.
+static const CGFloat kSquareAspect = 1.05;
 // The blur starts at the seam, or this share of the screen down where that is higher, so it is under the
 // controls whatever the clip's shape; it is whole kBlurRamp points below its start.
 static const CGFloat kBlurByControls = 0.6, kBlurRamp = 96;
@@ -118,6 +121,27 @@ CGFloat SGRPlayerImageBrightEnd(CGImageRef image) {
     return brightEnd(luminances);
 }
 
+// The mean color of the poster's last rows (kFootRows): drawn 16 pixels wide and averaged. A row's own colors
+// stretched on down read as vertical streaks (issue #40).
+static UIColor *footColor(CGImageRef poster) {
+    enum { kWide = 16 };
+    size_t height = CGImageGetHeight(poster), rows = MAX(1, (size_t)(height * kFootRows));
+    CGImageRef strip = CGImageCreateWithImageInRect(poster, CGRectMake(0, height - rows, CGImageGetWidth(poster), rows));
+    uint8_t pixels[kWide * 4];
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(pixels, kWide, 1, 8, kWide * 4, space, (CGBitmapInfo)kCGImageAlphaNoneSkipLast);
+    CGColorSpaceRelease(space);
+    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+    CGContextDrawImage(context, CGRectMake(0, 0, kWide, 1), strip);
+    CGContextRelease(context);
+    CGImageRelease(strip);
+    CGFloat sum[3] = {0};
+    for (int i = 0; i < kWide; i++) {
+        for (int c = 0; c < 3; c++) sum[c] += pixels[i * 4 + c];
+    }
+    return [UIColor colorWithRed:sum[0] / (kWide * 255.0) green:sum[1] / (kWide * 255.0) blue:sum[2] / (kWide * 255.0) alpha:1];
+}
+
 @interface SGRPlayerMotionView : UIView <SGPlayerStateObserver>
 @property (nonatomic) CGFloat screenHeight;
 // Plays inside the cover, filling it: no foot, dim or blur. Set before -playFile:poster:.
@@ -136,8 +160,7 @@ CGFloat SGRPlayerImageBrightEnd(CGImageRef image) {
     CALayer *_still;    // the poster, with the video drawn over it
     AVPlayerLayer *_clip;
     CAGradientLayer *_clipMask, *_seamMask;
-    CALayer *_foot;
-    CGFloat _footRows;   // the share of the poster's height the foot draws, from its bottom
+    CALayer *_foot;   // the color of the poster's last rows, from the seam down
     CALayer *_dim;   // black over the clip and its foot, as dark as the clip is bright
     NSMutableData *_luminances;   // of the frames measured so far
     BOOL _lyricsUp;
@@ -159,7 +182,6 @@ static UIBlurEffect *blurEffect(void) {
     _picture = [[UIView alloc] initWithFrame:frame];
     [self addSubview:_picture];
     _foot = [CALayer layer];
-    _foot.contentsGravity = kCAGravityResize;
     [_picture.layer addSublayer:_foot];
     // An AVPlayerLayer draws nothing until its first frame is decoded, so the poster, the clip's first
     // frame and where the looper starts, is the contents of the layer the video draws in: there is a
@@ -244,9 +266,6 @@ static UIBlurEffect *blurEffect(void) {
     _clip.frame = _still.bounds;
     _clipMask.frame = _still.bounds;
     _foot.frame = CGRectMake(0, seam, width, MAX(0, total - seam));
-    // The foot takes the same middle the clip shows when it is drawn taller than its shape and cut at its sides.
-    CGFloat shown = _aspect > 0 ? MIN(1, width * _aspect / height) : 1;
-    _foot.contentsRect = CGRectMake((1 - shown) / 2, 1 - _footRows, shown, _footRows);
     _dim.frame = bounds;
     _seamMask.frame = bounds;
     _seamMask.locations = @[@(MIN(1, blurFrom / total)), @(MIN(1, (blurFrom + kBlurRamp) / total))];
@@ -255,11 +274,8 @@ static UIBlurEffect *blurEffect(void) {
 
 - (void)playFile:(NSURL *)file poster:(UIImage *)poster {
     _aspect = poster.size.height / poster.size.width;
-    // The poster's last rows, stretched from the seam to the bottom: the clip goes on down in its own color.
-    _footRows = MAX(kFootRows, 1 / MAX(1, poster.size.height * poster.scale));
-    _foot.contents = (__bridge id)poster.CGImage;
+    _foot.backgroundColor = footColor(poster.CGImage).CGColor;
     _still.contents = (__bridge id)poster.CGImage;
-    [self setNeedsLayout];
     _player = [AVQueuePlayer new];
     _player.muted = YES;
     _player.preventsDisplaySleepDuringVideoPlayback = NO;
@@ -632,7 +648,7 @@ static void show(NSString *track, NSURL *file) {
         // A walk begun while the poster was read (switched off, Spotify's video) has the say.
         if (!poster || poster.size.width <= 0 || begun != sg_begun) return;
         clear(YES);
-        if (poster.size.height / poster.size.width <= kCanvasAspect) {
+        if (poster.size.height / poster.size.width <= kSquareAspect) {
             showInCover(track, file, poster);
             return;
         }
