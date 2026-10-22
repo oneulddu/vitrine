@@ -9,4 +9,6 @@ BOOL SGLyricsPiPEnabled(void);       // launch-time flag; querying it creates no
 BOOL SGLyricsPiPActive(void);
 BOOL SGLyricsPiPStarting(void);
 void SGLyricsPiPToggle(UIView *from); // user tap only; also cancels a pending start
+// Discoverable even with the launch flag off; Toggle then explains activation rather than doing nothing.
+NSString *SGLyricsPiPMenuTitle(void);
 extern NSNotificationName const SGLyricsPiPDidChangeNotification;

@@ -83,6 +83,8 @@ void SGRAnimate(NSInteger motion, void (^animations)(void), void (^completion)(B
 NSString *SGKaraokePlayingTrack(void) { return nil; }
 void SGPlayerShowSpeedPitchPanel(UIView *from) { NSLog(@"[harness] speed and pitch panel"); }
 UIAction *SGRLyricsSearchAction(NSString *trackID) { return nil; }
+NSString *SGLyricsPiPMenuTitle(void) { return @"Open lyrics Picture in Picture"; }
+void SGLyricsPiPToggle(UIView *from) { NSLog(@"[harness] lyrics PiP"); }
 
 // Every action and submenu the menu makes, by its title, so the harness can pick or open one.
 static NSMutableDictionary<NSString *, UIMenuElement *> *sg_elements;

@@ -9,3 +9,7 @@
 
 // `extras` nil or empty clears the owner's. Main thread.
 void SGNowPlayingSetExtras(NSString *owner, NSDictionary *extras, NSString *title);
+
+// Coalesced after now-playing setters finish, on main, even for paused tracks. An extras resend does
+// not emit this notification: consumers may publish recovered artwork without a setter/resend loop.
+FOUNDATION_EXPORT NSNotificationName const SGNowPlayingInfoDidChangeNotification;

@@ -1,12 +1,15 @@
 // One CPU-rendered still frame per content change, on Spotify's own playback clock.
-// Never owns an audio session or player. Everything, including rendering, is serialized on main.
+// Never owns an audio session or player. Lifecycle/text frames are on main; backgrounds prepare off main.
 #import "LyricsPiP.h"
 #import "LyricsPiPFrame.h"
 #import "LyricsPiPText.h"
+#import "LyricsPiPBackground.h"
 #import "Core/SGCore.h"
+#import "Settings/SGPageStyle.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/Player/NowPlayingExtras.h"
 #import <AVKit/AVKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreMedia/CoreMedia.h>
@@ -34,7 +37,10 @@ static void *kPossibleContext = &kPossibleContext;
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic, weak) UIWindow *window;
 @property (nonatomic, copy) NSString *track;
+@property (nonatomic, copy) NSString *artworkTrack;
 @property (nonatomic, copy) NSArray<NSString *> *shown;
+@property (nonatomic, strong) SGLyricsPiPBackground *background;
+@property (nonatomic) NSUInteger shownBackgroundRevision;
 @property (nonatomic) BOOL active, starting, startRequested, stopping, playing, alertPending, restoreCredit, retryPending;
 @property (nonatomic) NSUInteger generation, attempt;
 @property (nonatomic) double duration, position, speed;
@@ -47,8 +53,29 @@ static SGLyricsPiPEngine *sg_engine;
 BOOL SGLyricsPiPEnabled(void) { return sg_enabled; }
 BOOL SGLyricsPiPActive(void) { return sg_engine.active; }
 BOOL SGLyricsPiPStarting(void) { return sg_engine.starting; }
+NSString *SGLyricsPiPMenuTitle(void) {
+    return SGLyricsPiPActive() || SGLyricsPiPStarting()
+        ? SGL(@"settings.lyrics.pip.menu.close", @"Close lyrics Picture in Picture")
+        : SGL(@"settings.lyrics.pip.menu.open", @"Open lyrics Picture in Picture");
+}
 void SGLyricsPiPToggle(UIView *from) {
-    if (!sg_enabled) return;
+    if (!sg_enabled) {
+        UIViewController *presenter = from.window.rootViewController ?: SGTopController();
+        while (presenter.presentedViewController) presenter = presenter.presentedViewController;
+        if (presenter.transitionCoordinator) {
+            [presenter.transitionCoordinator animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) {
+                dispatch_async(dispatch_get_main_queue(), ^{ SGLyricsPiPToggle(from); });
+            }];
+            return;
+        }
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.lyrics.pip.title", @"Picture in Picture lyrics")
+            message:SGL(@"settings.lyrics.pip.disabled", @"Enable Picture in Picture lyrics in Vitrine settings → Lyrics, then restart Spotify.")
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
+        SGPresentDark(alert);
+        [presenter presentViewController:alert animated:YES completion:nil];
+        return;
+    }
     if (!sg_engine) sg_engine = [SGLyricsPiPEngine new];
     [sg_engine toggleFrom:from];
 }
@@ -58,6 +85,9 @@ void SGLyricsPiPToggle(UIView *from) {
 - (instancetype)init {
     if (!(self = [super init])) return nil;
     SGAddPlayerStateObserver(self);
+    _background = [SGLyricsPiPBackground new];
+    __weak SGLyricsPiPEngine *weakSelf = self;
+    _background.changed = ^{ [weakSelf refresh]; };
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     // No queued notification observer: a posting Spotify thread must never wait for main.
     [center addObserver:self selector:@selector(lyricsChanged:) name:SGKaraokeLinesKeptNotification object:nil];
@@ -65,6 +95,8 @@ void SGLyricsPiPToggle(UIView *from) {
     [center addObserver:self selector:@selector(lyricsChanged:) name:SGLyricsDidReloadNotification object:nil];
     [center addObserver:self selector:@selector(foreground:) name:UIApplicationDidBecomeActiveNotification object:nil];
     [center addObserver:self selector:@selector(background:) name:UIApplicationDidEnterBackgroundNotification object:nil];
+    [center addObserver:self selector:@selector(backgroundChanged:) name:NSUserDefaultsDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(backgroundChanged:) name:SGNowPlayingInfoDidChangeNotification object:nil];
     return self;
 }
 
@@ -112,6 +144,8 @@ void SGLyricsPiPToggle(UIView *from) {
     [_host removeFromSuperview];
     _shown = nil;
     _track = nil;
+    _artworkTrack = nil;
+    [_background invalidate];
     // A cancelled start may still deliver callbacks. Give the next attempt its own controller
     // identity so an old didStart/didStop can never start or tear down the new session.
     [_pip removeObserver:self forKeyPath:@"pictureInPicturePossible" context:kPossibleContext];
@@ -219,7 +253,13 @@ void SGLyricsPiPToggle(UIView *from) {
     dispatch_async(dispatch_get_main_queue(), ^{
         [self showFailure];
         [self showRestoredCredit];
+        [self refresh];
     });
+}
+
+- (void)backgroundChanged:(NSNotification *)note {
+    // Settings and late artwork must update a paused frame without a polling render timer.
+    dispatch_async(dispatch_get_main_queue(), ^{ [self refresh]; });
 }
 
 - (void)background:(NSNotification *)note {
@@ -254,8 +294,10 @@ void SGLyricsPiPToggle(UIView *from) {
     }
     NSString *track = SGKaraokePlayingTrack();
     SPTPlayerState *state = [(id<SPTPlayer>)SGKaraokePlayer() state];
+    NSString *artworkTrack = SGURIString(state.track.URI);
     double position = MAX(0, SGKaraokePositionMs()) / 1000.0;
     BOOL changedTrack = ![_track isEqualToString:track] && (_track || track);
+    changedTrack |= ![_artworkTrack isEqualToString:artworkTrack] && (_artworkTrack || artworkTrack);
     double clock = CMTimeGetSeconds(CMTimebaseGetTime(_timebase));
     // Position-only reports include scrubs. A discontinuity retires the previous track/seek's image.
     BOOL jumped = !isfinite(clock) || fabs(clock - position) > 0.25;
@@ -265,6 +307,8 @@ void SGLyricsPiPToggle(UIView *from) {
     double speed = isfinite(state.playbackSpeed) && state.playbackSpeed > 0 ? state.playbackSpeed : 1;
     BOOL playbackChanged = changedTrack || jumped || playing != _playing || duration != _duration || speed != _speed;
     _track = [track copy];
+    _artworkTrack = [artworkTrack copy];
+    [_background refreshForTrack:artworkTrack];
     _position = position;
     _duration = duration;
     _playing = playing;
@@ -295,7 +339,8 @@ void SGLyricsPiPToggle(UIView *from) {
     // Always credit every provider, a stronger rule than SGLyricsCreditRequired: full Spicy
     // maker/uploader attribution even with Show source off. Linked again on return from PiP.
     NSArray<NSString *> *content = @[current ?: @"", next ?: @"", credit ?: @""];
-    if (![_shown isEqualToArray:content]) [self enqueue:content generation:_generation];
+    if (_background.image && (![_shown isEqualToArray:content] || _shownBackgroundRevision != _background.revision))
+        [self enqueue:content generation:_generation];
     [self startIfPossible];
 }
 
@@ -335,7 +380,7 @@ void SGLyricsPiPToggle(UIView *from) {
         kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
     CGColorSpaceRelease(space);
     if (context) {
-        SGLyricsPiPDrawFrame(context, content);
+        SGLyricsPiPDrawFrameWithBackground(context, content, _background.image.CGImage);
         CGContextRelease(context);
     }
     CVPixelBufferUnlockBaseAddress(pixel, 0);
@@ -354,6 +399,7 @@ void SGLyricsPiPToggle(UIView *from) {
     if (generation == _generation && (_active || _starting)) {
         [layer enqueueSampleBuffer:sample];
         _shown = content;
+        _shownBackgroundRevision = _background.revision;
     }
     CFRelease(sample);
 }

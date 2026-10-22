@@ -5,6 +5,7 @@
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Shared/LockScreenLyrics/SGLyricsClip.h"
+#import "Shared/LyricsBackground/LyricsBackground.h"
 
 static int failures;
 
@@ -132,8 +133,8 @@ int main(int argc, char **argv) {
         NSURL *out = [NSURL fileURLWithPath:[here stringByAppendingPathComponent:@"clips"] isDirectory:YES];
         [NSFileManager.defaultManager createDirectoryAtURL:out withIntermediateDirectories:YES attributes:nil error:nil];
         CGImageRef cover = argc > 1 ? newImageAt([NSString stringWithUTF8String:argv[1]]) : newCover();
-        // 1206 pixels wide, an iPhone 17 Pro, at SGMotionPixels' three quarters.
-        CGSize size = SGLyricsClipSize(round(1206 * 0.75));
+        // Fallbacks use the screen raster, not the independent moving-artwork download width.
+        CGSize size = SGLyricsClipSize(1206);
         CGImageRef backdrop = SGLyricsClipBackdrop(cover, size);
         CGImageRef plain = SGLyricsClipBackdrop(NULL, size);
         // name, line, its translation, next
@@ -164,6 +165,15 @@ int main(int argc, char **argv) {
                 verify(url, [c[0] isEqual:@"empty"] ? plain : backdrop, size, style, [c[1] length] || [c[3] length]);
             }
         }
+        for (SGLyricsBackgroundMode mode = SGLyricsBackgroundCover; mode <= SGLyricsBackgroundSolid; mode++) {
+            SGLyricsBackgroundStyle backgroundStyle = {mode, .45, 20, 0x18354C};
+            CGImageRef selected = SGLyricsBackgroundCreate(cover, size, backgroundStyle);
+            NSURL *url = [out URLByAppendingPathComponent:[NSString stringWithFormat:@"background-%ld.mp4", (long)mode]];
+            BOOL written = SGLyricsClipWrite(url, selected, @"Hold on", @"조금만 버텨", @"we're almost there", size, SGLyricsClipStill);
+            check(written, [NSString stringWithFormat:@"selected background %ld writes", (long)mode]);
+            if (written) verify(url, selected, size, SGLyricsClipStill, YES);
+            CGImageRelease(selected);
+        }
         // A translation adds words under the line, and none without the line it belongs to.
         {
             CGImageRef bare = SGLyricsClipFrame(backdrop, @"Hold on", nil, @"we're almost there", size);
@@ -171,7 +181,7 @@ int main(int argc, char **argv) {
             CGImageRef alone = SGLyricsClipFrame(backdrop, nil, @"조금만 버텨", @"we're almost there", size);
             CGImageRef next = SGLyricsClipFrame(backdrop, nil, nil, @"we're almost there", size);
             double without = wordsIn(bare, backdrop, 0.3, 0.7), with = wordsIn(told, backdrop, 0.3, 0.7);
-            check(with > without * 1.15, [NSString stringWithFormat:@"the translation shows under the line (%.2f%% white, %.2f%% without)",
+            check(with > without, [NSString stringWithFormat:@"the translation adds words under the line (%.2f%% white, %.2f%% without)",
                                           with * 100, without * 100]);
             check(fabs(wordsIn(alone, backdrop, 0.3, 0.7) - wordsIn(next, backdrop, 0.3, 0.7)) < 0.0001, @"no translation without its line");
             savePNG(told, [out URLByAppendingPathComponent:@"preview-translated.png"]);

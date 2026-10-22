@@ -1,0 +1,147 @@
+#import "tests.h"
+#import <objc/message.h>
+// Logos transforms the real production hooks, including their existing player-sheet gate.
+#import "build/SpeedPitchMenu.m"
+
+void SGRequireClasses(NSArray *classes) {}
+void SGForEachView(UIView *view, void (^block)(UIView *)) {
+    block(view);
+    for (UIView *child in view.subviews) SGForEachView(child, block);
+}
+void SGPlayFeedback(SGFeedback feedback) {}
+void SGPrepareFeedback(SGFeedback feedback) {}
+double SGPlayerSpeed(void) { return 1; }
+BOOL SGPlayerSpeedAllowed(void) { return YES; }
+void SGSetPlayerSpeed(double speed) {}
+float SGPlayerPitch(void) { return 0; }
+void SGSetPlayerPitch(float pitch) {}
+BOOL SGPlayerPitchAvailable(void) { return YES; }
+BOOL SGPlayerPitchFollowsSpeed(void) { return YES; }
+void SGSetPlayerPitchFollowsSpeed(BOOL follows) {}
+BOOL SGPlayerMenuOffersAnimatedArtwork(void) { return YES; }
+BOOL SGPlayerMenuAnimatedArtwork(void) { return NO; }
+void SGPlayerMenuSetAnimatedArtwork(BOOL on) {}
+BOOL SGPlayerMenuReplaced(UIViewController *menu) { return NO; }
+BOOL SGDSPSwitch(NSString *key) { return NO; }
+void SGDSPSetSwitch(NSString *key, BOOL on) {}
+double SGDSPNumber(NSString *key) { return 0; }
+void SGDSPSetNumber(NSString *key, double value) {}
+
+static UIViewController *sheet(BOOL header) {
+    UIViewController *menu = [UIViewController new];
+    UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, 390, 600)];
+    if (header) table.tableHeaderView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 390, 80)];
+    menu.view = table;
+    return menu;
+}
+static UIButton *pipButton(SGSpeedPitchView *block) {
+    for (UIView *view in block.subviews)
+        if ([view isKindOfClass:UIButton.class] && [((UIButton *)view).currentTitle containsString:@"Picture in Picture"]) return (id)view;
+    return nil;
+}
+static void tap(UIButton *button, SGSpeedPitchView *block) {
+    // Selector-based UIControl dispatch goes through UIApplication, absent in this headless host.
+    // Deliver its registered touch-up actions directly; UIAction-based dispatch needs no application.
+    NSArray<NSString *> *actions = [button actionsForTarget:block forControlEvent:UIControlEventTouchUpInside];
+    SGTestAssert(actions.count == 1, @"native PiP button has one touch-up action");
+    for (NSString *action in actions) ((void (*)(id, SEL))objc_msgSend)(block, NSSelectorFromString(action));
+}
+void SGTestNativeMenu(void) {
+    UIViewController *nonplayer = sheet(NO);
+    install(nonplayer);
+    SGTestAssert(((UITableView *)nonplayer.view).tableHeaderView == nil, @"album/track context without existing player marker has no row");
+    for (NSNumber *footer in @[@NO, @YES]) {
+        SGPlayerMenuMarkPlayers();
+        UIViewController *menu = sheet(footer.boolValue);
+        install(menu);
+        UITableView *table = (id)menu.view;
+        SGSpeedPitchView *block = (id)(footer.boolValue ? table.tableFooterView : table.tableHeaderView);
+        install(menu);
+        SGTestAssert(block == (footer.boolValue ? table.tableFooterView : table.tableHeaderView), @"native repeat layout does not duplicate block");
+        [block layoutIfNeeded];
+        UIButton *pip = pipButton(block);
+        SGTestAssert(pip != nil && !pip.hidden && CGRectGetMaxY(pip.frame) <= block.bounds.size.height,
+            @"native disabled PiP row visible outside collapsed speed panel");
+        NSUInteger alerts = SGTestDisabledAlerts();
+        tap(pip, block);
+        SGTestAssert(SGTestDisabledAlerts() == alerts + 1, @"native row invokes shared disabled guidance");
+        [block toggle];
+        [block layoutSubviews];
+        SGTestAssert(CGRectGetMaxY(pip.frame) <= block.bounds.size.height && !pip.hidden,
+            @"native PiP stays outside expanded speed controls and artwork switch");
+        [block toggle];
+        SGTestPiPState(YES, NO, YES);
+        [block refresh];
+        SGTestAssert([pip.currentTitle isEqual:@"Close lyrics Picture in Picture"], @"native pending start label closes");
+        tap(pip, block);
+        SGTestAssert(!SGLyricsPiPStarting(), @"native PiP row cancels pending start");
+        SGTestPiPState(NO, NO, NO);
+        UIViewController *second = sheet(NO);
+        install(second);
+        SGTestAssert(((UITableView *)second.view).tableHeaderView == nil, @"consumed player marker cannot leak into nested menu");
+    }
+    SGSpeedPitchPanel *panel = [SGSpeedPitchPanel new];
+    SGSpeedPitchView *block = (id)panel.view;
+    SGTestAssert(pipButton(block).hidden, @"panel-only speed popup never shows PiP entry");
+
+    SGPlayerMenuMarkPlayers();
+    UIViewController *occupied = sheet(YES);
+    UITableView *table = (id)occupied.view;
+    UIView *header = table.tableHeaderView;
+    UIView *footer = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 390, 73)];
+    footer.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    UIButton *nativeButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    nativeButton.frame = CGRectMake(8, 8, 120, 40);
+    [footer addSubview:nativeButton];
+    NSArray *nativeSubviews = footer.subviews;
+    table.tableFooterView = footer;
+    install(occupied);
+    UIView *composed = table.tableFooterView;
+    block = objc_getAssociatedObject(occupied, &kBlockKey);
+    [block layoutIfNeeded];
+    SGTestAssert(block && pipButton(block) && !pipButton(block).hidden, @"both occupied slots still expose native PiP entry");
+    SGTestAssert(table.tableHeaderView == header && footer.superview == composed
+        && [footer.subviews isEqual:nativeSubviews] && nativeButton.superview == footer,
+        @"composition preserves exact native header/footer and footer subview ownership");
+    SGTestAssert(footer.bounds.size.height == 73 && footer.autoresizingMask == (UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight)
+        && composed.bounds.size.height == 73 + block.bounds.size.height && block.frame.origin.y == 73,
+        @"composition adds block height without stretching native footer");
+    NSUInteger alerts = SGTestDisabledAlerts();
+    tap(pipButton(block), block);
+    SGTestAssert(SGTestDisabledAlerts() == alerts + 1, @"composed PiP entry invokes shared disabled guidance");
+    CGFloat closed = composed.bounds.size.height;
+    [block toggle];
+    [composed layoutIfNeeded];
+    SGTestAssert(table.tableFooterView == composed && composed.bounds.size.height > closed
+        && composed.bounds.size.height == footer.bounds.size.height + block.bounds.size.height
+        && footer.bounds.size.height == 73 && CGRectEqualToRect(nativeButton.frame, CGRectMake(8, 8, 120, 40)),
+        @"opening speed resizes composed footer without changing native content");
+    [block toggle];
+    [composed layoutIfNeeded];
+    SGTestAssert(composed.bounds.size.height == closed && footer.bounds.size.height == 73,
+        @"closing speed restores composed footer height");
+    for (NSUInteger i = 0; i < 10; i++) install(occupied);
+    SGTestAssert(table.tableFooterView == composed && composed.subviews.count == 2
+        && [footer.subviews isEqual:nativeSubviews] && block.superview == composed,
+        @"repeated installation never nests wrappers or duplicates native/footer controls");
+    footer.frame = CGRectMake(0, 0, 390, 101);
+    table.frame = CGRectMake(0, 0, 430, 600);
+    install(occupied);
+    SGTestAssert(footer.bounds.size.height == 101 && footer.bounds.size.width == 430
+        && composed.bounds.size.height == 101 + block.bounds.size.height && block.frame.origin.y == 101,
+        @"subsequent native footer height and table width updates propagate to composition");
+    UIView *replacement = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 430, 61)];
+    table.tableFooterView = replacement;
+    install(occupied);
+    UIView *recomposed = table.tableFooterView;
+    install(occupied);
+    SGTestAssert(recomposed != composed && table.tableFooterView == recomposed && replacement.superview == recomposed
+        && block.superview == recomposed && recomposed.subviews.count == 2
+        && nativeButton.superview == footer && table.tableHeaderView == header,
+        @"native footer replacement preserves new content and moves exactly one existing PiP block");
+    CGRect currentBlockFrame = block.frame;
+    [composed setNeedsLayout];
+    [composed layoutIfNeeded];
+    SGTestAssert(CGRectEqualToRect(block.frame, currentBlockFrame) && block.superview == recomposed,
+        @"stale wrapper layout cannot reposition block owned by replacement footer");
+}

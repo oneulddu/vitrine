@@ -135,23 +135,35 @@ Shared:
                   fullwidth brackets and Korean ones too). A line can carry a cultural note (SGKaraokeLine.note). The
                   sync and state features are checked on the Mac by harness/lyrics-sources/state-build.sh
     LyricsPiP/    opt-in Picture in Picture lyrics over other apps (spotifyglass.lyrics.pip, off, restart
-                  required). Each look owns its entry: the redesign's Lyrics options menu, or a small
-                  native full-screen lyrics corner button. Only a tap starts it; a retained shared engine
+                  required). Both player more menus offer open/close, or activation guidance when disabled.
+                  The redesign's Lyrics options menu and native full-screen lyrics corner button remain.
+                  Its settings row opens a page with the enable switch and independent background controls.
+                  Only a tap starts it; a retained shared engine
                   draws the current and next lines and the full provider credit into a bounded CPU pixel
                   buffer pool, following Spotify's clock minus the lyrics delay. Frame drawing and text
-                  fitting live in LyricsPiPFrame.m (Foundation, CoreGraphics, CoreText, ImageIO only): each
+                  fitting live in LyricsPiPFrame.m, with the shared CPU background renderer: each
                   line takes the largest whole-point size that fits its box (current 40 down to 24, next 26
                   down to 16, credit 17 down to 12), and a line too long even at its minimum is drawn at that
                   minimum, as many lines as fit, the last ending in an ellipsis (hard breaks included).
                   Untimed lyrics never
                   claim a current line. Which text shows is decided in LyricsPiPText.m, checked on the Mac
                   by harness/lyrics-pip/. Its 4 Hz timer runs only while PiP is active and playing, and only
-                  changed content is drawn; a frame the layer or pool turns away is retried every 0.1 s
+                  changed content or background is drawn. LyricsPiPBackground.m loads the current URI's
+                  artwork through SGShownTrackArtwork and prepares backgrounds off main, rejecting stale
+                  replies; late covers and paused settings changes refresh the frame. A frame the layer or pool turns away is retried every 0.1 s
                   while starting or active. Closing never pauses Spotify. PiP uses Spotify's existing
                   audio session unchanged; unsupported/failed starts show an alert. Returning to Spotify
                   offers linked provider credits. The Live Activity ends while PiP is active and resumes
                   when enabled and playing, once Spotify is in front (ActivityKit cannot start behind
-                  another app). No automatic start, translation, word highlighting or styling options.
+                  another app). No automatic start, translation or word highlighting.
+    LyricsBackground/ shared CPU-only cover, monochrome, blur, album-color gradient and solid renderer,
+                  with independent spotifyglass.lockscreen.background and spotifyglass.lyrics.pip.background
+                  preference prefixes. Defaults: clear cover, 45% darkening, blur 20, solid RGB 18181B.
+                  Darkening ranges from 0 to 85%, blur from 0 to 40 at a reference width of 640; the color
+                  picker is shown only for Solid. Sharp modes render at the target size, not through a small
+                  blur buffer. Cache identity includes source, normalized style and raster size; no cover
+                  uses a dark fallback. Rendering uses CoreGraphics and Accelerate, not background GPU work.
+                  Checked by harness/lyrics-background/ and the PiP and lock-screen harnesses.
     LyricsSources/ the sources lyrics come from, asked in order or all at once and merged into the
                   best answer (LyricsSources.m, the list to drag in LyricsSourcesPage.m): Apple Music's TTML from
                   BiniLyrics.m (now lrc.red: first the TTML filed under Spotify's ISRC for the track, from
@@ -265,9 +277,9 @@ Shared:
                   Mac against the same harness
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
-                  next one dimmed over the blurred cover, SGLyricsClip.m) written only when the lock screen asks for it,
-                  Still (one frame) or Animated (15 fps). The backdrop is blurred small and drawn large, on the CPU as the
-                  lock screen asks in the background; previews are drawn on a queue apart from the clips, and while the
+                  next one dimmed over the selected background, SGLyricsClip.m) written only when the lock screen asks for it,
+                  Still (one frame) or Animated (15 fps). Fallbacks use the screen's native width and the shared
+                  CPU renderer; previews are drawn on a queue apart from the clips, and while the
                   lock screen is asking, the next line's preview and clip are drawn ahead and a ready preview is handed
                   over at once. iOS still shows the plain cover for about half a second at each change of artwork. Picking it or another artwork applies at once.
                   Moving artwork with lyrics (the choice's fifth value, 4) draws each line over the track's moving
@@ -302,9 +314,12 @@ Shared:
                   (SGMotionCatalog.m: searched without the album's edition, the edition of the same name first, and
                   left alone for 10 minutes after a 403 or 429; an album's answer kept on disk for a week, so a relaunch skips the search), kept as local files (SGMotionStore.m, a download that
                   fails on the way tried once more), on iOS 26 the lock screen's full-screen
-                  artwork (LockScreenMotion.x). With Every song, a song with neither gets its cover over copies of it
-                  blurred and swaying, a seamless 8 s 3:4 loop drawn on the CPU only when the lock screen asks for it
-                  and kept per picture (SGFluidClip.m). Rendered on the Mac against harness/fluid-clip/. A track whose
+                  artwork (LockScreenMotion.x). With Every song, a song with neither gets the selected background
+                  as a gentle 4 s 3:4 loop, using the shared lyric encoder without text (SGFluidClip.m).
+                  Cache keys include cover content, background settings and output size. Pending presentations
+                  retry on native now-playing updates without downloading again; ownership changes reject late
+                  posters. Late covers replace coverless lyric caches, including while paused.
+                  Rendered on the Mac against harness/fluid-clip/. A track whose
                   metadata names no Canvas has it asked of Spotify's Canvas service (MotionSources.m); each track is
                   looked up again when its Canvas comes in a later state, and the next track's clip is fetched ahead
                   (SGMotionFollower.m). The lock screen takes a clip under a key the system lists, cut to that key's
@@ -965,7 +980,8 @@ beside the CPU; CPU only), Prepare after updates, Ignore heat warnings and Ignor
 page under either look, opens the lock screen widget's page, titled Lock screen: Widget (the line in place of the artist,
 its Lyrics line, Original or Translation, and Spotify's like and dislike buttons' flag, locked off while the star is on) then
 Artwork (Off, Moving artwork, Lyrics, Every song or Moving artwork with lyrics, the lyrics' style, Still or Animated,
-Translations, Switch with the star, the sources and Low Data Mode; below iOS 26
+fallback Background with darkening, blur strength or solid color, Translations, Switch with the star,
+the sources and Low Data Mode; below iOS 26
 one row saying why not). Spotify's podcast, audiobook and artwork flags stay in All flags. Player: Gestures, Blocked artists (with the count on the row) and Sleep timer's Fade-out duration, which work with either look, including below iOS 17;
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and
 Spotify's own player screen (artwork background, glass header buttons, Disable Canvas and the sheet,

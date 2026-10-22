@@ -7,6 +7,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Shared/AnimatedArtwork/SGFluidClip.h"
 #import "Shared/LockScreenLyrics/SGLyricsClip.h"
+#import "Shared/LyricsBackground/LyricsBackground.h"
 
 static int failures;
 
@@ -92,12 +93,13 @@ int main(int argc, char **argv) {
         NSURL *out = [NSURL fileURLWithPath:[here stringByAppendingPathComponent:@"clips"] isDirectory:YES];
         [NSFileManager.defaultManager createDirectoryAtURL:out withIntermediateDirectories:YES attributes:nil error:nil];
         CGImageRef cover = argc > 1 ? newImageAt([NSString stringWithUTF8String:argv[1]]) : newCover();
-        // 1206 pixels wide, an iPhone 17 Pro, at SGMotionPixels' three quarters, as LockScreenMotion.x asks.
-        CGSize size = SGLyricsClipSize(round(1206 * 0.75));
+        CGSize size = SGLyricsClipSize(1206);
+        CGImageRef backdrop = SGLyricsBackgroundCreate(cover, size,
+            (SGLyricsBackgroundStyle){SGLyricsBackgroundCover, .45, 20, 0x18181B});
         NSURL *url = [out URLByAppendingPathComponent:@"fluid.mp4"];
         printf("fluid.mp4\n");
         CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
-        BOOL written = SGFluidClipWrite(url, cover, size);
+        BOOL written = SGFluidClipWrite(url, backdrop, size);
         check(written, [NSString stringWithFormat:@"written in %.0f ms", (CFAbsoluteTimeGetCurrent() - start) * 1000]);
         check(!SGFluidClipWrite([out URLByAppendingPathComponent:@"none.mp4"], NULL, size), @"no cover, no clip");
         if (!written) return 1;
@@ -110,7 +112,7 @@ int main(int argc, char **argv) {
         check(track != nil, @"has a video track");
         if (!track) return 1;
         double seconds = CMTimeGetSeconds(asset.duration);
-        check(fabs(seconds - 8) < 0.05, [NSString stringWithFormat:@"lasts %.3f s (want 8)", seconds]);
+        check(fabs(seconds - 4) < 0.05, [NSString stringWithFormat:@"lasts %.3f s (want 4)", seconds]);
         check(CGSizeEqualToSize(track.naturalSize, size) && fabs(size.height / size.width - 4.0 / 3) < 0.02,
               [NSString stringWithFormat:@"is %.0fx%.0f, 3:4", track.naturalSize.width, track.naturalSize.height]);
         FourCharCode codec = CMFormatDescriptionGetMediaSubType((__bridge CMFormatDescriptionRef)track.formatDescriptions.firstObject);
@@ -125,25 +127,25 @@ int main(int argc, char **argv) {
             if (CMSampleBufferGetNumSamples(sample)) samples++;
             CFRelease(sample);
         }
-        check(samples == 192, [NSString stringWithFormat:@"holds %d frames (want 192, 8 s at 24)", samples]);
+        check(samples == 60, [NSString stringWithFormat:@"holds %d frames (want 60, 4 s at 15)", samples]);
 
         AVAssetImageGenerator *generator = [AVAssetImageGenerator assetImageGeneratorWithAsset:asset];
         generator.requestedTimeToleranceBefore = generator.requestedTimeToleranceAfter = kCMTimeZero;
         CGImageRef first = [generator copyCGImageAtTime:kCMTimeZero actualTime:NULL error:nil];
-        CGImageRef second = [generator copyCGImageAtTime:CMTimeMake(1, 24) actualTime:NULL error:nil];
-        CGImageRef middle = [generator copyCGImageAtTime:CMTimeMake(96, 24) actualTime:NULL error:nil];
-        CGImageRef last = [generator copyCGImageAtTime:CMTimeMake(191, 24) actualTime:NULL error:nil];
+        CGImageRef second = [generator copyCGImageAtTime:CMTimeMake(1, 15) actualTime:NULL error:nil];
+        CGImageRef middle = [generator copyCGImageAtTime:CMTimeMake(30, 15) actualTime:NULL error:nil];
+        CGImageRef last = [generator copyCGImageAtTime:CMTimeMake(59, 15) actualTime:NULL error:nil];
         check(first && second && middle && last, @"frames read back");
         if (first && second && middle && last) {
             savePNG(first, [url URLByAppendingPathExtension:@"png"]);
             savePNG(middle, [[out URLByAppendingPathComponent:@"fluid-middle"] URLByAppendingPathExtension:@"png"]);
             // Measured against the preview, which is the loop's start drawn exactly, over the field in the top
             // quarter, clear of the cover: H.264 alone puts a decoded frame a little over 2 of 255 off it.
-            CGImageRef preview = SGFluidClipFrame(cover, size);
-            double toFirst = difference(preview, first, 0, 0.25, 0, 1), toSecond = difference(preview, second, 0, 0.25, 0, 1);
-            double toLast = difference(preview, last, 0, 0.25, 0, 1), toMiddle = difference(preview, middle, 0, 0.25, 0, 1);
-            check(toMiddle > 4, [NSString stringWithFormat:@"the field moves over the loop (%.2f of 255 from the start to the middle)", toMiddle]);
-            check(toFirst < 4 && toFirst < toMiddle / 2, [NSString stringWithFormat:@"the preview is the clip's first frame (%.2f of 255 apart)", toFirst]);
+            CGImageRef preview = SGFluidClipFrame(backdrop, size);
+            double toFirst = difference(preview, first, 0.2, 0.8, 0, 1), toSecond = difference(preview, second, 0.2, 0.8, 0, 1);
+            double toLast = difference(preview, last, 0.2, 0.8, 0, 1), toMiddle = difference(preview, middle, 0.2, 0.8, 0, 1);
+            check(toMiddle > toFirst + 0.5, [NSString stringWithFormat:@"the selected background breathes (%.2f of 255)", toMiddle]);
+            check(toFirst < 4, [NSString stringWithFormat:@"the preview is the clip's first frame (%.2f of 255 apart)", toFirst]);
             // The last frame is one step before the start as the second is one step after it: no seam.
             check(toLast < toSecond + 0.5, [NSString stringWithFormat:@"no seam where it loops (the last frame %.2f from the start, the second %.2f)", toLast, toSecond]);
             // The cover stays where it is, sharp: its middle is the stand-in's light disc, and it does not move.
@@ -152,7 +154,8 @@ int main(int argc, char **argv) {
             if (argc <= 1) {
                 int rgb[3];
                 colourAt(first, 0.5, 0.45, rgb);
-                check(rgb[0] > 200 && rgb[1] > 190 && rgb[2] > 140, [NSString stringWithFormat:@"the cover's middle is drawn sharp (%d, %d, %d)", rgb[0], rgb[1], rgb[2]]);
+                check(abs(rgb[0] - 133) < 5 && abs(rgb[1] - 126) < 5 && abs(rgb[2] - 98) < 5,
+                      [NSString stringWithFormat:@"the selected cover has 45%% darkening (%d, %d, %d)", rgb[0], rgb[1], rgb[2]]);
             }
             CGImageRelease(preview);
         }
@@ -161,6 +164,7 @@ int main(int argc, char **argv) {
         CGImageRelease(middle);
         CGImageRelease(last);
         CGImageRelease(cover);
+        CGImageRelease(backdrop);
         printf("%s, clips in %s\n", failures ? "FAILED" : "all passed", out.path.UTF8String);
         return failures ? 1 : 0;
     }

@@ -12,7 +12,8 @@ typedef NS_ENUM(NSInteger, SGLyricsClipStyle) {
 
 // The 3:4 size of a clip `pixels` wide, both sides a multiple of 16 for the encoder.
 CGSize SGLyricsClipSize(CGFloat pixels);
-// The cover blurred and darkened to fill `size`, made once per track; a dark field for a NULL cover.
+// The default sharp cover at 45% darkening, through the shared CPU renderer; a dark field for NULL.
+// Callers with a preference snapshot use SGLyricsBackgroundCreate directly.
 CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) CF_RETURNS_RETAINED;
 // The clip's first frame, for the lock screen's preview image. `line`, `translation` or `next` may be nil; a
 // translation shows smaller under the line, and only with it.

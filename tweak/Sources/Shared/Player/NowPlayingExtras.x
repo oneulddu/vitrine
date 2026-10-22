@@ -9,6 +9,21 @@ static NSMutableDictionary<NSString *, NSDictionary *> *sg_extras;   // by owner
 static NSMutableDictionary<NSString *, NSString *> *sg_titles;       // by owner
 static double sg_elapsed, sg_rate;
 static CFAbsoluteTime sg_clockAt;
+NSNotificationName const SGNowPlayingInfoDidChangeNotification = @"spotifyglass.nowPlayingInfoDidChange";
+static BOOL sg_notificationPending;   // under sg_lock
+static _Thread_local BOOL sg_resendingExtras;
+
+static void infoChanged(void) {
+    if (sg_resendingExtras) return;
+    @synchronized (sg_lock) {
+        if (sg_notificationPending) return;
+        sg_notificationPending = YES;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @synchronized (sg_lock) { sg_notificationPending = NO; }
+        [NSNotificationCenter.defaultCenter postNotificationName:SGNowPlayingInfoDidChangeNotification object:nil];
+    });
+}
 
 // `stale` are an owner's old keys: the info the getter gives back can still carry them, and the hook puts
 // back only the extras that are current.
@@ -20,7 +35,10 @@ static void resend(NSArray *stale) {
     @synchronized (sg_lock) {
         if (sg_clockAt > 0) info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(sg_elapsed + sg_rate * (CFAbsoluteTimeGetCurrent() - sg_clockAt));
     }
+    BOOL resending = sg_resendingExtras;
+    sg_resendingExtras = YES;
     center.nowPlayingInfo = info;
+    sg_resendingExtras = resending;
 }
 
 void SGNowPlayingSetExtras(NSString *owner, NSDictionary *extras, NSString *title) {
@@ -64,11 +82,13 @@ void SGNowPlayingSetExtras(NSString *owner, NSDictionary *extras, NSString *titl
     }
     if (!added) {
         %orig;
+        infoChanged();
         return;
     }
     NSMutableDictionary *withExtras = [info mutableCopy];
     [withExtras addEntriesFromDictionary:added];
     %orig(withExtras);
+    infoChanged();
 }
 %end
 

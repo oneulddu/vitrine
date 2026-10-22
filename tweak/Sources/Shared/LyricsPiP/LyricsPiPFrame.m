@@ -1,6 +1,7 @@
 // Core Text draws into a bottom-left-origin bitmap. Credits are fitted in full, including the
 // maker/uploader text Spicy Lyrics supplies; they are never governed by the Show source switch.
 #import "LyricsPiPFrame.h"
+#import "Shared/LyricsBackground/LyricsBackground.h"
 #if SG_DRIVER
 #import "Diagnostics/Diagnostics.h" // declares SGLyricsPiPFramePNG for the phone driver's pip.frame
 #endif
@@ -137,9 +138,20 @@ SGLyricsPiPTextFit SGLyricsPiPFitText(NSString *text, CGSize box, CGFloat size, 
 }
 
 void SGLyricsPiPDrawFrame(CGContextRef context, NSArray<NSString *> *content) {
+    CGImageRef background = SGLyricsBackgroundCreate(NULL, CGSizeMake(SGLyricsPiPFrameWidth, SGLyricsPiPFrameHeight),
+        SGLyricsBackgroundRead(@"spotifyglass.lyrics.pip.background"));
+    SGLyricsPiPDrawFrameWithBackground(context, content, background);
+    if (background) CGImageRelease(background);
+}
+
+void SGLyricsPiPDrawFrameWithBackground(CGContextRef context, NSArray<NSString *> *content, CGImageRef background) {
     if (!context) return;
-    CGContextSetRGBFillColor(context, 0.04, 0.04, 0.05, 1);
-    CGContextFillRect(context, CGRectMake(0, 0, SGLyricsPiPFrameWidth, SGLyricsPiPFrameHeight));
+    CGRect rect = CGRectMake(0, 0, SGLyricsPiPFrameWidth, SGLyricsPiPFrameHeight);
+    if (background) CGContextDrawImage(context, rect, background);
+    else { // allocation failure only; normal no-cover styling comes from the shared renderer
+        CGContextSetRGBFillColor(context, 24 / 255.0, 24 / 255.0, 27 / 255.0, 1);
+        CGContextFillRect(context, rect);
+    }
     NSArray<NSString *> *three = sg_frame_content(content);
     for (NSUInteger i = 0; i < 3; i++) {
         sg_layout(three[i], kBoxes[i].rect, kBoxes[i].size, kBoxes[i].minSize, kBoxes[i].white, context);

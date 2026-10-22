@@ -18,3 +18,27 @@ It runs once with lock screen lyrics off and once with it on (`LSL=1`).
     THEOS=$HOME/theos ./build.sh
 
 `SRC=<checkout>/tweak/Sources` builds another checkout instead, to see a bug before its fix.
+
+The harness also compiles `LockScreenMotion.x`, `LyricsArtwork.x` and `SGMotionFollower.m` from that
+source tree. It requires macOS 26 and the corresponding Catalyst SDK; no simulator or network is used.
+`artwork.m` supplies controlled source/poster completions and tiny renderer stand-ins, captures the real
+animated-artwork object's request blocks, and redirects caches to a unique temporary directory.
+
+The added checks exercise:
+
+- delayed posters after lyrics take ownership, after switching off, and after a same-title track change
+- plain → lyrics → plain generation changes
+- late animated-artwork capabilities without source re-downloads, polling or resend recursion
+- pending presentation cancellation when lyrics take ownership or artwork is switched off
+- coalesced main-thread info notifications without blocking background setters or notifying extras resends
+- Every song waiting for a paused track's late cover and retaining it for lazy requests
+- a paused lyric line acquiring its late cover under distinct preview and disk identities, including
+  the prefetched next line, without reusing the coverless cached output
+
+Use `OUT=$(mktemp -d /tmp/vitrine-now-playing.XXXXXX) THEOS=$HOME/theos ./build.sh` to leave existing
+build artifacts untouched. The checks still run with artist-row lyrics both off and on.
+
+The shared background renderer is real; render/encode stand-ins still isolate lifecycle behavior.
+An isolated volatile preference domain exercises paused background changes, slider-burst coalescing,
+stale request cancellation, current/prefetched disk identity changes, full-raster cover requests,
+and safe no-cover → real-cover recovery without source downloads.

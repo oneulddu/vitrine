@@ -5,8 +5,14 @@
 #import <CoreText/CoreText.h>
 #import "Shared/LyricsPiP/LyricsPiPText.h"
 #import "Shared/LyricsPiP/LyricsPiPFrame.h"
+#import "tests.h"
 
 static int failures, checks;
+
+void SGTestAssert(BOOL ok, NSString *what) {
+    checks++;
+    if (!ok) { failures++; printf("FAIL %s\n", what.UTF8String); }
+}
 
 static SGKaraokeLine *line(NSString *text, NSInteger start, NSInteger end, SGKaraokeTiming timing) {
     SGKaraokeWord *word = [SGKaraokeWord new];
@@ -77,6 +83,11 @@ static void writeFrame(NSString *directory, NSString *name, NSArray<NSString *> 
 
 int main(void) {
     @autoreleasepool {
+        SGTestBackground();
+        SGTestSettings();
+        SGTestLifecycle();
+        SGTestNativeMenu();
+        SGTestRedesignMenu();
         // nil: the track has no lyrics yet.
         check(@"nil lines", nil, 0, SGLyricsPiPTextNoLyrics, @"", @"");
 

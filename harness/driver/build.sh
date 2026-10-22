@@ -13,8 +13,9 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.4-simulator -fobjc-ar
     -I"$SRC" -I"$SRC/Diagnostics" -isysroot "$SDK" -Wno-deprecated-declarations \
     "$(dirname "$0")/main.m" "$(dirname "$0")/stubs.m" "$(dirname "$0")/../scene.m" "$OUT"/gen/*.m "$SRC"/Diagnostics/Driver.m \
     "$SRC"/Shared/LyricsPiP/LyricsPiPFrame.m \
+    "$SRC"/Shared/LyricsBackground/LyricsBackground.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGViewTree.m \
-    -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreText -framework ImageIO -framework Foundation \
+    -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreText -framework ImageIO -framework Foundation -framework Accelerate \
     -o "$OUT/DriverHarness.app/DriverHarness"
 
 cat > "$OUT/DriverHarness.app/Info.plist" <<'PLIST'

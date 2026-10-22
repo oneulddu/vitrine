@@ -9,6 +9,8 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/NowPlayingExtras.h"
 #import "Headers/SPTPlayer.h"
+#import "Shared/LockScreenLyrics/LockScreenLyrics.h"
+#import "artwork.h"
 
 #pragma mark - the system, underneath
 
@@ -32,13 +34,19 @@ __attribute__((constructor)) static void underneath(void) {
 
 #pragma mark - stubs
 
-BOOL SGFlag(NSString *key, BOOL fallback) { return getenv("LSL") != NULL; }
+BOOL SGFlag(NSString *key, BOOL fallback) {
+    return [key isEqual:SGKeyLockScreenLyrics] ? getenv("LSL") != NULL : fallback;
+}
 
 @implementation SPTPlayerTrack {
 @public
     NSString *_title;
+    NSString *_uri;
 }
 - (NSString *)trackTitle { return _title; }
+- (id)URI { return _uri; }
+- (NSDictionary *)metadata { return @{}; }
+- (NSString *)artistName { return @"Artist"; }
 @end
 
 @implementation SPTPlayerState {
@@ -46,6 +54,8 @@ BOOL SGFlag(NSString *key, BOOL fallback) { return getenv("LSL") != NULL; }
     SPTPlayerTrack *_track;
 }
 - (SPTPlayerTrack *)track { return _track; }
+- (BOOL)isPaused { return YES; }
+- (NSArray *)future { return nil; }
 @end
 
 @interface SGStubPlayer : NSObject
@@ -58,7 +68,7 @@ static SGStubPlayer *sg_player;
 static NSArray<SGKaraokeLine *> *sg_lines;
 
 id SGKaraokePlayer(void) { return sg_player; }
-NSString *SGKaraokePlayingTrack(void) { return @"track"; }
+NSString *SGKaraokePlayingTrack(void) { return sg_player.state.track.URI; }
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) { return sg_lines; }
 void SGKaraokeRequestLyrics(NSString *trackID) {}
 NSInteger SGKaraokeDelayMs(void) { return [NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsDelay]; }
@@ -70,7 +80,7 @@ void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<S
 void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void)) {}
 NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
 
-static SGKaraokeLine *lineOf(NSString *text, NSInteger start, NSInteger end) {
+SGKaraokeLine *lineOf(NSString *text, NSInteger start, NSInteger end) {
     SGKaraokeWord *word = [SGKaraokeWord new];
     word.text = text;
     word.start = start;
@@ -87,14 +97,27 @@ static SGKaraokeLine *lineOf(NSString *text, NSInteger start, NSInteger end) {
 
 static int failures;
 
-static void check(BOOL ok, NSString *what) {
+void check(BOOL ok, NSString *what) {
     printf("%s %s\n", ok ? "ok  " : "FAIL", what.UTF8String);
     if (!ok) failures++;
 }
 
-static void runFor(NSTimeInterval seconds) {
+void runFor(NSTimeInterval seconds) {
     [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:seconds]];
 }
+
+SPTPlayerState *harnessState(NSString *uri, NSString *title) {
+    SPTPlayerTrack *track = [SPTPlayerTrack new];
+    track->_uri = uri;
+    track->_title = title;
+    SPTPlayerState *state = [SPTPlayerState new];
+    state->_track = track;
+    sg_player.state = state;
+    return state;
+}
+void harnessLines(NSArray *lines) { sg_lines = lines; }
+NSDictionary *harnessSystem(void) { return sg_system; }
+NSUInteger harnessSets(void) { return sg_sets; }
 
 static NSDictionary *spotifyInfo(NSString *title, double elapsed, double rate) {
     return @{MPMediaItemPropertyTitle: title, MPMediaItemPropertyArtist: @"Artist",
@@ -168,6 +191,7 @@ int main(void) {
     @autoreleasepool {
         SPTPlayerTrack *track = [SPTPlayerTrack new];
         track->_title = @"Song";
+        track->_uri = @"track";
         SPTPlayerState *state = [SPTPlayerState new];
         state->_track = track;
         sg_player = [SGStubPlayer new];
@@ -177,6 +201,7 @@ int main(void) {
         printf("lock screen lyrics %s\n", lyrics ? "on" : "off");
         if (lyrics) progressBar();
         sameTitle();
+        artworkChecks();
         printf(failures ? "%d failed\n" : "all passed\n", failures);
         return failures ? 1 : 0;
     }

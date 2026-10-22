@@ -1,5 +1,5 @@
 // Moving artwork for a track: its Canvas, or Apple Music's animated album cover where the album has one,
-// and for the lock screen, failing both, the cover over a moving blur of itself (SGFluidClip.h).
+// and for the lock screen, failing both, the selected fallback background (SGFluidClip.h).
 // SGMotionCatalog.m looks covers and logos up in Apple Music's catalog. SGMotionStore.m keeps every video
 // as a local file, the form the system's lock screen takes.
 #import <UIKit/UIKit.h>

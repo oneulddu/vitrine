@@ -16,8 +16,17 @@
 // `animated` offers the redesign's Animated artwork switch: it is flipped, then the block opened and
 // closed, and where the switch's row sits is reported each time.
 #import <UIKit/UIKit.h>
+#import "Shared/LyricsPiP/LyricsPiP.h"
 
 #pragma mark - what SpeedPitchMenu.x calls
+
+NSNotificationName const SGLyricsPiPDidChangeNotification = @"harness.pip";
+static BOOL sg_pipActive;
+NSString *SGLyricsPiPMenuTitle(void) { return sg_pipActive ? @"Close lyrics Picture in Picture" : @"Open lyrics Picture in Picture"; }
+void SGLyricsPiPToggle(UIView *from) {
+    sg_pipActive = !sg_pipActive;
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsPiPDidChangeNotification object:nil];
+}
 
 static double sg_speed = 1;
 static float sg_pitch;

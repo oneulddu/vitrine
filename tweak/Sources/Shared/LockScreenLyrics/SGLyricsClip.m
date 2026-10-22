@@ -2,9 +2,9 @@
 // so an animated clip costs a scaled image draw and an encode a frame.
 #import <Accelerate/Accelerate.h>
 #import <AVFoundation/AVFoundation.h>
-#import <CoreImage/CoreImage.h>
 #import <CoreText/CoreText.h>
 #import "SGLyricsClip.h"
+#import "Shared/LyricsBackground/LyricsBackground.h"
 
 // The lock screen fills the screen with a 3:4 clip, so a phone's taller screen cuts its sides off: the
 // words keep to this middle share of the width. The center of the words sits this far down, clear of
@@ -49,41 +49,8 @@ static CGContextRef newContext(CGSize size, void *data, size_t bytesPerRow) {
     return context;
 }
 
-// The width the cover is blurred at, before it is drawn at the clip's size.
-static const CGFloat kBackdropWidth = 128;
-
 CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) {
-    CGContextRef context = newContext(size, NULL, 0);
-    CGRect bounds = {CGPointZero, size};
-    CGContextSetRGBFillColor(context, 0.11, 0.11, 0.12, 1);
-    CGContextFillRect(context, bounds);
-    if (cover) {
-        static CIContext *renderer;
-        static dispatch_once_t once;
-        // On the CPU: the lock screen asks while Spotify is in the background, where GPU work gets it killed.
-        dispatch_once(&once, ^{ renderer = [CIContext contextWithOptions:@{kCIContextUseSoftwareRenderer: @YES}]; });
-        // Blurred small and drawn large: a blur this wide looks the same either way, and on the CPU at full size it
-        // took 12 to 20 s for a song's first line.
-        CGSize small = CGSizeMake(kBackdropWidth, round(kBackdropWidth * size.height / size.width));
-        // Filled the way the lock screen fills the screen, the square cover's sides overflowing.
-        CIImage *image = [CIImage imageWithCGImage:cover];
-        CGFloat scale = MAX(small.width / image.extent.size.width, small.height / image.extent.size.height);
-        image = [image imageByApplyingTransform:CGAffineTransformMakeScale(scale, scale)];
-        image = [image imageByApplyingTransform:CGAffineTransformMakeTranslation((small.width - image.extent.size.width) / 2,
-                                                                                 (small.height - image.extent.size.height) / 2)];
-        // Clamped first, so the blur does not pull the dark in from past the edges.
-        image = [[image imageByClampingToExtent] imageByApplyingGaussianBlurWithSigma:small.width * 0.05];
-        CGImageRef blurred = [renderer createCGImage:image fromRect:(CGRect){CGPointZero, small}];
-        CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
-        if (blurred) CGContextDrawImage(context, bounds, blurred);
-        CGImageRelease(blurred);
-        // Darkened, so white words read over a light cover.
-        CGContextSetRGBFillColor(context, 0, 0, 0, 0.45);
-        CGContextFillRect(context, bounds);
-    }
-    CGImageRef backdrop = CGBitmapContextCreateImage(context);
-    CGContextRelease(context);
-    return backdrop;
+    return SGLyricsBackgroundCreate(cover, size, (SGLyricsBackgroundStyle){SGLyricsBackgroundCover, .45, 20, 0x18181B});
 }
 
 static BOOL isHangul(unichar c) {
@@ -231,6 +198,13 @@ BOOL SGLyricsClipWrite(NSURL *file, CGImageRef backdrop, NSString *line, NSStrin
         AVVideoCodecKey: AVVideoCodecTypeH264,
         AVVideoWidthKey: @(size.width),
         AVVideoHeightKey: @(size.height),
+        // The CPU backdrop is sRGB. Explicit input/output color tagging prevents the encoder from
+        // treating its samples as already Rec.709, which brightened decoded covers versus previews.
+        AVVideoColorPropertiesKey: @{
+            AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+            AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+            AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+        },
         AVVideoCompressionPropertiesKey: @{AVVideoAverageBitRateKey: @(2000000), AVVideoMaxKeyFrameIntervalKey: @(kFPS)},
     }];
     AVAssetWriterInputPixelBufferAdaptor *adaptor = [AVAssetWriterInputPixelBufferAdaptor assetWriterInputPixelBufferAdaptorWithAssetWriterInput:input
@@ -256,6 +230,9 @@ BOOL SGLyricsClipWrite(NSURL *file, CGImageRef backdrop, NSString *line, NSStrin
         drawFrame(context, backdrop, words, size, (double)i / frames);
         CGContextRelease(context);
         CVPixelBufferUnlockBaseAddress(buffer, 0);
+        CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
+        CVBufferSetAttachment(buffer, kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_sRGB, kCVAttachmentMode_ShouldPropagate);
+        CVBufferSetAttachment(buffer, kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
         ok = [adaptor appendPixelBuffer:buffer withPresentationTime:CMTimeMake(i, kFPS)];
         CVPixelBufferRelease(buffer);
     }

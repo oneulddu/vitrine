@@ -36,6 +36,7 @@
 #import "Shared/AudioEffects/AudioEffects.h"
 #import "Shared/Haptics/Haptics.h"
 #import "SpeedPitch.h"
+#import "Shared/LyricsPiP/LyricsPiP.h"
 
 // A menu this soon after the more button's tap is the player's.
 static const NSTimeInterval kMenuAfterTap = 3;
@@ -93,15 +94,61 @@ static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
 
 #pragma mark - the block
 
+// When Spotify owns both slots, keep its footer intact above our block. Do not add controls to
+// Spotify's own view or stretch it when the speed panel opens. Its next layout may change its height.
+@interface SGSpeedPitchContainer : UIView
+@property (nonatomic, strong) UIView *nativeView, *block;
+@property (nonatomic, weak) UITableView *table;
+@property (nonatomic) BOOL inFooter;
+- (void)layoutContent;
+@end
+
+@implementation SGSpeedPitchContainer
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame])) return nil;
+    self.autoresizesSubviews = NO;
+    return self;
+}
+- (void)layoutContent {
+    CGFloat width = self.bounds.size.width;
+    CGRect nativeFrame = self.nativeView.frame;
+    nativeFrame.origin = CGPointZero;
+    nativeFrame.size.width = width;
+    self.nativeView.frame = nativeFrame;
+    [self.nativeView layoutIfNeeded];
+    CGFloat nativeHeight = self.nativeView.bounds.size.height;
+    CGRect blockFrame = self.block.frame;
+    blockFrame.origin = CGPointMake(0, nativeHeight);
+    blockFrame.size.width = width;
+    self.block.frame = blockFrame;
+    CGFloat height = nativeHeight + blockFrame.size.height;
+    if (self.bounds.size.height == height) return;
+    CGRect frame = self.frame;
+    frame.size.height = height;
+    self.frame = frame;
+    // UITableView reads a header/footer's height when it is assigned, including native-only resizes.
+    if (self.inFooter && self.table.tableFooterView == self) self.table.tableFooterView = self;
+    else if (!self.inFooter && self.table.tableHeaderView == self) self.table.tableHeaderView = self;
+    [self.table invalidateIntrinsicContentSize];
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self layoutContent];
+}
+@end
+
 @interface SGSpeedPitchView : UIView
 @property (nonatomic, weak) UITableView *table;
 @property (nonatomic) BOOL inFooter;
+@property (nonatomic, weak) SGSpeedPitchContainer *container;
+- (void)placeInTable;
 // The sliders alone, always open, for the redesign's panel under the ⋯ (SGPlayerShowSpeedPitchPanel).
 @property (nonatomic) BOOL panelOnly;
 @end
 
 @implementation SGSpeedPitchView {
     UIControl *_row;
+    UIButton *_pipRow;
     UIImageView *_icon, *_chevron;
     UILabel *_title, *_summary;
     UIView *_panel;
@@ -261,18 +308,33 @@ static void placeTick(UISlider *slider) {
         [self addSubview:_animatedRow];
     }
 
+    UIButtonConfiguration *pipConfiguration = [UIButtonConfiguration plainButtonConfiguration];
+    pipConfiguration.contentInsets = NSDirectionalEdgeInsetsMake(0, kSideMargin, 0, kSideMargin);
+    pipConfiguration.imagePadding = kSideMargin;
+    _pipRow = [UIButton buttonWithConfiguration:pipConfiguration primaryAction:nil];
+    _pipRow.titleLabel.font = font(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
+    _pipRow.titleLabel.numberOfLines = 2;
+    _pipRow.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+    [_pipRow setTitleColor:primary() forState:UIControlStateNormal];
+    [_pipRow setImage:paintedSymbol(@"pip", 20, UIImageSymbolWeightRegular, secondary()) forState:UIControlStateNormal];
+    [_pipRow addTarget:self action:@selector(togglePiP) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:_pipRow];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refreshPiP)
+        name:SGLyricsPiPDidChangeNotification object:nil];
     [self refresh];
     return self;
 }
 
 + (CGFloat)heightOpen:(BOOL)open {
-    return kRowHeight + (open ? 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom : 0)
+    return 2 * kRowHeight + (open ? 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom : 0)
          + (SGPlayerMenuOffersAnimatedArtwork() ? kRowHeight : 0);
 }
 
 // Set after init, which drew the values for the sheet's closed block: drawn again open.
 - (void)setPanelOnly:(BOOL)panelOnly {
     _panelOnly = panelOnly;
+    _pipRow.hidden = panelOnly;
+    _pipRow.accessibilityElementsHidden = panelOnly;
     [self showValues];
     [self setNeedsLayout];
 }
@@ -312,6 +374,8 @@ static void placeTick(UISlider *slider) {
     toggle = [_animated sizeThatFits:CGSizeZero];
     _animated.frame = CGRectMake(width - side - toggle.width, (kRowHeight - toggle.height) / 2, toggle.width, toggle.height);
     _animatedName.frame = CGRectMake(titleX, 0, MAX(0, CGRectGetMinX(_animated.frame) - kGrid - titleX), kRowHeight);
+    _pipRow.frame = CGRectMake(0, (sg_open ? CGRectGetMaxY(_panel.frame) : kRowHeight)
+        + (_animatedRow ? kRowHeight : 0), width, kRowHeight);
 }
 
 #pragma mark state
@@ -346,6 +410,7 @@ static NSString *pitchText(float pitch) {
 
 // What the player and the pitch say now, onto the controls (not while a finger is on one).
 - (void)refresh {
+    [self refreshPiP];
     BOOL speedAllowed = SGPlayerSpeedAllowed(), pitchAvailable = SGPlayerPitchAvailable();
     if (!_speed.tracking) _shownSpeed = snappedSpeed(SGPlayerSpeed());
     if (!_pitch.tracking) _shownPitch = SGPlayerPitch();
@@ -406,6 +471,13 @@ static NSString *pitchText(float pitch) {
 
 #pragma mark actions
 
+- (void)refreshPiP {
+    [_pipRow setTitle:SGLyricsPiPMenuTitle() forState:UIControlStateNormal];
+    _pipRow.accessibilityLabel = SGLyricsPiPMenuTitle();
+}
+
+- (void)togglePiP { SGLyricsPiPToggle(self); }
+
 - (void)rowHighlight {
     _row.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
 }
@@ -414,17 +486,50 @@ static NSString *pitchText(float pitch) {
     [UIView animateWithDuration:0.2 animations:^{ _row.backgroundColor = UIColor.clearColor; }];
 }
 
+- (void)placeInTable {
+    UITableView *table = self.table;
+    UIView *placed = self.inFooter ? table.tableFooterView : table.tableHeaderView;
+    CGSize before = placed.bounds.size;
+    SGSpeedPitchContainer *container = self.container;
+    if (placed != self && (!container || placed != container)) {
+        container.block = nil; // an obsolete wrapper must not lay out the block in its new owner
+        container = nil;
+        if (placed && placed.bounds.size.height > 0) {
+            container = [[SGSpeedPitchContainer alloc] initWithFrame:placed.frame];
+            container.nativeView = placed;
+            container.block = self;
+            container.table = table;
+            container.inFooter = self.inFooter;
+            [container addSubview:self];
+        }
+        self.container = container;
+    }
+    CGFloat width = table.bounds.size.width;
+    self.frame = CGRectMake(0, container ? self.frame.origin.y : 0, width, [SGSpeedPitchView heightOpen:sg_open]);
+    UIView *host = container ?: self;
+    if (container) {
+        CGRect frame = container.frame;
+        frame.size.width = width;
+        container.frame = frame;
+        [container layoutContent];
+    }
+    if (placed != host || !CGSizeEqualToSize(before, host.bounds.size)) {
+        if (self.inFooter) table.tableFooterView = host;
+        else table.tableHeaderView = host;
+        [table invalidateIntrinsicContentSize];
+    }
+    // Assign the wrapper first: UITableView may remove its former native slot from its superview.
+    if (container && container.nativeView.superview != container)
+        [container insertSubview:container.nativeView atIndex:0];
+}
+
 - (void)toggle {
     sg_open = !sg_open;
     if (sg_open) [self refresh];
     UITableView *table = self.table;
-    CGRect frame = self.frame;
-    frame.size.height = [SGSpeedPitchView heightOpen:sg_open];
     animateOpen(^{
         [table beginUpdates];
-        self.frame = frame;
-        if (self.inFooter) table.tableFooterView = self;
-        else table.tableHeaderView = self;
+        [self placeInTable];
         [self showValues];
         [self layoutIfNeeded];
         [table endUpdates];
@@ -729,35 +834,17 @@ static void install(UIViewController *menu) {
                   table.tableFooterView ? NSStringFromClass(table.tableFooterView.class) : @"none", structure);
         }
         BOOL headerFree = !table.tableHeaderView || table.tableHeaderView.bounds.size.height < 1;
-        BOOL footerFree = !table.tableFooterView || table.tableFooterView.bounds.size.height < 1;
-        if (!headerFree && !footerFree) {
-            SGLog(@"speed and pitch: the table's header and footer are both Spotify's, speed and pitch left out");
-            objc_setAssociatedObject(menu, &kDecidedKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            return;
-        }
         block = [[SGSpeedPitchView alloc] initWithFrame:CGRectMake(0, 0, width, [SGSpeedPitchView heightOpen:sg_open])];
         block.table = table;
         block.inFooter = !headerFree;
         objc_setAssociatedObject(menu, &kBlockKey, block, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        if (block.inFooter) table.tableFooterView = block;
-        else table.tableHeaderView = block;
-        [table invalidateIntrinsicContentSize];
+        [block placeInTable];
         return;
     }
     noteRows(menu, table);
-    // Spotify replaced the view, or the table changed width: put it back at the table's width.
-    UIView *placed = block.inFooter ? table.tableFooterView : table.tableHeaderView;
-    if (placed != block) {
-        static int logged;
-        if (logged++ < 3) SGLog(@"speed and pitch: the table's %@ became %@, speed and pitch put back", block.inFooter ? @"footer" : @"header",
-                                placed ? NSStringFromClass(placed.class) : @"nothing");
-    }
-    if (placed != block || fabs(block.frame.size.width - width) > 0.5) {
-        block.frame = CGRectMake(0, block.frame.origin.y, width, [SGSpeedPitchView heightOpen:sg_open]);
-        if (block.inFooter) table.tableFooterView = block;
-        else table.tableHeaderView = block;
-        [table invalidateIntrinsicContentSize];
-    }
+    // A replaced native slot is composed too; repeat layouts keep exactly one block/container.
+    block.table = table;
+    [block placeInTable];
 }
 
 // The player's header row: its more button found by its identifier and watched, under either look.

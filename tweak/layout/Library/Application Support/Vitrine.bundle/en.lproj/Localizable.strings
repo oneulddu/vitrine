@@ -365,6 +365,20 @@
 "settings.automix.style.title" = "Style";
 "settings.automix.title" = "AutoMix";
 
+"settings.background.blur.subtitle" = "Only applies to the blurred album cover.";
+"settings.background.blur.title" = "Blur strength";
+"settings.background.color.subtitle" = "Only applies to the solid background.";
+"settings.background.color.title" = "Background color";
+"settings.background.darkness.subtitle" = "Keeps lyrics readable without hiding album details.";
+"settings.background.darkness.title" = "Darken background";
+"settings.background.mode.blur" = "Blurred album cover";
+"settings.background.mode.cover" = "Clear album cover";
+"settings.background.mode.gradient" = "Album-color gradient";
+"settings.background.mode.monochrome" = "Monochrome album cover";
+"settings.background.mode.solid" = "Solid color";
+"settings.background.mode.subtitle" = "Used when moving artwork is unavailable.";
+"settings.background.mode.title" = "Background";
+
 "settings.environment.app_changes.message" = "Some of what Vitrine does needs changes to the app that only its IPA build makes. Without them, %@. Build the IPA with Vitrine instead of injecting its .deb.";
 "settings.environment.app_changes.title" = "Installed without Vitrine's app changes";
 "settings.environment.chroma.action.keep" = "Keep";
@@ -864,7 +878,7 @@
 "settings.lockscreen.artwork.choice.lyrics" = "Lyrics";
 "settings.lockscreen.artwork.choice.moving" = "Moving artwork";
 "settings.lockscreen.artwork.choice.moving_with_lyrics" = "Moving artwork with lyrics";
-"settings.lockscreen.artwork.note.every_song" = "Uses moving artwork when available; otherwise puts the cover over a moving blur of it.";
+"settings.lockscreen.artwork.note.every_song" = "Uses moving artwork when available; otherwise uses your selected background.";
 "settings.lockscreen.artwork.note.lyrics" = "Lyrics, a line at a time.";
 "settings.lockscreen.artwork.note.moving" = "The Canvas or Apple Music's animated cover.";
 "settings.lockscreen.artwork.note.off" = "Leaves Spotify's artwork unchanged.";
@@ -875,7 +889,7 @@
 "settings.lockscreen.low_data.title" = "Download in Low Data Mode";
 "settings.lockscreen.lyrics_style.choice.animated" = "Animated";
 "settings.lockscreen.lyrics_style.choice.still" = "Still";
-"settings.lockscreen.lyrics_style.subtitle" = "Still draws each line once; Animated breathes the cover behind it. With moving artwork, for songs that have none";
+"settings.lockscreen.lyrics_style.subtitle" = "Still draws each line once; Animated gently moves the selected background. Applies when moving artwork is unavailable.";
 "settings.lockscreen.lyrics_style.title" = "Lyrics style";
 "settings.lockscreen.needs_ios26.alert.message" = "This iPhone has iOS %@. The lock screen takes moving artwork from apps from iOS 26 on, so the Canvas and Apple Music's animated covers can show there once the iPhone is updated.";
 "settings.lockscreen.needs_ios26.alert.title" = "Needs iOS 26";
@@ -965,9 +979,13 @@
 "settings.lyrics.offline.title" = "Keep lyrics for offline listening";
 "settings.lyrics.pip.close" = "Close Picture in Picture";
 "settings.lyrics.pip.credit_links" = "View source credits";
+"settings.lyrics.pip.disabled" = "Enable Picture in Picture lyrics in Vitrine settings → Lyrics, then restart Spotify.";
 "settings.lyrics.pip.failed" = "Picture in Picture could not start. This device or Spotify's current playback session may not support it. Keep Spotify in front and try again.";
 "settings.lyrics.pip.instrumental" = "Instrumental";
+"settings.lyrics.pip.menu.close" = "Close lyrics Picture in Picture";
+"settings.lyrics.pip.menu.open" = "Open lyrics Picture in Picture";
 "settings.lyrics.pip.no_lyrics" = "No lyrics available";
+"settings.lyrics.pip.page.subtitle" = "Open lyrics over other apps and customize their background.";
 "settings.lyrics.pip.show" = "Show in Picture in Picture";
 "settings.lyrics.pip.subtitle" = "Show lyrics over other apps from the lyrics screen. Restart Spotify after changing this.";
 "settings.lyrics.pip.title" = "Picture in Picture lyrics";

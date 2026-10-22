@@ -14,6 +14,10 @@ write. The first frame of each clip is saved next to it as a PNG.
 
 The clips land in `build/clips/`.
 
+Fallback clips now use the full screen raster and the shared sharp-cover default (45% darkening).
+Five additional still clips exercise each selected background through the real encoder and existing
+decoded-frame layout checks. `OUT=<unique temporary directory>` isolates build/output artifacts.
+
 `motion` renders Moving artwork with lyrics (`SGLyricsClipWriteOverMotion`, `motion.m`) over two stand-ins
 it makes, a bright busy flag (720x1280, 30 fps, a Canvas's shape) and a dark field (904x1206, 24 fps, an
 Apple Music cover's), and over any videos given: a line with the one before and after, the same with its

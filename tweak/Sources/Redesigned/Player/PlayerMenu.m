@@ -17,6 +17,7 @@
 #import "Player.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Redesigned/Lyrics/LyricsTools.h"
+#import "Shared/LyricsPiP/LyricsPiP.h"
 
 static __weak UIView *sg_moreButton;   // the ⋯ the sliders' panel comes from
 
@@ -58,6 +59,8 @@ static NSString *sheetKind(void);
 
 static NSArray<UIMenuElement *> *playerItems(void) {
     NSMutableArray<UIMenuElement *> *items = [NSMutableArray arrayWithObject:soundMenu()];
+    [items addObject:[UIAction actionWithTitle:SGLyricsPiPMenuTitle() image:symbol(@"pip") identifier:nil
+        handler:^(UIAction *action) { SGLyricsPiPToggle(sg_moreButton); }]];
     // Not for a podcast: LRCLIB has songs.
     UIAction *search = [sheetKind() isEqualToString:@"episode"] ? nil : SGRLyricsSearchAction(SGKaraokePlayingTrack());
     if (search) [items addObject:search];
