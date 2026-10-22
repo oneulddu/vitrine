@@ -766,7 +766,7 @@ static void startWalk(NSString *trackID, SGLyricsQuery *query) {
     SGLyricsWalk *walk = [SGLyricsWalk new];
     walk.order = order;
     NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
-    walk.typeFirst = mode != 0;
+    walk.typeFirst = mode != 0 || SGFlag(SGKeyLyricsPreferWordTiming, NO);
     walk.concurrent = mode == 2;
     walk.started = [NSMutableSet set];
     walk.inFlight = [NSMutableSet set];
@@ -978,4 +978,19 @@ void SGLyricsKeepChosen(NSString *trackID, SGLyricsResult *result) {
     if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
     sg_kept[trackID] = result;
     @synchronized (sg_missing) { [sg_missing removeObject:trackID]; }
+}
+
+id SGLyricsKeptAnswer(NSString *trackID) {
+    setUp();
+    return sg_kept[trackID];
+}
+
+void SGLyricsRestoreKept(NSString *trackID, id kept) {
+    setUp();
+    if (kept) sg_kept[trackID] = kept;
+    else [sg_kept removeObjectForKey:trackID];
+    @synchronized (sg_missing) {
+        if (kept == NSNull.null) [sg_missing addObject:trackID];
+        else [sg_missing removeObject:trackID];
+    }
 }

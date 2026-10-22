@@ -37,7 +37,8 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
         NSUInteger count = SGImportedLRCFiles().count;
         return count ? @(count).stringValue : SGL(@"settings.lyrics.imported_lrc.value.none", @"None");
     };
-    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources, SGLyricsTypesRow(), imported, offline, deleteSaved,
+    SGModRow *words = SGOptionRow(SGL(@"settings.lyrics.prefer_words.title", @"Prefer word-by-word timing"), SGL(@"settings.lyrics.prefer_words.subtitle", @"In In order mode, keep looking past line-timed lyrics"), SGKeyLyricsPreferWordTiming);
+    NSMutableArray<SGModRow *> *rows = [NSMutableArray arrayWithObjects:sources, SGLyricsTypesRow(), words, imported, offline, deleteSaved,
         SGSwitchRow(SGL(@"settings.lyrics.all_tracks.title", @"Lyrics for every track"), SGL(@"settings.lyrics.all_tracks.subtitle", @"Even where Spotify has none"), SGKeyLyricsAllTracks), SGSpicyLyricsKeyRow(), SGDeezerARLRow(), nil];
     // Spicy Lyrics' terms ask for its credit wherever its lines show (Shared/LyricsSources/SpicyLyrics.m), so the switch
     // says so, or its credit under the lyrics reads as the switch not working (issue #20).
