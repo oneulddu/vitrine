@@ -114,7 +114,7 @@ SGLyricsResult *SGLrcLibRecordResult(NSDictionary *record) {
         result = [SGLyricsResult new];
         result.instrumental = YES;
     } else {
-        result = syncedResult(SGLyricsfileLines(record[@"lyricsfile"]));
+        result = [record[@"hasWordSync"] isEqual:@YES] ? syncedResult(SGLyricsfileLines(record[@"lyricsfile"])) : nil;
         if (result) result.wordTimed = YES;
         else {
             if ([record[@"hasWordSync"] isEqual:@YES]) SGLog(@"lrclib: record %@ times words in a Lyricsfile this cannot read", record[@"id"]);
