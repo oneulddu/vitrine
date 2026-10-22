@@ -238,6 +238,7 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             make(@"kugou", @"KuGou", SGL(@"settings.lyricssources.kugou.subtitle", @"Word timing, Chinese catalog"), SGKuGouAsk),
             make(@"deezer", @"Deezer", SGL(@"settings.lyricssources.deezer.subtitle", @"Word and line timing, your own ARL"), SGDeezerAsk),
             make(SGImportedLRCKey, SGL(@"settings.lyricssources.importedlrc.title", @"Imported LRC"), SGL(@"settings.lyricssources.importedlrc.subtitle", @"Your own .lrc files"), SGImportedLRCAsk),
+            make(@"genius", @"Genius", SGL(@"settings.lyricssources.genius.subtitle", @"Untimed, when no other has lyrics"), SGGeniusAsk),
         ];
     });
     return all;
@@ -264,7 +265,7 @@ static NSArray<NSString *> *fromLegacyKeys(void) {
 // Stored orders are untouched. Sources needing a key pass straight on without one.
 static NSArray<NSString *> *defaultOrder(void) {
     return @[SGImportedLRCKey, SGSpicyLyricsKey, @"binilyrics", @"lyricsplus", @"musixmatch",
-             @"unison", @"deezer", @"netease", @"lrclib", @"bugs", @"genie", @"qqmusic", @"kugou"];
+             @"unison", @"deezer", @"netease", @"lrclib", @"bugs", @"genie", @"qqmusic", @"kugou", @"genius"];
 }
 
 NSArray<NSString *> *SGLyricsOrder(void) {
