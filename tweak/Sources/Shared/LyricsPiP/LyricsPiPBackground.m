@@ -42,8 +42,13 @@ static BOOL currentSource(NSString *track, NSArray *source) {
         NSUInteger generation = ++_sourceGeneration;
         if ([source[1] length]) {
             __weak SGLyricsPiPBackground *weakSelf = self;
-            // This existing API reads local/Spotify metadata URLs and decodes off main.
-            SGShownTrackArtwork(shown, ^(UIImage *cover) {
+            // This existing API reads local/Spotify metadata URLs and decodes off main. A failed load
+            // gets one retry, for a source that is still current; no further attempt follows a second
+            // failure (the solid shared fallback stays until the source changes).
+            SGShownTrackArtworkBounded(shown, ^BOOL {
+                SGLyricsPiPBackground *self = weakSelf;
+                return self && generation == self->_sourceGeneration && currentSource(track, source);
+            }, ^(UIImage *cover) {
                 SGLyricsPiPBackground *self = weakSelf;
                 if (!self || generation != self->_sourceGeneration) return;
                 if (!currentSource(track, source)) {

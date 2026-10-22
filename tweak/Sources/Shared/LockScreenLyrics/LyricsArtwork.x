@@ -363,7 +363,12 @@ static void tick(void) {
             sg_coverKey = @"no-cover";
             NSUInteger generation = ++sg_coverGeneration;
             if (url) {
-                SGShownTrackArtwork(shown, ^(UIImage *cover) {
+                // A failed authoritative load gets one retry while the track, source URL and artwork
+                // choice are still current; a second failure keeps the dark fallback, never old art.
+                SGShownTrackArtworkBounded(shown, ^BOOL {
+                    return currentCoverRequest(generation, trackID, shown) && [url isEqual:sg_coverURL]
+                        && SGLockArtworkShowsLyrics(SGLockScreenArtwork());
+                }, ^(UIImage *cover) {
                     if (!cover || !currentCoverRequest(generation, trackID, shown)) return;
                     dispatch_async(sg_previewQueue, ^{
                         NSString *key = coverKey(cover);

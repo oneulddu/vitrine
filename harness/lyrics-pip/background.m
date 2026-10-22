@@ -147,16 +147,71 @@ void SGTestBackground(void) {
     old(cover);
     void (^failed)(UIImage *) = SGTestTakeArtwork();
     failed(nil);
+    // Approved bounded recovery: the first failure asks once more for the same source.
+    void (^retry)(UIImage *) = SGTestTakeArtwork();
+    SGTestAssert(retry != nil, @"a failed cover load retries exactly once");
     SGTestAssert(SGTestPump(^BOOL { return background.image != nil; }), @"failed image retains shared fallback");
     CGImageRef expected = SGLyricsBackgroundCreate(NULL, SGLyricsPiPReadStyle().raster, SGLyricsBackgroundRead(prefix));
     SGTestAssert([pixels(background.image.CGImage) isEqual:pixels(expected)], @"old fetch and render cannot replace new track fallback");
-    CGImageRelease(expected);
     revision = background.revision;
+    retry(nil); // the one retry fails too: the budget is exhausted
     [background refreshForTrack:SGTestTrackURI()];
-    SGTestAssert(background.revision == revision && requests.count == 0, @"failed image is not refetched every tick");
+    SGTestAssert(background.revision == revision && requests.count == 0,
+                 @"an exhausted retry keeps the solid fallback without another request");
+
+    // A transient nil is recovered by the one retry, and its cover is prepared.
+    SGTestSetTrack(@"spotify:track:transient", @"https://i.scdn.co/image/transient");
+    [background refreshForTrack:SGTestTrackURI()];
+    SGTestTakeArtwork()(nil);
+    void (^recover)(UIImage *) = SGTestTakeArtwork();
+    SGTestAssert(recover != nil, @"a transient failure retries immediately");
+    SGTestAssert(SGTestPump(^BOOL { return background.image != nil; }), @"the solid fallback shows during the retry");
+    revision = background.revision;
+    recover(cover);
+    SGTestAssert(SGTestPump(^BOOL { return background.revision > revision; }), @"a successful retry prepares a new frame");
+    SGTestAssert(![pixels(background.image.CGImage) isEqual:fallback], @"the recovered retry cover replaces the solid fallback");
+    CGImageRelease(expected);
+    expected = SGLyricsBackgroundCreate(NULL, SGLyricsPiPReadStyle().raster, SGLyricsBackgroundRead(prefix));
+
+    // A source URL change retires the old retry; its late cover cannot paint over the new source.
+    SGTestSetTrack(@"spotify:track:retry-a", @"https://i.scdn.co/image/retry-a");
+    [background refreshForTrack:SGTestTrackURI()];
+    SGTestTakeArtwork()(nil);
+    void (^retryA)(UIImage *) = SGTestTakeArtwork();
+    SGTestSetTrack(@"spotify:track:retry-b", @"https://i.scdn.co/image/retry-b");
+    [background refreshForTrack:SGTestTrackURI()];
+    SGTestTakeArtwork()(nil);
+    void (^retryB)(UIImage *) = SGTestTakeArtwork();
+    retryA(cover);
+    drainBackground(queue);
+    CGImageRef fallbackB = SGLyricsBackgroundCreate(NULL, SGLyricsPiPReadStyle().raster, SGLyricsBackgroundRead(prefix));
+    SGTestAssert([pixels(background.image.CGImage) isEqual:pixels(fallbackB)],
+                 @"a retired source's retry cannot publish its cover");
+    CGImageRelease(fallbackB);
+    retryB(cover);
+    SGTestAssert(SGTestPump(^BOOL { return ![pixels(background.image.CGImage) isEqual:pixels(expected)]; }),
+                 @"the current source's retry still recovers its own cover");
+    CGImageRelease(expected);
+
+    // Disposal retires a retry in flight.
+    SGTestSetTrack(@"spotify:track:retry-stop", @"https://i.scdn.co/image/retry-stop");
+    [background refreshForTrack:SGTestTrackURI()];
+    SGTestTakeArtwork()(nil);
+    void (^retryStop)(UIImage *) = SGTestTakeArtwork();
+    revision = background.revision;
+    [background invalidate];
+    retryStop(cover);
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.03]];
+    SGTestAssert(background.image == nil && background.revision == revision,
+                 @"disposal cancels a retry before it can publish");
+    [background refreshForTrack:SGTestTrackURI()];
+    SGTestAssert(requests.count == 1, @"after disposal a current source starts a fresh load");
+    SGTestTakeArtwork()(nil);
+    SGTestTakeArtwork()(cover);
     SGTestSetting([prefix stringByAppendingString:@".mode"], @3);
     [background refreshForTrack:SGTestTrackURI()];
     [queue waitUntilAllOperationsAreFinished];
+    revision = background.revision;
     [background invalidate];
     [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.03]];
     SGTestAssert(background.image == nil && background.revision == revision, @"stop cancels queued publication");

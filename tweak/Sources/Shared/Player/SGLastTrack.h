@@ -23,5 +23,17 @@ SGShownTrack *SGShownTrackNow(void);
 // The track's cover, fetched (from the URL cache when it is there) and decoded off the main thread, then `done`
 // on it with the image, or nil when there is none or it did not come. The last one is kept for the next ask.
 void SGShownTrackArtwork(SGShownTrack *track, void (^done)(UIImage *image));
+// The same load, with one bounded retry when the first attempt came back without an image: at most two
+// requests for a track/source. After a failed first attempt `mayRetry` is asked on main; NO stops there
+// (a changed source, a disabled feature), and `done` still runs with nil. `done` runs on main.
+static inline void SGShownTrackArtworkBounded(SGShownTrack *track, BOOL (^mayRetry)(void), void (^done)(UIImage *image)) {
+    SGShownTrackArtwork(track, ^(UIImage *image) {
+        if (image || !mayRetry()) {
+            done(image);
+            return;
+        }
+        SGShownTrackArtwork(track, done);
+    });
+}
 // The artwork of no track: a calm gradient of `tint`, a faint note in its middle.
 UIImage *SGPlaceholderArtwork(UIColor *tint);

@@ -614,10 +614,53 @@ void artworkChecks(void) {
     coverMetadata(@"source-unavailable");
     finishCover(@"source-unavailable", nil);
     check(sameImage(preview(artwork()), safe), @"failed authoritative artwork uses dark fallback, not native placeholder or stale cover");
+    // The approved retry contract: that first failure asks once more for the same source.
+    check(await(^BOOL { return coverRequests[coverURL(@"source-unavailable")] != nil; }),
+          @"a failed authoritative load makes exactly one retry");
+    check(sameImage(preview(artwork()), safe), @"the solid fallback stays while the retry loads");
+    finishCover(@"source-unavailable", nil);
     NSUInteger loads = coverLoads;
     for (NSUInteger i = 0; i < 5; i++) { report(); nativeInfo(placeholder); }
-    runFor(.1);
-    check(coverLoads == loads, @"failed artwork does not trigger a download loop");
+    runFor(.2);
+    check(coverLoads == loads && coverRequests.count == 0,
+          @"an exhausted retry budget keeps the solid fallback without further requests");
+
+    // A transient failure recovers on the retry, while the player is paused.
+    coverMetadata(@"source-transient");
+    finishCover(@"source-transient", nil);
+    check(await(^BOOL { return coverRequests[coverURL(@"source-transient")] != nil; }),
+          @"a paused transient cover failure is retried once");
+    id transientFallback = artwork();
+    check(sameImage(preview(transientFallback), safe), @"the paused line keeps the solid fallback during the retry");
+    finishCover(@"source-transient", red);
+    check(![name(artwork()) isEqual:name(transientFallback)] && sameImage(preview(artwork()), red),
+          @"a paused line recovers its cover when the retry succeeds");
+    check(sameImage([UIImage imageWithContentsOfFile:video(artwork()).path], red),
+          @"the recovered retry cover reaches the paused disk clip");
+
+    // A new source URL during the old retry retires that retry, which cannot paint over the new cover.
+    coverMetadata(@"source-retry-old");
+    finishCover(@"source-retry-old", nil);
+    check(await(^BOOL { return coverRequests[coverURL(@"source-retry-old")] != nil; }),
+          @"the old source's retry is in flight");
+    coverMetadata(@"source-retry-new");
+    finishCover(@"source-retry-new", blue);
+    check(sameImage(preview(artwork()), blue), @"the revised source URL shows its own cover while the old retry is pending");
+    finishCover(@"source-retry-old", red);
+    check(sameImage(preview(artwork()), blue), @"a late old-URL retry cannot replace the new source's cover");
+
+    // Disabling during a retry retires it.
+    coverMetadata(@"source-retry-disabled");
+    finishCover(@"source-retry-disabled", nil);
+    check(await(^BOOL { return coverRequests[coverURL(@"source-retry-disabled")] != nil; }),
+          @"a retry is in flight before disabling");
+    choose(SGLockArtworkOff);
+    finishCover(@"source-retry-disabled", red);
+    check(!artwork(), @"a retry completing after disabling cannot revive lyrics");
+    choose(SGLockArtworkLyrics);
+    coverMetadata(@"source-retry-restored");
+    finishCover(@"source-retry-restored", red);
+    check(sameImage(preview(artwork()), red), @"re-enabling starts a fresh source rather than reusing the retired retry");
     coverMetadata(@"source-disabled");
     check(await(^BOOL { return coverRequests[coverURL(@"source-disabled")] != nil; }), @"cover request starts before disabling");
     choose(SGLockArtworkOff);

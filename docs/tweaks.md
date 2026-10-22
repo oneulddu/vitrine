@@ -157,7 +157,11 @@ Shared:
                   changed content or background is drawn. LyricsPiPBackground.m loads the current URI's
                   artwork through SGShownTrackArtwork and prepares backgrounds off main, rejecting stale
                   replies; late covers and paused settings changes refresh the frame. A frame the layer or pool turns away is retried every 0.1 s
-                  while starting or active. Closing never pauses Spotify. PiP uses Spotify's existing
+                  while starting or active. Authoritative cover loads for PiP and lock-screen lyrics
+                  get at most one immediate retry while the track/source and feature remain current.
+                  A second failure keeps the shared solid fallback without recurring requests or
+                  resetting the retry budget on unrelated settings changes.
+                  Closing never pauses Spotify. PiP uses Spotify's existing
                   audio session unchanged; unsupported/failed starts show an alert. Returning to Spotify
                   offers linked provider credits. Skip controls acknowledge settled Spotify position reports
                   rather than command dispatch, preserve intent through seek loading, and never blindly resume

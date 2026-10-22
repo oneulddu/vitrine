@@ -47,7 +47,8 @@ The lyrics cover checks compile the real `SGLastTrack.m`: track metadata passes 
 `SGShownTrackNow` and `SGShownTrackArtwork`, with only HTTP transport intercepted by an in-process
 `NSURLProtocol`. A non-nil native photo placeholder remains in now-playing info while the metadata
 cover arrives; previews and disk clips must go from dark fallback to the real cover, including the
-prefetched line. Same-title URI changes, same-URI artwork URL revisions, failed loads without retry
-loops, and disabling during a load are also checked. This boundary was missing from the older
+prefetched line. Same-title URI changes, same-URI artwork URL revisions, at most one failed-load retry
+followed by no further requests, paused retry recovery, and disabling during a load or retry are
+also checked. This boundary was missing from the older
 nil → image now-playing tests. Rendering/encoding and the OS remain stand-ins, so these checks do
 not establish the origin of a device's placeholder or validate device video playback.
