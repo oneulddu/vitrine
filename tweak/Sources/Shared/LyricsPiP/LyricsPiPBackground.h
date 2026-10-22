@@ -6,6 +6,7 @@
 
 @interface SGLyricsPiPBackground : NSObject
 @property (nonatomic, readonly) UIImage *image;
+@property (nonatomic, readonly) UIImage *cover;
 @property (nonatomic, readonly) NSUInteger revision;
 @property (nonatomic, copy) void (^changed)(void);
 - (void)refreshForTrack:(NSString *)track;

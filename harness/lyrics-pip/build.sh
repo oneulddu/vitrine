@@ -11,6 +11,7 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" -fobjc-arc -g -Wall \
     -I"$SRC" -I"$SRC/Shared/Player" \
     "$HERE/main.m" "$SRC/Shared/LyricsPiP/LyricsPiPText.m" "$SRC/Shared/LyricsPiP/LyricsPiPFrame.m" \
+    "$SRC/Shared/LyricsPiP/LyricsPiPStyle.m" "$HERE/typography.m" \
     "$SRC/Shared/LyricsPiP/LyricsPiPBackground.m" "$HERE/background.m" \
     "$HERE/lifecycle.m" "$HERE/native-menu.m" "$HERE/redesign-menu.m" \
     "$HERE/settings.m" "$SRC/Shared/LyricsPiP/LyricsPiPSettings.m" \

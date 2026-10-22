@@ -36,3 +36,11 @@ SGLyricsPiPTextKind SGLyricsPiPTextFor(NSArray<SGKaraokeLine *> *lines, NSIntege
     if (next) *next = following ?: @"";
     return kind;
 }
+
+SGKaraokeLine *SGLyricsPiPSelectedLine(NSArray<SGKaraokeLine *> *lines, NSInteger positionMs) {
+    SGLyricsPiPTextKind kind = SGLyricsPiPTextFor(lines, positionMs, NULL, NULL);
+    if (kind == SGLyricsPiPTextUntimed) return lines.firstObject;
+    if (kind != SGLyricsPiPTextLine) return nil;
+    NSInteger index = SGKaraokeLeadLine(lines, positionMs);
+    return index >= 0 ? lines[index] : nil;
+}

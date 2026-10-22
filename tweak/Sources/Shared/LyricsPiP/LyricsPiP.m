@@ -7,6 +7,9 @@
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
+#import "Shared/Fonts/FontLibrary.h"
+#import "Shared/Player/SGLastTrack.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/NowPlayingExtras.h"
@@ -41,6 +44,15 @@ static void *kPossibleContext = &kPossibleContext;
 @property (nonatomic, copy) NSArray<NSString *> *shown;
 @property (nonatomic, strong) SGLyricsPiPBackground *background;
 @property (nonatomic) NSUInteger shownBackgroundRevision;
+@property (nonatomic, strong) SGLyricsPiPStyle *style;
+@property (nonatomic, copy) NSArray *shownStyle;
+@property (nonatomic) CGSize raster;
+@property (nonatomic, strong) NSArray<SGKaraokeLine *> *sourceLines, *preparedLines;
+@property (nonatomic, copy) void (^seekCompletion)(void);
+@property (nonatomic, copy) NSString *seekTrack;
+@property (nonatomic) NSInteger seekTarget;
+@property (nonatomic) BOOL seekWasPlaying;
+@property (nonatomic) NSUInteger seekToken;
 @property (nonatomic) BOOL active, starting, startRequested, stopping, playing, alertPending, restoreCredit, retryPending;
 @property (nonatomic) NSUInteger generation, attempt;
 @property (nonatomic) double duration, position, speed;
@@ -93,9 +105,13 @@ void SGLyricsPiPToggle(UIView *from) {
     [center addObserver:self selector:@selector(lyricsChanged:) name:SGKaraokeLinesKeptNotification object:nil];
     [center addObserver:self selector:@selector(lyricsChanged:) name:SGLyricsOffsetsDidChangeNotification object:nil];
     [center addObserver:self selector:@selector(lyricsChanged:) name:SGLyricsDidReloadNotification object:nil];
+    for (NSString *name in @[SGLyricsTranslationSavedNotification, SGLyricsTranslationsDidChangeNotification,
+        SGLyricsAIResultDidChangeNotification, SGLyricsLanguageDidChangeNotification])
+        [center addObserver:self selector:@selector(lyricsChanged:) name:name object:nil];
     [center addObserver:self selector:@selector(foreground:) name:UIApplicationDidBecomeActiveNotification object:nil];
     [center addObserver:self selector:@selector(background:) name:UIApplicationDidEnterBackgroundNotification object:nil];
     [center addObserver:self selector:@selector(backgroundChanged:) name:NSUserDefaultsDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(backgroundChanged:) name:SGFontLibraryChangedNotification object:nil];
     [center addObserver:self selector:@selector(backgroundChanged:) name:SGNowPlayingInfoDidChangeNotification object:nil];
     return self;
 }
@@ -130,6 +146,7 @@ void SGLyricsPiPToggle(UIView *from) {
 }
 
 - (void)finish {
+    [self completeSeek];
     _attempt++;
     _generation++;
     _retryPending = NO;
@@ -143,6 +160,9 @@ void SGLyricsPiPToggle(UIView *from) {
     if (_timebase) CMTimebaseSetRate(_timebase, 0);
     [_host removeFromSuperview];
     _shown = nil;
+    _shownStyle = nil;
+    _sourceLines = nil;
+    _preparedLines = nil;
     _track = nil;
     _artworkTrack = nil;
     [_background invalidate];
@@ -179,15 +199,7 @@ void SGLyricsPiPToggle(UIView *from) {
         [_pip addObserver:self forKeyPath:@"pictureInPicturePossible" options:NSKeyValueObservingOptionNew context:kPossibleContext];
     }
     if (!_pip) return NO;
-    if (!_pool) {
-        NSDictionary *attributes = @{(__bridge NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
-            (__bridge NSString *)kCVPixelBufferWidthKey: @(SGLyricsPiPFrameWidth),
-            (__bridge NSString *)kCVPixelBufferHeightKey: @(SGLyricsPiPFrameHeight),
-            (__bridge NSString *)kCVPixelBufferCGImageCompatibilityKey: @YES,
-            (__bridge NSString *)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES,
-            (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{}};
-        if (CVPixelBufferPoolCreate(kCFAllocatorDefault, NULL, (__bridge CFDictionaryRef)attributes, &_pool) != kCVReturnSuccess) return NO;
-    }
+    if (![self preparePool:SGLyricsPiPReadStyle().raster]) return NO;
     _host.alpha = 1;
     [window addSubview:_host];
     [NSLayoutConstraint activateConstraints:@[
@@ -195,6 +207,27 @@ void SGLyricsPiPToggle(UIView *from) {
         [_host.bottomAnchor constraintEqualToAnchor:window.safeAreaLayoutGuide.bottomAnchor constant:-64]
     ]];
     [window layoutIfNeeded];
+    return YES;
+}
+
+- (BOOL)preparePool:(CGSize)size {
+    if (_pool && CGSizeEqualToSize(size, _raster)) return YES;
+    [self resetFrames];
+    if (_pool) { CVPixelBufferPoolRelease(_pool); _pool = NULL; }
+    _raster = size;
+    for (NSLayoutConstraint *constraint in _host.constraints) {
+        if (constraint.firstAttribute == NSLayoutAttributeWidth) constraint.constant = 160;
+        if (constraint.firstAttribute == NSLayoutAttributeHeight) constraint.constant = 160 * size.height / size.width;
+    }
+    {
+        NSDictionary *attributes = @{(__bridge NSString *)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+            (__bridge NSString *)kCVPixelBufferWidthKey: @(size.width),
+            (__bridge NSString *)kCVPixelBufferHeightKey: @(size.height),
+            (__bridge NSString *)kCVPixelBufferCGImageCompatibilityKey: @YES,
+            (__bridge NSString *)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES,
+            (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{}};
+        if (CVPixelBufferPoolCreate(kCFAllocatorDefault, NULL, (__bridge CFDictionaryRef)attributes, &_pool) != kCVReturnSuccess) return NO;
+    }
     return YES;
 }
 
@@ -245,7 +278,11 @@ void SGLyricsPiPToggle(UIView *from) {
 
 - (void)lyricsChanged:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!note.object || [note.object isEqual:self.track]) [self refresh];
+        if (!note.object || [note.object isEqual:self.track]) {
+            self.sourceLines = nil;
+            self.preparedLines = nil;
+            [self refresh];
+        }
     });
 }
 
@@ -259,7 +296,13 @@ void SGLyricsPiPToggle(UIView *from) {
 
 - (void)backgroundChanged:(NSNotification *)note {
     // Settings and late artwork must update a paused frame without a polling render timer.
-    dispatch_async(dispatch_get_main_queue(), ^{ [self refresh]; });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([note.name isEqual:NSUserDefaultsDidChangeNotification]) {
+            self.sourceLines = nil;
+            self.preparedLines = nil;
+        }
+        [self refresh];
+    });
 }
 
 - (void)background:(NSNotification *)note {
@@ -288,6 +331,8 @@ void SGLyricsPiPToggle(UIView *from) {
 
 - (void)refresh {
     if (!_active && !_starting) return;
+    _style = SGLyricsPiPReadStyle();
+    if (![self preparePool:_style.raster]) { [self fail:@"could not resize pixel buffer pool"]; return; }
     if (self.displayLayer.status == AVQueuedSampleBufferRenderingStatusFailed) {
         [self fail:[NSString stringWithFormat:@"display layer failed: %@", self.displayLayer.error]];
         return;
@@ -298,11 +343,17 @@ void SGLyricsPiPToggle(UIView *from) {
     double position = MAX(0, SGKaraokePositionMs()) / 1000.0;
     BOOL changedTrack = ![_track isEqualToString:track] && (_track || track);
     changedTrack |= ![_artworkTrack isEqualToString:artworkTrack] && (_artworkTrack || artworkTrack);
+    if (_seekCompletion && ![_seekTrack isEqual:artworkTrack]) [self completeSeek];
+    BOOL seekArrived = _seekCompletion && !state.isLoading && fabs(position - _seekTarget / 1000.0) <= .75;
+    // Spotify reports loading/not-playing while an asynchronous seek is in flight. That is not
+    // a user pause. Keep the pre-seek clock rate until a report lands or a real play/pause arrives.
+    BOOL seeking = _seekCompletion != nil;
+    if (seeking && !seekArrived) position = _position;
     double clock = CMTimeGetSeconds(CMTimebaseGetTime(_timebase));
     // Position-only reports include scrubs. A discontinuity retires the previous track/seek's image.
     BOOL jumped = !isfinite(clock) || fabs(clock - position) > 0.25;
     if (changedTrack || jumped) [self resetFrames];
-    BOOL playing = state && state.isPlaying && !state.isPaused && !state.isLoading;
+    BOOL playing = seeking ? _seekWasPlaying : state && state.isPlaying && !state.isPaused && !state.isLoading;
     double duration = isfinite(state.duration) && state.duration > 0 ? state.duration : 0;
     double speed = isfinite(state.playbackSpeed) && state.playbackSpeed > 0 ? state.playbackSpeed : 1;
     BOOL playbackChanged = changedTrack || jumped || playing != _playing || duration != _duration || speed != _speed;
@@ -315,6 +366,7 @@ void SGLyricsPiPToggle(UIView *from) {
     _speed = speed;
     CMTimebaseSetTime(_timebase, CMTimeMakeWithSeconds(position, 1000));
     CMTimebaseSetRate(_timebase, _playing ? _speed : 0);
+    if (seekArrived) [self completeSeek];
     if (playbackChanged || !_duration) [_pip invalidatePlaybackState];
     if (_active && _playing && !_timer) {
         __weak SGLyricsPiPEngine *weakSelf = self;
@@ -326,6 +378,32 @@ void SGLyricsPiPToggle(UIView *from) {
     }
     if (track.length && !SGKaraokeLinesForTrack(track)) SGKaraokeRequestLyrics(track);
     NSArray<SGKaraokeLine *> *lines = track.length ? SGKaraokeLinesForTrack(track) : nil;
+    if (changedTrack || _sourceLines != lines) {
+        _sourceLines = lines;
+        NSMutableArray *copies = [NSMutableArray arrayWithCapacity:lines.count];
+        for (SGKaraokeLine *line in lines) [copies addObject:[line copy]];
+        if (track.length && copies.count) SGLyricsSyncSavedTranslation(track, SGLyricsGeminiLanguage(), copies);
+        NSString *notation = [NSString stringWithFormat:@"%ld", (long)[NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsPronunciationNotation]];
+        NSDictionary *saved = track.length && copies.count ? SGLyricsAIValues(@"pronunciation", track, notation) : nil;
+        for (SGKaraokeLine *line in copies) {
+            if (line.pronunciation && !line.pronunciationMade) continue;
+            NSString *text = saved[SGKaraokeLineText(line)];
+            SGKaraokeLine *spoken = nil;
+            if (text.length) {
+                SGKaraokeWord *word = [SGKaraokeWord new]; word.text = text;
+                spoken = [SGKaraokeLine new]; spoken.words = @[word];
+            }
+            line.pronunciation = spoken;
+        }
+        _preparedLines = lines ? copies : nil;
+    }
+    // The lyrics views apply language defaults once per song to these shared switches.
+    // They are also the current manual choice: reapplying a rule here on open/reopen would
+    // undo that choice. Read the effective switches, including a queued next-song update,
+    // without owning a second rule ledger or changing preferences.
+    BOOL showTranslation = SGFlag(@"spotifyglass.redesign.lyricsTranslation", NO);
+    BOOL showPronunciation = SGFlag(@"spotifyglass.redesign.lyricsPronunciation", NO);
+    lines = _preparedLines;
     NSString *current = nil, *next = nil;
     SGLyricsPiPTextKind kind = SGLyricsPiPTextFor(lines, SGKaraokePositionMs() - SGKaraokeDelayMs(), &current, &next);
     if (kind == SGLyricsPiPTextNoLyrics) {
@@ -338,8 +416,15 @@ void SGLyricsPiPToggle(UIView *from) {
     NSString *credit = track.length ? SGLyricsCreditFor(track) : nil;
     // Always credit every provider, a stronger rule than SGLyricsCreditRequired: full Spicy
     // maker/uploader attribution even with Show source off. Linked again on return from PiP.
-    NSArray<NSString *> *content = @[current ?: @"", next ?: @"", credit ?: @""];
-    if (_background.image && (![_shown isEqualToArray:content] || _shownBackgroundRevision != _background.revision))
+    SGKaraokeLine *selected = SGLyricsPiPSelectedLine(lines, SGKaraokePositionMs() - SGKaraokeDelayMs());
+    SGShownTrack *metadata = SGShownTrackNow();
+    BOOL currentMetadata = metadata.current && [metadata.uri isEqual:artworkTrack];
+    NSArray<NSString *> *content = @[current ?: @"", next ?: @"", credit ?: @"",
+        showPronunciation ? SGKaraokeLineText(selected.pronunciation) ?: @"" : @"",
+        showTranslation ? selected.translation ?: @"" : @"",
+        currentMetadata ? metadata.title ?: @"" : @"", currentMetadata ? metadata.artist ?: @"" : @""];
+    if (_background.image && (![_shown isEqualToArray:content] || _shownBackgroundRevision != _background.revision ||
+        ![_shownStyle isEqual:_style.identity]))
         [self enqueue:content generation:_generation];
     [self startIfPossible];
 }
@@ -375,12 +460,12 @@ void SGLyricsPiPToggle(UIView *from) {
         return;
     }
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pixel), SGLyricsPiPFrameWidth,
-        SGLyricsPiPFrameHeight, 8, CVPixelBufferGetBytesPerRow(pixel), space,
+    CGContextRef context = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pixel), _raster.width,
+        _raster.height, 8, CVPixelBufferGetBytesPerRow(pixel), space,
         kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
     CGColorSpaceRelease(space);
     if (context) {
-        SGLyricsPiPDrawFrameWithBackground(context, content, _background.image.CGImage);
+        SGLyricsPiPDrawStyledFrame(context, content, _style, _background.image.CGImage, _background.cover.CGImage);
         CGContextRelease(context);
     }
     CVPixelBufferUnlockBaseAddress(pixel, 0);
@@ -399,6 +484,7 @@ void SGLyricsPiPToggle(UIView *from) {
     if (generation == _generation && (_active || _starting)) {
         [layer enqueueSampleBuffer:sample];
         _shown = content;
+        _shownStyle = _style.identity;
         _shownBackgroundRevision = _background.revision;
     }
     CFRelease(sample);
@@ -462,6 +548,9 @@ void SGLyricsPiPToggle(UIView *from) {
 
 - (void)pictureInPictureController:(AVPictureInPictureController *)controller setPlaying:(BOOL)playing {
     if (controller != _pip || _stopping) return;
+    // An explicit later request wins over the seek's captured intent. Never resume in a seek
+    // completion: doing so would unpause a user-paused song or a newly switched track.
+    if (_seekCompletion) _seekWasPlaying = playing;
     id<SPTPlayer> player = SGKaraokePlayer();
     SPTPlayerState *state = player.state;
     if (!state) return;
@@ -484,25 +573,63 @@ void SGLyricsPiPToggle(UIView *from) {
 - (void)pictureInPictureController:(AVPictureInPictureController *)controller
     skipByInterval:(CMTime)interval completionHandler:(void (^)(void))completionHandler {
     double delta = CMTimeGetSeconds(interval);
-    double duration = [(id<SPTPlayer>)SGKaraokePlayer() state].duration;
-    if (controller == _pip && _timebase && isfinite(delta) && isfinite(duration) && duration > 0) {
-        double target = MIN(duration, MAX(0, SGKaraokePositionMs() / 1000.0 + delta));
+    SPTPlayerState *state = [(id<SPTPlayer>)SGKaraokePlayer() state];
+    NSString *track = SGURIString(state.track.URI);
+    double duration = state.duration;
+    if (controller == _pip && !_stopping && _timebase && isfinite(delta) && isfinite(duration) && duration > 0) {
+        BOOL sameSeekTrack = _seekCompletion && track.length && [_seekTrack isEqual:track];
+        double origin = sameSeekTrack ? _seekTarget / 1000.0 : SGKaraokePositionMs() / 1000.0;
+        [self completeSeek];
+        double target = MIN(duration, MAX(0, origin + delta));
         NSInteger targetMs = (NSInteger)llround(target * 1000);
+        _seekCompletion = [completionHandler copy];
+        _seekTrack = track;
+        _seekTarget = targetMs;
+        _seekWasPlaying = !state.isPaused;
+        NSUInteger token = ++_seekToken;
         [self resetFrames];
         SGKaraokeSeek(targetMs);
-        // PiP reads the clock when completion runs; don't leave it at the pre-seek position
-        // until Spotify reports the seek and the deferred refresh catches up.
+        // Completion is an acknowledgement, not "request sent". The next settled Spotify
+        // position must agree before AVKit reads the clock and playback rate.
         _position = targetMs / 1000.0;
         CMTimebaseSetTime(_timebase, CMTimeMake(targetMs, 1000));
+        CMTimebaseSetRate(_timebase, _seekWasPlaying ? _speed : 0);
         [_pip invalidatePlaybackState];
-        [self scheduleRefresh];
+        __weak SGLyricsPiPEngine *weakSelf = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            SGLyricsPiPEngine *self = weakSelf;
+            if (!self || self.seekToken != token || !self.seekCompletion) return;
+            // Rejected seeks must also release AVKit's controls, but never start audio.
+            [self completeSeek];
+            [self refresh];
+        });
+        return;
     }
     completionHandler();
 }
 
+- (void)completeSeek {
+    void (^completion)(void) = _seekCompletion;
+    _seekCompletion = nil;
+    _seekTrack = nil;
+    ++_seekToken;
+    if (completion) {
+        // Success, timeout, replacement, stop and track switch all acknowledge with the actual
+        // player clock/rate, never the optimistic target or a stale loading state.
+        SPTPlayerState *state = [(id<SPTPlayer>)SGKaraokePlayer() state];
+        _position = MAX(0, SGKaraokePositionMs()) / 1000.0;
+        _playing = state && state.isPlaying && !state.isPaused && !state.isLoading;
+        if (_timebase) {
+            CMTimebaseSetTime(_timebase, CMTimeMakeWithSeconds(_position, 1000));
+            CMTimebaseSetRate(_timebase, _playing ? _speed : 0);
+        }
+        completion();
+    }
+}
+
 - (void)pictureInPictureController:(AVPictureInPictureController *)controller
     didTransitionToRenderSize:(CMVideoDimensions)newRenderSize {
-    // A fixed, modest raster keeps the CPU and pool bounded at every system window size.
+    // The chosen aspect, not the floating window's transient size, bounds our CPU raster.
 }
 
 - (void)dealloc {

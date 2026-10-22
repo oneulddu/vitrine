@@ -83,9 +83,20 @@ static void writeFrame(NSString *directory, NSString *name, NSArray<NSString *> 
 
 int main(void) {
     @autoreleasepool {
+        if ([NSProcessInfo.processInfo.arguments containsObject:@"--intent"]) {
+            SGTestIntent();
+            printf("lyrics-pip intent: %d checks, %d failures\n", checks, failures);
+            return failures ? 1 : 0;
+        }
+        if ([NSProcessInfo.processInfo.arguments containsObject:@"--rtl-ellipsis"]) {
+            SGTestRTLEllipsis(NSProcessInfo.processInfo.environment[@"SG_PIP_FRAMES"]);
+            printf("lyrics-pip RTL ellipsis: %d checks, %d failures\n", checks, failures);
+            return failures ? 1 : 0;
+        }
         SGTestBackground();
         SGTestSettings();
         SGTestLifecycle();
+        SGTestIntent();
         SGTestNativeMenu();
         SGTestRedesignMenu();
         // nil: the track has no lyrics yet.
@@ -173,7 +184,10 @@ int main(void) {
         // The executable sits in build/, so the frames go beside it at build/frames whatever the cwd.
         NSString *frames = [[[NSProcessInfo processInfo].arguments[0] stringByDeletingLastPathComponent]
             stringByAppendingPathComponent:@"frames"];
+        frames = NSProcessInfo.processInfo.environment[@"SG_PIP_FRAMES"] ?: frames;
         [files createDirectoryAtPath:frames withIntermediateDirectories:YES attributes:nil error:NULL];
+        SGTestTypography(frames);
+        SGTestRTLEllipsis(frames);
         writeFrame(frames, @"short", @[@"One short line", @"The next one", @"Lyrics by Someone"]);
         writeFrame(frames, @"long", @[medium, @"The next one", @"Lyrics by Someone"]);
         writeFrame(frames, @"long-credit", @[@"One short line", @"The next one", longCredit]);

@@ -2,6 +2,7 @@
 #import "Shared/LyricsPiP/LyricsPiPBackground.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
 #import "Shared/Player/SGLastTrack.h"
+#import "Shared/LyricsPiP/LyricsPiPStyle.h"
 
 // Only the external player/artwork transport is mocked. The coordinator and renderer are production.
 @interface SGShownTrack ()
@@ -147,7 +148,7 @@ void SGTestBackground(void) {
     void (^failed)(UIImage *) = SGTestTakeArtwork();
     failed(nil);
     SGTestAssert(SGTestPump(^BOOL { return background.image != nil; }), @"failed image retains shared fallback");
-    CGImageRef expected = SGLyricsBackgroundCreate(NULL, CGSizeMake(640, 360), SGLyricsBackgroundRead(prefix));
+    CGImageRef expected = SGLyricsBackgroundCreate(NULL, SGLyricsPiPReadStyle().raster, SGLyricsBackgroundRead(prefix));
     SGTestAssert([pixels(background.image.CGImage) isEqual:pixels(expected)], @"old fetch and render cannot replace new track fallback");
     CGImageRelease(expected);
     revision = background.revision;

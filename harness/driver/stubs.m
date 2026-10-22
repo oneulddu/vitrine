@@ -3,6 +3,19 @@
 // probes reach Spotify's own settings, so they report the harness has none rather than pretend.
 #import <UIKit/UIKit.h>
 #import "Diagnostics/Diagnostics.h"
+#import "Shared/Fonts/Fonts.h"
+#import "Shared/Fonts/FontLibrary.h"
+
+// The production PiP renderer resolves fonts through the existing app facilities. This mock
+// has system fonts, but no imported files, downloaded library or localization bundle.
+NSString *SGL(NSString *key, NSString *english) { return english; }
+SGAppFont SGAppFontChosen(void) { return SGAppFontSystem; }
+NSArray<NSString *> *SGAppFontFamilies(void) { return @[]; }
+NSString *SGRegisterCustomFont(void) { return nil; }
+NSArray<SGLibraryFont *> *SGFontLibrary(void) { return @[]; }
+BOOL SGFontLibraryInstalled(NSString *identifier) { return NO; }
+NSString *SGFontLibraryRegister(NSString *identifier) { return nil; }
+SGLibraryFont *SGFontLibraryFont(NSString *identifier) { return nil; }
 
 double SGPlayerSpeed(void) { return 1; }
 void SGSetPlayerSpeed(double speed) {}

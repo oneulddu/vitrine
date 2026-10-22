@@ -139,12 +139,18 @@ Shared:
                   The redesign's Lyrics options menu and native full-screen lyrics corner button remain.
                   Its settings row opens a page with the enable switch and independent background controls.
                   Only a tap starts it; a retained shared engine
-                  draws the current and next lines and the full provider credit into a bounded CPU pixel
+                  draws the current and next lines, available saved/source pronunciation and translation,
+                  song metadata and the full provider credit into a bounded CPU pixel
                   buffer pool, following Spotify's clock minus the lyrics delay. Frame drawing and text
-                  fitting live in LyricsPiPFrame.m, with the shared CPU background renderer: each
-                  line takes the largest whole-point size that fits its box (current 40 down to 24, next 26
-                  down to 16, credit 17 down to 12), and a line too long even at its minimum is drawn at that
-                  minimum, as many lines as fit, the last ending in an ellipsis (hard breaks included).
+                  fitting live in LyricsPiPFrame.m, with the shared CPU background renderer. LyricsPiPStyle.m
+                  supplies square (640×640, default), landscape (800×450) and portrait (480×720) layouts,
+                  cover/metadata visibility, alignment and independent PiP font selection from existing
+                  system, imported and library families. Original, pronunciation and translation each
+                  have size/weight controls; defaults are 40/semibold and 26/regular for both supplements.
+                  Text wraps and shrinks within its own box, with visible ellipsis when it still cannot fit.
+                  The native Layout/Text/Background settings page previews the production renderer.
+                  Display/language rules govern supplements; opening PiP starts no translation or AI request.
+                  Layout and typography changes update paused frames and resize the pool when needed.
                   Untimed lyrics never
                   claim a current line. Which text shows is decided in LyricsPiPText.m, checked on the Mac
                   by harness/lyrics-pip/. Its 4 Hz timer runs only while PiP is active and playing, and only
@@ -153,9 +159,12 @@ Shared:
                   replies; late covers and paused settings changes refresh the frame. A frame the layer or pool turns away is retried every 0.1 s
                   while starting or active. Closing never pauses Spotify. PiP uses Spotify's existing
                   audio session unchanged; unsupported/failed starts show an alert. Returning to Spotify
-                  offers linked provider credits. The Live Activity ends while PiP is active and resumes
+                  offers linked provider credits. Skip controls acknowledge settled Spotify position reports
+                  rather than command dispatch, preserve intent through seek loading, and never blindly resume
+                  a paused song; timeout, track change and cancellation also release the pending completion.
+                  The Live Activity ends while PiP is active and resumes
                   when enabled and playing, once Spotify is in front (ActivityKit cannot start behind
-                  another app). No automatic start, translation or word highlighting.
+                  another app). No automatic start, translation generation or word highlighting.
     LyricsBackground/ shared CPU-only cover, monochrome, blur, album-color gradient and solid renderer,
                   with independent spotifyglass.lockscreen.background and spotifyglass.lyrics.pip.background
                   preference prefixes. Defaults: clear cover, 45% darkening, blur 20, solid RGB 18181B.

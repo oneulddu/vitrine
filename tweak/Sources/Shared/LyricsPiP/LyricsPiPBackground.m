@@ -7,7 +7,6 @@
 @implementation SGLyricsPiPBackground {
     NSOperationQueue *_queue;
     NSArray *_source, *_look;
-    UIImage *_cover;
     NSUInteger _sourceGeneration, _renderGeneration;
 }
 
@@ -60,7 +59,7 @@ static BOOL currentSource(NSString *track, NSArray *source) {
         }
     }
     SGLyricsBackgroundStyle style = SGLyricsBackgroundRead(SGKeyLyricsPiPBackground);
-    CGSize size = CGSizeMake(SGLyricsPiPFrameWidth, SGLyricsPiPFrameHeight);
+    CGSize size = SGLyricsPiPReadStyle().raster;
     NSArray *look = @[source, SGLyricsBackgroundIdentity(style), [NSValue valueWithCGSize:size]];
     if ([_look isEqual:look]) return;
     _look = look;

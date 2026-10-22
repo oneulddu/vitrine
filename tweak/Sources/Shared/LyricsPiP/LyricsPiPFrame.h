@@ -1,9 +1,7 @@
-// The lyrics PiP frame's fixed raster, text fitting and drawing, free of UIKit and of the tweak:
-// the Mac harness and phone driver also link Shared/LyricsBackground for the default background.
+// The same bounded CPU renderer is used by PiP, the settings preview, driver and Mac harness.
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
-
-extern const size_t SGLyricsPiPFrameWidth, SGLyricsPiPFrameHeight;
+#import "LyricsPiPStyle.h"
 
 typedef struct {
     CGFloat size;
@@ -16,11 +14,19 @@ typedef struct {
 // minSize the text is drawn at minSize with its last line truncated.
 SGLyricsPiPTextFit SGLyricsPiPFitText(NSString *text, CGSize box, CGFloat size, CGFloat minSize);
 
-// Draws a whole frame (background + the three texts) into a 640x360 bottom-left-origin context.
-// content = @[current, next, credit]; empty strings draw nothing.
+// Draws into a bottom-left-origin context sized to SGLyricsPiPReadStyle().raster.
+// The first three content slots remain current, next, credit; empty strings draw nothing.
 void SGLyricsPiPDrawFrame(CGContextRef context, NSArray<NSString *> *content);
 // Production uses a precomputed background; never blurs or generates gradients on the playback tick.
 void SGLyricsPiPDrawFrameWithBackground(CGContextRef context, NSArray<NSString *> *content, CGImageRef background);
 
 // The same frame as PNG data (BGRA premultiplied-first little-endian, device RGB, as the PiP pixel buffers are).
 NSData *SGLyricsPiPFramePNG(NSArray<NSString *> *content);
+
+// Content retains its original first three slots: current, next, credit; then pronunciation,
+// translation, song, artist. All rectangles use bottom-left raster coordinates.
+NSArray<NSValue *> *SGLyricsPiPFrameRects(NSArray<NSString *> *content, SGLyricsPiPStyle *style);
+SGLyricsPiPTextFit SGLyricsPiPFitRole(NSString *text, CGSize box, SGLyricsPiPStyle *style, NSUInteger role);
+void SGLyricsPiPDrawStyledFrame(CGContextRef context, NSArray<NSString *> *content,
+    SGLyricsPiPStyle *style, CGImageRef background, CGImageRef cover);
+NSData *SGLyricsPiPStyledPNG(NSArray<NSString *> *content, SGLyricsPiPStyle *style, CGImageRef cover);

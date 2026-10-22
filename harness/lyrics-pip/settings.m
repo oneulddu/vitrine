@@ -3,6 +3,8 @@
 #import "Settings/SGModPage.h"
 #import "Shared/LyricsPiP/LyricsPiP.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
+#import "Shared/LyricsPiP/LyricsPiPStyle.h"
+#import "Shared/Fonts/Fonts.h"
 @implementation SGPage
 @end
 @implementation SGModRow
@@ -48,7 +50,18 @@ void SGTestSettings(void) {
     SGModRow *toggle = page.sections[0].rows[0];
     SGTestAssert([toggle.key isEqual:SGKeyLyricsPiP] && [toggle.subtitle containsString:@"Restart Spotify"],
         @"page preserves opt-in toggle and existing restart explanation");
-    NSArray<SGModRow *> *rows = page.sections[1].rows;
+    SGTestAssert(page.sections.count == 4 && [page.sections[1].title isEqual:@"Layout"] &&
+        [page.sections[2].title isEqual:@"Text"] && [page.sections[3].title isEqual:@"Background"],
+        @"native page groups layout, text and background");
+    SGTestAssert(page.sections[1].rows[0].menu.count == 3 && page.sections[1].rows[1].defaultOn,
+        @"aspect choices and default-on metadata control are discoverable");
+    SGModPage *role = (id)page.sections[2].rows[2].page();
+    SGTestAssert(role.sections[0].rows[0].minimum == 24 && role.sections[0].rows[0].maximum == 64 &&
+        [role.sections[0].rows[1].key isEqual:SGLyricsPiPRoleKey(0, @"weight")], @"original settings use bounded role-specific controls");
+    role = (id)page.sections[2].rows[3].page();
+    SGTestAssert(role.sections[0].rows[0].minimum == 16 && role.sections[0].rows[0].maximum == 48,
+        @"secondary role settings have smaller bounded range");
+    NSArray<SGModRow *> *rows = page.sections[3].rows;
     SGTestAssert(rows.count == 4 && [rows[0].key isEqual:@"spotifyglass.lyrics.pip.background.mode"] && rows[0].menu.count == 5,
         @"page reuses all five shared background choices under PiP prefix");
     SGTestAssert(rows[1].minimum == 0 && rows[1].maximum == 85 && rows[2].minimum == 0 && rows[2].maximum == 40,
@@ -66,9 +79,21 @@ void SGTestSettings(void) {
     SGTestAssert(rows[1].number() == 33 && rows[2].number() == 12 && SGLyricsBackgroundRead(@"spotifyglass.lyrics.pip.background").color == 0x123456
         && SGLyricsBackgroundRead(@"spotifyglass.lockscreen.background").darkness == .8,
         @"production slider/color writes never change lockscreen preferences");
+    id appFont = [defaults objectForKey:SGKeyAppFont] ?: @0;
+    SGModPage *fonts = (id)page.sections[2].rows[1].page();
+    for (SGModRow *choice in fonts.sections[0].rows) if ([choice.title isEqual:@"Georgia"]) choice.action();
+    SGTestAssert([SGLyricsPiPReadStyle().font isEqual:@"Georgia"] &&
+        [appFont isEqual:[defaults objectForKey:SGKeyAppFont] ?: @0], @"PiP font picker changes only the PiP font");
+    SGModPage *original = (id)page.sections[2].rows[2].page();
+    original.sections[0].rows[0].setNumber(64);
+    SGTestAssert(SGLyricsPiPReadStyle().sizes[0].doubleValue == 64, @"role size setter reaches production style");
+    page.sections[2].rows[5].action();
+    SGTestAssert(SGLyricsPiPReadStyle().sizes[0].doubleValue == 40 &&
+        ![defaults objectForKey:SGKeyPiPFont] && rows[1].number() == 33,
+        @"reset restores layout/text defaults without changing background");
     [defaults setPersistentDomain:saved forName:domain];
     // These keys were created only by this host test when Foundation uses its executable domain.
-    for (NSString *key in @[darkness, blur, color])
+    for (NSString *key in @[darkness, blur, color, SGKeyPiPFont, SGLyricsPiPRoleKey(0, @"size")])
         if (!saved[key]) [defaults removeObjectForKey:key]; else [defaults setObject:saved[key] forKey:key];
     SGTestSetting(darkness, @45);
     SGTestSetting(@"spotifyglass.lyrics.pip.background.mode", @2);

@@ -15,3 +15,5 @@ typedef NS_ENUM(NSInteger, SGLyricsPiPTextKind) {
 // supplies the localized strings for NoLyrics, Instrumental and Untimed.
 SGLyricsPiPTextKind SGLyricsPiPTextFor(NSArray<SGKaraokeLine *> *lines, NSInteger positionMs,
                                        NSString **current, NSString **next);
+// The exact selected source line, or nil during a break/no lyrics. No fetches or side effects.
+SGKaraokeLine *SGLyricsPiPSelectedLine(NSArray<SGKaraokeLine *> *lines, NSInteger positionMs);
