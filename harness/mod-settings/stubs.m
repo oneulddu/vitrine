@@ -65,3 +65,5 @@ NSArray<SGModRow *> *SGEnvironmentWarningRows(void) {
 SGModRow *SGLyricsRomanisedRow(void) { return SGOptionRow(@"Romanized lyrics", nil, @"spotifyglass.harness.romanised"); }
 // The lock screen's source order row (MotionSources.m), for AnimatedArtworkSettings.m.
 SGModRow *SGMotionSourcesRow(void) { return SGStatRow(@"Sources", ^NSString *{ return @"Canvas, Apple Music"; }); }
+// The lock screen's background rows (LyricsBackgroundSettings.m), empty here.
+NSArray<SGModRow *> *SGLyricsBackgroundRows(NSString *prefix) { return @[]; }

@@ -31,6 +31,11 @@ names before the hooks are set, then lays a drawer list out and a settings list 
 each of its subviews as Spotify can, and lays it out again. It logs how many Mod Settings rows each has: 1 and 1 for
 both. With main's ModSettings.x before the fix it read 0 and 0 for the drawer and 1 then 0 for the settings list.
 
+`search` runs `Settings/SGSettingsSearch.m`'s initials rules without a search bar: each syllable becomes its
+initial (`번역` → `ㅂㅇ`, `가사 설정` → `ㄱㅅ ㅅㅈ`), initials words match rows, double consonants and mixed
+queries work, plain Latin queries are unchanged and a vowel jamo (`ㅏ`) is not treated as initials. It logs
+`search passed` and exits 0, or logs the failures and exits 1.
+
 `needs` pushes the Lock screen page's artwork section as iOS 18 to 25 get it (the real
 `AnimatedArtworkSettings.m`'s `SGLockScreenArtworkNeedsRow`), and `tap=<section>.<row>` selects a row and logs the
 alert it brings up: "Full-screen artwork", "Needs iOS 26", and an alert naming the iOS version.
