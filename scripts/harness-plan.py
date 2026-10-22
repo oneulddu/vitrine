@@ -59,7 +59,7 @@ HARNESSES = [
      "run": "sh harness/lyrics-clip/build.sh && harness/lyrics-clip/build/lyrics-clip"},
     {"name": "Lyrics backgrounds", "dir": "lyrics-background",
      "run": "sh harness/lyrics-background/build.sh"},
-    {"name": "Lyrics PiP text", "dir": "lyrics-pip",
+    {"name": "Lyrics PiP text", "dir": "lyrics-pip", "theos": True,
      "run": "sh harness/lyrics-pip/build.sh && harness/lyrics-pip/build/lyrics-pip"},
     {"name": "Lyrics sources", "dir": "lyrics-sources",
      "run": "sh harness/lyrics-sources/build.sh"},

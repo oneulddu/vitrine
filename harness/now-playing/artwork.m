@@ -94,7 +94,7 @@ static NSUInteger lookups, posters;
 static NSURL *sourceFile;
 static NSMutableArray *posterCallbacks;
 static UIImage *red, *blue;
-// Hold one coverless production worker before it renders, without replacing the renderer or
+// Hold one production background worker before it renders, without replacing the renderer or
 // changing delivery order on main. Guard the gate and preparation counter across both threads.
 static NSString *heldPicture;
 static dispatch_semaphore_t renderEntered, renderRelease;
@@ -132,8 +132,7 @@ NSURL *SGMotionMadeFile(NSString *key) {
     dispatch_semaphore_t entered = nil, release = nil;
     @synchronized (cacheRoot) {
         if ([key hasPrefix:@"background\n"]) backgroundPreparations++;
-        if (heldPicture && [key hasPrefix:[NSString stringWithFormat:@"background\n%@\n", heldPicture]]
-            && [key hasSuffix:@"\nno-cover"]) {
+        if (heldPicture && [key hasPrefix:[NSString stringWithFormat:@"background\n%@\n", heldPicture]]) {
             entered = renderEntered;
             release = renderRelease;
             heldPicture = nil;
@@ -475,15 +474,32 @@ void artworkChecks(void) {
           @"lazy fluid video uses the offered cover");
 
     fetched = lookups;
+    entered = dispatch_semaphore_create(0);
+    release = dispatch_semaphore_create(0);
+    @synchronized (cacheRoot) {
+        heldPicture = @"fluid-late";
+        renderEntered = entered;
+        renderRelease = release;
+        renderGateTimedOut = NO;
+    }
     background(@{@"mode": @4, @"darkness": @0, @"color": @0x0000FF});
-    runFor(.2);
+    // Defaults delivery hops to main, debounces, then renders on the worker.
+    // Clearing the old offer is observable before the replacement is ready.
+    check(await(^BOOL { @synchronized (cacheRoot) { return heldPicture == nil; } }),
+          @"paused Every song settings render reaches the controlled worker gate");
+    check(!artwork(), @"settings change clears the old offer while its replacement is still rendering");
+    dispatch_semaphore_signal(release);
+    check(await(^BOOL { return artwork() && ![name(artwork()) isEqual:name(fluid)]; }),
+          @"paused Every song publishes the replacement after the settings render completes");
     id solid = artwork();
     check(solid && ![name(solid) isEqual:name(fluid)] && lookups == fetched,
           @"paused Every song background changes identity without a source lookup");
+    @synchronized (cacheRoot) { check(!renderGateTimedOut, @"settings render was explicitly released, not timed out"); }
     check(sameImage(preview(solid), blue), @"Every song uses the selected solid color");
     check(preview(fluid) == nil, @"old fallback request cannot return a stale preview after settings change");
     background(@{@"darkness": @0});
-    runFor(.2);
+    check(await(^BOOL { return artwork() && ![name(artwork()) isEqual:name(solid)]; }),
+          @"Every song restores the cover background before the next case");
 
     nativeInfo(nil);
     track(@"lyrics-late-cover", SGLockArtworkLyrics, nil, lines);
