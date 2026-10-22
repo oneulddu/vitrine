@@ -156,20 +156,12 @@ xcrun --sdk iphoneos clang -target arm64-apple-ios16.0 -dynamiclib -fobjc-arc -O
 FILES+=("$GROUPS_DYLIB")
 
 # A key in plist/ replaces Spotify's own of that name, so the Bonjour services Connect discovery
-# (Shared/Connect) browses go in after the ones Spotify lists, and Spotify's own local network wording
-# is kept where it has one.
+# (Shared/Connect) browses go in after the ones Spotify lists, Spotify's own local network wording
+# is kept where it has one, and an ATS exception is merged under Spotify's own ATS policy rather
+# than replacing it (scripts/merge-overlay.py).
 OVERLAY="$ROOT/out/.overlay.plist"
 unzip -p "$IN" "${APP_DIR}Info.plist" > "$ROOT/out/.info.plist"
-python3 - "$ROOT/plist/liquid-glass.plist" "$ROOT/out/.info.plist" "$OVERLAY" <<'PY'
-import plistlib, sys
-with open(sys.argv[1], 'rb') as f: overlay = plistlib.load(f)
-with open(sys.argv[2], 'rb') as f: app = plistlib.load(f)
-services = list(app.get('NSBonjourServices', []))
-services += [s for s in overlay.get('NSBonjourServices', []) if s not in services]
-overlay['NSBonjourServices'] = services
-if app.get('NSLocalNetworkUsageDescription'): overlay.pop('NSLocalNetworkUsageDescription', None)
-with open(sys.argv[3], 'wb') as f: plistlib.dump(overlay, f)
-PY
+python3 -B "$ROOT/scripts/merge-overlay.py" "$ROOT/plist/liquid-glass.plist" "$ROOT/out/.info.plist" "$OVERLAY"
 rm -f "$ROOT/out/.info.plist"
 
 echo "==> injecting"

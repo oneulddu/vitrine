@@ -1701,6 +1701,11 @@
 "settings.translation.models.error.status" = "모델 목록을 불러오지 못했습니다(%ld).";
 "settings.translation.models.error.unlisted" = "이 서비스는 모델 목록을 제공하지 않습니다. 직접 입력해 주세요.";
 "settings.translation.models.error.unreachable" = "서비스에 연결할 수 없습니다.";
+"settings.translation.models.error.ats" = "iPhone의 보안 정책이 이 주소로의 HTTP 연결을 차단했습니다. HTTPS 주소 또는 앱의 보안 정책에서 허용한 주소를 사용하세요.";
+"settings.translation.models.error.host" = "서버를 찾을 수 없습니다. 주소를 확인하세요.";
+"settings.translation.models.error.refused" = "해당 주소와 포트에서 응답이 없습니다. 서비스가 실행 중인지, 이 iPhone에서 접속할 수 있는지 확인하세요.";
+"settings.translation.models.error.timeout" = "서비스 응답 시간이 초과되었습니다. 주소와 이 iPhone의 서버 연결을 확인하세요.";
+"settings.translation.models.error.offline" = "현재 이 iPhone에서 해당 서비스로 연결할 수 있는 네트워크가 없습니다.";
 "settings.translation.models.error.unreadable" = "모델 목록을 읽을 수 없습니다. 모델을 직접 입력해 주세요.";
 "settings.translation.models.header" = "모델 %lu개";
 "settings.translation.models.loading" = "모델 불러오는 중…";

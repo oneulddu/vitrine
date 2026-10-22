@@ -231,6 +231,73 @@ static void checkModelLists(void) {
     testKeys = keptKeys; openAIKeys = keptOpenAIKeys;
     puts("Model lists: Gemini/Anthropic/OpenAI-compatible replies, bounds, sorting, /models URLs, requests and Gemini's model in its path passed");
 }
+// A model list that never reached the service: each network failure gets its own sentence, so an ATS
+// refusal ("use an HTTPS address") is never confused with a timeout or an offline iPhone.
+static void checkModelNetworkProblems(void) {
+    NSError *(^httpError)(NSInteger) = ^NSError *(NSInteger code) {
+        return [NSError errorWithDomain:NSURLErrorDomain code:code userInfo:nil];
+    };
+    NSString *ats = SGLyricsAIConnectionProblem(httpError(NSURLErrorAppTransportSecurityRequiresSecureConnection));
+    NSString *timeout = SGLyricsAIConnectionProblem(httpError(NSURLErrorTimedOut));
+    NSString *refused = SGLyricsAIConnectionProblem(httpError(NSURLErrorCannotConnectToHost));
+    NSString *host = SGLyricsAIConnectionProblem(httpError(NSURLErrorCannotFindHost));
+    NSString *offline = SGLyricsAIConnectionProblem(httpError(NSURLErrorNotConnectedToInternet));
+    NSString *generic = SGLyricsAIConnectionProblem(httpError(NSURLErrorUnknown));
+    CHECK([ats containsString:@"HTTP"] && [ats containsString:@"HTTPS"]);
+    for (NSString *other in @[timeout, refused, host, offline, generic]) {
+        CHECK(other.length && ![other isEqual:ats]);
+    }
+    CHECK([timeout containsString:@"time"] && [refused containsString:@"answered"] && [host containsString:@"host"]);
+    CHECK([offline containsString:@"connection"]);
+    CHECK([generic isEqual:SGLyricsAIConnectionProblem(httpError(NSURLErrorBadURL))]);
+    CHECK([SGLyricsAIConnectionProblem(httpError(NSURLErrorDNSLookupFailed)) isEqual:host]);
+    CHECK([SGLyricsAIConnectionProblem(httpError(NSURLErrorNetworkConnectionLost)) isEqual:offline]);
+    // A failure from another domain (a TLS or a Keychain error) stays the plain unreachable sentence.
+    NSString *foreign = SGLyricsAIConnectionProblem([NSError errorWithDomain:NSOSStatusErrorDomain code:-9800 userInfo:nil]);
+    CHECK([foreign isEqual:generic]);
+    puts("Model list network problems: ATS, timeout, refused, unknown host, offline and other errors told apart");
+}
+// The real model-list job with a keyed plain-HTTP tailnet address, whose transport reports an ATS
+// refusal: the row gets the ATS sentence, and neither the key nor the address or port is in it.
+static void checkModelFetchErrors(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSSet *keptKeys = testKeys;
+    NSMutableDictionary *keptOpenAIKeys = openAIKeys;
+    id keptBase = [defaults objectForKey:SGKeyLyricsOpenAIBaseURL];
+    NSError *keptFailure = modelListFailure;
+
+    testKeys = [NSSet setWithObject:@"Vitrine.OpenAI"];
+    [defaults setObject:@"http://100.97.8.81:10100/v1" forKey:SGKeyLyricsOpenAIBaseURL];
+    openAIKeys = [@{@"100.97.8.81": [@"tailnet-key" dataUsingEncoding:NSUTF8StringEncoding]} mutableCopy];
+    modelListFailure = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorAppTransportSecurityRequiresSecureConnection userInfo:nil];
+
+    __block NSString *listProblem;
+    __block NSArray *listModels;
+    __block NSUInteger calls = 0;
+    SGLyricsAIFetchModels(SGLyricsAIOpenAI, YES, ^(NSArray *models, NSString *failure) {
+        CHECK(NSThread.isMainThread && ++calls == 1);
+        listModels = models; listProblem = failure;
+    });
+    waitFor(^BOOL { return calls > 0; });
+    NSString *ats = SGLyricsAIConnectionProblem(modelListFailure);
+    CHECK(!listModels && [listProblem isEqual:ats] && [ats containsString:@"HTTP"]);
+    CHECK(![listProblem containsString:@"tailnet-key"] && ![listProblem containsString:@"10100"]
+          && ![listProblem containsString:@"100.97.8.81"]);
+
+    // A saved key and address that build a request give no "save a key" complaint: a network failure
+    // is the connection's, not the setting's.
+    NSString *problem = nil;
+    NSURLRequest *request = SGOpenAIModelsRequest(&problem);
+    CHECK(request && !problem && [request.URL.absoluteString isEqual:@"http://100.97.8.81:10100/v1/models"]
+          && [[request valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer tailnet-key"]);
+
+    modelListFailure = keptFailure;
+    openAIKeys = keptOpenAIKeys;
+    testKeys = keptKeys;
+    if (keptBase) [defaults setObject:keptBase forKey:SGKeyLyricsOpenAIBaseURL];
+    else [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    puts("Model fetch errors: ATS sentence from the real job with a keyed tailnet HTTP address, no key or address in it");
+}
 static void checkAIJobs(void) {
     NSArray *texts = @[@"Blue robot", @"", @"♪"];
     for (NSInteger notation = 0; notation < 3; notation++) {

@@ -104,6 +104,16 @@ static NSUInteger aiRequests;
 static NSURLRequest *lastAIRequest;
 static BOOL duplicateAIReply;
 static void (^beforeAIReply)(void);
+// Model lists go through the one-shot transport, which has no reply script of its own. An error here is
+// handed to the production job as its NSError, which is what the app receives from a refused request.
+static NSError *modelListFailure;
+NSURLSessionDataTask *SGLyricsTranslationSendOnceUpTo(NSURLRequest *request, NSUInteger limit,
+                                                      void (^done)(NSData *, NSInteger, NSError *)) {
+    CHECK(NSThread.isMainThread && limit == 8 * 1024 * 1024);
+    NSError *failure = modelListFailure;
+    dispatch_async(dispatch_get_main_queue(), ^{ done(nil, 0, failure); });
+    return nil;
+}
 static NSUInteger bingGets, bingPosts;
 static NSMutableArray *bingReplies;
 static BOOL disableOnReply;
@@ -463,6 +473,8 @@ int main(int argc, const char **argv) {
         checkProviders();
         checkBing();
         checkNewAI();
+        checkModelNetworkProblems();
+        checkModelFetchErrors();
         checkConnection();
         checkAutoRetry();
         puts("lyrics translation: all checks passed");

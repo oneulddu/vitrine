@@ -34,6 +34,10 @@ NSURLSessionDataTask *SGLyricsTranslationSendOnce(NSURLRequest *request, void (^
 // The same with its own reply size limit in bytes, for a model list (OpenRouter's runs past 512 KiB).
 NSURLSessionDataTask *SGLyricsTranslationSendOnceUpTo(NSURLRequest *request, NSUInteger limit, void (^finished)(NSData *, NSInteger, NSError *));
 
+// A model-list failure that never reached the service, told apart from a reply: an ATS refusal, an
+// unresolvable host, nothing listening, a timeout or no network each get their own sentence. The
+// error is logged by its domain and code only, never with the request or its credentials.
+NSString *SGLyricsAIConnectionProblem(NSError *error);
 // Model names as a service takes them: trimmed, 1-256 characters, no control characters; else nil.
 NSString *SGLyricsAICleanModel(NSString *text);
 // Each service's model in use: the stored one when it is clean, else the service's default.

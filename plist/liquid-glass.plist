@@ -18,6 +18,23 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Find nearby speakers and devices for Spotify Connect and Cast.</string>
+	<!-- Spotify's own ATS policy (NSAllowsArbitraryLoads off, NSAllowsLocalNetworking on) is kept by
+	     scripts/merge-overlay.py, which merges this dictionary into it. Since iOS 17 ATS refuses HTTP
+	     to a bare IP address even with local networking on, and an IP or CIDR range belongs in
+	     NSExceptionDomains, so a Tailscale host the translation service accepts over HTTP
+	     (Shared/LyricsTranslation/OpenAITranslate.m: 100.64.0.0/10) is reachable inside the app.
+	     Nothing outside that range becomes plain HTTP. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>100.64.0.0/10</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>NSMotionUsageDescription</key>
 	<string>AirPods gestures and Spatial voice read how your head moves, so a double nod can like a song, a shake can skip it, and Karaoke's voice can stay in front of you as you turn.</string>
 </dict>

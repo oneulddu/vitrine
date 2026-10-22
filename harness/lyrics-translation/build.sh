@@ -9,7 +9,7 @@ mkdir -p "$HERE/build"
 compile() {
     xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$(xcrun --sdk macosx --show-sdk-path)" -iframework "$(xcrun --sdk macosx --show-sdk-path)/System/iOSSupport/System/Library/Frameworks" -DSecItemCopyMatching=SGLyricsTestKey -DSecItemAdd=SGLyricsTestKeyAdd -DSecItemUpdate=SGLyricsTestKeyUpdate -DSecItemDelete=SGLyricsTestKeyDelete -fobjc-arc -g -Wall -I"$SRC" "$@"
 }
-compile -DSGLyricsTranslationSendRequest=SGLyricsTranslationRealSendRequest -DSGLyricsTranslationSendOnce=SGLyricsTranslationRealSendOnce -c "$SRC/Shared/LyricsTranslation/DeepL.m" -o "$HERE/build/DeepL.o"
+compile -DSGLyricsTranslationSendRequest=SGLyricsTranslationRealSendRequest -DSGLyricsTranslationSendOnce=SGLyricsTranslationRealSendOnce -DSGLyricsTranslationSendOnceUpTo=SGLyricsTranslationRealSendOnceUpTo -c "$SRC/Shared/LyricsTranslation/DeepL.m" -o "$HERE/build/DeepL.o"
 compile -DSG_LYRICS_TEST_STORE \
     "$HERE/check.m" "$SRC/Shared/LyricsSources/Musixmatch.m" "$SRC/Shared/LyricsTranslation/LyricsTranslation.m" \
     "$HERE/build/DeepL.o" "$SRC/Shared/LyricsTranslation/BingTranslate.m" "$SRC/Shared/LyricsTranslation/GoogleTranslate.m" "$SRC/Shared/LyricsTranslation/OpenAITranslate.m" \

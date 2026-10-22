@@ -1979,6 +1979,11 @@
 "settings.translation.models.error.status" = "The model list could not be loaded (%ld).";
 "settings.translation.models.error.unlisted" = "This service does not list its models. Enter one by hand.";
 "settings.translation.models.error.unreachable" = "The service could not be reached.";
+"settings.translation.models.error.ats" = "This iPhone blocks plain HTTP to that address. Use an HTTPS address, or a host allowed by the app's transport security.";
+"settings.translation.models.error.host" = "That address's host could not be found. Check the address.";
+"settings.translation.models.error.refused" = "Nothing answered at that address and port. Check that the service is running and reachable here.";
+"settings.translation.models.error.timeout" = "The service did not answer in time. Check the address and that this iPhone can reach it.";
+"settings.translation.models.error.offline" = "This iPhone has no connection to that service right now.";
 "settings.translation.models.error.unreadable" = "The model list could not be read. Enter a model by hand.";
 "settings.translation.models.header" = "%lu models";
 "settings.translation.models.loading" = "Loading models…";

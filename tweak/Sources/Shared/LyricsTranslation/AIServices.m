@@ -83,6 +83,33 @@ NSArray<NSDictionary<NSString *, NSString *> *> *SGLyricsAIModelsIn(SGLyricsAI s
 
 static NSMutableDictionary<NSString *, NSArray *> *sg_modelLists;   // for the launch, by service, address and key
 
+// A request that never reached the service says why in its NSError: an ATS refusal (the address is
+// plain HTTP and the app carries no exception for it), a host that does not resolve, no network, or
+// a timeout. They are told apart here so the row can say which; nothing about the request -- key,
+// Authorization header, full URL -- is logged or shown.
+NSString *SGLyricsAIConnectionProblem(NSError *error) {
+    if (![error.domain isEqualToString:NSURLErrorDomain]) {
+        SGLog(@"ai transport: %@/%ld", error.domain, (long)error.code);
+        return SGL(@"settings.translation.models.error.unreachable", @"The service could not be reached.");
+    }
+    SGLog(@"ai transport: NSURLErrorDomain/%ld", (long)error.code);
+    switch (error.code) {
+        case NSURLErrorAppTransportSecurityRequiresSecureConnection:
+            return SGL(@"settings.translation.models.error.ats", @"This iPhone blocks plain HTTP to that address. Use an HTTPS address, or a host allowed by the app's transport security.");
+        case NSURLErrorCannotFindHost:
+        case NSURLErrorDNSLookupFailed:
+            return SGL(@"settings.translation.models.error.host", @"That address's host could not be found. Check the address.");
+        case NSURLErrorCannotConnectToHost:
+            return SGL(@"settings.translation.models.error.refused", @"Nothing answered at that address and port. Check that the service is running and reachable here.");
+        case NSURLErrorTimedOut:
+            return SGL(@"settings.translation.models.error.timeout", @"The service did not answer in time. Check the address and that this iPhone can reach it.");
+        case NSURLErrorNotConnectedToInternet:
+        case NSURLErrorNetworkConnectionLost:
+            return SGL(@"settings.translation.models.error.offline", @"This iPhone has no connection to that service right now.");
+    }
+    return SGL(@"settings.translation.models.error.unreachable", @"The service could not be reached.");
+}
+
 NSURLSessionDataTask *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
                                             void (^done)(NSArray<NSDictionary<NSString *, NSString *> *> *, NSString *)) {
     NSString *problem = nil;
@@ -102,7 +129,7 @@ NSURLSessionDataTask *SGLyricsAIFetchModels(SGLyricsAI service, BOOL fresh,
     return SGLyricsTranslationSendOnceUpTo(request, 8 * 1024 * 1024, ^(NSData *data, NSInteger status, NSError *error) {
         NSArray *models = nil;
         NSString *failure = nil;
-        if (error) failure = SGL(@"settings.translation.models.error.unreachable", @"The service could not be reached.");
+        if (error) failure = SGLyricsAIConnectionProblem(error);
         else if (status == 401 || status == 403 || (service == SGLyricsAIGemini && status == 400))
             failure = SGL(@"settings.translation.models.error.keyinvalid", @"The service turned the key down. Check the API key.");
         else if (status == 404 || status == 405)

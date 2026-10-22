@@ -228,7 +228,11 @@ Shared:
                   and Test connection. Model lists what the service offers for the saved key (Gemini's models that
                   generate content, Anthropic's /v1/models, the base URL's /models; one try, 20 s, 8 MiB), kept for the
                   launch by address and key, filtered as it is typed, pulled to load again, and Enter a model takes one by
-                  hand for a service with no list. Gemini's model (SGKeyLyricsGeminiModel) defaults to gemini-flash-latest. AIServices.m
+                  hand for a service with no list. The IPA overlay adds the scoped Tailscale IPv4
+                  100.64.0.0/10 HTTP exception required by newer ATS policies; scripts/merge-overlay.py
+                  preserves Spotify's other transport policies rather than enabling arbitrary HTTP.
+                  Model-list network failures distinguish ATS refusal, DNS, refused connections, timeout
+                  and disconnection without exposing credentials. Gemini's model (SGKeyLyricsGeminiModel) defaults to gemini-flash-latest. AIServices.m
                   asks Gemini, Claude or that service for two other jobs, on the user's own key: how each line sounds,
                   in the translation language's letters, Latin letters or IPA (SGKeyLyricsPronunciationNotation), and a
                   one-sentence cultural note for the few lines a listener would miss (SGKeyLyricsCulturalNotes, off);
