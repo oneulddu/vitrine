@@ -112,6 +112,21 @@ SGLyricsResult *SGLyricsLRCResult(NSString *lrc) {
     return syncedResult([lrc isKindOfClass:NSString.class] ? linesFromLRC(lrc) : nil);
 }
 
+SGLyricsResult *SGLyricsPlainResult(NSArray<NSString *> *rows) {
+    NSMutableArray<NSNumber *> *starts = [NSMutableArray array];
+    NSMutableArray<NSString *> *texts = [NSMutableArray array];
+    for (NSString *row in rows) {
+        [starts addObject:@0];
+        [texts addObject:row.length ? row : @"♪"];
+    }
+    SGLyricsResult *result = [SGLyricsResult new];
+    result.starts = starts;
+    result.texts = texts;
+    result.karaokeLines = SGKaraokeStaticLines(texts);
+    return result;
+}
+
+// wordLines: the record's Lyricsfile as lines, nil when it has none this reads.
 static SGLyricsResult *resultFrom(NSDictionary *record, NSArray<SGKaraokeLine *> *wordLines) {
     if (!boundedRecord(record)) return nil;
     SGLyricsResult *result;
@@ -125,7 +140,7 @@ static SGLyricsResult *resultFrom(NSDictionary *record, NSArray<SGKaraokeLine *>
             if ([record[@"hasWordSync"] isEqual:@YES]) SGLog(@"lrclib: record %@ times words in a Lyricsfile this cannot read", record[@"id"]);
             result = SGLyricsLRCResult(record[@"syncedLyrics"]);
         }
-        if (!result.karaokeLines.count) result = SGLyricsPlainResult(record[@"plainLyrics"], @"LRCLIB");
+        if (!result.karaokeLines.count) result = SGLyricsPlainTextResult(record[@"plainLyrics"], @"LRCLIB");
         if (!result.karaokeLines.count) return nil;
     }
     result.provider = @"LRCLIB";

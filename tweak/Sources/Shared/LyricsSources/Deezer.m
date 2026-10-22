@@ -107,7 +107,7 @@ SGLyricsResult *SGDeezerResult(id root) {
         SGLyricsResult *lines = SGLyricsResultWithLines(SGKaraokeEstimatedLines([sorted valueForKey:@"at"], [sorted valueForKey:@"text"]), @"Deezer");
         if (lines) return lines;
     }
-    return SGLyricsPlainResult(SGLyricsField(lyrics, @"text"), @"Deezer");
+    return SGLyricsPlainTextResult(SGLyricsField(lyrics, @"text"), @"Deezer");
 }
 
 static NSString *songFor(id root, SGLyricsQuery *query) {

@@ -5,7 +5,7 @@
 
 SGLyricsResult *SGBugsResult(id root, BOOL timed) {
     NSString *body = SGLyricsString(SGLyricsField(root, @"lyrics"), 262144);
-    if (!timed) return SGLyricsPlainResult(body, @"Bugs");
+    if (!timed) return SGLyricsPlainTextResult(body, @"Bugs");
     if (!body.length) return nil;
     NSArray *entries = [body componentsSeparatedByString:@"＃"];
     if (entries.count > 2000) return nil;
