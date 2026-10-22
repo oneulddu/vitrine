@@ -540,6 +540,10 @@ void SGLyricsOpenCreditLinks(NSArray<SGLyricsLink *> *links, UIView *from) {
 @property (nonatomic, strong) NSMutableArray<NSString *> *passedOver;
 // sg_failures when the walk started. Another walk's failure counts too, which at worst asks again.
 @property (nonatomic) NSUInteger failuresAtStart;
+// The source picked for the track when the walk started, asked first.
+@property (nonatomic, copy) NSString *picked;
+// The picked source answered with lines, which are the walk's answer however they are timed.
+@property (nonatomic) BOOL pickedAnswered;
 @end
 
 @implementation SGLyricsWalk
@@ -562,7 +566,9 @@ static void finish(SGLyricsWalk *walk) {
     BOOL everyoneAsked = !walk.passedOver.count;
     BOOL failed = atomic_load(&sg_failures) != walk.failuresAtStart;
     id picked = SGLyricsChosenSource(trackID) ? sg_kept[trackID] : nil;
-    if ([picked isKindOfClass:SGLyricsResult.class]) {
+    if (walk.pickedAnswered) {
+        SGLyricsKeepChosen(trackID, lyrics);
+    } else if ([picked isKindOfClass:SGLyricsResult.class]) {
         // A source was picked from the player's ⋯ while the walk ran: the pick stands, and the walk's answer
         // is what Automatic puts back.
         SGLyricsNoteOrderChoice(trackID, lyrics);
@@ -618,6 +624,15 @@ static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyrics
     SGLyricsResult *merged = walk.merged;
     // Even a filtered reply can name the track for a deferred source.
     learnFrom(query, fresh);
+    if (fresh.karaokeLines.count && [provider.key isEqualToString:walk.picked]
+        && [walk.picked isEqualToString:SGLyricsChosenSource(query.trackID)]) {
+        if (!fresh.provider) fresh.provider = provider.name;
+        noteCredit(fresh);
+        walk.merged = fresh;
+        walk.pickedAnswered = YES;
+        finish(walk);
+        return NO;
+    }
     SGLyricsTypes allowed = SGLyricsSourceTypes(provider.key);
     SGKaraokeTiming timing = fresh.karaokeLines.count ? SGKaraokeLinesTiming(fresh.karaokeLines)
         : fresh.synced ? SGKaraokeTimingLine : SGKaraokeTimingNone;
@@ -773,12 +788,13 @@ static void startWalk(NSString *trackID, SGLyricsQuery *query) {
     walk.order = order;
     NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
     walk.typeFirst = mode != 0 || SGFlag(SGKeyLyricsPreferWordTiming, NO);
-    walk.concurrent = mode == 2;
+    walk.concurrent = mode == 2 && !chosen;
     walk.started = [NSMutableSet set];
     walk.inFlight = [NSMutableSet set];
     walk.originalOrder = walk.order;
     walk.lineRank = walk.pageRank = NSNotFound;
     walk.pageTiming = SGKaraokeTimingNone;
+    walk.picked = chosen;
     walk.query = query;
     walk.waiting = sg_waiting[trackID];
     walk.merged = [SGLyricsResult new];

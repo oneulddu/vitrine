@@ -191,7 +191,7 @@ static NSData *decide(NSString *track, SGLyricsResult *chain, NSData *spotifyBod
     NSArray<SGKaraokeLine *> *spotifyLines = spotifyBody ? SGKaraokeLinesFromBody(spotifyBody) : nil;
     if (!spotifyLines.count) spotifyLines = nil;
     SGKaraokeTiming spotifyTiming = SGKaraokeLinesTiming(spotifyLines);
-    BOOL pinned = SGLyricsPinnedID(track) != nil;
+    BOOL pinned = SGLyricsPinnedID(track) != nil || SGLyricsChosenSource(track) != nil;
     BOOL replace = (pinned && chain.instrumental) ||
         (chain.texts.count && (pinned || chain.synced || spotifyTiming == SGKaraokeTimingNone));
     NSData *page = replace ? pageBody(chain, colours) : nil;
