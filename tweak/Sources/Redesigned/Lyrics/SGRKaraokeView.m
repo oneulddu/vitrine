@@ -1705,6 +1705,7 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(autoTranslationSettingsChanged) name:SGRAutoTranslationDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(aiResultsChanged:) name:SGLyricsAIResultDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationDidChange:) name:SGRTranslationNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sourceChosen:) name:SGLyricsSourceChosenNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(lookChanged) name:SGRLyricsLookDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsStyleDidChangeNotification object:nil];
     // The menu says the song's offsets and whether its lyrics were picked by hand.
@@ -2746,6 +2747,18 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     if (!notes && !SGFlag(SGRKeyLyricsPronunciation, NO)) SGRSetLyricsTextShown(SGRLyricsTextPronunciation, YES);
     if (notes) SGLyricsAINotes(service, track, lines, language, answered);
     else SGLyricsAIPronounce(service, track, lines, answered);
+}
+
+// A source picked from the player's ⋯ replaces the lines of the song playing, which the page otherwise keeps
+// through any later answer: they are dropped as on a change of track, and the next tick takes the new ones.
+- (void)sourceChosen:(NSNotification *)note {
+    if (_sample || ![note.object isEqual:_track]) return;
+    _lines = nil;
+    _passedOver = nil;
+    _builtWidth = 0;
+    [self creditTo:nil];
+    [self dropLineViews];
+    [self offerExtras];
 }
 
 // Saved translations deleted, the target language changed, or Translate any song switched: sync and redraw.

@@ -755,10 +755,16 @@ static void scheduleWalk(SGLyricsWalk *walk) {
 }
 
 static void startWalk(NSString *trackID, SGLyricsQuery *query) {
+    NSMutableArray<NSString *> *order = [SGLyricsOrder() mutableCopy];
+    NSString *chosen = SGLyricsChosenSource(trackID);
+    if (chosen && [order containsObject:chosen]) {
+        [order removeObject:chosen];
+        [order insertObject:chosen atIndex:0];
+    }
     SGLog(@"lyrics: asking %@ for %@ as \"%@\" by \"%@\", album \"%@\", %lds",
-          [SGLyricsOrder() componentsJoinedByString:@", "], trackID, query.title, query.artist, query.album, (long)query.seconds);
+          [order componentsJoinedByString:@", "], trackID, query.title, query.artist, query.album, (long)query.seconds);
     SGLyricsWalk *walk = [SGLyricsWalk new];
-    walk.order = SGLyricsOrder();
+    walk.order = order;
     NSInteger mode = SGInt(SGKeyLyricsAskMode, 1);
     walk.typeFirst = mode != 0;
     walk.concurrent = mode == 2;
@@ -948,4 +954,28 @@ void SGLyricsSetSourceTypes(NSString *key, SGLyricsTypes types) {
     if (types == SGLyricsTypesAny) [stored removeObjectForKey:key];
     else stored[key] = @(types);
     [defaults setObject:stored forKey:SGKeyLyricsSourceTypes];
+}
+
+#pragma mark - a source picked for a track (LyricsPick.m)
+
+SGLyricsQuery *SGLyricsQueryFor(NSString *trackID) {
+    return queryFor(trackID);
+}
+
+// The picked answer stands in for the walk's, so a later request for the track, Spotify's own page's included,
+// gets the same lines. A source that times words but has no page text gets the page lines made from its own.
+void SGLyricsKeepChosen(NSString *trackID, SGLyricsResult *result) {
+    setUp();
+    if (!result.texts.count && result.karaokeLines.count) {
+        NSArray<NSNumber *> *starts;
+        NSArray<NSString *> *texts;
+        SGLyricsPageLines(result.karaokeLines, &starts, &texts);
+        result.starts = starts;
+        result.texts = texts;
+        result.synced = SGKaraokeLinesTiming(result.karaokeLines) != SGKaraokeTimingNone;
+    }
+    noteCredit(result);
+    if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
+    sg_kept[trackID] = result;
+    @synchronized (sg_missing) { [sg_missing removeObject:trackID]; }
 }
