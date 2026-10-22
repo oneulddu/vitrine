@@ -271,7 +271,7 @@ static UIViewController *servicePage(SGLyricsAI service) {
         case SGLyricsAIOpenAI:
             sections = @[SGNotedSection(nil, @[SGOpenAIPresetRow(), SGOpenAIBaseURLRow(), SGOpenAIKeyRow(), modelRow(service)],
                              SGL(@"settings.translation.ai.openai.footer", @"Translations, pronunciations and notes send the song's lyrics to the service at this address, on your own key. A service sets the address and a model; each host keeps its own key on this iPhone.")),
-                         SGSection(nil, @[SGOpenAIConnectionTestRow()])];
+                         SGSection(nil, @[SGOpenAIConnectionTestRow(), SGOpenAITranslationTestRow()])];
             break;
     }
     return [[SGModPage alloc] initWithTitle:serviceTitle(service) intro:nil sections:sections footer:nil];

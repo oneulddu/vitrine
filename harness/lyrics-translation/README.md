@@ -78,13 +78,20 @@ The connection-test regression can also run on its own:
 harness/lyrics-translation/build.sh --connection-only
 ```
 
-`check-connection.m` compiles the real `ConnectionTest.m` and calls `SGTestOpenAITranslation`.
-Its scripted `SendOnce` replacement checks missing-key/no-send, the exact HTTP Tailscale endpoint,
-host-bound fake authorization, saved model and target, and a prompt containing only the fixed test
-sentence as input. It covers success, 401/403, 400/404, 429/5xx, unreachable, malformed/empty replies,
-key echoes, output and payload bounds, duplicate completion, explicit cancellation, and stale base,
-model, key or target both without a notification and with each settings/redraw notification separately.
-An unchanged generic redraw leaves the request alive. These are service/lifecycle fixture checks;
+`check-connection.m` compiles the real `ConnectionTest.m` and calls `SGTestOpenAIConnection` for both
+kinds. Its scripted `SendOnce`/`SendOnceUpTo` replacements check that neither kind sends without an
+explicit call, that a missing key or an unbuildable address is a configuration report with `sent=no`,
+and that the free model check is a GET of the base URL's `/models` with no body or generation. Facts
+stay separate: 401/403 is `authentication` with `reachable=yes`, 404/405 on `/models` leaves `models`
+unknown (not proof chat fails), an unreadable 200 list still means the key answered, and a transport
+`NSError` is `connection` with its domain/code only. The paid sample sends exactly one POST with the
+Tailscale endpoint, host-bound fake authorization, saved model and target, and a prompt containing
+only the fixed test sentence; its success, 401/403, 400/404, 429/5xx, unreachable, malformed/empty
+replies, key echoes, echoed address/URL/lyric, output and payload bounds, and duplicate completion are
+covered. Copied `diagnostic` lines are checked for the key, `Bearer`, host, port, `/models`,
+`/chat/completions`, the sample lyric and upstream text. Explicit cancellation and stale base, model,
+key or target both without a notification and with each settings/redraw notification are covered;
+an unchanged generic redraw leaves the request alive. These are service/lifecycle fixture checks;
 they do not exercise UI or a network service.
 
 The production `SGLyricsTranslationSendOnce` is separately linked as `SGLyricsTranslationRealSendOnce`.
@@ -106,7 +113,7 @@ Claude / presets: multipart and fenced replies, errors, bounds, all five endpoin
 AI jobs: prompt JSON, notation, note limits, all three requests, strict replies, main completion, coalescing and memo passed
 Saved AI: isolated round trip, empty values, tuple isolation, malformed data, combined count/delete and newest 200 passed
 Titles: language/script detection, Latin artists, two-line request, local fallback, notification, once per track and 200-result cache passed
-Connection fixtures: no key/no send, exact host/model/auth/fixed prompt, safe errors, single completion, cancellation and stale configuration passed
+Connection checks: configuration/no-key without a send, free GET /models with separate reachability/auth/model facts, paid sample only when asked, error categories, hostile reply redaction, single completion, cancellation and stale configuration passed
 Connection transport: real SendOnce, 20s request, 429/503 no retry, cancel, 512 KiB boundary; direct redirect delegate passed
 lyrics translation: all checks passed
 ```

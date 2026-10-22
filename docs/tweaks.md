@@ -238,7 +238,7 @@ Shared:
                   OpenAI-compatible service (OpenAI, OpenRouter, Groq, Perplexity, Pollinations or Custom). Gemini, Claude
                   and the OpenAI-compatible service each take one row of the Translation section, which opens its page
                   (AIModelsPage.m): the key and the model, and for the OpenAI-compatible service the preset, the address
-                  and Test connection. Model lists what the service offers for the saved key (Gemini's models that
+                  and separate Check connection and Test translation actions. Model lists what the service offers for the saved key (Gemini's models that
                   generate content, Anthropic's /v1/models, the base URL's /models; one try, 20 s, 8 MiB), kept for the
                   launch by address and key, filtered as it is typed, pulled to load again, and Enter a model takes one by
                   hand for a service with no list. The IPA overlay adds the scoped Tailscale IPv4
@@ -276,11 +276,18 @@ Shared:
                   main-thread, generation guarded and bounded to 200 song/language pairs. Display-only changes do
                   not restart work. Only known local failures become connection/key/busy reasons; remote bodies
                   and credentials are never copied into the note.
-                  Test connection, on the OpenAI-compatible service's page, sends one fixed short sentence using the
-                  saved address, model, key and translation language. It runs only from a tap, with no retries,
-                  redirects, cookies or credential storage, a 20 s limit and a 512 KiB response cap. A second tap
-                  while testing cancels. Saving a key remains distinct from a successful test. Service/target changes
-                  clear the UI result and cancel stale requests; completing after leaving the page shows no popup.
+                  Check connection, on the OpenAI-compatible service's page, makes one bounded GET /models
+                  with an 8 MiB response cap and sends no translation. A readable model list does not prove
+                  key validity on a public endpoint or that a selected model can translate. The separate
+                  Test translation action sends one fixed short sentence using the saved address, model,
+                  key and translation language, with a possible-charge notice. Both run only from a tap,
+                  without retries, redirects, cookies or credential storage, with a 20 s limit; translation
+                  responses are capped at 512 KiB. A second tap on the running check cancels it. Both rows
+                  remain visible when a key is missing. Result alerts offer safe diagnostic details to copy:
+                  observed status, tri-state results and allowlisted error domains/codes, never model names,
+                  credentials, addresses or upstream free text. An unsent check remains unknown, not unreachable.
+                  Service/target changes clear the UI results and cancel stale requests; completing after
+                  leaving the page shows no popup.
                   Both AI results are kept per song in Caches/Vitrine/AI beside the saved translations, which the Saved
                   translations row counts and deletes with them. AI completion refreshes every open view of that song,
                   including views sharing the same line objects. Failed writes keep the answer in the shared

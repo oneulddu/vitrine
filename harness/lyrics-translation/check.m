@@ -107,9 +107,12 @@ static void (^beforeAIReply)(void);
 // Model lists go through the one-shot transport, which has no reply script of its own. An error here is
 // handed to the production job as its NSError, which is what the app receives from a refused request.
 static NSError *modelListFailure;
+// The connection check scripts the same one-shot transport through this block; nil keeps the error-only fake.
+static NSURLSessionDataTask * (^connectionModelTransport)(NSURLRequest *, NSUInteger, void (^)(NSData *, NSInteger, NSError *));
 NSURLSessionDataTask *SGLyricsTranslationSendOnceUpTo(NSURLRequest *request, NSUInteger limit,
                                                       void (^done)(NSData *, NSInteger, NSError *)) {
     CHECK(NSThread.isMainThread && limit == 8 * 1024 * 1024);
+    if (connectionModelTransport) return connectionModelTransport(request, limit, done);
     NSError *failure = modelListFailure;
     dispatch_async(dispatch_get_main_queue(), ^{ done(nil, 0, failure); });
     return nil;
