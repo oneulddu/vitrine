@@ -16,6 +16,24 @@ typedef struct {
 // Posted on the main queue when the look changes; the object is whoever changed it, nil for none named.
 extern NSNotificationName const SGRLyricsLookDidChangeNotification;
 
+// Independent of the five look sliders. Missing or unknown IDs use the original drawing.
+#define SGRKeyLyricsStyle @"spotifyglass.redesign.lyricsStyle"
+typedef NS_ENUM(NSUInteger, SGRLyricsDrawingStyle) {
+    SGRLyricsDrawingAppleMusic,
+    SGRLyricsDrawingAurora,
+    SGRLyricsDrawingNeon,
+    SGRLyricsDrawingShimmer,
+    SGRLyricsDrawingOutline,
+};
+extern NSNotificationName const SGRLyricsStyleDidChangeNotification;
+NSArray<NSString *> *SGRLyricsStyleIDs(void);
+NSString *SGRLyricsStyleNow(void);
+SGRLyricsDrawingStyle SGRLyricsDrawingStyleForID(NSString *identifier);
+NSString *SGRLyricsStyleName(NSString *identifier);
+void SGRSetLyricsStyle(NSString *identifier);
+UIMenu *SGRLyricsStyleMenu(NSString *title);
+UIViewController *SGRLyricsStylesSettingsPage(void);
+
 SGRLyricsLook SGRLyricsLookNow(void);
 void SGRSetLyricsLook(SGRLyricsLook look, id changer);
 

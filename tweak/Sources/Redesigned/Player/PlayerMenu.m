@@ -17,6 +17,8 @@
 #import "Player.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Redesigned/Lyrics/LyricsTools.h"
+#import "Redesigned/Lyrics/LyricsLook.h"
+#import "Core/SGLocalize.h"
 #import "Shared/LyricsPiP/LyricsPiP.h"
 
 static __weak UIView *sg_moreButton;   // the ⋯ the sliders' panel comes from
@@ -49,7 +51,7 @@ static UIAction *soundMenu(void) {
     if (SGPlayerSpeedAllowed() && fabs(SGPlayerSpeed() - 1) >= 0.01) [changed addObject:speedText(SGPlayerSpeed())];
     if (SGPlayerPitchAvailable() && !pitchFollowing() && SGPlayerPitch() != 0) [changed addObject:semitonesText(SGPlayerPitch())];
     if (SGPlayerReverb() > 0) [changed addObject:[NSString stringWithFormat:@"Reverb %.0f%%", SGPlayerReverb()]];
-    UIAction *open = [UIAction actionWithTitle:@"Speed, Pitch & Reverb" image:symbol(@"slider.horizontal.3") identifier:nil
+    UIAction *open = [UIAction actionWithTitle:SGL(@"settings.player.sound_menu", @"Speed, Pitch & Reverb") image:symbol(@"slider.horizontal.3") identifier:nil
                                        handler:^(UIAction *action) { SGPlayerShowSpeedPitchPanel(sg_moreButton); }];
     open.subtitle = changed.count ? [changed componentsJoinedByString:@", "] : @"Normal";
     return open;
@@ -64,6 +66,8 @@ static NSArray<UIMenuElement *> *playerItems(void) {
     // Not for a podcast: LRCLIB has songs.
     UIAction *search = [sheetKind() isEqualToString:@"episode"] ? nil : SGRLyricsSearchAction(SGKaraokePlayingTrack());
     if (search) [items addObject:search];
+    if (![sheetKind() isEqualToString:@"episode"])
+        [items addObject:SGRLyricsStyleMenu(SGL(@"settings.lyricsstyle.menu", @"Lyrics Style"))];
     if (SGPlayerMenuOffersAnimatedArtwork()) {
         // Buttons named for what they do, not checkmarks: the HIG's changeable label for a toggled item.
         NSArray<NSArray *> *backgrounds = @[

@@ -160,6 +160,7 @@ static UIButtonConfiguration *chipConfiguration(NSString *title, NSString *symbo
     UIScrollView *_strip;          // the presets, scrolled sideways when they do not all fit
     NSArray<UIButton *> *_chips;
     UIButton *_adjust;             // the sliders' button, after the last preset
+    UIButton *_drawingStyle;
     UILabel *_note;
     UISelectionFeedbackGenerator *_feedback;
     BOOL _stripPlaced, _showChosen;
@@ -206,15 +207,23 @@ static UIButtonConfiguration *chipConfiguration(NSString *title, NSString *symbo
     [_adjust addTarget:self action:@selector(adjustTapped) forControlEvents:UIControlEventPrimaryActionTriggered];
     [_strip addSubview:_adjust];
     [_header addSubview:_strip];
+    _drawingStyle = [UIButton buttonWithType:UIButtonTypeSystem];
+    _drawingStyle.showsMenuAsPrimaryAction = YES;
+    [_header addSubview:_drawingStyle];
     [_header addSubview:_note];
     _feedback = [UISelectionFeedbackGenerator new];
     [self showLook];
     self.tableView.tableHeaderView = _header;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(showLook) name:SGRLyricsLookDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(showLook) name:SGRLyricsStyleDidChangeNotification object:nil];
 }
 
 // Which preset the look is, lit and scrolled into sight; a look of the sliders' own lights their button.
 - (void)showLook {
+    NSString *styleTitle = [NSString stringWithFormat:SGL(@"settings.lyricsstyle.choice", @"Style: %@"),
+                           SGRLyricsStyleName(SGRLyricsStyleNow())];
+    _drawingStyle.configuration = chipConfiguration(styleTitle, @"textformat", NO);
+    _drawingStyle.menu = SGRLyricsStyleMenu(SGL(@"settings.lyricsstyle.menu", @"Lyrics Style"));
     NSInteger chosen = SGRLyricsLookPresetIndex(SGRLyricsLookNow());
     NSArray<NSString *> *names = SGRLyricsLookPresetNames();
     for (UIButton *chip in _chips) {
@@ -275,8 +284,10 @@ static UIButtonConfiguration *chipConfiguration(NSString *title, NSString *symbo
         [_strip scrollRectToVisible:CGRectInset(_chips[(NSUInteger)chosen].frame, -kChipGap, 0) animated:self.view.window != nil];
     }
     _showChosen = NO;
+    CGFloat styleHeight = MAX(44, ceil([_drawingStyle sizeThatFits:CGSizeMake(inner, CGFLOAT_MAX)].height));
+    _drawingStyle.frame = CGRectMake(inset, CGRectGetMaxY(_strip.frame) + kStripGap, inner, styleHeight);
     CGFloat noteHeight = _note.text.length ? ceil([_note sizeThatFits:CGSizeMake(inner, CGFLOAT_MAX)].height) : 0;
-    _note.frame = CGRectMake(inset, CGRectGetMaxY(_strip.frame) + kNoteGap - kStripPad, inner, noteHeight);
+    _note.frame = CGRectMake(inset, CGRectGetMaxY(_drawingStyle.frame) + kNoteGap, inner, noteHeight);
     CGSize size = CGSizeMake(width, CGRectGetMaxY(_note.frame));
     if (CGSizeEqualToSize(_header.bounds.size, size)) return;
     _header.frame = (CGRect){CGPointZero, size};

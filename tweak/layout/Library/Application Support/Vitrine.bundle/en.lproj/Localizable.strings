@@ -1115,6 +1115,14 @@
 "settings.lyricssources.translationlanguage.choice.any" = "Any · iPhone's language";
 "settings.lyricssources.unison.subtitle" = "Hand-timed, few tracks";
 
+"settings.lyricsstyle.aurora" = "Aurora";
+"settings.lyricsstyle.choice" = "Style: %@";
+"settings.lyricsstyle.menu" = "Lyrics Style";
+"settings.lyricsstyle.neon" = "Neon";
+"settings.lyricsstyle.outline" = "Outline";
+"settings.lyricsstyle.shimmer" = "Shimmer";
+"settings.lyricsstyle.title" = "Lyrics styles";
+
 "settings.lyricstext.choice.lyrics" = "Lyrics";
 "settings.lyricstext.choice.pronunciation" = "Pronunciation";
 "settings.lyricstext.choice.translation" = "Translation";
@@ -1667,6 +1675,7 @@
 "settings.player.redesigned_header.title" = "Redesigned header";
 "settings.player.sheet_style.title" = "Sheet style player";
 "settings.player.sleep_fade.subtitle" = "While Labs' Fade out is forced on, Spotify's own timer fades its own way.";
+"settings.player.sound_menu" = "Speed, Pitch & Reverb";
 "settings.player.title" = "Player";
 "settings.player.visualizer_style.title" = "Visualizer style";
 "settings.player.visualizers.footer" = "The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence and stops in the background, during player transitions, in Low Power Mode or when the device is hot.";

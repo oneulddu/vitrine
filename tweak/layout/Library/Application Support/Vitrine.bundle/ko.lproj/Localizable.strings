@@ -1054,6 +1054,14 @@
 "settings.lyricslook.choice.compact" = "조밀하게";
 "settings.lyricslook.choice.large" = "크게";
 "settings.lyricslook.choice.vivid" = "생생하게";
+"settings.lyricsstyle.aurora" = "오로라";
+"settings.lyricsstyle.neon" = "네온";
+"settings.lyricsstyle.shimmer" = "반짝임";
+"settings.lyricsstyle.outline" = "윤곽선";
+"settings.lyricsstyle.choice" = "스타일: %@";
+"settings.lyricsstyle.menu" = "가사 스타일";
+"settings.lyricsstyle.title" = "가사 스타일";
+"settings.player.sound_menu" = "속도, 음정 및 리버브";
 "settings.lyricslook.footer" = "흐림은 재생 중인 줄에서 벗어난 줄을 얼마나 부드럽게 처리할지 설정합니다. 발광 및 파동은 단어를 길게 부를 때 얼마나 강하게 빛나고 글자가 떠오르는지를 나타냅니다. 100%는 Apple Music의 기본 효과와 같습니다.";
 "settings.lyricslook.format.percent" = "%.0f%%";
 "settings.lyricslook.format.pt" = "%.0f pt";

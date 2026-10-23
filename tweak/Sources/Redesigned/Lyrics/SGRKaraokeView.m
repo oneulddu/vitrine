@@ -177,6 +177,7 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
 - (void)settle;   // land and unglow at once
 - (void)land;     // back down from its float
 - (void)unglow;   // the glow off
+- (void)applyDrawingStyle:(SGRLyricsDrawingStyle)style;
 @end
 
 @implementation SGRKaraokeWordView {
@@ -188,6 +189,10 @@ static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect f
     NSArray<UILabel *> *_dimLetters, *_litLetters;
     CGFloat *_letterAt, *_letterLift;
     CGFloat _waveHeight;
+    SGRLyricsDrawingStyle _drawingStyle;
+    UIColor *_styleAccent;
+    CAGradientLayer *_ink;
+    UIView *_inkMask;   // retains the glyph views whose layers mask the color field
 }
 
 // The word set letter by letter, each where the whole word would put it, in a view the word's size.
@@ -268,6 +273,81 @@ static UIView *lettersOf(NSArray<NSString *> *letters, NSArray<NSNumber *> *xs, 
     free(_letterLift);
 }
 
+// Preserve shaped text and writing direction, including the individual glyphs of a held word.
+static void colorGlyphs(UIView *view, UIColor *color, BOOL outline) {
+    if ([view isKindOfClass:UILabel.class]) {
+        UILabel *label = (UILabel *)view;
+        NSMutableAttributedString *text = label.attributedText
+            ? [label.attributedText mutableCopy]
+            : [[NSMutableAttributedString alloc] initWithString:label.text ?: @"" attributes:@{NSFontAttributeName: label.font}];
+        NSRange range = NSMakeRange(0, text.length);
+        if (outline) {
+            [text addAttributes:@{NSStrokeWidthAttributeName: @3, NSStrokeColorAttributeName: label.textColor} range:range];
+        } else {
+            // The accent over each run keeps the run's own alpha, so a word waiting at half brightness
+            // stays half lit when the style is applied. The runs are read from a copy: the string is
+            // written as they are walked.
+            CGFloat accent = CGColorGetAlpha(color.CGColor);
+            NSAttributedString *before = [text copy];
+            [before enumerateAttribute:NSForegroundColorAttributeName inRange:range options:0
+                            usingBlock:^(id value, NSRange run, BOOL *stop) {
+                UIColor *existing = [value isKindOfClass:UIColor.class] ? value : label.textColor;
+                CGFloat alpha = existing ? CGColorGetAlpha(existing.CGColor) : 1;
+                [text addAttribute:NSForegroundColorAttributeName value:[color colorWithAlphaComponent:alpha * accent] range:run];
+            }];
+        }
+        label.attributedText = text;
+    }
+    for (UIView *child in view.subviews) colorGlyphs(child, color, outline);
+}
+
+- (void)applyDrawingStyle:(SGRLyricsDrawingStyle)style {
+    if (style == SGRLyricsDrawingAppleMusic) return;   // original layer tree and drawing, untouched
+    _drawingStyle = style;
+    _styleAccent = SGRAccent();
+    if (style == SGRLyricsDrawingOutline) {
+        for (UIView *view in self.subviews) if (view != _lit) colorGlyphs(view, nil, YES);
+        return;
+    }
+    if (style == SGRLyricsDrawingNeon) {
+        colorGlyphs(_lit, _styleAccent, NO);
+        return;
+    }
+    // Keep the original glyph views (and their letter-wave transforms) as a mask. The existing
+    // feathered karaoke sweep still masks the outer view, independently of the ink inside it.
+    UIView *glyphs = _lit;
+    [glyphs removeFromSuperview];
+    glyphs.layer.mask = nil;
+    glyphs.hidden = NO;
+    _lit = [[UIView alloc] initWithFrame:self.bounds];
+    _lit.hidden = YES;
+    _lit.layer.mask = _fill;
+    [self addSubview:_lit];
+    CGFloat pad = _font.pointSize * 0.3;
+    _ink = [CAGradientLayer layer];
+    _ink.frame = CGRectInset(self.bounds, -pad, -pad);
+    _inkMask = [[UIView alloc] initWithFrame:_ink.bounds];
+    glyphs.frame = CGRectOffset(self.bounds, pad, pad);
+    [_inkMask addSubview:glyphs];
+    _ink.mask = _inkMask.layer;
+    UIColor *light = [_styleAccent colorWithAlphaComponent:1];
+    if (style == SGRLyricsDrawingAurora) {
+        CGFloat hue = 0, saturation = 0, brightness = 0, alpha = 0;
+        [light getHue:&hue saturation:&saturation brightness:&brightness alpha:&alpha];
+        UIColor *other = [UIColor colorWithHue:fmod(hue + 0.18, 1) saturation:MAX(0.45, saturation)
+                                   brightness:MAX(0.85, brightness) alpha:1];
+        _ink.colors = @[(id)light.CGColor, (id)UIColor.whiteColor.CGColor, (id)other.CGColor];
+        _ink.startPoint = CGPointMake(0, 0);
+        _ink.endPoint = CGPointMake(1, 1);
+    } else {
+        _ink.colors = @[(id)light.CGColor, (id)UIColor.whiteColor.CGColor, (id)light.CGColor];
+        _ink.locations = @[@0, @0.5, @1];
+        _ink.startPoint = CGPointMake(0, 0.5);
+        _ink.endPoint = CGPointMake(1, 0.5);
+    }
+    [_lit.layer addSublayer:_ink];
+}
+
 // The cursor is in line units and the feathered edge is centered on it, so the edge runs on through
 // the space into the next word instead of starting over at each one. Right to left, the mask is the
 // same one turned around: white from the word's right edge, the feather `local` in from it.
@@ -286,6 +366,21 @@ static UIView *lettersOf(NSArray<NSString *> *letters, NSArray<NSNumber *> *xs, 
 // Rises like a critically damped spring let go as the word starts: no jolt, a long soft landing.
 // x = 5 at the end of the word is 96 % of the way up.
 - (void)floatAt:(double)ms {
+    // One clock for the whole sung run, including a paused song and a looping preview. No extra
+    // display link, animation objects, colors or arrays are made on a frame.
+    if (_drawingStyle == SGRLyricsDrawingShimmer && !SGRReduceMotion()) {
+        // The band runs on one clock at 0.5 pt/ms, its position the word's place along the run taken off:
+        // `across` is already the band's offset within the word, so every word sees it pass and a band
+        // crossing into the next word lines up with it.
+        CGFloat across = fmod(MAX(0, ms) * 0.5 - _offset, 1200) - 300;
+        CGFloat width = MAX(1, _ink.bounds.size.width);
+        CGFloat start = (across + _font.pointSize * 0.3) / width;
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        _ink.startPoint = CGPointMake(_rightToLeft ? 1 - start : start, 0.5);
+        _ink.endPoint = CGPointMake(_rightToLeft ? 1 - start - 300 / width : start + 300 / width, 0.5);
+        [CATransaction commit];
+    }
     double x = MAX(0, ms - _riseStart + kFloatLeadMs) / MAX(_riseEnd - _riseStart, kFloatMinMs) * 5;
     CGFloat lift = kLift * (1 - (1 + x) * exp(-x));
     [self glowAt:ms];
@@ -312,12 +407,14 @@ static double heldStrength(double held) {
                         : MAX(0, 1 - (ms - _word.end) / kGlowFadeMs);
         glow = round(strength * envelope * 50) / 50;   // steps of 2 %, so most frames change nothing
     }
+    BOOL neon = _drawingStyle == SGRLyricsDrawingNeon;
+    if (neon && ms >= _riseStart) glow = MAX(glow, 0.65);
     if (glow == _glow) return;
     _glow = glow;
     CALayer *layer = _lit.layer;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    layer.shadowColor = UIColor.whiteColor.CGColor;
+    layer.shadowColor = (neon ? _styleAccent : UIColor.whiteColor).CGColor;
     layer.shadowOffset = CGSizeZero;
     layer.shadowRadius = kGlowRadius * (0.5 + glow / 2) * (0.75 + sgr_glowScale / 4);
     layer.shadowOpacity = MIN(1, kGlowOpacity * glow * sgr_glowScale);
@@ -371,6 +468,7 @@ static double heldStrength(double held) {
 // sizes of their places whatever is hidden above them, so a translation stays the smallest with the
 // pronunciation off. A song is laid out and measured by one of these, so a change of it is a new one.
 @interface SGRKaraokeStyle : NSObject
+@property (nonatomic) SGRLyricsDrawingStyle drawingStyle;
 @property (nonatomic, readonly) NSArray<NSNumber *> *order;   // SGRLyricsText, largest first, shown ones only
 @property (nonatomic, readonly) UIFont *lyrics, *pronunciation, *translation;   // nil for a text not shown
 @property (nonatomic, readonly) SGRKaraokeStyle *backing;   // the backing row's: smaller, its translation read with the line's
@@ -470,6 +568,7 @@ static UIFontWeight lighterWeight(NSInteger weight) {
 
 - (SGRKaraokeStyle *)backing {
     SGRKaraokeStyle *backing = [SGRKaraokeStyle new];
+    backing.drawingStyle = _drawingStyle;
     backing->_lyricsWeight = _lyricsWeight;
     backing->_spokenWeight = _spokenWeight;
     backing->_spokenDim = _spokenDim;
@@ -922,12 +1021,14 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
 // A sweep's word views, each put where the layout has it and told where it sits along the sweep.
 // start: NAN for words timed one by one, else when the run lights up whole. waiting: the words' brightness until sung.
 - (SGRKaraokeSweep *)sweepOf:(NSArray<SGKaraokeWord *> *)words font:(UIFont *)font waiting:(CGFloat)waiting sung:(CGFloat)sung
-                      frames:(NSArray<NSValue *> *)frames offsets:(NSArray<NSNumber *> *)offsets wholeFrom:(double)start {
+                      frames:(NSArray<NSValue *> *)frames offsets:(NSArray<NSNumber *> *)offsets wholeFrom:(double)start
+                drawingStyle:(SGRLyricsDrawingStyle)drawingStyle {
     if (!words.count || frames.count != words.count) return nil;
     BOOL rightToLeft = readsRightToLeft([[words valueForKey:@"text"] componentsJoinedByString:@""]);
     NSMutableArray<SGRKaraokeWordView *> *views = [NSMutableArray arrayWithCapacity:words.count];
     for (NSUInteger i = 0; i < words.count; i++) {
         SGRKaraokeWordView *view = [[SGRKaraokeWordView alloc] initWithWord:words[i] font:font waiting:waiting sung:sung rightToLeft:rightToLeft];
+        [view applyDrawingStyle:drawingStyle];
         CGRect frame = frames[i].CGRectValue;
         view.center = CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame));
         view.offset = offsets[i].doubleValue;
@@ -963,10 +1064,10 @@ static double wholeFrom(SGKaraokeLine *run, BOOL sweepsEstimates) {
     _noteLit = style.noteLit;
     NSMutableArray<SGRKaraokeSweep *> *sweeps = [NSMutableArray array];
     SGRKaraokeSweep *sung = [self sweepOf:line.words font:style.lyrics waiting:kDimAlpha sung:1 frames:layout.lyricFrames
-                                  offsets:layout.lyricOffsets wholeFrom:wholeFrom(line, sweepsEstimates)];
+                                  offsets:layout.lyricOffsets wholeFrom:wholeFrom(line, sweepsEstimates) drawingStyle:style.drawingStyle];
     SGRKaraokeSweep *spoken = [self sweepOf:line.pronunciation.words font:style.pronunciation waiting:_spokenDim sung:style.spokenSung
                                      frames:layout.spokenFrames offsets:layout.spokenOffsets
-                                  wholeFrom:wholeFrom(line.pronunciation, sweepsEstimates)];
+                                  wholeFrom:wholeFrom(line.pronunciation, sweepsEstimates) drawingStyle:style.drawingStyle];
     if (sung) [sweeps addObject:sung];
     if (spoken) [sweeps addObject:spoken];
     _sweeps = sweeps;
@@ -1598,6 +1699,7 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(aiResultsChanged:) name:SGLyricsAIResultDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationDidChange:) name:SGRTranslationNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(lookChanged) name:SGRLyricsLookDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsStyleDidChangeNotification object:nil];
     // The menu says the song's offsets and whether its lyrics were picked by hand.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(offerExtras) name:SGLyricsOffsetsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pinChanged:) name:SGLyricsPinDidChangeNotification object:nil];
@@ -1655,6 +1757,12 @@ typedef struct {
     self.userInteractionEnabled = NO;
     self.accessibilityElementsHidden = YES;   // a picture of the setting, with nothing to read or do
     return self;
+}
+
+- (void)setSampleStyleIdentifier:(NSString *)identifier {
+    if (!_sample || [_sampleStyleIdentifier isEqualToString:identifier]) return;
+    _sampleStyleIdentifier = [identifier copy];
+    [self restyle];
 }
 
 - (void)dealloc {
@@ -2086,6 +2194,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
                                                      pronunciation:_hasSpoken && (_sample || SGFlag(SGRKeyLyricsPronunciation, NO))
                                                        translation:_hasTranslation && (_sample || SGFlag(SGRKeyLyricsTranslation, NO))
                                                          romanised:romanised];
+    style.drawingStyle = SGRLyricsDrawingStyleForID(_sampleStyleIdentifier ?: SGRLyricsStyleNow());
     BOOL japanese = SGLyricsLooksJapanese(_lines);
     style.japanese = romanised && japanese;
     if (japanese && SGFlag(SGKeyLyricsFurigana, NO)) style.furigana = [style furiganaAt:round(_fontSize * kFuriganaShare)];
