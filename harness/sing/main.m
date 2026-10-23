@@ -487,8 +487,8 @@ static void checkEngine(SGSingSeparator *separator, Audio mix, Audio voice, Audi
         instrumental.right[i] = mix.right[i] - voice.right[i];
     }
     double first = 0;
-    for (size_t i = 0; i < kSGSingRate; i++) first = fmax(first, fabs(out.left[i] - mix.left[i]) + fabs(out.right[i] - mix.right[i]));
-    CHECK(first == 0, "while the lead fills the mix plays dry (%.2g)", first);
+    for (size_t i = kSGSingRate / 10; i < kSGSingRate; i++) first = fmax(first, fabs(out.left[i] - 0.1f * mix.left[i]) + fabs(out.right[i] - 0.1f * mix.right[i]));
+    CHECK(first < 1e-6, "while the lead fills the mix plays quietly at -20 dB (%.2g)", first);
     double match = snr(expected, out, from, to);
     CHECK(match > 25, "then what plays is the mix less the vocals the offline pass finds (%.1f dB)", match);
     printf("  info  the karaoke against the true instrumental: %.1f dB; the mix's own: %.1f dB\n", snr(instrumental, out, from, to), snr(instrumental, mix, from, to));
@@ -557,6 +557,103 @@ static void checkEngine(SGSingSeparator *separator, Audio mix, Audio voice, Audi
     return YES;
 }
 @end
+
+// Constant input makes the envelope (including buffer boundaries) measurable independently of a waveform.
+// No model is needed: the whole-window separator makes level 0.5 an exact half-gain separated mix.
+static void checkQuietStart(void) {
+    Audio input = makeAudio(22 * kSGSingRate);
+    for (size_t i = 0; i < input.frames; i++) { input.left[i] = 0.5f; input.right[i] = -0.25f; }
+    enum { slice = 441 };
+    // A model that never arrives: the start is bounded even without a separator, with the budget held.
+    // Off and As sung remain bit-identical, including the resting/paused case.
+    for (int mode = 0; mode < 4; mode++) {
+        SGSingEngine *engine = SGSingEngineCreate();
+        SGSingEngineSetLevel(engine, mode >= 2 ? 1 : 0);
+        SGSingEngineSetOn(engine, mode != 1);
+        SGSingEngineSetPaused(engine, mode == 3);
+        SGSingEngineHoldBudget(engine, true);
+        Source source = {input, 0};
+        float left[slice], right[slice], previous = input.left[0];
+        double fill = 0, dry = 0, step = 0, bypass = 0;
+        sg_renderThread = pthread_self();
+        malloc_logger = countAllocation;
+        for (size_t done = 0; done < 8 * kSGSingRate; done += slice) {
+            atomic_store(&sg_inRender, true);
+            SGSingEngineRender(engine, slice, left, right, pullSource, &source);
+            atomic_store(&sg_inRender, false);
+            for (UInt32 i = 0; i < slice; i++) {
+                size_t at = done + i;
+                step = fmax(step, fabsf(left[i] - previous));
+                previous = left[i];
+                bypass = fmax(bypass, fabsf(left[i] - 0.5f) + fabsf(right[i] + 0.25f));
+                if (at >= kSGSingRate / 10 && at < 6 * kSGSingRate)
+                    fill = fmax(fill, fabsf(left[i] - 0.05f) + fabsf(right[i] + 0.025f));
+                if (at >= 6.2 * kSGSingRate)
+                    dry = fmax(dry, fabsf(left[i] - 0.5f) + fabsf(right[i] + 0.25f));
+            }
+        }
+        malloc_logger = NULL;
+        if (mode == 0) {
+            CHECK(fill < 1e-6, "quiet start: -20 dB throughout the six-second fill, even while the model is loading (%.2g)", fill);
+            CHECK(dry == 0, "quiet start: dry again after six seconds plus the 100 ms release, even with the budget held (%.2g)", dry);
+            CHECK(step <= 0.5 * 0.9 / (0.02 * kSGSingRate) + 1e-6,
+                  "quiet start: attack and timeout release have no steps beyond the ramp (%.6f)", step);
+        } else {
+            CHECK(bypass == 0, "quiet start: %s stays bit-identical (%.2g)", mode == 1 ? "Off" : mode == 2 ? "As sung" : "As sung resting", bypass);
+        }
+        SGSingEngineDestroy(engine);
+    }
+
+    SGSingEngine *engine = SGSingEngineCreate();
+    SGWholeSeparator *separator = [[SGWholeSeparator alloc] initWithModel:nil];
+    SGSingEngineSetSeparator(engine, separator);
+    SGSingEngineSetLevel(engine, 0.5);
+    Source source = {input, 0};
+    __block bool switched = false, flushed = false, removed = false;
+    __block double firstMix = -1, secondMix = -1, flushAt = -1, removedAt = -1;
+    malloc_logger = countAllocation;
+    Audio out = play(engine, input, &source, slice, 16, ^(double played) {
+        bool mixing = SGSingEngineReadStats(engine).mixing;
+        if (mixing && firstMix < 0) firstMix = played;
+        if (flushed && mixing && secondMix < 0) secondMix = played;
+        if (played >= 0.5 && !switched) { switched = true; SGSingEngineSetOn(engine, true); }
+        if (played >= 6 && !flushed) {
+            flushed = true;
+            flushAt = played;
+            SGSingEngineFlush(engine);
+        }
+        // Once established, losing the separator is not a fresh start: the dry song must stay audible.
+        if (played >= 12 && !removed) {
+            removed = true;
+            removedAt = played;
+            SGSingEngineSetSeparator(engine, nil);
+        }
+    });
+    malloc_logger = NULL;
+    double firstFill = 0, nextFill = 0, mixed = 0, behind = 0, crossfadeStep = 0, overshoot = 0;
+    for (size_t i = 0; i < out.frames / slice * slice; i++) {
+        double t = (double)i / kSGSingRate;
+        double quietError = fabsf(out.left[i] - 0.05f) + fabsf(out.right[i] + 0.025f);
+        if (t >= 0.6 && t < 1) firstFill = fmax(firstFill, quietError);
+        if (t >= flushAt + 0.1 && t < flushAt + 0.5) nextFill = fmax(nextFill, quietError);
+        if (t >= 5 && t < 6) mixed = fmax(mixed, fabsf(out.left[i] - 0.25f) + fabsf(out.right[i] + 0.125f));
+        if (t >= removedAt + 0.2) behind = fmax(behind, fabsf(out.left[i] - 0.5f) + fabsf(out.right[i] + 0.25f));
+        if ((firstMix > 0 && t >= firstMix - 0.02 && t < firstMix + 0.2) ||
+            (secondMix > 0 && t >= secondMix - 0.02 && t < secondMix + 0.2)) {
+            if (i) crossfadeStep = fmax(crossfadeStep, fabsf(out.left[i] - out.left[i - 1]));
+            overshoot = fmax(overshoot, fmax(0.05 - out.left[i], out.left[i] - 0.25));
+        }
+    }
+    CHECK(firstFill < 1e-6 && nextFill < 1e-6, "quiet start: switching on and a track/seek flush each duck the fill (%.2g, %.2g)", firstFill, nextFill);
+    CHECK(firstMix > 0 && secondMix > flushAt && mixed < 1e-6, "quiet start: both fills reach the separated mix (%.2f s, %.2f s; error %.2g)", firstMix, secondMix, mixed);
+    CHECK(crossfadeStep <= 0.2 / (0.1 * kSGSingRate) + 1e-6 && overshoot < 1e-6,
+          "quiet start: linear 100 ms crossfade, no click or dry-vocal overshoot (step %.6f, overshoot %.2g)", crossfadeStep, overshoot);
+    CHECK(behind == 0, "quiet start: losing separation after the start returns to dry, not a quiet hold (%.2g)", behind);
+    CHECK(atomic_load(&sg_renderAllocations) == 0, "quiet start: no render-thread allocations (%u)", atomic_load(&sg_renderAllocations));
+    SGSingEngineDestroy(engine);
+    free(input.left); free(input.right);
+    free(out.left); free(out.right);
+}
 
 // Whole windows back as vocals, as fast as asked: the first `fastWindows` at once, then `slow` seconds each; with a
 // NaN in every window when `poison` is set.
@@ -1129,6 +1226,8 @@ int main(int argc, char **argv) {
     @autoreleasepool {
         if (argc == 2 && !strcmp(argv[1], "spatial")) {
             sg_outDir = NSTemporaryDirectory();
+            checkSTFT();
+            checkQuietStart();
             checkHold();
             checkCap();
             checkStarved();
@@ -1151,6 +1250,7 @@ int main(int argc, char **argv) {
         sg_outDir = @(argv[3]);
         [NSFileManager.defaultManager createDirectoryAtPath:sg_outDir withIntermediateDirectories:YES attributes:nil error:nil];
         checkSTFT();
+        checkQuietStart();
 
         SGSingSeparator *separator = checkLoader(modelPath, neural);
         if (!separator) return 1;

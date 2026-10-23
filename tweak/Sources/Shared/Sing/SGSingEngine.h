@@ -7,7 +7,9 @@
 // takes the held sound two seconds at a time, every 1.5 s, runs the separator and writes the vocals into a
 // second ring beside it, the half second the windows share crossfaded. Each render plays the held sound
 // from the oldest frame on, the vocals turned down by the level once a hop of them is in ahead, and dry once fewer
-// than the reserve are (as the lead fills, or when the model falls behind), with a budget for falling behind. Not
+// than the reserve are (when the model falls behind), with a budget for falling behind. At switch-on or a flush,
+// the dry side starts at -20 dB after a 20 ms ramp, then crossfades into the separated mix over 100 ms. After six
+// seconds without a mix it returns to dry over 100 ms; Off, held, given up and As sung never ask for attenuation. Not
 // separating (switched off, held, given up, without a model), it plays the lead it holds on as it is, dry, and lets it
 // go only with a flush, where nothing heard is lost; once off and let go, it is a straight pull again.
 //

@@ -723,7 +723,7 @@ NSString *SGSingStatusDetail(void) {
             return [NSString stringWithFormat:SGL(@"settings.karaoke.note.cpu_preparing", @"Core ML prepares the voice model for this iPhone's CPU, %.0f s so far, then Karaoke starts. The first time, that can take a minute."),
                     SGSingLoaderSeconds()];
         case SGSingStateBuffering:
-            return SGL(@"settings.karaoke.note.buffering_ahead", @"Karaoke listens a few seconds ahead of what plays, so the vocals are separated before you hear them. Until then the song plays as it is.");
+            return SGL(@"settings.karaoke.note.buffering_quiet_start", @"Karaoke listens ahead to separate the vocals. Except at As sung, the song starts quietly for up to six seconds, then fades into the separated mix or back to normal volume if the vocals are late.");
         case SGSingStateSinging:
             return runsOnNote();
         case SGSingStateBehind: {

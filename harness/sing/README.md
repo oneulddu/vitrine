@@ -24,10 +24,15 @@ the CPU copy and the Neural Engine copy. Each check prints a line:
   synthetic chords taken apart (the vocals found scored against the voice, beside the mix's own score), and with
   `ane` the Neural Engine copy against the CPU copy on the same window;
 - the engine: the mix pulled through `SGSingEngineRender` in buffers of 1024 on a thread that keeps real time,
-  with Sing on from the start: the mix plays dry while the lead fills, then exactly the mix less the vocals the
+  with Sing on from the start: the mix plays quietly at -20 dB while the lead fills, then exactly the mix less the vocals the
   offline pass finds, the lead kept after Sing is switched off and the mix playing on where it was, nothing skipped, the
   top of the slider playing the vocals alone, a flush dropping the lead, and no allocation on the render thread
   (`malloc_logger`);
+- the quiet start, without the model: switch-on and a track/seek flush duck the whole dry output to -20 dB in
+  20 ms, then crossfade into the separated mix over 100 ms without clicks or a dry-vocal overshoot; with no model
+  arriving it returns to dry after six seconds plus a 100 ms ramp, even while the falling-behind budget is held;
+  Off, As sung and resting remain bit-identical, and losing separation after a successful start stays dry.
+  The start's gain is on the dry side only, so it never attenuates the separated mix. No render-thread allocations.
 - the lead, without the model: the lead reported is the frames pulled and not played, to the frame; held (the heat,
   resting), given up or switched off, it is kept and played on as it is, every frame in order and none built; a flush
   (a pause, a seek) drops it at once and the next frame pulled plays next; it is built again when it separates; and
@@ -70,7 +75,7 @@ second apart over 30 seconds.
 
     ./build.sh && build/sing <separator-ane.mlmodelc> <voice> <out dir> [ane|cpu]   (both copies, the default, or the CPU's alone)
     ./build.sh thread && build/sing-thread <separator-ane.mlmodelc> <voice> <out dir> ane     (ThreadSanitizer)
-    ./build.sh && build/sing spatial                                        (the lead, spatial voice and falling behind)
+    ./build.sh && build/sing spatial                                        (STFT, quiet start, lead, spatial voice and falling behind)
 
 The out dir gets `mix.wav`, `vocals.wav`, `accompaniment.wav`, `engine.wav` (what played) and `spatial.wav` (the
 tone turned; the temporary folder's with `spatial` alone).

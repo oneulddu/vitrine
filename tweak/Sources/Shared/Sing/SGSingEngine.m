@@ -16,6 +16,11 @@ enum {
 static const double kLeadPerModelTime = 1.5, kLeadSpare = 0.75;
 // The vocals come in and go out over this long, so the switch and the lead filling do not click.
 static const float kFadeSeconds = 0.1f;
+// A start has no vocals to subtract yet. -20 dB keeps the song audible without a full-volume vocal entrance.
+// Duck in 20 ms; crossfade into the separated mix (or back to dry) in kFadeSeconds. Six seconds of rendered audio
+// is the whole allowance, including a model still loading: loading it must not renew the quiet hold.
+static const float kStartGain = 0.1f, kStartAttackSeconds = 0.02f;
+static const uint64_t kQuietStartFrames = kSGSingRate * 6;
 // Changes in what Spotify's clock runs ahead of what plays, kept for SGSingEngineLeadAt: a fill or two's worth, as
 // it is read soon after each report; and the moments last asked about, kept for as long as their report stands.
 enum { kHistory = 1024, kAsked = 8 };
@@ -81,6 +86,9 @@ struct SGSingEngine {
     // The render thread's own.
     bool running;                 // the rings are in use: Sing is on, or the lead is not given back yet
     float amount, vocalsGain, otherGain;
+    float startGain;              // gain of the dry side only; the separated side is never attenuated
+    bool quietStart;              // until the first mix or the deadline; Behind never rearms it
+    uint64_t startFrames;         // rendered frames since switch-on or flush, including time without a model
     bool established;             // the vocals have been in since the rings last started over or the work resumed
     bool wasWorking;              // the last render's: working resumed (after a heat hold, a new model) starts over
     uint64_t recovering, steady;  // frames short of vocals since they were in, and frames in with them since
@@ -130,6 +138,8 @@ static void startOver(SGSingEngine *engine) {
     atomic_store(&engine->base, written);
     atomic_fetch_add(&engine->generation, 1);
     engine->amount = 0;
+    engine->quietStart = true;
+    engine->startFrames = 0;
     engine->established = false;
     atomic_store(&engine->mixing, false);
 }
@@ -201,7 +211,11 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
         atomic_store(&engine->flushAsked, false);
     }
     if (atomic_exchange_explicit(&engine->flushAsked, false, memory_order_relaxed)) startOver(engine);
-    if (atomic_exchange_explicit(&engine->freshBudget, false, memory_order_relaxed)) engine->recovering = engine->steady = 0;
+    if (atomic_exchange_explicit(&engine->freshBudget, false, memory_order_relaxed)) {
+        engine->recovering = engine->steady = 0;
+        engine->quietStart = true;
+        engine->startFrames = 0;
+    }
 
     uint64_t written = atomic_load_explicit(&engine->written, memory_order_relaxed);
     uint64_t played = atomic_load_explicit(&engine->played, memory_order_relaxed);
@@ -266,8 +280,14 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
     }
     atomic_store_explicit(&engine->mixing, mixing, memory_order_relaxed);
     atomic_store_explicit(&engine->spent, engine->recovering, memory_order_relaxed);
+    // First success ends the start, even if the model subsequently falls behind. Do not rearm when a model loads
+    // or a pause ends: only an explicit switch-on or flush gets another bounded quiet start.
+    if (mixing) engine->quietStart = false;
     float vocalsTo, otherTo;
-    gainsFor(loadFloat(&engine->levelBits), &vocalsTo, &otherTo);
+    float level = loadFloat(&engine->levelBits);
+    gainsFor(level, &vocalsTo, &otherTo);
+    bool quiet = on && level != 1 && !atomic_load_explicit(&engine->paused, memory_order_relaxed)
+                 && !atomic_load_explicit(&engine->gaveUp, memory_order_relaxed) && engine->quietStart;
     float vocalsStep = (vocalsTo - engine->vocalsGain) / frames, otherStep = (otherTo - engine->otherGain) / frames;
     float directTo = 1, sendTo = 0, widthTo = 1;
     if (atomic_load_explicit(&engine->spatial, memory_order_relaxed)) {
@@ -300,6 +320,15 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
         engine->directGain += directStep;
         engine->sendGain += sendStep;
         engine->width += widthStep;
+        bool holding = quiet && engine->startFrames < kQuietStartFrames;
+        if (on && engine->quietStart && engine->startFrames < kQuietStartFrames) engine->startFrames++;
+        // Keep the quiet dry side throughout the crossfade, rather than raising the original vocals while the
+        // separated side fades in. Once fully mixed its weight is zero, so restoring its gain is inaudible.
+        if (amountTo == 0) {
+            float toGain = holding ? kStartGain : 1;
+            float step = (1 - kStartGain) / ((holding ? kStartAttackSeconds : kFadeSeconds) * kSGSingRate);
+            engine->startGain += fmaxf(-step, fminf(toGain - engine->startGain, step));
+        }
         float voiceSend = 0;
         if (position < ready) {
             engine->amount += fmaxf(-fade, fminf(amountTo - engine->amount, fade));
@@ -322,12 +351,14 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
             voiceSend = a * engine->vocalsGain * engine->sendGain * (v + w) * 0.5f;
             // Instruments width: the rest's side (half its left less its right) scaled, its middle kept.
             float side = (engine->width - 1) * ((x - v) - (y - w)) * 0.5f * engine->otherGain;
-            left[i] = fmaxf(-1, fminf(x + a * (voice * placedLeft - v + otherGain * (x - v) + side), 1));
-            right[i] = fmaxf(-1, fminf(y + a * (voice * placedRight - w + otherGain * (y - w) - side), 1));
+            float dryGain = (1 - a) * (engine->startGain - 1);
+            left[i] = fmaxf(-1, fminf(x + x * dryGain + a * (voice * placedLeft - v + otherGain * (x - v) + side), 1));
+            right[i] = fmaxf(-1, fminf(y + y * dryGain + a * (voice * placedRight - w + otherGain * (y - w) - side), 1));
+            if (a == 1) engine->startGain = 1;
         } else {
             engine->amount = 0;
-            left[i] = x;
-            right[i] = y;
+            left[i] = x * engine->startGain;
+            right[i] = y * engine->startGain;
             dry += working;
         }
         if (sending) engine->send[0][i % kSGDSPEffectMaxFrames] = voiceSend;
@@ -361,7 +392,7 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
         atomic_store_explicit(&engine->historyCount, n + 1, memory_order_release);
     }
     // The lead given back and the vocals faded out: a straight pull from the next render on.
-    if (!on && played == written) engine->running = false;
+    if (!on && played == written && engine->startGain == 1) engine->running = false;
     return noErr;
 }
 
@@ -492,6 +523,7 @@ SGSingEngine *SGSingEngineCreate(void) {
         engine->vocals[c] = calloc(kSGSingWindowFrames, sizeof(float));
     }
     engine->vocalsGain = engine->otherGain = engine->directGain = engine->width = 1;
+    engine->startGain = 1;
     storeFloat(&engine->widthBits, 1);
     storeFloat(&engine->levelBits, 1);
     storeFloat(&engine->distanceBits, kNearest);

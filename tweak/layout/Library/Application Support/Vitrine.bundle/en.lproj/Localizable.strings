@@ -721,7 +721,7 @@
 "settings.karaoke.model.switch.action" = "Switch";
 "settings.karaoke.model.switch.stop.message" = "The voice model coming in stops, and what has come in is kept for when you choose it again.";
 "settings.karaoke.model.switch.stop.title" = "Stop the download?";
-"settings.karaoke.note.buffering_ahead" = "Karaoke listens a few seconds ahead of what plays, so the vocals are separated before you hear them. Until then the song plays as it is.";
+"settings.karaoke.note.buffering_quiet_start" = "Karaoke listens ahead to separate the vocals. Except at As sung, the song starts quietly for up to six seconds, then fades into the separated mix or back to normal volume if the vocals are late.";
 "settings.karaoke.note.cpu_by_setting" = "Karaoke runs on the CPU alone, as Runs on says.";
 "settings.karaoke.note.cpu_loads_on_open" = "Karaoke runs on the CPU; the Neural Engine copy loads once Spotify is open.";
 "settings.karaoke.note.cpu_model_update" = "Karaoke runs on the CPU with the voice model it had before. Its update (%@, on the Voice model row) runs on the Neural Engine, faster and cooler.";

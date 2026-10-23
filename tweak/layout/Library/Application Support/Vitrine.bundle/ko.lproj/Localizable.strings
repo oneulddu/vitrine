@@ -760,7 +760,7 @@
 "settings.karaoke.model.switch.action" = "전환";
 "settings.karaoke.model.switch.stop.message" = "다운로드 중인 음성 모델이 중단되며, 이미 수신된 내용은 나중에 다시 선택할 때를 위해 보관됩니다.";
 "settings.karaoke.model.switch.stop.title" = "다운로드를 중단하겠습니까?";
-"settings.karaoke.note.buffering_ahead" = "노래방 기능은 소리를 듣기 전에 보컬을 분리할 수 있도록 재생 중인 위치보다 몇 초 앞서 오디오를 분석합니다. 분석이 완료될 때까지 노래는 원본대로 재생됩니다.";
+"settings.karaoke.note.buffering_quiet_start" = "노래방 기능은 보컬을 분리하기 위해 재생 위치보다 앞서 오디오를 분석합니다. ‘원곡 그대로’가 아니면 최대 6초 동안 노래가 작게 재생된 뒤 보컬이 분리된 소리로 부드럽게 넘어가고, 분리가 늦어지면 원래 음량으로 돌아갑니다.";
 "settings.karaoke.note.cpu_by_setting" = "'실행 장치' 설정에 따라 노래방 기능이 CPU에서만 실행됩니다.";
 "settings.karaoke.note.cpu_loads_on_open" = "노래방 기능이 CPU에서 실행됩니다. Spotify가 열리면 Neural Engine 복사본이 로드됩니다.";
 "settings.karaoke.note.cpu_model_update" = "노래방 기능이 이전 음성 모델을 사용하여 CPU에서 실행 중입니다. 업데이트(%@, '음성 모델' 행)를 다운로드하면 Neural Engine에서 더 빠르고 발열 없이 실행됩니다.";
