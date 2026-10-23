@@ -1293,6 +1293,7 @@
 "settings.mod.licenses.voice_model.subtitle" = "Mel-Band RoFormer · MIT License";
 "settings.mod.licenses.voice_model.title" = "Karaoke's voice model";
 "settings.mod.licenses.wdl.subtitle" = "Liveprog's EEL2 · zlib License";
+"settings.mod.report.title" = "Report a problem";
 "settings.mod.reset.action.reset_and_restart" = "Reset and restart";
 "settings.mod.reset.alert.message" = "Every switch and lyrics source turns off, flag overrides and the tab bar layout are cleared, and Spotify restarts as it came, with the mod doing nothing until asked. Spotify settings changed by AutoMix and Lossless are restored.";
 "settings.mod.reset.alert.title" = "Reset all settings?";
@@ -1800,6 +1801,38 @@
 "settings.redesign.title" = "Redesigned UI";
 "settings.redesign.untested.alert.message" = "The redesign is built on iOS 26's Liquid Glass. iOS %@ draws a blur in its place, and nobody has tested the redesign there: pages can be laid out wrongly, and Spotify can freeze as it starts. If Spotify does not start with it, the next launch goes back to Native.";
 "settings.redesign.untested.subtitle" = "Untested on iOS %@";
+
+"settings.report.action.ok" = "OK";
+"settings.report.action.record.subtitle" = "A red Stop floats over Spotify while it records. The recording is saved into this report.";
+"settings.report.action.record.title" = "Record the screen";
+"settings.report.action.send.subtitle" = "Share the text, the diagnostics and the recordings.";
+"settings.report.action.send.title" = "Send";
+"settings.report.delete.alert.action" = "Delete";
+"settings.report.delete.alert.message" = "Its text and diagnostics are removed from this phone. This cannot be undone.";
+"settings.report.delete.alert.message_recordings" = "Its text, diagnostics and %lu recording(s) are removed from this phone. This cannot be undone.";
+"settings.report.delete.alert.title" = "Delete this report?";
+"settings.report.delete.recording.message" = "Stop the recording, then delete the report.";
+"settings.report.delete.recording.title" = "Recording in progress";
+"settings.report.delete.title" = "Delete report";
+"settings.report.list.empty" = "No reports on this phone yet.";
+"settings.report.list.none_title" = "(no text)";
+"settings.report.list.recordings_format" = "%@ · %lu recording(s)";
+"settings.report.list.title" = "Your reports";
+"settings.report.recording.busy.message" = "A recording is already running.";
+"settings.report.recording.failed.title" = "Could not record the screen";
+"settings.report.recording.saved" = "Recording saved to this report.";
+"settings.report.recording.stop" = "Stop";
+"settings.report.recording.stop.hint" = "Ends the recording and goes back to the report.";
+"settings.report.recording.stop.label" = "Stop recording";
+"settings.report.recording.unavailable.message" = "This iPhone does not offer ReplayKit's recording, or screen recording is turned off in Settings.";
+"settings.report.share.empty.message" = "Write what went wrong, record the screen, or both.";
+"settings.report.share.empty.title" = "Nothing to send yet";
+"settings.report.status.saved" = "Saved on this phone";
+"settings.report.status.shared_format" = "Shared on %@";
+"settings.report.title" = "Report a problem";
+"settings.report.what.note" = "What you were doing, which song, and what the screen did. It stays on this phone until you send it.";
+"settings.report.what.placeholder" = "What went wrong?";
+"settings.report.what.title" = "What went wrong";
 
 "settings.search.none" = "No Results";
 "settings.search.placeholder" = "Search";

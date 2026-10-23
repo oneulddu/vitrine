@@ -80,3 +80,13 @@ void SGShareDiagnostics(void);
 NSURL *SGWriteDiagnosticsFile(void);
 
 UIViewController *SGAboutPage(void);   // the Mod page
+
+// Report.m: "Report a problem". A report is kept in Application Support/Vitrine/Reports/<uuid>/ —
+// report.json (created and shared dates, the text, the versions), diagnostics.txt (SGWriteDiagnosticsFile's
+// copy, refreshed each time the report is opened and before each send), and a .mov for each screen
+// recording. Send hands the text, the diagnostics and the recordings to the share sheet; the report
+// counts as shared only when that completes. The page lists every report on the phone and opens each one
+// to add more text or a recording, refresh the diagnostics, send again or delete it. The screen is
+// recorded with ReplayKit in the app, microphone off, and a red Stop floats over Spotify until it ends.
+UIViewController *SGReportListPage(void);            // the page, opening a new report at its top
+UIViewController *SGReportPageFor(NSString *identifier);   // one kept report, identifier from its list entry
