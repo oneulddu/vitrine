@@ -1,5 +1,5 @@
 // The plays Listening stats counts, kept on the phone: recorded as they happen, merged in from Spotify's own
-// data export, and added up into tops for a period. Foundation only, so the Mac harness
+// data export, and added up into tops, chart bars and streaks for a calendar period. Foundation only, so the Mac harness
 // (harness/listening-stats) builds it as the tweak does.
 //
 // The log is a text file of one play per line, appended to as plays end, so recording costs one write:
@@ -77,12 +77,38 @@ SGHistoryImport *SGReadHistoryURLs(NSArray<NSURL *> *urls);
 
 // The plays that ended at or after `since` (Unix seconds; 0 for all of them), added up.
 SGStats *SGStatsSince(NSArray<SGPlay *> *plays, int64_t since, NSUInteger top);
+// The plays that ended in [start, end) (Unix seconds; INT64_MAX for no end), added up the same way.
+SGStats *SGStatsBetween(NSArray<SGPlay *> *plays, int64_t start, int64_t end, NSUInteger top);
 
 @interface SGListeningStreaks : NSObject
 @property (nonatomic) NSUInteger current, best;
+// The first and last local day (each its start) of the current streak and of the best one, the latest
+// best on a tie; nil while the streak is 0.
+@property (nonatomic, strong) NSDate *currentStart, *currentEnd, *bestStart, *bestEnd;
 @end
 // Inputs are already-counted log records (do not apply the Spotify import threshold again).
 // Each play belongs to its ending local day/hour. Streaks ignore future days; current may end yesterday.
 SGListeningStreaks *SGStreaks(NSArray<SGPlay *> *plays, NSDate *now, NSCalendar *calendar);
 // Always 24 entries indexed 0…23, including empty hours; repeated DST hours share a bucket.
 NSArray<SGStatEntry *> *SGHourlyStats(NSArray<SGPlay *> *plays, int64_t since, NSCalendar *calendar);
+// The same for the plays that ended in [start, end) (INT64_MAX for no end).
+NSArray<SGStatEntry *> *SGHourlyStatsBetween(NSArray<SGPlay *> *plays, int64_t start, int64_t end, NSCalendar *calendar);
+
+// The calendar periods the page steps through, in the supplied calendar and its time zone. A week starts on
+// the calendar's firstWeekday; every period starts at the start of its first day, which is 01:00 on a day a
+// time zone skips midnight, so DST weeks and days are an hour short or long.
+typedef NS_ENUM(NSInteger, SGStatsPeriod) { SGStatsPeriodWeek, SGStatsPeriodMonth, SGStatsPeriodYear };
+// The period holding `date`, as [its start, the next one's start). Nil outside what NSCalendar can represent.
+NSDateInterval *SGPeriodInterval(SGStatsPeriod period, NSDate *date, NSCalendar *calendar);
+// The period `steps` whole periods after (negative: before) the one holding `date`.
+NSDateInterval *SGPeriodStep(SGStatsPeriod period, NSDate *date, NSInteger steps, NSCalendar *calendar);
+
+// One bar of a period's chart: a local day of a week or month, or a month of a year.
+@interface SGStatBucket : NSObject
+@property (nonatomic) int64_t start, end;   // Unix seconds, [start, end)
+@property (nonatomic) NSUInteger plays;
+@property (nonatomic) int64_t ms;
+@end
+// The days (week, month) or months (year) of the period holding `date`, in order and empty ones included,
+// each with the plays that ended in it. Empty when the period cannot be represented.
+NSArray<SGStatBucket *> *SGPeriodBuckets(NSArray<SGPlay *> *plays, SGStatsPeriod period, NSDate *date, NSCalendar *calendar);

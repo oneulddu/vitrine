@@ -8,7 +8,8 @@
 // Actions: erase (the log emptied), seed (a week, a month and a year of plays merged in), record (a track played
 // 31 s, one played 5 s, one paused after 10 s for 10 s and played 25 s more, then playback stopped: takes 82 s, so put it
 // last), pick (an extended export and a zip of a basic one handed to the picker's delegate as if picked),
-// select=<section>.<row> (a tap on a row of the page on top), pop, bottom, dump (the rows each section shows).
+// select=<section>.<row> (a tap on a row of the page on top), kind=<0 week|1 month|2 year>, back, forward (the period
+// card's controls), pop, bottom, dump (the rows each section shows).
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
@@ -155,13 +156,14 @@ static UIDocumentPickerViewController *SGHarnessPicker;
     [picker.delegate documentPicker:picker didPickDocumentsAtURLs:@[json, zipURL]];
     // The import row while the files are read, before the merge comes back, and the guard against a second pick.
     UITableView *table = self.table;
-    UITableViewCell *row = [table.dataSource tableView:table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:2]];
+    NSIndexPath *importRow = [NSIndexPath indexPathForRow:0 inSection:7];   // Import history
+    UITableViewCell *row = [table.dataSource tableView:table cellForRowAtIndexPath:importRow];
     SGHarnessPicker = nil;
-    [table.delegate tableView:table didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:2]];
+    [table.delegate tableView:table didSelectRowAtIndexPath:importRow];
     NSLog(@"[harness] importing: the row reads \"%@\", a second tap %@", [(UILabel *)row.accessoryView text],
           SGHarnessPicker ? @"opens the picker again" : @"is ignored");
     [self after:1.5 do:^{
-        UITableViewCell *after = [table.dataSource tableView:table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:2]];
+        UITableViewCell *after = [table.dataSource tableView:table cellForRowAtIndexPath:importRow];
         NSLog(@"[harness] imported: the row reads \"%@\"", [(UILabel *)after.accessoryView text]);
     }];
     [self after:2 do:^{
@@ -193,6 +195,20 @@ static UIDocumentPickerViewController *SGHarnessPicker;
     } else if ([verb isEqualToString:@"select"]) {
         NSArray<NSString *> *at = [value componentsSeparatedByString:@"."];
         [table.delegate tableView:table didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:at[1].integerValue inSection:at[0].integerValue]];
+    } else if ([verb isEqualToString:@"kind"] || [verb isEqualToString:@"back"] || [verb isEqualToString:@"forward"]) {
+        // The period card's controls, tapped as a finger would.
+        NSMutableArray<UIControl *> *controls = [NSMutableArray array];
+        findViews(table, UIControl.class, controls);
+        for (UIControl *control in controls) {
+            if ([verb isEqualToString:@"kind"] && [control isKindOfClass:UISegmentedControl.class]) {
+                ((UISegmentedControl *)control).selectedSegmentIndex = value.integerValue;
+                [control sendActionsForControlEvents:UIControlEventValueChanged];
+            } else if (![verb isEqualToString:@"kind"] && [control isKindOfClass:UIButton.class] && control.accessibilityLabel.length &&
+                       [control.accessibilityLabel hasPrefix:[verb isEqualToString:@"back"] ? @"Previous" : @"Next"]) {
+                NSLog(@"[harness] %@ enabled %d", control.accessibilityLabel, control.enabled);
+                [control sendActionsForControlEvents:UIControlEventTouchUpInside];
+            }
+        }
     } else if ([verb isEqualToString:@"pop"]) {
         [self.nav popViewControllerAnimated:YES];
     } else if ([verb isEqualToString:@"bottom"]) {

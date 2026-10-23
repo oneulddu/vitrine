@@ -633,8 +633,10 @@ Shared:
                   or half the track (ListeningStats.x), Spotify's data export read in, either shape, loose, zipped or from a
                   selected folder, and Vitrine's own versioned JSON history imported or exported without an account. Plays
                   already there are skipped (SGPlayLog.m); input is bounded to 64 MiB per JSON, 256 MiB total and one million
-                  plays. Its page shows the current and best day streak, top tracks, artists and albums for a week, a month,
-                  a year and all time, and a locale-formatted hourly breakdown for each period. File parsing, traversal,
+                  plays. Its page leads with the current and best day streak and their dates, then a calendar week, month or
+                  year stepped through one at a time (the calendar's first weekday), with a bar per day or month, the time
+                  and plays, top tracks, artists and albums, and a locale-formatted hourly breakdown; all time stays a row
+                  of its own. File parsing, traversal,
                   aggregation and serialization stay off the main thread. Tested on the Mac against harness/listening-stats/,
                   the page and the recorder in the simulator against its sim/
     Connect/      Connect speakers on the Wi-Fi for a build signed without the multicast entitlement (Connect.h lists

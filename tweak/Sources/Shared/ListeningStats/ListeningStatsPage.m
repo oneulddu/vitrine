@@ -1,5 +1,12 @@
 // Shared local history pages. The log is main-owned; parsing, export and aggregation use snapshots.
+//
+// The page: a streak card; a calendar week, month or year stepped through (its chart, listening time, plays,
+// hours and tops); all time; the Record plays switch; import, export and erase. The cards are cells of the
+// page's own, one instance each, so a step or a reload never takes VoiceOver's focus off a control, and
+// every row count stays fixed while data changes (the See all rows come and go with the page's ticker),
+// so a step never scrolls the page.
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <QuartzCore/QuartzCore.h>
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
@@ -8,32 +15,35 @@
 
 static BOOL sg_importing, sg_exporting, sg_picking;
 
+@class SGStreakCell, SGPeriodCell, SGChartCell, SGTopListCell;
+
 @interface SGListeningPage : SGModPage
 @property (nonatomic, copy) void (^refreshHistory)(void);
-@property (nonatomic) NSUInteger generation;
+@property (nonatomic) NSUInteger generation, periodGeneration;
 @property (nonatomic) BOOL loading;
 @property (nonatomic) BOOL observing;
-@end
-@implementation SGListeningPage
-- (void)viewWillAppear:(BOOL)animated {
-    [super viewWillAppear:animated];
-    if (!self.observing) {
-        self.observing = YES;
-        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(historyChanged)
-            name:SGPlayLogDidChangeNotification object:SGListeningLog()];
-    }
-    if (self.refreshHistory) self.refreshHistory();
-}
-- (void)viewDidDisappear:(BOOL)animated {
-    [super viewDidDisappear:animated];
-    if (self.observing) {
-        [NSNotificationCenter.defaultCenter removeObserver:self name:SGPlayLogDidChangeNotification object:SGListeningLog()];
-        self.observing = NO;
-    }
-}
-- (void)historyChanged {
-    if (self.refreshHistory) self.refreshHistory();
-}
+// The rows drawn by the cards below; they have no title, so Settings search passes them by.
+@property (nonatomic, strong) SGModRow *streakRow, *periodRow, *chartRow, *tracksRow, *artistsRow, *albumsRow;
+@property (nonatomic, strong) SGStreakCell *streakCell;
+@property (nonatomic, strong) SGPeriodCell *periodCell;
+@property (nonatomic, strong) SGChartCell *chartCell;
+@property (nonatomic, strong) SGTopListCell *tracksCell, *artistsCell, *albumsCell;
+// What the rows' value blocks read.
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSString *> *values;
+// The log as last loaded (nil until then or after a load error), its first play and the calendar it is read in.
+@property (nonatomic, copy) NSArray<SGPlay *> *snapshot;
+@property (nonatomic) int64_t earliest;
+@property (nonatomic, copy) NSCalendar *calendar;
+@property (nonatomic) SGStatsPeriod kind;
+@property (nonatomic, strong) NSDateInterval *shown;
+@property (nonatomic, strong) SGStats *stats;   // the shown period's, top 25 of each
+@property (nonatomic, copy) NSString *statsTitle;   // the title of the period `stats` and `hours` add up
+@property (nonatomic, copy) NSArray<SGStatEntry *> *hours;
+@property (nonatomic, strong) SGListeningStreaks *streaks;
+- (void)showPeriod;
+- (void)showStreaks;
+- (void)updateNavigator;
+- (void)showSummaryError;
 @end
 
 static NSString *duration(int64_t ms) {
@@ -125,6 +135,595 @@ static UIViewController *periodPage(NSString *title, int64_t since) {
     }];
     return page;
 }
+
+#pragma mark - dates
+
+static NSDateFormatter *dateFormatter(NSCalendar *calendar, NSString *template) {
+    NSDateFormatter *formatter = [NSDateFormatter new];
+    formatter.locale = NSLocale.currentLocale;
+    formatter.calendar = calendar;
+    formatter.timeZone = calendar.timeZone;
+    [formatter setLocalizedDateFormatFromTemplate:template];
+    return formatter;
+}
+
+// Local days from `first` through `last`, the year written only when either is outside the current one.
+static NSString *dayRange(NSDate *first, NSDate *last, NSCalendar *calendar) {
+    NSInteger year = [calendar component:NSCalendarUnitYear fromDate:NSDate.date];
+    BOOL thisYear = [calendar component:NSCalendarUnitYear fromDate:first] == year && [calendar component:NSCalendarUnitYear fromDate:last] == year;
+    NSDateIntervalFormatter *formatter = [NSDateIntervalFormatter new];
+    formatter.locale = NSLocale.currentLocale;
+    formatter.calendar = calendar;
+    formatter.timeZone = calendar.timeZone;
+    formatter.dateTemplate = thisYear ? @"MMMd" : @"yMMMd";
+    return [formatter stringFromDate:first toDate:last];
+}
+
+// [start, end): NSDateInterval's own test counts the end in.
+static BOOL holds(NSDateInterval *interval, NSDate *date) {
+    return [interval.startDate compare:date] != NSOrderedDescending && [date compare:interval.endDate] == NSOrderedAscending;
+}
+
+static NSString *periodTitle(SGStatsPeriod kind, NSDateInterval *shown, NSCalendar *calendar) {
+    NSDate *now = NSDate.date;
+    if (kind == SGStatsPeriodWeek) {
+        if (holds(shown, now)) return SGL(@"settings.stats.period.this_week", @"This week");
+        if ([shown.endDate isEqualToDate:SGPeriodInterval(kind, now, calendar).startDate]) return SGL(@"settings.stats.period.last_week", @"Last week");
+        return dayRange(shown.startDate, [shown.endDate dateByAddingTimeInterval:-1], calendar);
+    }
+    return [dateFormatter(calendar, kind == SGStatsPeriodMonth ? @"MMMMy" : @"y") stringFromDate:shown.startDate];
+}
+
+static NSString *countText(NSUInteger count) {
+    return [NSNumberFormatter localizedStringFromNumber:@(count) numberStyle:NSNumberFormatterDecimalStyle];
+}
+
+#pragma mark - cards
+
+// Spotify's typeface in bold at `size` for the default text size, grown with the title font and capped.
+static UIFont *strongFont(CGFloat size, CGFloat largest) {
+    UIFont *base = SGTitleFont();
+    CGFloat scaled = MIN(largest, base.pointSize * size / 13);
+    UIFontDescriptor *bold = [base.fontDescriptor fontDescriptorWithSymbolicTraits:UIFontDescriptorTraitBold];
+    return bold ? [UIFont fontWithDescriptor:bold size:scaled] : [UIFont systemFontOfSize:scaled weight:UIFontWeightBold];
+}
+
+static UILabel *cardLabel(UIColor *color) {
+    UILabel *label = [UILabel new];
+    label.textColor = color;
+    label.numberOfLines = 0;
+    return label;
+}
+
+// A card's content between the cell's side margins, `vertical` from its top and bottom.
+static void pinToCard(UIView *view, UITableViewCell *cell, CGFloat vertical) {
+    UIView *content = cell.contentView;
+    view.translatesAutoresizingMaskIntoConstraints = NO;
+    [content addSubview:view];
+    // One point under required, so the cell's first, estimated height does not break it before sizing.
+    NSLayoutConstraint *bottom = [view.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-vertical];
+    bottom.priority = UILayoutPriorityRequired - 1;
+    [NSLayoutConstraint activateConstraints:@[
+        [view.leadingAnchor constraintEqualToAnchor:content.layoutMarginsGuide.leadingAnchor],
+        [view.trailingAnchor constraintEqualToAnchor:content.layoutMarginsGuide.trailingAnchor],
+        [view.topAnchor constraintEqualToAnchor:content.topAnchor constant:vertical], bottom]];
+}
+
+static void prepareCard(UITableViewCell *cell) {
+    cell.backgroundColor = SGCardBackground();
+    cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    // VoiceOver reaches the controls and elements inside rather than reading the card as one row.
+    cell.isAccessibilityElement = NO;
+}
+
+// One streak: its symbol and name, the number of days large, and the days it ran. Read as one element.
+@interface SGStreakColumn : UIStackView
+- (instancetype)initWithSymbol:(NSString *)symbol caption:(NSString *)caption;
+- (void)showValue:(NSString *)value note:(NSString *)note;
+@end
+@implementation SGStreakColumn {
+    UIImageView *_icon;
+    UILabel *_caption, *_value, *_note;
+}
+- (instancetype)initWithSymbol:(NSString *)symbol caption:(NSString *)caption {
+    if (!(self = [super initWithFrame:CGRectZero])) return nil;
+    self.axis = UILayoutConstraintAxisVertical;
+    self.alignment = UIStackViewAlignmentLeading;
+    self.spacing = 3;
+    _icon = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:symbol]];
+    _icon.contentMode = UIViewContentModeScaleAspectFit;
+    _caption = cardLabel(SGGrey());
+    _caption.text = caption;
+    UIStackView *top = [[UIStackView alloc] initWithArrangedSubviews:@[_icon, _caption]];
+    top.spacing = 5;
+    top.alignment = UIStackViewAlignmentCenter;
+    _value = cardLabel(UIColor.whiteColor);
+    _note = cardLabel(SGGrey());
+    [self addArrangedSubview:top];
+    [self addArrangedSubview:_value];
+    [self addArrangedSubview:_note];
+    [self setCustomSpacing:6 afterView:top];
+    self.isAccessibilityElement = YES;
+    return self;
+}
+- (void)showValue:(NSString *)value note:(NSString *)note {
+    _caption.font = SGSubtitleFont();
+    _note.font = SGSubtitleFont();
+    _value.font = strongFont(24, 40);
+    _icon.preferredSymbolConfiguration = [UIImageSymbolConfiguration configurationWithFont:SGCappedFont(SGSubtitleFont(), 22)];
+    _icon.tintColor = SGAccentMark();
+    _value.text = value;
+    _note.text = note;
+    _note.hidden = !note.length;
+    self.accessibilityLabel = _caption.text;
+    self.accessibilityValue = note.length ? [@[value, note] componentsJoinedByString:@", "] : value;
+}
+@end
+
+@interface SGStreakCell : UITableViewCell
+@property (nonatomic, readonly) SGStreakColumn *current, *best;
+- (void)render;
+@end
+@implementation SGStreakCell {
+    UIStackView *_columns;
+}
+- (instancetype)init {
+    if (!(self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil])) return nil;
+    prepareCard(self);
+    _current = [[SGStreakColumn alloc] initWithSymbol:@"flame.fill" caption:SGL(@"settings.stats.row.current_streak", @"Current streak")];
+    _best = [[SGStreakColumn alloc] initWithSymbol:@"trophy.fill" caption:SGL(@"settings.stats.row.best_streak", @"Best streak")];
+    _columns = [[UIStackView alloc] initWithArrangedSubviews:@[_current, _best]];
+    _columns.distribution = UIStackViewDistributionFillEqually;
+    _columns.alignment = UIStackViewAlignmentTop;
+    _columns.spacing = 16;
+    pinToCard(_columns, self, 14);
+    return self;
+}
+- (void)render {
+    _columns.axis = SGAccessibilityTextSize() ? UILayoutConstraintAxisVertical : UILayoutConstraintAxisHorizontal;
+}
+@end
+
+// The period's kind over the step back, its title and the step forward.
+@interface SGPeriodCell : UITableViewCell
+@property (nonatomic, readonly) UISegmentedControl *kinds;
+@property (nonatomic, readonly) UIButton *previous, *next;
+@property (nonatomic, readonly) UILabel *title;
+- (void)render;
+@end
+static UIButton *stepButton(NSString *symbol) {
+    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
+    [button setImage:[UIImage systemImageNamed:symbol] forState:UIControlStateNormal];
+    button.tintColor = UIColor.whiteColor;
+    button.translatesAutoresizingMaskIntoConstraints = NO;
+    [NSLayoutConstraint activateConstraints:@[[button.widthAnchor constraintEqualToConstant:44], [button.heightAnchor constraintEqualToConstant:44]]];
+    return button;
+}
+@implementation SGPeriodCell
+- (instancetype)init {
+    if (!(self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil])) return nil;
+    prepareCard(self);
+    _kinds = [[UISegmentedControl alloc] initWithItems:@[SGL(@"settings.stats.kind.week", @"Week"), SGL(@"settings.stats.kind.month", @"Month"),
+                                                         SGL(@"settings.stats.kind.year", @"Year")]];
+    _kinds.accessibilityLabel = SGL(@"settings.stats.a11y.period", @"Period");
+    _previous = stepButton(@"chevron.left");
+    _next = stepButton(@"chevron.right");
+    _title = cardLabel(UIColor.whiteColor);
+    _title.textAlignment = NSTextAlignmentCenter;
+    _title.accessibilityTraits = UIAccessibilityTraitHeader;
+    [_title setContentHuggingPriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+    [_title setContentCompressionResistancePriority:UILayoutPriorityDefaultLow forAxis:UILayoutConstraintAxisHorizontal];
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[_previous, _title, _next]];
+    row.alignment = UIStackViewAlignmentCenter;
+    row.spacing = 4;
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[_kinds, row]];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 8;
+    pinToCard(stack, self, 12);
+    return self;
+}
+- (void)render {
+    [_kinds setTitleTextAttributes:@{NSFontAttributeName: SGCappedFont(SGTitleFont(), 22)} forState:UIControlStateNormal];
+    _title.font = strongFont(17, 34);
+    UIImageSymbolConfiguration *arrow = [UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightSemibold];
+    [_previous setPreferredSymbolConfiguration:arrow forImageInState:UIControlStateNormal];
+    [_next setPreferredSymbolConfiguration:arrow forImageInState:UIControlStateNormal];
+}
+@end
+
+// Bars of listening time drawn on plain layers, one per day or month, a label under some, and one VoiceOver
+// element per bar.
+@interface SGStatsChart : UIView
+- (void)showBuckets:(NSArray<SGStatBucket *> *)buckets labels:(NSArray<NSString *> *)labels spokenLabels:(NSArray<NSString *> *)spokenLabels
+       spokenValues:(NSArray<NSString *> *)spokenValues highlighted:(NSInteger)highlighted;
+- (CGFloat)labelHeight;
+@end
+@implementation SGStatsChart {
+    NSArray<SGStatBucket *> *_buckets;
+    NSMutableArray<CALayer *> *_bars;
+    NSMutableArray<UILabel *> *_labels;
+    BOOL _placeAtOnce;
+}
+- (UIFont *)labelFont {
+    return SGCappedFont(SGSubtitleFont(), 14);
+}
+- (CGFloat)labelHeight {
+    return ceil(self.labelFont.lineHeight) + 4;
+}
+- (void)showBuckets:(NSArray<SGStatBucket *> *)buckets labels:(NSArray<NSString *> *)labels spokenLabels:(NSArray<NSString *> *)spokenLabels
+       spokenValues:(NSArray<NSString *> *)spokenValues highlighted:(NSInteger)highlighted {
+    NSUInteger n = buckets.count;
+    if (n != _bars.count) {
+        for (CALayer *bar in _bars) [bar removeFromSuperlayer];
+        for (UILabel *label in _labels) [label removeFromSuperview];
+        _bars = [NSMutableArray arrayWithCapacity:n];
+        _labels = [NSMutableArray arrayWithCapacity:n];
+        for (NSUInteger i = 0; i < n; i++) {
+            CALayer *bar = [CALayer layer];
+            [self.layer addSublayer:bar];
+            [_bars addObject:bar];
+            UILabel *label = [UILabel new];
+            label.textAlignment = NSTextAlignmentCenter;
+            label.adjustsFontSizeToFitWidth = YES;
+            label.minimumScaleFactor = 0.5;
+            [self addSubview:label];
+            [_labels addObject:label];
+        }
+        _placeAtOnce = YES;   // new bars appear where they belong; the same bars grow and shrink
+    }
+    _buckets = [buckets copy];
+    NSMutableArray<UIAccessibilityElement *> *elements = [NSMutableArray arrayWithCapacity:n];
+    for (NSUInteger i = 0; i < n; i++) {
+        UILabel *label = _labels[i];
+        label.text = labels[i];
+        label.font = self.labelFont;
+        label.textColor = (NSInteger)i == highlighted ? UIColor.whiteColor : SGGrey();
+        UIAccessibilityElement *element = [[UIAccessibilityElement alloc] initWithAccessibilityContainer:self];
+        element.accessibilityLabel = spokenLabels[i];
+        element.accessibilityValue = spokenValues[i];
+        element.accessibilityTraits = UIAccessibilityTraitStaticText;
+        [elements addObject:element];
+    }
+    self.accessibilityElements = elements;
+    [self setNeedsLayout];
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    NSUInteger n = _buckets.count;
+    if (!n) return;
+    CGFloat labelHeight = self.labelHeight, width = self.bounds.size.width;
+    CGFloat area = MAX(0, self.bounds.size.height - labelHeight), slot = width / n;
+    CGFloat barWidth = MIN(22, MAX(2, floor(slot * 0.6)));
+    int64_t most = 1;
+    for (SGStatBucket *bucket in _buckets) most = MAX(most, bucket.ms);
+    [CATransaction begin];
+    [CATransaction setDisableActions:_placeAtOnce || UIAccessibilityIsReduceMotionEnabled()];
+    _placeAtOnce = NO;
+    for (NSUInteger i = 0; i < n; i++) {
+        SGStatBucket *bucket = _buckets[i];
+        CGFloat height = bucket.ms > 0 ? MAX(3, round(area * (double)bucket.ms / (double)most)) : 2;
+        CALayer *bar = _bars[i];
+        bar.frame = CGRectMake(round(slot * i + (slot - barWidth) / 2), area - height, barWidth, height);
+        bar.cornerRadius = MIN(barWidth / 2, 3);
+        bar.backgroundColor = (bucket.ms > 0 ? SGAccentMark() : [UIColor colorWithWhite:1 alpha:0.14]).CGColor;
+        // Wider than its slot so a month's day numbers fit; only every seventh has one.
+        CGFloat labelWidth = MAX(slot, 24);
+        _labels[i].frame = CGRectMake(slot * i + (slot - labelWidth) / 2, area + 4, labelWidth, labelHeight - 4);
+        ((UIAccessibilityElement *)self.accessibilityElements[i]).accessibilityFrameInContainerSpace = CGRectMake(slot * i, 0, slot, self.bounds.size.height);
+    }
+    [CATransaction commit];
+}
+@end
+
+@interface SGChartCell : UITableViewCell
+@property (nonatomic, readonly) UILabel *caption;
+@property (nonatomic, readonly) SGStatsChart *chart;
+- (void)render;
+@end
+@implementation SGChartCell {
+    NSLayoutConstraint *_height;
+}
+- (instancetype)init {
+    if (!(self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil])) return nil;
+    prepareCard(self);
+    _caption = cardLabel(SGGrey());
+    _chart = [SGStatsChart new];
+    _height = [_chart.heightAnchor constraintEqualToConstant:100];
+    _height.active = YES;
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[_caption, _chart]];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 10;
+    pinToCard(stack, self, 12);
+    return self;
+}
+- (void)render {
+    _caption.font = SGSubtitleFont();
+    _height.constant = 88 + _chart.labelHeight;
+}
+@end
+
+// A top list's first five, each read as one element; the See all row under it opens the rest.
+@interface SGTopListCell : UITableViewCell
+@property (nonatomic, copy) NSArray<SGStatEntry *> *entries;   // nil while loading
+- (void)render;
+@end
+@implementation SGTopListCell {
+    UIStackView *_stack;
+}
+- (instancetype)init {
+    if (!(self = [super initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil])) return nil;
+    prepareCard(self);
+    _stack = [UIStackView new];
+    _stack.axis = UILayoutConstraintAxisVertical;
+    pinToCard(_stack, self, 0);
+    return self;
+}
+- (UIView *)lineWithTitle:(NSString *)title detail:(NSString *)detail trailing:(NSString *)trailing {
+    UILabel *name = cardLabel(UIColor.whiteColor), *under = cardLabel(SGGrey()), *count = cardLabel(SGGrey());
+    name.font = SGTitleFont();
+    name.text = title;
+    under.font = SGSubtitleFont();
+    under.text = detail;
+    under.hidden = !detail.length;
+    count.font = SGTitleFont();
+    count.text = trailing;
+    count.hidden = !trailing.length;
+    [count setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+    [count setContentCompressionResistancePriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+    UIStackView *texts = [[UIStackView alloc] initWithArrangedSubviews:@[name, under]];
+    texts.axis = UILayoutConstraintAxisVertical;
+    texts.spacing = 2;
+    UIStackView *line = [[UIStackView alloc] initWithArrangedSubviews:@[texts, count]];
+    line.spacing = 12;
+    line.alignment = UIStackViewAlignmentCenter;
+    if (SGAccessibilityTextSize()) {
+        line.axis = UILayoutConstraintAxisVertical;
+        line.alignment = UIStackViewAlignmentLeading;
+        line.spacing = 2;
+    }
+    line.layoutMarginsRelativeArrangement = YES;
+    line.directionalLayoutMargins = NSDirectionalEdgeInsetsMake(11, 0, 11, 0);
+    line.isAccessibilityElement = YES;
+    line.accessibilityLabel = detail.length ? [@[title, detail] componentsJoinedByString:@", "] : title;
+    line.accessibilityValue = trailing;
+    return line;
+}
+- (void)render {
+    for (UIView *view in _stack.arrangedSubviews) {
+        [_stack removeArrangedSubview:view];
+        [view removeFromSuperview];
+    }
+    if (!self.entries.count) {
+        NSString *text = self.entries ? SGL(@"settings.stats.empty", @"Nothing yet") : SGL(@"settings.stats.status.loading", @"Loading…");
+        [_stack addArrangedSubview:[self lineWithTitle:text detail:nil trailing:nil]];
+        return;
+    }
+    NSUInteger shown = MIN(self.entries.count, 5);
+    for (NSUInteger i = 0; i < shown; i++) {
+        SGStatEntry *entry = self.entries[i];
+        if (i) {
+            UIView *hairline = [UIView new];
+            hairline.backgroundColor = [UIColor colorWithWhite:1 alpha:0.1];
+            [hairline.heightAnchor constraintEqualToConstant:1 / MAX(1, self.traitCollection.displayScale)].active = YES;
+            [_stack addArrangedSubview:hairline];
+        }
+        NSString *title = [NSString stringWithFormat:SGL(@"settings.stats.rank_format", @"%lu. %@"), (unsigned long)i + 1, entry.name];
+        [_stack addArrangedSubview:[self lineWithTitle:title detail:entry.detail trailing:playsText(entry.plays)]];
+    }
+}
+@end
+
+#pragma mark - the page
+
+@implementation SGListeningPage
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.streakCell = [SGStreakCell new];
+    self.periodCell = [SGPeriodCell new];
+    self.chartCell = [SGChartCell new];
+    self.tracksCell = [SGTopListCell new];
+    self.artistsCell = [SGTopListCell new];
+    self.albumsCell = [SGTopListCell new];
+    SGPeriodCell *period = self.periodCell;
+    [period.kinds addTarget:self action:@selector(kindPicked) forControlEvents:UIControlEventValueChanged];
+    [period.previous addTarget:self action:@selector(stepBack) forControlEvents:UIControlEventTouchUpInside];
+    [period.next addTarget:self action:@selector(stepForward) forControlEvents:UIControlEventTouchUpInside];
+    [self showStreaks];
+    [self updateNavigator];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    if (!self.observing) {
+        self.observing = YES;
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(historyChanged)
+            name:SGPlayLogDidChangeNotification object:SGListeningLog()];
+    }
+    if (self.refreshHistory) self.refreshHistory();
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    if (self.observing) {
+        [NSNotificationCenter.defaultCenter removeObserver:self name:SGPlayLogDidChangeNotification object:SGListeningLog()];
+        self.observing = NO;
+    }
+}
+
+- (void)historyChanged {
+    if (self.refreshHistory) self.refreshHistory();
+}
+
+// The card at `path`, or nil for an ordinary row. Card rows sit in sections whose rows never change, so the
+// section's own list names them.
+- (UITableViewCell *)cardAt:(NSIndexPath *)path {
+    NSArray<SGModRow *> *rows = self.sections[(NSUInteger)path.section].rows;
+    SGModRow *row = (NSUInteger)path.row < rows.count ? rows[(NSUInteger)path.row] : nil;
+    if (!row) return nil;
+    if (row == self.streakRow) return self.streakCell;
+    if (row == self.periodRow) return self.periodCell;
+    if (row == self.chartRow) return self.chartCell;
+    if (row == self.tracksRow) return self.tracksCell;
+    if (row == self.artistsRow) return self.artistsCell;
+    if (row == self.albumsRow) return self.albumsCell;
+    return nil;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *card = [self cardAt:path];
+    if (!card) return [super tableView:table cellForRowAtIndexPath:path];
+    // Fonts again on every pass, for a text size changed while the page was open.
+    [(id)card render];
+    if (card == self.streakCell) [self showStreaks];
+    return card;
+}
+
+- (BOOL)tableView:(UITableView *)table shouldHighlightRowAtIndexPath:(NSIndexPath *)path {
+    return ![self cardAt:path];
+}
+
+#pragma mark stepping
+
+- (BOOL)canStepBack {
+    return self.snapshot && self.earliest < (int64_t)floor(self.shown.startDate.timeIntervalSince1970);
+}
+
+- (BOOL)canStepForward {
+    return [self.shown.endDate compare:NSDate.date] != NSOrderedDescending;
+}
+
+- (void)updateNavigator {
+    SGPeriodCell *cell = self.periodCell;
+    if (!cell) return;
+    cell.kinds.selectedSegmentIndex = self.kind;
+    cell.title.text = periodTitle(self.kind, self.shown, self.calendar);
+    BOOL back = [self canStepBack], forward = [self canStepForward];
+    cell.previous.enabled = back;
+    cell.next.enabled = forward;
+    cell.previous.alpha = back ? 1 : 0.3;
+    cell.next.alpha = forward ? 1 : 0.3;
+    NSArray<NSString *> *previous = @[SGL(@"settings.stats.a11y.previous_week", @"Previous week"), SGL(@"settings.stats.a11y.previous_month", @"Previous month"),
+                                      SGL(@"settings.stats.a11y.previous_year", @"Previous year")];
+    NSArray<NSString *> *next = @[SGL(@"settings.stats.a11y.next_week", @"Next week"), SGL(@"settings.stats.a11y.next_month", @"Next month"),
+                                  SGL(@"settings.stats.a11y.next_year", @"Next year")];
+    cell.previous.accessibilityLabel = previous[(NSUInteger)self.kind];
+    cell.next.accessibilityLabel = next[(NSUInteger)self.kind];
+    self.chartCell.caption.text = self.kind == SGStatsPeriodYear ? SGL(@"settings.stats.chart.by_month", @"Listening time by month")
+                                                                : SGL(@"settings.stats.chart.by_day", @"Listening time by day");
+}
+
+- (void)step:(NSInteger)delta {
+    if (delta < 0 ? ![self canStepBack] : ![self canStepForward]) return;
+    NSDateInterval *shown = SGPeriodStep(self.kind, self.shown.startDate, delta, self.calendar);
+    if (!shown) return;
+    self.shown = shown;
+    [self showPeriod];
+    UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, self.periodCell.title.text);
+}
+
+- (void)stepBack { [self step:-1]; }
+- (void)stepForward { [self step:1]; }
+
+// The new kind's period around the middle of the one shown, or now when that is later.
+- (void)kindPicked {
+    NSInteger index = self.periodCell.kinds.selectedSegmentIndex;
+    if (index < SGStatsPeriodWeek || index > SGStatsPeriodYear || index == self.kind) return;
+    NSDate *middle = [self.shown.startDate dateByAddingTimeInterval:self.shown.duration / 2], *now = NSDate.date;
+    NSDateInterval *shown = SGPeriodInterval((SGStatsPeriod)index, [middle compare:now] == NSOrderedDescending ? now : middle, self.calendar);
+    if (!shown) { [self updateNavigator]; return; }
+    self.kind = (SGStatsPeriod)index;
+    self.shown = shown;
+    [self showPeriod];
+}
+
+// The shown period added up off main from the snapshot; a newer step or reload wins.
+- (void)showPeriod {
+    [self updateNavigator];
+    NSArray<SGPlay *> *snapshot = self.snapshot;
+    if (!snapshot) return;
+    NSUInteger generation = ++self.periodGeneration;
+    SGStatsPeriod kind = self.kind;
+    NSDateInterval *shown = self.shown;
+    NSCalendar *calendar = [self.calendar copy];
+    __weak SGListeningPage *weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        int64_t start = (int64_t)floor(shown.startDate.timeIntervalSince1970), end = (int64_t)floor(shown.endDate.timeIntervalSince1970);
+        SGStats *stats = SGStatsBetween(snapshot, start, end, 25);
+        NSArray<SGStatEntry *> *hours = SGHourlyStatsBetween(snapshot, start, end, calendar);
+        NSArray<SGStatBucket *> *buckets = SGPeriodBuckets(snapshot, kind, shown.startDate, calendar);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SGListeningPage *page = weakSelf;
+            if (!page || page.periodGeneration != generation) return;
+            [page showStats:stats hours:hours buckets:buckets kind:kind shown:shown];
+        });
+    });
+}
+
+- (void)showStats:(SGStats *)stats hours:(NSArray<SGStatEntry *> *)hours buckets:(NSArray<SGStatBucket *> *)buckets
+             kind:(SGStatsPeriod)kind shown:(NSDateInterval *)shown {
+    self.stats = stats;
+    self.statsTitle = periodTitle(kind, shown, self.calendar);
+    self.hours = hours;
+    self.values[@"periodTime"] = duration(stats.ms);
+    self.values[@"periodPlays"] = countText(stats.plays);
+    self.tracksCell.entries = stats.tracks;
+    self.artistsCell.entries = stats.artists;
+    self.albumsCell.entries = stats.albums;
+    NSCalendar *calendar = self.calendar;
+    NSDateFormatter *mark = dateFormatter(calendar, kind == SGStatsPeriodYear ? @"MMMMM" : kind == SGStatsPeriodMonth ? @"d" : @"EEEEE");
+    NSDateFormatter *spoken = dateFormatter(calendar, kind == SGStatsPeriodYear ? @"MMMMy" : @"EEEEMMMMd");
+    NSMutableArray<NSString *> *labels = [NSMutableArray array], *spokenLabels = [NSMutableArray array], *spokenValues = [NSMutableArray array];
+    NSInteger highlighted = -1;
+    int64_t now = (int64_t)time(NULL);
+    for (NSUInteger i = 0; i < buckets.count; i++) {
+        SGStatBucket *bucket = buckets[i];
+        NSDate *day = [NSDate dateWithTimeIntervalSince1970:bucket.start];
+        [labels addObject:kind != SGStatsPeriodMonth || i % 7 == 0 ? [mark stringFromDate:day] : @""];
+        [spokenLabels addObject:[spoken stringFromDate:day]];
+        [spokenValues addObject:[@[duration(bucket.ms), playsText(bucket.plays)] componentsJoinedByString:@", "]];
+        if (bucket.start <= now && now < bucket.end) highlighted = (NSInteger)i;
+    }
+    [self.chartCell.chart showBuckets:buckets labels:labels spokenLabels:spokenLabels spokenValues:spokenValues highlighted:highlighted];
+    [self.tableView reloadData];
+}
+
+- (void)showStreaks {
+    SGListeningStreaks *streaks = self.streaks;
+    SGStreakCell *cell = self.streakCell;
+    if (!cell) return;
+    if (!streaks) {
+        NSString *text = self.loading ? SGL(@"settings.stats.status.loading", @"Loading…") : SGL(@"settings.stats.status.unavailable", @"Unavailable");
+        [cell.current showValue:text note:nil];
+        [cell.best showValue:text note:nil];
+        return;
+    }
+    NSCalendar *calendar = self.calendar;
+    NSString *currentNote;
+    if (!streaks.current) currentNote = SGL(@"settings.stats.streak.start", @"Listen today to start one");
+    else if (![streaks.currentEnd isEqualToDate:[calendar startOfDayForDate:NSDate.date]]) currentNote = SGL(@"settings.stats.streak.keep_going", @"Listen today to keep it going");
+    else currentNote = dayRange(streaks.currentStart, streaks.currentEnd, calendar);
+    [cell.current showValue:daysText(streaks.current) note:currentNote];
+    [cell.best showValue:daysText(streaks.best) note:streaks.best ? dayRange(streaks.bestStart, streaks.bestEnd, calendar) : nil];
+}
+
+- (void)showSummaryError {
+    self.snapshot = nil;
+    self.streaks = nil;
+    self.stats = nil;
+    self.hours = nil;
+    self.periodGeneration++;
+    NSString *unavailable = SGL(@"settings.stats.status.unavailable", @"Unavailable");
+    for (NSString *key in @[@"plays", @"allTime", @"periodTime", @"periodPlays"]) self.values[key] = unavailable;
+    self.tracksCell.entries = @[];
+    self.artistsCell.entries = @[];
+    self.albumsCell.entries = @[];
+    [self.chartCell.chart showBuckets:@[] labels:@[] spokenLabels:@[] spokenValues:@[] highlighted:-1];
+    [self showStreaks];
+    [self updateNavigator];
+}
+
+@end
 
 #pragma mark - document picker
 
@@ -243,16 +842,42 @@ static void confirmErase(SGListeningPage *page) {
 
 UIViewController *SGListeningStatsPage(void) {
     NSMutableDictionary<NSString *, NSString *> *values = [NSMutableDictionary dictionary];
-    NSMutableArray *periods = [NSMutableArray array];
-    NSArray *names = @[SGL(@"settings.stats.period.week", @"Past week"), SGL(@"settings.stats.period.month", @"Past month"), SGL(@"settings.stats.period.year", @"Past year"), SGL(@"settings.stats.period.all_time", @"All time")], *days = @[@7, @30, @365, @0];
-    // Preserve the existing rolling 7/30/365-day periods used by the top lists.
-    for (NSUInteger i = 0; i < names.count; i++) {
-        NSString *name = names[i];
-        int64_t back = [days[i] longLongValue] * 86400;
-        SGModRow *row = SGPageRow(name, ^UIViewController *{ return periodPage(name, back ? (int64_t)time(NULL) - back : 0); });
-        row.value = ^NSString *{ return values[name] ?: SGL(@"settings.stats.status.loading", @"Loading…"); };
-        [periods addObject:row];
+    __block __weak SGListeningPage *weakPage;
+    NSString *(^read)(NSString *) = ^NSString *(NSString *key) {
+        return values[key] ?: SGL(@"settings.stats.status.loading", @"Loading…");
+    };
+
+    // The shown period: its card, chart, totals and hours.
+    SGModRow *streak = [SGModRow new], *period = [SGModRow new], *chart = [SGModRow new];
+    SGModRow *periodTime = SGStatRow(SGL(@"settings.stats.row.listening_time", @"Listening time"), ^NSString *{ return read(@"periodTime"); });
+    SGModRow *periodPlays = SGStatRow(SGL(@"settings.stats.row.plays", @"Plays"), ^NSString *{ return read(@"periodPlays"); });
+    SGModRow *byHour = SGPageRow(SGL(@"settings.stats.row.by_hour", @"By hour of day"), ^UIViewController *{
+        return hoursPage(weakPage.hours ?: SGHourlyStats(@[], 0, NSCalendar.currentCalendar));
+    });
+
+    // Its tops: five on a card, then See all for the rest of the 25.
+    NSArray<NSString *> *topTitles = @[SGL(@"settings.stats.section.top_tracks", @"Top tracks"), SGL(@"settings.stats.section.top_artists", @"Top artists"),
+                                       SGL(@"settings.stats.section.top_albums", @"Top albums")];
+    NSMutableArray<SGModRow *> *lists = [NSMutableArray array];
+    NSMutableArray<SGModSection *> *tops = [NSMutableArray array];
+    for (NSUInteger i = 0; i < topTitles.count; i++) {
+        NSString *title = topTitles[i];
+        NSArray<SGStatEntry *> *(^entries)(void) = ^NSArray<SGStatEntry *> *{
+            SGStats *stats = weakPage.stats;
+            return i == 0 ? stats.tracks : i == 1 ? stats.artists : stats.albums;
+        };
+        SGModRow *list = [SGModRow new];
+        SGModRow *all = SGPageRow(SGL(@"settings.stats.see_all", @"See all"), ^UIViewController *{
+            return [[SGModPage alloc] initWithTitle:title intro:nil sections:@[topSection(weakPage.statsTitle, entries() ?: @[])] footer:nil];
+        });
+        all.visible = ^BOOL { return entries().count > 5; };
+        [lists addObject:list];
+        [tops addObject:SGSection(title, @[list, all])];
     }
+
+    NSString *allTimeTitle = SGL(@"settings.stats.period.all_time", @"All time");
+    SGModRow *allTime = SGPageRow(allTimeTitle, ^UIViewController *{ return periodPage(allTimeTitle, 0); });
+    allTime.value = ^NSString *{ return read(@"allTime"); };
     SGModRow *import = SGWithSymbol(SGStatActionRow(SGL(@"settings.stats.action.import", @"Import history"), SGL(@"settings.stats.action.import.subtitle", @"Vitrine JSON or Spotify JSON/ZIP"),
         ^NSString *{ return sg_importing ? SGL(@"settings.stats.status.importing", @"Importing…") : nil; }, nil), @"square.and.arrow.down");
     SGModRow *folder = SGActionRow(SGL(@"settings.stats.action.import_folder", @"Import a folder"), SGL(@"settings.stats.action.import_folder.subtitle", @"JSON files in the selected folder and its subfolders"), nil);
@@ -261,20 +886,32 @@ UIViewController *SGListeningStatsPage(void) {
     SGModRow *erase = SGWithSymbol(SGActionRow(SGL(@"settings.stats.action.erase", @"Erase listening history"), nil, nil), @"trash");
     erase.color = SGRed();
     SGListeningPage *page = [[SGListeningPage alloc] initWithTitle:SGL(@"settings.stats.page.title", @"Listening stats") intro:nil sections:@[
+        SGSection(nil, @[streak]),
+        SGSection(nil, @[period, chart, periodTime, periodPlays, byHour]),
+        tops[0], tops[1], tops[2],
+        SGNotedSection(nil, @[
+            allTime,
+            SGStatRow(SGL(@"settings.stats.row.plays", @"Plays"), ^NSString *{ return read(@"plays"); }),
+            SGStatRow(SGL(@"settings.stats.row.history", @"History"), ^NSString *{ return read(@"status"); }),
+        ], SGL(@"settings.stats.section.history.footer", @"Streaks use local calendar days when plays ended. A current streak can end yesterday until you listen today. Import Spotify's account or extended streaming history, or Vitrine's own versioned history export. Duplicate plays are skipped. Large selections may need to be imported in smaller batches.")),
         SGNotedSection(nil, @[SGSwitchRow(SGL(@"settings.stats.record.title", @"Record plays"), nil, SGKeyListeningStats)],
             SGL(@"settings.stats.record.footer", @"A play counts once it has run 30 seconds, or half of a shorter track. History stays on this phone unless you export it.")),
-        SGSection(nil, periods),
-        SGNotedSection(nil, @[
-            SGStatRow(SGL(@"settings.stats.row.plays", @"Plays"), ^NSString *{ return values[@"plays"] ?: SGL(@"settings.stats.status.loading", @"Loading…"); }),
-            SGStatRow(SGL(@"settings.stats.row.current_streak", @"Current streak"), ^NSString *{ return values[@"current"] ?: SGL(@"settings.stats.status.loading", @"Loading…"); }),
-            SGStatRow(SGL(@"settings.stats.row.best_streak", @"Best streak"), ^NSString *{ return values[@"best"] ?: SGL(@"settings.stats.status.loading", @"Loading…"); }),
-            SGStatRow(SGL(@"settings.stats.row.history", @"History"), ^NSString *{ return values[@"status"] ?: SGL(@"settings.stats.status.loading", @"Loading…"); }),
-        ], SGL(@"settings.stats.section.history.footer", @"Streaks use local calendar days when plays ended. A current streak can end yesterday until you listen today. Import Spotify's account or extended streaming history, or Vitrine's own versioned history export. Duplicate plays are skipped. Large selections may need to be imported in smaller batches.")),
         SGSection(nil, @[import, folder, export]),
         SGSection(nil, @[erase]),
     ] footer:nil];
+    weakPage = page;
+    page.values = values;
+    page.streakRow = streak;
+    page.periodRow = period;
+    page.chartRow = chart;
+    page.tracksRow = lists[0];
+    page.artistsRow = lists[1];
+    page.albumsRow = lists[2];
+    page.earliest = INT64_MAX;
+    page.calendar = NSCalendar.currentCalendar;
+    page.kind = SGStatsPeriodWeek;
+    page.shown = SGPeriodInterval(SGStatsPeriodWeek, NSDate.date, page.calendar);
     page.loading = YES;
-    __weak SGListeningPage *weakPage = page;
     page.refreshHistory = ^{
         SGListeningPage *page = weakPage;
         if (!page) return;
@@ -282,36 +919,45 @@ UIViewController *SGListeningStatsPage(void) {
         page.loading = YES;
         values[@"status"] = SGL(@"settings.stats.status.loading", @"Loading…");
         [SGListeningLog() loadWithCompletion:^{
+            SGListeningPage *page = weakPage;
+            if (!page || page.generation != generation) return;
             if (SGListeningLog().loadError) {
-                if (weakPage.generation != generation) return;
-                [values removeAllObjects];
-                for (NSString *key in [names arrayByAddingObjectsFromArray:@[@"plays", @"current", @"best"]]) values[key] = SGL(@"settings.stats.status.unavailable", @"Unavailable");
+                page.loading = NO;
+                [page showSummaryError];
                 values[@"status"] = SGL(@"settings.stats.status.error_retry", @"Could not load history. Reopen to retry.");
-                weakPage.loading = NO;
-                [weakPage.tableView reloadData];
+                [page.tableView reloadData];
                 UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, values[@"status"]);
                 return;
             }
             NSArray *snapshot = [SGListeningLog().plays copy];
             NSDate *now = NSDate.date;
             NSCalendar *calendar = [NSCalendar.currentCalendar copy];
+            // The time zone or first weekday may have changed since the period was picked: the same period
+            // again, read in the calendar as it is now.
+            NSDate *middle = [page.shown.startDate dateByAddingTimeInterval:page.shown.duration / 2];
+            page.calendar = calendar;
+            page.shown = SGPeriodInterval(page.kind, middle && [middle compare:now] == NSOrderedAscending ? middle : now, calendar);
+            page.snapshot = snapshot;
+            [page showPeriod];
             dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
                 SGListeningStreaks *streaks = SGStreaks(snapshot, now, calendar);
-                NSMutableDictionary *summary = [NSMutableDictionary dictionary];
-                for (NSUInteger i = 0; i < names.count; i++) {
-                    int64_t back = [days[i] longLongValue] * 86400, since = back ? (int64_t)now.timeIntervalSince1970 - back : 0;
-                    int64_t ms = 0;
-                    for (SGPlay *play in snapshot) if (play.end >= since) ms += play.ms;
-                    summary[names[i]] = duration(ms);
+                int64_t ms = 0, earliest = INT64_MAX;
+                for (SGPlay *play in snapshot) {
+                    ms += play.ms;
+                    // As in SGStreaks, a damaged row's time outside NSDate's years is not a period to step to.
+                    if (play.end >= -62135596800LL && play.end <= 253402300799LL) earliest = MIN(earliest, play.end);
                 }
-                summary[@"plays"] = [NSString stringWithFormat:@"%lu", (unsigned long)snapshot.count];
-                summary[@"current"] = daysText(streaks.current); summary[@"best"] = daysText(streaks.best);
-                summary[@"status"] = snapshot.count ? SGL(@"settings.stats.status.on_phone", @"On this phone") : SGL(@"settings.stats.status.no_plays", @"No plays yet");
+                NSDictionary *summary = @{@"allTime": duration(ms), @"plays": countText(snapshot.count),
+                    @"status": snapshot.count ? SGL(@"settings.stats.status.on_phone", @"On this phone") : SGL(@"settings.stats.status.no_plays", @"No plays yet")};
                 dispatch_async(dispatch_get_main_queue(), ^{
                     SGListeningPage *page = weakPage;
                     if (!page || page.generation != generation) return;
                     [values addEntriesFromDictionary:summary];
+                    page.streaks = streaks;
+                    page.earliest = earliest;
                     page.loading = NO;
+                    [page showStreaks];
+                    [page updateNavigator];
                     [page.tableView reloadData];
                 });
             });

@@ -58,6 +58,37 @@ TSV load 146 ms, top lists 153 ms, streaks plus hourly buckets 183 ms. These are
 measurements, not iPhone timings. `THEOS=$HOME/theos ./build-sim.sh` built successfully with
 `-Wall -Werror`; the repository layer check and scoped `git diff --check` also passed.
 
+## Calendar periods and the redesigned page
+
+The page steps through calendar weeks, months and years rather than rolling 7/30/365-day windows. The model
+adds pure, Foundation-only functions, safe on any thread (each copies the calendar it is given):
+
+- `SGPeriodInterval(period, date, calendar)`: the week (from `calendar.firstWeekday`), month or year holding
+  `date` as `[start, next start)`. The next start is found one unit past the middle of the period, so DST weeks
+  (167/169 h), short months and zones that skip midnight (the day starts at 01:00) come out right.
+- `SGPeriodStep(period, date, steps, calendar)`: whole periods back or forward, stepped from the middle so a
+  month never clamps on the 31st.
+- `SGStatsBetween(plays, start, end, top)` and `SGHourlyStatsBetween(...)`: `[start, end)` in Unix seconds;
+  `INT64_MAX` means no end, which is what `SGStatsSince` and `SGHourlyStats` now call.
+- `SGPeriodBuckets(plays, period, date, calendar)`: the period's local days (week, month) or months (year), empty
+  ones included, each with its plays and listening time, for the chart.
+- `SGListeningStreaks` also carries the first and last day of the current and the best streak (the latest best
+  on a tie).
+
+`periodChecks()` covers Monday-, Sunday- and Saturday-first weeks, the spring DST week (167 h) and Sunday (23 h),
+the fall-back Sunday (25 h, its repeated hour counted once per play), the week across New Year, a week starting
+on São Paulo's day without midnight, leap February, month stepping from the 31st and across years, year stepping
+from 29 February, half-open period sums (a play at the exact end belongs to the next period), March's 31 day
+buckets adding up to the month's plays, a year's 12 month buckets, a Hebrew leap year's 13 months and streak date
+ranges (ties, leap day, a current streak ending yesterday, none without plays).
+
+Page structure (sections): 0 the streak card; 1 the period card (Week/Month/Year control, previous, title,
+next), the chart, Listening time, Plays, By hour of day; 2–4 Top tracks/artists/albums (five on a card, See all
+while there are more of the 25); 5 All time, total Plays, History; 6 Record plays; 7 Import history, Import a
+folder, Export history; 8 Erase listening history.
+
+2026-10-24 local verification: `./build.sh && build/listening-stats` passed all 97 checks.
+
 ## The page and the recorder in the simulator (`sim/`)
 
 `ListeningStatsPage.m` on the real Settings/ framework, `ListeningStats.x` through Logos with `sim/stubs.m` standing in
@@ -77,8 +108,8 @@ Importing… until the merge, a second tap on it ignored meanwhile), and `record
 5 s skip left out.
 
 The local parity batch also builds this simulator app with the real page and dark document presentation
-helper. The original import row remains section 2, row 1; folder import is row 2, export row 3, current/best
-streak rows 4/5. Each period's hourly page is section 0, row 2.
+helper. Since the calendar redesign the import row is section 7, row 0 (folder import row 1, export row 2) and
+the shown period's hourly page is section 1, row 4; the All time page's hourly row is section 0, row 2.
 
 What it does not cover: Spotify's real player reporting, a real export from Spotify, cloud document-provider
 access, or interactive system export completion/cancellation. The dated simulator observations above are

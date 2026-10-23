@@ -19,6 +19,8 @@ NSNotificationName const SGPlayLogDidChangeNotification = @"SGPlayLogDidChange";
 @end
 @implementation SGListeningStreaks
 @end
+@implementation SGStatBucket
+@end
 @implementation SGHistoryImport
 @end
 
@@ -490,11 +492,15 @@ static void count(NSMutableDictionary<NSString *, SGStatEntry *> *entries, NSStr
 // Tracks go by title and artist rather than URI: the basic export has no URIs, and a track's URI can
 // differ between its single and its album.
 SGStats *SGStatsSince(NSArray<SGPlay *> *plays, int64_t since, NSUInteger top) {
+    return SGStatsBetween(plays, since, INT64_MAX, top);
+}
+
+SGStats *SGStatsBetween(NSArray<SGPlay *> *plays, int64_t start, int64_t end, NSUInteger top) {
     NSMutableDictionary<NSString *, SGStatEntry *> *tracks = [NSMutableDictionary dictionary], *artists = [NSMutableDictionary dictionary],
                                                    *albums = [NSMutableDictionary dictionary];
     SGStats *stats = [SGStats new];
     for (SGPlay *play in plays) {
-        if (play.end < since) continue;
+        if (play.end < start || (end != INT64_MAX && play.end >= end)) continue;
         stats.plays++;
         stats.ms += play.ms;
         NSString *artist = play.artist.lowercaseString;
@@ -520,17 +526,24 @@ SGListeningStreaks *SGStreaks(NSArray<SGPlay *> *plays, NSDate *now, NSCalendar 
     }
     SGListeningStreaks *result = [SGListeningStreaks new];
     NSUInteger run = 0;
-    NSDate *previous;
+    NSDate *previous, *runStart;
     for (NSDate *day in [days.allObjects sortedArrayUsingSelector:@selector(compare:)]) {
         NSDate *next = previous ? [cal dateByAddingUnit:NSCalendarUnitDay value:1 toDate:previous options:0] : nil;
         if (next) next = [cal startOfDayForDate:next]; // Some zones skip midnight at DST start.
         run = [next isEqualToDate:day] ? run + 1 : 1;
-        result.best = MAX(result.best, run);
+        if (run == 1) runStart = day;
+        if (run >= result.best) {
+            result.best = run;
+            result.bestStart = runStart;
+            result.bestEnd = day;
+        }
         previous = day;
     }
     NSDate *last = [days containsObject:today] ? today : [cal dateByAddingUnit:NSCalendarUnitDay value:-1 toDate:today options:0];
     if (last) last = [cal startOfDayForDate:last];
     while (last && [days containsObject:last]) {
+        if (!result.current) result.currentEnd = last;
+        result.currentStart = last;
         result.current++;
         last = [cal dateByAddingUnit:NSCalendarUnitDay value:-1 toDate:last options:0];
         if (last) last = [cal startOfDayForDate:last];
@@ -539,15 +552,91 @@ SGListeningStreaks *SGStreaks(NSArray<SGPlay *> *plays, NSDate *now, NSCalendar 
 }
 
 NSArray<SGStatEntry *> *SGHourlyStats(NSArray<SGPlay *> *plays, int64_t since, NSCalendar *calendar) {
+    return SGHourlyStatsBetween(plays, since, INT64_MAX, calendar);
+}
+
+NSArray<SGStatEntry *> *SGHourlyStatsBetween(NSArray<SGPlay *> *plays, int64_t start, int64_t end, NSCalendar *calendar) {
     NSCalendar *cal = [calendar copy];
     NSMutableArray<SGStatEntry *> *hours = [NSMutableArray arrayWithCapacity:24];
     for (NSUInteger i = 0; i < 24; i++) [hours addObject:[SGStatEntry new]];
     for (SGPlay *play in plays) {
-        if (play.end < since || play.end < -62135596800LL || play.end > 253402300799LL) continue;
+        if (play.end < start || play.end >= end || play.end < -62135596800LL || play.end > 253402300799LL) continue;
         NSInteger hour = [cal component:NSCalendarUnitHour fromDate:[NSDate dateWithTimeIntervalSince1970:play.end]];
         if (hour < 0 || hour > 23) continue;
         hours[hour].plays++;
         hours[hour].ms += play.ms;
     }
     return hours;
+}
+
+#pragma mark - calendar periods
+
+static NSCalendarUnit periodUnit(SGStatsPeriod period) {
+    return period == SGStatsPeriodYear ? NSCalendarUnitYear : period == SGStatsPeriodMonth ? NSCalendarUnitMonth : NSCalendarUnitWeekOfYear;
+}
+
+static int64_t unixSeconds(NSDate *date) {
+    return (int64_t)floor(date.timeIntervalSince1970);
+}
+
+// The unit holding `date`, as [its start, the next one's start). The next start is looked up from a date one
+// unit past the middle of this one, so neither a DST hour, a skipped midnight nor a short month can land
+// it in the wrong unit, and the unit's length is the calendar's rather than a fixed count of seconds.
+static NSDateInterval *unitInterval(NSCalendar *cal, NSCalendarUnit unit, NSDate *date) {
+    NSDate *start, *next;
+    NSTimeInterval length = 0, nextLength = 0;
+    if (!date || ![cal rangeOfUnit:unit startDate:&start interval:&length forDate:date]) return nil;
+    NSDate *ahead = [cal dateByAddingUnit:unit value:1 toDate:[start dateByAddingTimeInterval:length / 2] options:0];
+    if (!ahead || ![cal rangeOfUnit:unit startDate:&next interval:&nextLength forDate:ahead] ||
+        [next compare:start] != NSOrderedDescending) return nil;
+    return [[NSDateInterval alloc] initWithStartDate:start endDate:next];
+}
+
+NSDateInterval *SGPeriodInterval(SGStatsPeriod period, NSDate *date, NSCalendar *calendar) {
+    return unitInterval([calendar copy], periodUnit(period), date);
+}
+
+NSDateInterval *SGPeriodStep(SGStatsPeriod period, NSDate *date, NSInteger steps, NSCalendar *calendar) {
+    NSCalendar *cal = [calendar copy];
+    NSCalendarUnit unit = periodUnit(period);
+    NSDateInterval *shown = unitInterval(cal, unit, date);
+    if (!shown) return nil;
+    // From the middle, so stepping a month never clamps (the 31st) and a week never meets a skipped midnight.
+    NSDate *middle = [shown.startDate dateByAddingTimeInterval:shown.duration / 2];
+    return unitInterval(cal, unit, [cal dateByAddingUnit:unit value:steps toDate:middle options:0]);
+}
+
+NSArray<SGStatBucket *> *SGPeriodBuckets(NSArray<SGPlay *> *plays, SGStatsPeriod period, NSDate *date, NSCalendar *calendar) {
+    enum { most = 64 };   // 31 days, or 13 months in a Hebrew leap year
+    NSCalendar *cal = [calendar copy];
+    NSDateInterval *whole = unitInterval(cal, periodUnit(period), date);
+    NSMutableArray<SGStatBucket *> *buckets = [NSMutableArray array];
+    if (!whole) return buckets;
+    NSCalendarUnit part = period == SGStatsPeriodYear ? NSCalendarUnitMonth : NSCalendarUnitDay;
+    int64_t starts[most], end = unixSeconds(whole.endDate);
+    NSDate *at = whole.startDate;
+    while (buckets.count < most && [at compare:whole.endDate] == NSOrderedAscending) {
+        NSDateInterval *piece = unitInterval(cal, part, at);
+        if (!piece) break;
+        SGStatBucket *bucket = [SGStatBucket new];
+        bucket.start = unixSeconds(at);
+        bucket.end = MIN(unixSeconds(piece.endDate), end);
+        starts[buckets.count] = bucket.start;
+        [buckets addObject:bucket];
+        at = piece.endDate;
+    }
+    NSUInteger n = buckets.count;
+    if (!n) return buckets;
+    int64_t first = starts[0], last = buckets[n - 1].end;
+    for (SGPlay *play in plays) {
+        if (play.end < first || play.end >= last) continue;
+        NSUInteger lo = 0, hi = n;   // the last bucket starting at or before the play's end
+        while (hi - lo > 1) {
+            NSUInteger mid = (lo + hi) / 2;
+            if (starts[mid] <= play.end) lo = mid; else hi = mid;
+        }
+        buckets[lo].plays++;
+        buckets[lo].ms += play.ms;
+    }
+    return buckets;
 }

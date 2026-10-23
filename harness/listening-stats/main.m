@@ -111,6 +111,114 @@ static void calendarChecks(void) {
     CHECK(s.current == 3 && s.best == 3, "streak: timezone skipping midnight at DST start");
 }
 
+static BOOL spans(NSDateInterval *interval, NSString *start, NSString *end) {
+    return [interval.startDate isEqualToDate:date(start)] && [interval.endDate isEqualToDate:date(end)];
+}
+
+static int64_t unixOf(NSString *iso) {
+    return (int64_t)date(iso).timeIntervalSince1970;
+}
+
+static void periodChecks(void) {
+    NSCalendar *monday = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierGregorian];
+    monday.timeZone = [NSTimeZone timeZoneWithName:@"America/New_York"];
+    monday.firstWeekday = 2;
+    NSCalendar *sunday = [monday copy];
+    sunday.firstWeekday = 1;
+    NSCalendar *saturday = [monday copy];
+    saturday.firstWeekday = 7;
+
+    // Weeks: a non-Sunday first weekday, DST inside the week, a week across New Year.
+    CHECK(spans(SGPeriodInterval(SGStatsPeriodWeek, date(@"2026-03-11T15:00:00-04:00"), monday), @"2026-03-09T00:00:00-04:00", @"2026-03-16T00:00:00-04:00"),
+          "week: Monday-first week of Wed 11 Mar 2026 is Mon 9 – Mon 16");
+    NSDateInterval *dstWeek = SGPeriodInterval(SGStatsPeriodWeek, date(@"2026-03-08T12:00:00-04:00"), monday);
+    CHECK(spans(dstWeek, @"2026-03-02T00:00:00-05:00", @"2026-03-09T00:00:00-04:00") && dstWeek.duration == 167 * 3600,
+          "week: Monday-first week of DST Sunday 8 Mar ends on it, 167 h long");
+    NSDateInterval *sundayWeek = SGPeriodInterval(SGStatsPeriodWeek, date(@"2026-03-08T12:00:00-04:00"), sunday);
+    CHECK(spans(sundayWeek, @"2026-03-08T00:00:00-05:00", @"2026-03-15T00:00:00-04:00"),
+          "week: the same Sunday starts a Sunday-first week");
+    CHECK(spans(SGPeriodInterval(SGStatsPeriodWeek, date(@"2026-10-23T12:00:00-04:00"), saturday), @"2026-10-17T00:00:00-04:00", @"2026-10-24T00:00:00-04:00"),
+          "week: Saturday-first week of Fri 23 Oct 2026 is Sat 17 – Sat 24");
+    CHECK(spans(SGPeriodInterval(SGStatsPeriodWeek, date(@"2026-01-01T12:00:00-05:00"), monday), @"2025-12-29T00:00:00-05:00", @"2026-01-05T00:00:00-05:00"),
+          "week: the week of 1 Jan 2026 starts Mon 29 Dec 2025");
+    CHECK(spans(SGPeriodInterval(SGStatsPeriodWeek, date(@"2026-03-09T00:00:00-04:00"), monday), @"2026-03-09T00:00:00-04:00", @"2026-03-16T00:00:00-04:00"),
+          "week: a week's first instant belongs to it");
+    CHECK(spans(SGPeriodStep(SGStatsPeriodWeek, date(@"2026-03-11T15:00:00-04:00"), -1, monday), @"2026-03-02T00:00:00-05:00", @"2026-03-09T00:00:00-04:00") &&
+          spans(SGPeriodStep(SGStatsPeriodWeek, date(@"2026-03-02T00:00:00-05:00"), 1, monday), @"2026-03-09T00:00:00-04:00", @"2026-03-16T00:00:00-04:00") &&
+          spans(SGPeriodStep(SGStatsPeriodWeek, date(@"2026-01-01T12:00:00-05:00"), -1, monday), @"2025-12-22T00:00:00-05:00", @"2025-12-29T00:00:00-05:00"),
+          "week: stepping back and forward across DST and New Year");
+    NSCalendar *brazil = [sunday copy];
+    brazil.timeZone = [NSTimeZone timeZoneWithName:@"America/Sao_Paulo"];
+    NSDateInterval *skipped = SGPeriodInterval(SGStatsPeriodWeek, date(@"2018-11-06T12:00:00-02:00"), brazil);
+    CHECK([skipped.startDate isEqualToDate:date(@"2018-11-04T01:00:00-02:00")] &&
+          spans(SGPeriodStep(SGStatsPeriodWeek, skipped.startDate, -1, brazil), @"2018-10-28T00:00:00-03:00", @"2018-11-04T01:00:00-02:00"),
+          "week: a week starting on a day without midnight starts at 01:00, and steps back cleanly");
+
+    // Months and years.
+    CHECK(spans(SGPeriodInterval(SGStatsPeriodMonth, date(@"2024-02-15T12:00:00-05:00"), monday), @"2024-02-01T00:00:00-05:00", @"2024-03-01T00:00:00-05:00"),
+          "month: leap February");
+    CHECK(spans(SGPeriodStep(SGStatsPeriodMonth, date(@"2026-01-31T23:00:00-05:00"), 1, monday), @"2026-02-01T00:00:00-05:00", @"2026-03-01T00:00:00-05:00") &&
+          spans(SGPeriodStep(SGStatsPeriodMonth, date(@"2026-03-31T23:00:00-04:00"), -1, monday), @"2026-02-01T00:00:00-05:00", @"2026-03-01T00:00:00-05:00"),
+          "month: stepping from the 31st does not skip February");
+    CHECK(spans(SGPeriodStep(SGStatsPeriodMonth, date(@"2026-01-10T12:00:00-05:00"), -1, monday), @"2025-12-01T00:00:00-05:00", @"2026-01-01T00:00:00-05:00") &&
+          spans(SGPeriodStep(SGStatsPeriodMonth, date(@"2026-01-10T12:00:00-05:00"), 12, monday), @"2027-01-01T00:00:00-05:00", @"2027-02-01T00:00:00-05:00"),
+          "month: stepping across years");
+    CHECK(spans(SGPeriodInterval(SGStatsPeriodYear, date(@"2024-06-01T12:00:00-04:00"), monday), @"2024-01-01T00:00:00-05:00", @"2025-01-01T00:00:00-05:00") &&
+          spans(SGPeriodStep(SGStatsPeriodYear, date(@"2026-10-24T12:00:00-04:00"), -1, monday), @"2025-01-01T00:00:00-05:00", @"2026-01-01T00:00:00-05:00") &&
+          spans(SGPeriodStep(SGStatsPeriodYear, date(@"2024-02-29T12:00:00-05:00"), 1, monday), @"2025-01-01T00:00:00-05:00", @"2026-01-01T00:00:00-05:00"),
+          "year: leap year bounds, stepping back, stepping from 29 Feb");
+
+    // Adding up between bounds: [start, end).
+    NSArray *plays = @[dated(@"2026-03-02T00:00:00-05:00", 60000), dated(@"2026-03-08T23:30:00-04:00", 120000),
+                       dated(@"2026-03-09T00:00:00-04:00", 180000), dated(@"2026-03-01T23:59:59-05:00", 240000),
+                       dated(@"2026-03-08T01:30:00-05:00", 30000)];
+    SGStats *week = SGStatsBetween(plays, (int64_t)dstWeek.startDate.timeIntervalSince1970, (int64_t)dstWeek.endDate.timeIntervalSince1970, 10);
+    CHECK(week.plays == 3 && week.ms == 210000 && week.tracks.firstObject.plays == 3, "between: start included, end excluded (3 plays, 210 s)");
+    SGStats *open = SGStatsBetween(plays, unixOf(@"2026-03-02T00:00:00-05:00"), INT64_MAX, 10), *from = SGStatsSince(plays, unixOf(@"2026-03-02T00:00:00-05:00"), 10);
+    CHECK(open.plays == from.plays && open.ms == from.ms && open.plays == 4, "between: INT64_MAX end equals since");
+    NSArray<SGStatEntry *> *hours = SGHourlyStatsBetween(plays, (int64_t)dstWeek.startDate.timeIntervalSince1970, (int64_t)dstWeek.endDate.timeIntervalSince1970, monday);
+    CHECK(hours[0].plays == 1 && hours[23].plays == 1 && hours[1].plays == 1 && hours[0].ms == 60000, "hours between: end-of-week midnight left to the next week");
+
+    // Chart buckets: a DST week's days, a month's days, a year's months, one bucket per play.
+    NSArray<SGStatBucket *> *days = SGPeriodBuckets(plays, SGStatsPeriodWeek, date(@"2026-03-05T12:00:00-05:00"), monday);
+    CHECK(days.count == 7 && days[6].end - days[6].start == 23 * 3600 && days[0].start == unixOf(@"2026-03-02T00:00:00-05:00") &&
+          days[6].end == unixOf(@"2026-03-09T00:00:00-04:00"), "buckets: 7 days, DST Sunday 23 h, ends where the week does");
+    CHECK(days[0].plays == 1 && days[6].plays == 2 && days[6].ms == 150000 && days[1].plays == 0, "buckets: plays land on their local day, the DST day included");
+    NSArray<SGStatBucket *> *fall = SGPeriodBuckets(@[dated(@"2026-11-01T01:30:00-05:00", 60000)], SGStatsPeriodWeek, date(@"2026-11-01T12:00:00-05:00"), monday);
+    CHECK(fall.count == 7 && fall[6].end - fall[6].start == 25 * 3600 && fall[6].plays == 1, "buckets: fall-back Sunday 25 h, its repeated hour counted");
+    NSArray<SGStatBucket *> *march = SGPeriodBuckets(plays, SGStatsPeriodMonth, date(@"2026-03-20T12:00:00-04:00"), monday);
+    NSUInteger marchPlays = 0;
+    for (SGStatBucket *b in march) marchPlays += b.plays;
+    SGStats *marchStats = SGStatsBetween(plays, unixOf(@"2026-03-01T00:00:00-05:00"), unixOf(@"2026-04-01T00:00:00-04:00"), 1);
+    CHECK(march.count == 31 && marchPlays == marchStats.plays && marchPlays == 5 && march[0].plays == 1 && march[8].plays == 1,
+          "buckets: March has 31 days and its bars add up to the month's plays");
+    NSArray *yearPlays = @[dated(@"2026-02-28T23:59:00-05:00", 1000), dated(@"2026-03-01T00:00:00-05:00", 2000),
+                           dated(@"2026-12-31T23:59:59-05:00", 4000), dated(@"2027-01-01T00:00:00-05:00", 8000)];
+    NSArray<SGStatBucket *> *months = SGPeriodBuckets(yearPlays, SGStatsPeriodYear, date(@"2026-07-01T12:00:00-04:00"), monday);
+    CHECK(months.count == 12 && months[1].ms == 1000 && months[2].ms == 2000 && months[11].ms == 4000 &&
+          months[11].end == unixOf(@"2027-01-01T00:00:00-05:00"), "buckets: a year's 12 months, its last second in, the next year's first out");
+    NSArray<SGStatBucket *> *skippedDays = SGPeriodBuckets(@[], SGStatsPeriodWeek, date(@"2018-11-06T12:00:00-02:00"), brazil);
+    CHECK(skippedDays.count == 7 && skippedDays[0].end - skippedDays[0].start == 23 * 3600, "buckets: a day without midnight is 23 h");
+    NSCalendar *hebrew = [[NSCalendar alloc] initWithCalendarIdentifier:NSCalendarIdentifierHebrew];
+    hebrew.timeZone = monday.timeZone;
+    CHECK(SGPeriodBuckets(@[], SGStatsPeriodYear, date(@"2024-03-01T12:00:00-05:00"), hebrew).count == 13, "buckets: a Hebrew leap year has 13 months");
+
+    // Streak date ranges.
+    NSArray *runs = @[dated(@"2024-02-28T23:00:00-05:00", 60000), dated(@"2024-02-29T23:00:00-05:00", 60000),
+                      dated(@"2024-03-01T01:00:00-05:00", 60000), dated(@"2024-03-04T01:00:00-05:00", 60000),
+                      dated(@"2024-03-05T01:00:00-05:00", 60000), dated(@"2024-03-06T01:00:00-05:00", 60000)];
+    SGListeningStreaks *s = SGStreaks(runs, date(@"2024-03-07T12:00:00-05:00"), monday);
+    CHECK(s.best == 3 && [s.bestStart isEqualToDate:date(@"2024-03-04T00:00:00-05:00")] && [s.bestEnd isEqualToDate:date(@"2024-03-06T00:00:00-05:00")],
+          "streak range: of two 3-day runs the latest is the best's");
+    CHECK(s.current == 3 && [s.currentStart isEqualToDate:date(@"2024-03-04T00:00:00-05:00")] && [s.currentEnd isEqualToDate:date(@"2024-03-06T00:00:00-05:00")],
+          "streak range: a current streak ending yesterday");
+    s = SGStreaks([runs subarrayWithRange:NSMakeRange(0, 4)], date(@"2024-03-04T12:00:00-05:00"), monday);
+    CHECK(s.best == 3 && [s.bestStart isEqualToDate:date(@"2024-02-28T00:00:00-05:00")] && [s.bestEnd isEqualToDate:date(@"2024-03-01T00:00:00-05:00")] &&
+          s.current == 1 && [s.currentStart isEqualToDate:s.currentEnd], "streak range: across leap day, and a one-day current streak");
+    s = SGStreaks(@[], date(@"2024-03-04T12:00:00-05:00"), monday);
+    CHECK(!s.bestStart && !s.bestEnd && !s.currentStart && !s.currentEnd, "streak range: none without plays");
+}
+
 static void localHistoryChecks(NSString *dir, NSArray<SGPlay *> *existing) {
     SGPlay *shortPlay = play(1700000001, 12500, @"짧은 곡 🎵", @"가수", @"");
     shortPlay.uri = @"spotify:local:short";
@@ -336,6 +444,7 @@ int main(void) {
               "a play counts past 30 s or half the track");
 
         calendarChecks();
+        periodChecks();
         localHistoryChecks(dir, reread.plays);
 
         // An export's size: 100k extended rows.

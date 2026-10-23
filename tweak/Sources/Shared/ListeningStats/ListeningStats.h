@@ -1,6 +1,7 @@
 // Listening stats (Mod Settings > Listening stats), under either look: plays counted on the phone as they
-// happen, Spotify's own data export merged in, and the top tracks, artists and albums of a week, a month,
-// a year and all time, local calendar streaks and hourly totals. Vitrine JSON can round-trip history;
+// happen, Spotify's own data export merged in, and for a calendar week, month or year stepped through (or
+// all time) the listening time, a chart by day or month, hourly totals and the top tracks, artists and
+// albums, under a card of the current and best local calendar streaks. Vitrine JSON can round-trip history;
 // Spotify JSON/ZIP and selected folders of JSON can be imported without an account.
 //
 //     SGPlayLog.m            the log, the export's parsers and the adding up; the Mac harness runs it
