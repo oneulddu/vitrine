@@ -1042,6 +1042,8 @@
 "settings.lyrics.pip.weight.medium" = "Medium";
 "settings.lyrics.pip.weight.regular" = "Regular";
 "settings.lyrics.pip.weight.semibold" = "Semibold";
+"settings.lyrics.prefer_words.subtitle" = "In In order mode, keep looking past line-timed lyrics";
+"settings.lyrics.prefer_words.title" = "Prefer word-by-word timing";
 "settings.lyrics.romanized.subtitle" = "Shows Latin-letter readings, or hiragana for Japanese.";
 "settings.lyrics.romanized.title" = "Pronunciation";
 "settings.lyrics.show_source.subtitle" = "Spicy Lyrics is always credited after the last line: its terms ask for it";
@@ -1106,6 +1108,7 @@
 "settings.lyricssources.deezer.status.set" = "Set";
 "settings.lyricssources.deezer.subtitle" = "Word and line timing, your own ARL";
 "settings.lyricssources.genie.subtitle" = "Line timing, Korean catalog";
+"settings.lyricssources.genius.subtitle" = "Untimed, when no other has lyrics";
 "settings.lyricssources.importedlrc.subtitle" = "Your own .lrc files";
 "settings.lyricssources.importedlrc.title" = "Imported LRC";
 "settings.lyricssources.intro" = "Drag to set source priority. Choose how sources are asked in Request mode & lyric types. In All at once mode, the first word-timed answer wins regardless of order. Deezer uses your own login cookie when you add it.";
@@ -1114,6 +1117,11 @@
 "settings.lyricssources.lyricsplus.subtitle" = "Word and line timing, multiple catalogs";
 "settings.lyricssources.musixmatch.subtitle" = "Spotify's licensed catalog";
 "settings.lyricssources.netease.subtitle" = "Word timing, censored";
+"settings.lyricssources.offers.empty" = "No Source Has Lyrics";
+"settings.lyricssources.offers.loading" = "Asking…";
+"settings.lyricssources.pick.automatic" = "Automatic";
+"settings.lyricssources.pick.menu" = "Lyrics Source";
+"settings.lyricssources.pick.order" = "As the order chooses";
 "settings.lyricssources.qqmusic.subtitle" = "Line timing, Chinese catalog";
 "settings.lyricssources.spicy.action.open_dashboard" = "Open Dashboard";
 "settings.lyricssources.spicy.alert.instructions" = "Sign up at Spicy Lyrics for Developers, create an application, turn on client access with No origin header allowed, and paste its publishable key (sl_pk_). The key stays on this iPhone.";
@@ -1126,6 +1134,9 @@
 "settings.lyricssources.spicy.status.rejected" = "Rejected";
 "settings.lyricssources.spicy.status.set" = "Set";
 "settings.lyricssources.spicylyrics.subtitle" = "Community word syncs, your own key";
+"settings.lyricssources.timing.lines" = "Line by line";
+"settings.lyricssources.timing.none" = "Not synced";
+"settings.lyricssources.timing.words" = "Word by word";
 "settings.lyricssources.title" = "Lyrics sources";
 "settings.lyricssources.translationlanguage.choice.any" = "Any · iPhone's language";
 "settings.lyricssources.unison.subtitle" = "Hand-timed, few tracks";
@@ -1988,8 +1999,6 @@
 "settings.tabbar.labels.icons_and_names" = "Icons and names";
 "settings.tabbar.labels.icons_only" = "Icons only";
 "settings.tabbar.placement.apart" = "Apart, on the right";
-"settings.tabbar.placement.hidden" = "Hidden";
-"settings.tabbar.placement.together" = "With the others";
 "settings.tabbar.preset.albums" = "Albums";
 "settings.tabbar.preset.artists" = "Artists";
 "settings.tabbar.preset.audiobooks" = "Audiobooks";
@@ -2022,7 +2031,9 @@
 "settings.tabbar.split_row.title" = "Split tabs";
 "settings.tabbar.split_tabs.cell_subtitle" = "Place chosen tabs apart on the right";
 "settings.tabbar.split_tabs.cell_title" = "Split tabs";
-"settings.tabbar.split_tabs.intro" = "Tabs switched on here sit apart from the others at the right end of the bar, the way the Music app sets Search apart. Hidden tabs stay hidden.";
+"settings.tabbar.split_tabs.list_intro" = "Tabs here sit apart from the others at the right end of the bar, the way the Music app sets Search apart. They are not on the bar's own list.";
+"settings.tabbar.split_tabs.move_hint" = "Moves the tab to the right end of the bar";
+"settings.tabbar.split_tabs.stock_header" = "Spotify's tabs";
 "settings.tabbar.split_tabs.title" = "Split Tabs";
 "settings.tabbar.status.hidden" = "Hidden";
 "settings.tabbar.status.stock_tab" = "Spotify's own tab";

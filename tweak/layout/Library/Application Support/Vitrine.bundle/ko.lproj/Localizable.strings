@@ -1073,6 +1073,8 @@
 "settings.lyrics.ask_mode.order.subtitle" = "순서대로 요청하고 싱크가 있는 첫 가사를 찾으면 멈춥니다.";
 "settings.lyrics.ask_mode.words.subtitle" = "순서대로 요청하며, 단어 단위 싱크를 찾는 동안 줄 단위 싱크 가사를 보여 줍니다.";
 "settings.lyrics.ask_mode.all.subtitle" = "모든 소스에 동시에 요청하며, 먼저 도착한 단어 단위 싱크를 사용합니다. 더 많은 요청을 보냅니다.";
+"settings.lyrics.prefer_words.title" = "단어 단위 싱크 끝까지 찾기";
+"settings.lyrics.prefer_words.subtitle" = "순서대로 모드에서도 줄 단위 싱크 가사를 지나 단어 단위 싱크를 계속 찾습니다";
 "settings.lyrics.types.synced" = "줄 단위 싱크 이상";
 "settings.lyrics.types.title" = "요청 방식 및 가사 유형";
 "settings.lyrics.types.words" = "단어 단위 싱크만";
@@ -1125,6 +1127,7 @@
 "settings.lyricssources.deezer.status.set" = "설정됨";
 "settings.lyricssources.deezer.subtitle" = "단어 단위 싱크 및 줄 단위 싱크, 내 ARL 필요";
 "settings.lyricssources.genie.subtitle" = "줄 단위 싱크, 국내 음원";
+"settings.lyricssources.genius.subtitle" = "싱크 없음, 다른 소스에 가사가 없을 때";
 "settings.lyricssources.importedlrc.subtitle" = "직접 가져온 .lrc 파일";
 "settings.lyricssources.importedlrc.title" = "가져온 LRC";
 "settings.lyricssources.intro" = "드래그하여 소스 우선순위를 정하세요. 요청 방식 및 가사 유형에서 소스 요청 방식을 선택할 수 있습니다. 모두 동시에 모드에서는 순서와 관계없이 단어 단위 싱크가 있는 첫 응답을 사용합니다. Deezer는 직접 추가한 로그인 쿠키를 사용합니다.";
@@ -1133,6 +1136,11 @@
 "settings.lyricssources.lyricsplus.subtitle" = "단어 단위 싱크 및 줄 단위 싱크, 여러 음원";
 "settings.lyricssources.musixmatch.subtitle" = "Spotify 라이선스 카탈로그";
 "settings.lyricssources.netease.subtitle" = "단어 단위 싱크, 검열됨";
+"settings.lyricssources.offers.empty" = "가사가 있는 소스 없음";
+"settings.lyricssources.offers.loading" = "찾는 중…";
+"settings.lyricssources.pick.automatic" = "자동";
+"settings.lyricssources.pick.menu" = "가사 소스";
+"settings.lyricssources.pick.order" = "소스 순서대로";
 "settings.lyricssources.qqmusic.subtitle" = "줄 단위 싱크, 중국 카탈로그";
 "settings.lyricssources.spicy.action.open_dashboard" = "대시보드 열기";
 "settings.lyricssources.spicy.alert.instructions" = "Spicy Lyrics for Developers에 가입하고 애플리케이션을 생성한 뒤, 'No origin header allowed'로 클라이언트 접근을 활성화하고 공개 가능 키(sl_pk_)를 붙여넣으십시오. 키는 이 iPhone에만 저장됩니다.";
@@ -1145,6 +1153,9 @@
 "settings.lyricssources.spicy.status.rejected" = "거부됨";
 "settings.lyricssources.spicy.status.set" = "설정됨";
 "settings.lyricssources.spicylyrics.subtitle" = "커뮤니티 단어 단위 싱크, 직접 발급한 키";
+"settings.lyricssources.timing.lines" = "줄 단위 싱크";
+"settings.lyricssources.timing.none" = "싱크 없음";
+"settings.lyricssources.timing.words" = "단어 단위 싱크";
 "settings.lyricssources.title" = "가사 소스";
 "settings.lyricssources.translationlanguage.choice.any" = "모두 · iPhone 언어";
 "settings.lyricssources.unison.subtitle" = "수동 타이밍, 적은 트랙 수";
@@ -1703,8 +1714,6 @@
 "settings.tabbar.labels.icons_and_names" = "아이콘 및 이름";
 "settings.tabbar.labels.icons_only" = "아이콘만";
 "settings.tabbar.placement.apart" = "오른쪽에 따로 분리";
-"settings.tabbar.placement.hidden" = "숨김";
-"settings.tabbar.placement.together" = "다른 탭과 함께";
 "settings.tabbar.preset.albums" = "앨범";
 "settings.tabbar.preset.artists" = "아티스트";
 "settings.tabbar.preset.audiobooks" = "오디오북";
@@ -1737,7 +1746,9 @@
 "settings.tabbar.split_row.title" = "탭 분리";
 "settings.tabbar.split_tabs.cell_subtitle" = "선택한 탭을 오른쪽에 따로 배치";
 "settings.tabbar.split_tabs.cell_title" = "탭 분리";
-"settings.tabbar.split_tabs.intro" = "여기서 켠 탭은 음악 앱에서 검색 탭을 분리해 두는 것처럼 막대 오른쪽 끝에 따로 배치됩니다. 숨겨진 탭은 그대로 숨겨집니다.";
+"settings.tabbar.split_tabs.list_intro" = "여기 있는 탭은 음악 앱이 검색 탭을 따로 두는 것처럼 막대 오른쪽 끝에 떨어져 표시됩니다. 막대의 기본 목록에는 들어가지 않습니다.";
+"settings.tabbar.split_tabs.move_hint" = "탭을 막대 오른쪽 끝으로 옮깁니다";
+"settings.tabbar.split_tabs.stock_header" = "Spotify 탭";
 "settings.tabbar.split_tabs.title" = "탭 분리";
 "settings.tabbar.status.hidden" = "숨김";
 "settings.tabbar.status.stock_tab" = "Spotify 기본 탭";
