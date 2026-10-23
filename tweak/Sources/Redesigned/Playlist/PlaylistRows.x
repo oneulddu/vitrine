@@ -23,6 +23,7 @@
 // only the row below is a row.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRPress.h"
 #import "Playlist.h"
 
 // Under the text rather than the whole row, as the Music app draws it; the trailing end clears the page margin.
@@ -61,6 +62,8 @@ static void applyHairline(UIView *row, CGFloat leading) {
 static void applyRow(UIView *cell) {
     clearSurface(cell);
     UIView *row = identified(cell, @"Encore.ListRow", &kRowKey);
+    // The Music app's highlight under the finger (SGRPress.h), on the rows only: not the pills or a heading.
+    SGRPressRow(cell, row != nil);
     if (!row) return;
     clearSurface(row);
 

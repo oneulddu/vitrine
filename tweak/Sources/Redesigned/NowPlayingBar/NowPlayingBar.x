@@ -21,6 +21,7 @@
 #import "Redesigned/Kit/SGRRepaint.h"
 #import "Redesigned/Kit/SGRGlass.h"
 #import "Redesigned/Kit/SGRTokens.h"
+#import "Redesigned/Kit/SGRPress.h"
 #import "Settings/SGMarquee.h"
 #import "NowPlayingBar.h"
 #import "Redesigned/Navbar/Navbar.h"
@@ -28,7 +29,9 @@
 static const CGFloat kCardRadius = 24;
 // The strip's pane is this much smaller than the strip at each end, so a gap parts it from the card's glass.
 static const CGFloat kStripInset = 4;
-static char kGlassKey, kStripGlassKey;
+// Pressed, the card sinks to this and a veil this dark goes over it, as the Music app's mini player does.
+static const CGFloat kCardPressScale = 0.97, kCardPressDim = 0.22;
+static char kGlassKey, kStripGlassKey, kDimKey;
 static __weak UIView *sg_card;
 static CGRect sg_stripFrame;
 static __weak UIVisualEffectView *sg_cardGlass;
@@ -38,7 +41,77 @@ static __weak UIViewController *sg_container;
 // The container's view while it stands in the minimized tab bar's row, below the page that holds it.
 static __weak UIView *sg_inline;
 
+#pragma mark - the press
+
+// The card sinks by a sublayerTransform of the container's view about the card's middle: its transform is
+// the row's move (placeInline) and its children's frames are Spotify's, and this touches neither. The veil
+// sits over the card in the same view, so it sinks with it; the glass itself never fades (SGRGlass.h).
+static BOOL sg_cardPressed;
+
+static void pressCard(BOOL pressed, BOOL animated) {
+    UIView *host = sg_container.viewIfLoaded;
+    UIVisualEffectView *glass = sg_cardGlass;
+    if (!host) return;
+    sg_cardPressed = pressed;
+    CATransform3D sink = CATransform3DIdentity;
+    if (pressed && glass.superview == host && !SGRReduceMotion()) {
+        CGRect bounds = host.bounds, card = glass.frame;
+        CGFloat dx = CGRectGetMidX(card) - CGRectGetMidX(bounds), dy = CGRectGetMidY(card) - CGRectGetMidY(bounds);
+        // Applied right to left: to the card's middle, scaled, back.
+        sink = CATransform3DTranslate(CATransform3DScale(CATransform3DMakeTranslation(dx, dy, 0), kCardPressScale, kCardPressScale, 1), -dx, -dy, 0);
+    }
+    SGRPressAnimateLayer(host.layer, @"sublayerTransform", [NSValue valueWithCATransform3D:sink], animated);
+    UIView *dim = objc_getAssociatedObject(host, &kDimKey);
+    if (!dim) return;
+    if (!animated) {
+        [dim.layer removeAllAnimations];
+        dim.alpha = 0;
+        return;
+    }
+    SGRAnimate(pressed ? SGRMotionRespond : SGRMotionFade, ^{ dim.alpha = pressed ? 1 : 0; }, nil);
+}
+
+// The card at rest at once, pressed or springing back: the player grows from the card at rest.
+static void settleCard(void) {
+    UIView *host = sg_container.viewIfLoaded;
+    if (!host || (!sg_cardPressed && ![host.layer animationForKey:@"sublayerTransform"])) return;
+    pressCard(NO, NO);
+}
+
+// Touches on the card press it; the card's own buttons (play, devices, add) and the Jam strip do not. Spotify's
+// tap still opens the player and its swipes still turn the page: the watcher takes nothing from them.
+static void watchCard(UIView *host, CGRect card, CGFloat radius) {
+    UIView *dim = objc_getAssociatedObject(host, &kDimKey);
+    if (!dim) {
+        dim = [UIView new];
+        dim.userInteractionEnabled = NO;
+        dim.isAccessibilityElement = NO;
+        dim.accessibilityElementsHidden = YES;
+        dim.alpha = 0;
+        dim.backgroundColor = [UIColor colorWithWhite:0 alpha:kCardPressDim];
+        dim.layer.zPosition = 1;
+        dim.layer.cornerCurve = kCACornerCurveContinuous;
+        objc_setAssociatedObject(host, &kDimKey, dim, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        __weak UIView *weakHost = host;
+        SGRPressWatch(host, SGRPressKindScrolling, ^BOOL(UITouch *touch) {
+            UIView *view = weakHost;
+            UIVisualEffectView *glass = sg_cardGlass;
+            if (!view || glass.superview != view || !glass.window) return NO;
+            return CGRectContainsPoint(glass.frame, [touch locationInView:view]) && !SGRPressOnSmallControl(touch, view);
+        }, ^(BOOL pressed, BOOL tapped) {
+            pressCard(pressed, YES);
+        });
+        SGLog(@"now playing card: pressed under the finger");
+    }
+    if (dim.superview != host) [host addSubview:dim];
+    [UIView performWithoutAnimation:^{
+        dim.frame = card;
+        dim.layer.cornerRadius = radius;
+    }];
+}
+
 CGRect SGRNowPlayingCardFrameIn(UIView *host, CGFloat *radius) {
+    settleCard();
     UIVisualEffectView *glass = sg_cardGlass;
     if (!glass.superview || !glass.window || !host) return CGRectNull;
     if (radius) *radius = MIN(kCardRadius, glass.bounds.size.height / 2);
@@ -46,6 +119,7 @@ CGRect SGRNowPlayingCardFrameIn(UIView *host, CGFloat *radius) {
 }
 
 CGRect SGRNowPlayingArtworkFrameIn(UIView *host) {
+    settleCard();
     UIView *artwork = sg_cardArtwork;
     if (!artwork.window || !host) return CGRectNull;
     return [host convertRect:artwork.bounds fromView:artwork];
@@ -507,6 +581,7 @@ static void styleNowPlayingBar(UIViewController *container) {
     glass.frame = frame;
     SGShapeGlass(glass, radius, NO);
     placeStripGlass(container.view, strip, frame, stripAbove);
+    watchCard(container.view, frame, radius);
 
     static dispatch_once_t once;
     dispatch_once(&once, ^{

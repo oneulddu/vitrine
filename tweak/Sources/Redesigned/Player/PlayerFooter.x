@@ -23,9 +23,12 @@
 #import <substrate.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRPress.h"
 #import "Player.h"
 
 static const CGFloat kLyricsGlyphSize = 20;
+// The platter a pressed glyph of the row sinks into (SGRPress.h), the row's touch square.
+static const CGFloat kFooterPlatter = 44;
 // Filled and at full strength while the lyrics are up, the way the Music app marks the control that is on.
 static NSString *const kLyricsSymbol = @"quote.bubble", *const kLyricsSymbolOpen = @"quote.bubble.fill";
 // Where the three glyphs sit, as parts of the footer's width.
@@ -305,6 +308,13 @@ void SGRPlayerLowerRow(UIView *row) {
 
     SGRPlayerLowerRow(host);
     SGRPlayerCoverConnect(arrangedAround(connect, host), glyph);
+
+    // The Music app's press on each of the three, its platter under the row in the unit's view. The lyrics glyph
+    // sinks and dims on its own (SGRGlyphButton); Connect's and the queue's glyphs are Spotify's image views.
+    SGRPressGlyph(lyrics, lyrics.glyph, host, kFooterPlatter, 0);
+    if (connect && glyph) SGRPressGlyph(connect, glyph, host, kFooterPlatter, SGRPressScale);
+    UIView *queueGlyph = connectGlyphIn(queue);
+    if (queue) SGRPressGlyph(queue, queueGlyph ?: queue, host, kFooterPlatter, queueGlyph ? SGRPressScale : 0);
 
     static dispatch_once_t once;
     dispatch_once(&once, ^{
