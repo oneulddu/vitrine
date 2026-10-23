@@ -562,7 +562,7 @@ static BOOL sgr_wasOff;    // the idle timer was off already when they took it, 
 
 BOOL SGRLyricsKeepAwakeOn(void) {
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ sgr_keepAwake = SGFlag(SGRKeyLyricsKeepAwake, NO); });
+    dispatch_once(&once, ^{ sgr_keepAwake = SGEnabled(SGRKeyLyricsKeepAwake); });
     return sgr_keepAwake;
 }
 
@@ -588,7 +588,8 @@ void SGRLyricsHoldAwake(id holder, BOOL hold) {
 }
 
 SGModRow *SGRLyricsKeepAwakeRow(void) {
-    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.keep_awake.title", @"Keep screen on"),
+    // On until switched off: the Music app keeps the screen on while its lyrics are open.
+    SGModRow *row = SGSwitchRow(SGL(@"settings.lyrics.keep_awake.title", @"Keep screen on"),
                                 SGL(@"settings.lyrics.keep_awake.subtitle", @"While lyrics are shown and the song plays"), SGRKeyLyricsKeepAwake);
     row.changed = ^(BOOL on) {
         SGRLyricsKeepAwakeOn();
