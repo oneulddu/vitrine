@@ -32,6 +32,7 @@
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Shared/Player/SGLastTrack.h"
 #import "Player.h"
+#import "PlayerLyricLine.h"
 
 // The card's height as a share of its width, kept between the two bounds.
 static const CGFloat kCardAspect = 0.5, kCardMinHeight = 168, kCardMaxHeight = 220;
@@ -449,7 +450,10 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
                                    @"using a little more battery. Brightness above 100% can make white text harder to read. A paused song holds the "
                                    @"background still. Animated and Visualizer use these where they show Fluid.")),
         SGNotedSection(SGL(@"settings.player.controls.header", @"Controls"), @[SGSwitchRow(SGL(@"settings.player.volume.title", @"Volume"), nil, SGRKeyPlayerVolume),
-                                      SGOptionRow(SGL(@"settings.player.follows_cover.title", @"Follow the cover"), nil, SGRKeyPlayerFollowsCover)],
+                                      SGOptionRow(SGL(@"settings.player.follows_cover.title", @"Follow the cover"), nil, SGRKeyPlayerFollowsCover),
+                                      SGWithNew(SGSwitchRow(SGL(@"settings.player.lyric_line.title", @"Lyrics Line"),
+                                                  SGL(@"settings.player.lyric_line.subtitle", @"The line being sung, under the cover. Tap it to open the lyrics."),
+                                                  SGRKeyPlayerLyricLine), @"playerLyricLine")],
                        SGL(@"settings.player.controls.footer", @"Volume puts a slider under the controls for this iPhone, or the speaker's while Spotify plays on another device. "
                        @"Follow the cover paints the like, shuffle and repeat in the color of the song playing.")),
         SGNotedSection(SGL(@"settings.player.mini_player.header", @"Mini player"), SGRNowPlayingBarRows(),

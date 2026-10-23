@@ -1,4 +1,4 @@
-// Player redesign: glass circles behind the header's close and more buttons.
+// Player redesign: glass circles behind the header's close and more buttons, and the Music app's grabber over them.
 //
 // Glass is the control layer floating over the field, so it goes behind the round buttons only: the
 // playlist name between them stays a label, and the row of playback controls stays bare glyphs
@@ -29,7 +29,7 @@
 #import "Redesigned/ContextMenu/ContextMenu.h"
 #import "Player.h"
 
-static char kGlassKey, kCloseKey, kMoreKey, kPressKey;
+static char kGlassKey, kCloseKey, kMoreKey, kPressKey, kGrabberKey;
 static const CGFloat kPressScale = 0.92;
 
 @interface SGRHeaderPress : NSObject
@@ -106,9 +106,67 @@ static void glassInside(UIViewController *unit, NSArray<NSArray<NSString *> *> *
     }
 }
 
+#pragma mark - the grabber
+
+// The Music app's grabber over its full screen player: a pill centered over the header row, taking no touches and
+// read by nothing, the player's own close being the down arrow and the swipe down. It is a subview of the header
+// unit's view, so it fades with the row while the lyrics have the player to themselves (PlayerLyrics.x fades that
+// view by its alpha) and comes back with it. The view does not clip, so the pill may sit over the row's top.
+//
+// Where: under the safe area's top when the row leaves room for it there; else, under an island or a notch (a
+// safe area top of 44pt or more, the cutout ending well above it), in the strip between the cutout and the row;
+// else (a status bar of 20pt, nothing below it to sit in) just inside the row's top, over the middle where the
+// playlist's name leaves a gap above itself.
+static const CGSize kGrabberSize = {36, 5};
+static const CGFloat kGrabberGap = 4;
+static const CGFloat kCutoutSafeTop = 44;
+
+static void placeGrabber(UIView *header) {
+    UIWindow *window = header.window;
+    if (!window) return;
+    UIView *grabber = objc_getAssociatedObject(header, &kGrabberKey);
+    if (!grabber) {
+        grabber = [UIView new];
+        grabber.userInteractionEnabled = NO;
+        grabber.isAccessibilityElement = NO;
+        grabber.accessibilityElementsHidden = YES;
+        grabber.layer.cornerRadius = kGrabberSize.height / 2;
+        grabber.layer.cornerCurve = kCACornerCurveContinuous;
+        objc_setAssociatedObject(header, &kGrabberKey, grabber, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    grabber.backgroundColor = [UIColor colorWithWhite:1 alpha:SGRIncreaseContrast() ? 0.5 : 0.3];
+    if (grabber.superview != header) [header addSubview:grabber];
+
+    // Measured in the player's own full screen view (SPTNowPlayingView), whose top is the screen's once the player
+    // is up: the window's coordinates would take in the player's open and close as it moves.
+    UIView *player = window;
+    for (UIView *v = header.superview; v && v != window; v = v.superview) {
+        if (v.bounds.size.height >= window.bounds.size.height - 1) {
+            player = v;
+            break;
+        }
+    }
+    CGFloat safeTop = player.safeAreaInsets.top;
+    CGFloat rowTop = [header convertPoint:CGPointZero toView:player].y;
+    CGFloat top;   // in the player
+    if (rowTop - safeTop >= kGrabberSize.height + 2 * kGrabberGap) top = safeTop + kGrabberGap;
+    else if (safeTop >= kCutoutSafeTop) top = rowTop - kGrabberSize.height - kGrabberGap;
+    else top = rowTop + kGrabberGap / 2;
+    CGFloat y = [header convertPoint:CGPointMake(0, top) fromView:player].y;
+    CGRect frame = CGRectMake(round(CGRectGetMidX(header.bounds) - kGrabberSize.width / 2), round(y), kGrabberSize.width, kGrabberSize.height);
+    if (!CGRectEqualToRect(grabber.frame, frame)) grabber.frame = frame;
+
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        SGLog(@"redesign player: grabber at %.0f in %@ (safe top %.0f, header row at %.0f)", top, NSStringFromClass(player.class), safeTop, rowTop);
+    });
+}
+
 static void glassHeader(UIViewController *unit, BOOL watchMenu) {
     static const void *keys[] = {&kCloseKey, &kMoreKey};
     glassInside(unit, @[@[@"now-playing-minimize-button", @"mobile-nowplaying-close-button"], @[@"Context menu"]], keys, watchMenu);
+    UIView *header = unit.viewIfLoaded;
+    if (header) placeGrabber(header);
 }
 
 %hook _TtC20NowPlaying_ModesImpl18HeaderElementsUnit

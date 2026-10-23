@@ -85,6 +85,9 @@ void SGPlayerShowSpeedPitchPanel(UIView *from) { NSLog(@"[harness] speed and pit
 UIAction *SGRLyricsSearchAction(NSString *trackID) { return nil; }
 NSString *SGLyricsPiPMenuTitle(void) { return @"Open lyrics Picture in Picture"; }
 void SGLyricsPiPToggle(UIView *from) { NSLog(@"[harness] lyrics PiP"); }
+// LyricsStyle.m and PlayerQueue.m: the lyrics style submenu and Playing Next are logged, not built.
+UIMenu *SGRLyricsStyleMenu(NSString *title) { return [UIMenu menuWithTitle:title children:@[]]; }
+void SGRPlayerShowQueue(UIView *from) { NSLog(@"[harness] playing next"); }
 
 // Every action and submenu the menu makes, by its title, so the harness can pick or open one.
 static NSMutableDictionary<NSString *, UIMenuElement *> *sg_elements;

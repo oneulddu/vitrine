@@ -20,6 +20,7 @@
 #import "Redesigned/Lyrics/LyricsLook.h"
 #import "Core/SGLocalize.h"
 #import "Shared/LyricsPiP/LyricsPiP.h"
+#import "PlayerQueue.h"
 
 static __weak UIView *sg_moreButton;   // the ⋯ the sliders' panel comes from
 
@@ -63,6 +64,9 @@ static NSArray<UIMenuElement *> *playerItems(void) {
     NSMutableArray<UIMenuElement *> *items = [NSMutableArray arrayWithObject:soundMenu()];
     [items addObject:[UIAction actionWithTitle:SGLyricsPiPMenuTitle() image:symbol(@"pip") identifier:nil
         handler:^(UIAction *action) { SGLyricsPiPToggle(sg_moreButton); }]];
+    // What plays after this, a song's or an episode's (PlayerQueue.m).
+    [items addObject:[UIAction actionWithTitle:SGL(@"settings.player.queue.menu", @"Playing Next") image:symbol(@"list.bullet") identifier:nil
+        handler:^(UIAction *action) { SGRPlayerShowQueue(sg_moreButton); }]];
     // Not for a podcast: LRCLIB has songs.
     UIAction *search = [sheetKind() isEqualToString:@"episode"] ? nil : SGRLyricsSearchAction(SGKaraokePlayingTrack());
     if (search) [items addObject:search];

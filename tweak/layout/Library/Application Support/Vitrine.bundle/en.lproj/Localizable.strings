@@ -1669,6 +1669,9 @@
 "settings.player.like_dislike.subtitle" = "Off and locked while Switch with the star is on: the star takes their place";
 "settings.player.like_dislike.title" = "Like and dislike buttons";
 "settings.player.lockscreen.title" = "Lock screen";
+"settings.player.lyric_line.hint" = "Opens the lyrics.";
+"settings.player.lyric_line.subtitle" = "The line being sung, under the cover. Tap it to open the lyrics.";
+"settings.player.lyric_line.title" = "Lyrics Line";
 "settings.player.lyrics_line.choice.original" = "Original";
 "settings.player.lyrics_line.choice.translation" = "Translation";
 "settings.player.lyrics_line.subtitle" = "A line without a translation shows the original";
@@ -1684,7 +1687,10 @@
 "settings.player.play_next_menu.title" = "Play next in the context menu";
 "settings.player.player_screen.header" = "Player screen";
 "settings.player.preview.a11y" = "Player preview";
+"settings.player.queue.empty" = "Nothing is playing next.";
 "settings.player.queue.header" = "Queue";
+"settings.player.queue.menu" = "Playing Next";
+"settings.player.queue.title" = "Playing Next";
 "settings.player.queue_and_devices.title" = "Queue & devices";
 "settings.player.queue_bottom_sheet.title" = "Queue as a bottom sheet";
 "settings.player.queue_devices.title" = "Queue & devices";
