@@ -309,6 +309,86 @@ SGModRow *SGWithTile(SGModRow *row, NSString *symbol, UIColor *color) {
     return SGWithSymbol(row, symbol);
 }
 
+SGModRow *SGWithNew(SGModRow *row, NSString *identifier) {
+    row.markedNewAs = identifier;
+    return row;
+}
+
+#pragma mark - the New mark
+
+static BOOL rowIsNew(SGModRow *row) {
+    if (!row.markedNewAs.length) return NO;
+    NSDictionary *seen = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeySeenNew];
+    return ![seen[row.markedNewAs] boolValue];
+}
+
+// Remembers the row as seen; answers whether it was new until now.
+static BOOL markSeen(SGModRow *row) {
+    if (!rowIsNew(row)) return NO;
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    NSMutableDictionary *seen = [NSMutableDictionary dictionaryWithDictionary:[store dictionaryForKey:SGKeySeenNew] ?: @{}];
+    seen[row.markedNewAs] = @YES;
+    [store setObject:seen forKey:SGKeySeenNew];
+    return YES;
+}
+
+// White bold caption2 on a system blue capsule, drawn into an image with 3pt of clear room before it, which the
+// no-break space ahead of it in the title widens to the gap between the two and keeps it on the title's last word.
+static UIImage *newBadge(void) {
+    UIFontDescriptor *descriptor = [[UIFontDescriptor preferredFontDescriptorWithTextStyle:UIFontTextStyleCaption2] fontDescriptorWithSymbolicTraits:UIFontDescriptorTraitBold];
+    NSDictionary *attributes = @{NSFontAttributeName: [UIFont fontWithDescriptor:descriptor size:0], NSForegroundColorAttributeName: UIColor.whiteColor};
+    NSString *text = SGL(@"settings.common.new", @"New");
+    CGSize size = [text sizeWithAttributes:attributes];
+    CGFloat lead = 3, height = ceil(size.height + 3), width = MAX(height, ceil(size.width + 12));
+    UIColor *fill = [UIColor.systemBlueColor resolvedColorWithTraitCollection:[UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]];
+    UIImage *badge = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(lead + width, height)] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [fill setFill];
+        [[UIBezierPath bezierPathWithRoundedRect:CGRectMake(lead, 0, width, height) cornerRadius:height / 2] fill];
+        [text drawAtPoint:CGPointMake(lead + (width - size.width) / 2, (height - size.height) / 2) withAttributes:attributes];
+    }];
+    return [badge imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+}
+
+// The title as VoiceOver reads it.
+static NSString *spokenTitle(SGModRow *row) {
+    return rowIsNew(row) ? [NSString stringWithFormat:@"%@, %@", row.title, SGL(@"settings.common.new", @"New")] : row.title;
+}
+
+// The cell's own label is what VoiceOver reads instead of the title with an image in it: the title, New, and
+// the line under it. A row that is not new reads its text as the cell does.
+static void speakNew(UITableViewCell *cell, SGModRow *row, UIListContentConfiguration *content) {
+    if (!rowIsNew(row)) {
+        cell.accessibilityLabel = nil;
+        return;
+    }
+    cell.accessibilityLabel = content.secondaryText.length ? [NSString stringWithFormat:@"%@, %@", spokenTitle(row), content.secondaryText] : spokenTitle(row);
+}
+
+// The mark after the title, in the title's own font and color, centered on its capitals.
+static void showNew(UITableViewCell *cell, SGModRow *row, UIListContentConfiguration *content) {
+    speakNew(cell, row, content);
+    if (!rowIsNew(row)) return;
+    UIFont *font = content.textProperties.font;
+    NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithString:[row.title stringByAppendingString:@"\u00A0"]
+                                                                              attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: content.textProperties.color}];
+    NSTextAttachment *badge = [NSTextAttachment new];
+    badge.image = newBadge();
+    CGSize size = badge.image.size;
+    badge.bounds = CGRectMake(0, round((font.capHeight - size.height) / 2), size.width, size.height);
+    [title appendAttributedString:[NSAttributedString attributedStringWithAttachment:badge]];
+    content.attributedText = title;
+}
+
+// A row just seen loses its mark where it is, before anything the use of it reloads.
+static void dropNew(UITableViewCell *cell, SGModRow *row) {
+    UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+    if (![content isKindOfClass:UIListContentConfiguration.class]) return;
+    content.attributedText = nil;
+    content.text = row.title;
+    cell.contentConfiguration = content;
+    speakNew(cell, row, content);
+}
+
 // What a page row carrying a value shows on the right: the value, then the chevron, the same
 // distance apart as Spotify's own rows keep them.
 // A value never takes more than this much of the row, so a long one ends in "…" and leaves the title its room.
@@ -894,6 +974,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
             UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
             content.secondaryText = stackedValue(row);
             cell.contentConfiguration = content;
+            speakNew(cell, row, content);
             continue;
         }
         if (row.page && row.value) {
@@ -978,6 +1059,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
     BOOL tile = row.symbol && !row.color && self.tiles;
     if (tile) content.image = row.tint ? SGTileImageTinted(row.symbol, row.tint) : SGTileImage(row.symbol);
     else if (!row.color) content.image = nil;
+    showNew(cell, row, content);
     cell.contentConfiguration = content;
     cell.separatorInset = UIEdgeInsetsMake(0, tile ? SGTileRowInset : row.symbol && row.color ? 48 : 16, 0, 0);
 
@@ -992,7 +1074,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
         if (row.glows) {
             SGGlowSwitch *glow = [SGGlowSwitch new];
             glow.on = on;
-            glow.accessibilityLabel = row.title;
+            glow.accessibilityLabel = spokenTitle(row);
             toggle = glow;
         } else {
             UISwitch *plain = [UISwitch new];
@@ -1044,6 +1126,8 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
         [self explainLock];
         return;
     }
+    // A switch is seen when it is flipped and a menu when it is picked from, not when their row is touched.
+    if (!row.key && !row.menu && markSeen(row)) dropNew([table cellForRowAtIndexPath:path], row);
     if (row.page) [self.navigationController pushViewController:row.page() animated:YES];
     if (!row.action) return;
     row.action();
@@ -1060,6 +1144,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
     __weak typeof(self) weakSelf = self;
     [row.menu enumerateObjectsUsingBlock:^(NSString *name, NSUInteger i, BOOL *stop) {
         UIAction *item = [UIAction actionWithTitle:name image:nil identifier:nil handler:^(UIAction *action) {
+            markSeen(row);
             if (row.chosen) row.chosen((NSInteger)i);
             [weakSelf.tableView reloadData];
         }];
@@ -1077,7 +1162,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
     UIButton *button = [UIButton buttonWithConfiguration:look primaryAction:nil];
     button.menu = [UIMenu menuWithChildren:items];
     button.showsMenuAsPrimaryAction = YES;
-    button.accessibilityLabel = row.title;
+    button.accessibilityLabel = spokenTitle(row);
     button.accessibilityValue = current;
     [button sizeToFit];
     return button;
@@ -1117,6 +1202,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
     NSIndexPath *path = [self pathOf:toggle];
     if (!path) return;
     SGModRow *row = [self rowAt:path];
+    if (markSeen(row)) dropNew([self.tableView cellForRowAtIndexPath:path], row);
     if (row.flag) SGSetFlagOverride(row.key, on ? @(!row.forceOff) : nil);
     else SGSetEnabled(row.key, on != row.inverted);
     if (row.changed) row.changed(on);

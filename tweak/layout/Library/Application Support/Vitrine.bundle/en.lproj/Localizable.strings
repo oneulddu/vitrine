@@ -386,6 +386,11 @@
 "settings.background.mode.subtitle" = "Used when moving artwork is unavailable.";
 "settings.background.mode.title" = "Background";
 
+"settings.common.new" = "New";
+
+"settings.cover_viewer.close" = "Close";
+"settings.cover_viewer.share" = "Share";
+
 "settings.environment.app_changes.message" = "Some of what Vitrine does needs changes to the app that only its IPA build makes. Without them, %@. Build the IPA with Vitrine instead of injecting its .deb.";
 "settings.environment.app_changes.title" = "Installed without Vitrine's app changes";
 "settings.environment.chroma.action.keep" = "Keep";

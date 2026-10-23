@@ -55,6 +55,8 @@
 // One of a few rows picked from on the page itself (an action row each): a checkmark against it while this answers
 // YES, read as the row is drawn, so its action reloads the table.
 @property (nonatomic, copy) BOOL (^checked)(void);
+// What the row's New mark is remembered under once it has been seen (SGWithNew); nil, the default, shows none.
+@property (nonatomic, copy) NSString *markedNewAs;
 @end
 
 @interface SGModSection : NSObject
@@ -124,3 +126,8 @@ SGModSection *SGNotedSection(NSString *title, NSArray<SGModRow *> *rows, NSStrin
 SGModRow *SGWithSymbol(SGModRow *row, NSString *symbol);
 // The same on a tile of `color`, the way Settings colors the icon of each of its rows.
 SGModRow *SGWithTile(SGModRow *row, NSString *symbol, UIColor *color);
+// A small blue "New" capsule after the row's title until the row is first used: a page row's page opened, a
+// switch flipped, a menu's item picked, any other row tapped. From then on `identifier` reads YES in the
+// dictionary under SGKeySeenNew and the mark is gone for good. A slider row shows no mark.
+SGModRow *SGWithNew(SGModRow *row, NSString *identifier);
+#define SGKeySeenNew @"spotifyglass.settings.seenNew"
