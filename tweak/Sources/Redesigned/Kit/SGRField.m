@@ -31,7 +31,7 @@ static NSDictionary *noActions(void) {
     return none;
 }
 
-const NSTimeInterval SGRFieldHoldLimit = 1.0;
+const NSTimeInterval SGRFieldHoldLimit = 0.5;
 
 // The veil over a held page: black, the redesign's field before a color arrives (SGRAmoled.x), painted on a
 // sublayer for the reason the field is, so the repaint hook does not take it for Spotify's base surface.
