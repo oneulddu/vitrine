@@ -117,8 +117,8 @@ UIViewController *SGWorkshopPage(void) {
         [sections addObject:SGSection(SGL(@"settings.workshop.look.header", @"Look"), @[
             SGWithTile(SGPageRow(SGL(@"settings.workshop.visualizers.title", @"Visualizers"), ^UIViewController *{ return SGRVisualiserSettingsPage(); }),
                        @"waveform.path", UIColor.systemPurpleColor),
-            SGWithTile(SGPageRow(SGL(@"settings.lyricsstyle.title", @"Lyrics styles"), ^UIViewController *{ return SGRLyricsStylesSettingsPage(); }),
-                       @"textformat", UIColor.systemPinkColor),
+            SGWithNew(SGWithTile(SGPageRow(SGL(@"settings.lyricsstyle.title", @"Lyrics styles"), ^UIViewController *{ return SGRLyricsStylesSettingsPage(); }),
+                       @"textformat", UIColor.systemPinkColor), @"lyricsStyles"),
         ])];
     }
 
