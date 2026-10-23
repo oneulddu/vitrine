@@ -13,10 +13,20 @@
 //                       hairline between them, and the curation pills collapsed
 //     PlaylistMenu.x    Sort and Mix, the two of the curation pills the ⋯ menu does not already offer,
 //                       put on that menu's own sheet
+//     PlaylistSettings.m the redesign's Playlists page, a switch for each of the three below
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
 // Threading: main thread only.
 #import <UIKit/UIKit.h>
+
+// Read at launch, each on until switched off (PlaylistSettings.m). PlaylistHeader.x: a tap on the header's
+// picture opens the cover full screen (Kit/SGRCoverViewer.h).
+#define SGRKeyPlaylistCoverViewer @"spotifyglass.redesign.playlist.coverViewer"
+// PlaylistRows.x: the curation pills over the first track closed up.
+#define SGRKeyPlaylistHideCuration @"spotifyglass.redesign.playlist.hide.curation"
+// PlaylistMenu.x: Sort and Mix on the ⋯ sheet.
+#define SGRKeyPlaylistMenuSortMix @"spotifyglass.redesign.playlist.menuSortMix"
+UIViewController *SGRPlaylistSettingsPage(void);
 
 // The page's list (trees/clean/playlist/02.txt:23).
 extern NSString *const SGRPlaylistListIdentifier;

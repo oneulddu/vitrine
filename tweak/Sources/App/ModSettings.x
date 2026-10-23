@@ -1,7 +1,7 @@
 // Settings: a Mod Settings row at the end of Spotify's settings list opens the mod's own page, its rows
 // grouped by what they are as the system Settings app groups its own, in cards with no headings: what the
 // app looks like (Redesigned UI's switch, Appearance, Tab bar), the screens a page of its own changes
-// (Home & Library in the native look, Player, Lyrics, and Albums and Artists in the redesign), the features
+// (Home & Library in the native look, Player, Lyrics, Albums, Artists and Playlists, and Search in the redesign), the features
 // that work under either look (Sing, Spatial voice, Audio effects, AutoMix, Live Activity, AirPods gestures, Listening
 // stats), the system's side (Lock screen, Vibrations; Premium, ads & privacy), the advanced pages (Labs, All flags, a
 // searchable list of every flag with an override per flag) and Mod, the build, its updates and links. The
@@ -37,6 +37,8 @@
 #import "App/Onboarding/Onboarding.h"
 #import "Redesigned/Album/Album.h"
 #import "Redesigned/Artist/Artist.h"
+#import "Redesigned/Playlist/Playlist.h"
+#import "Redesigned/Search/Search.h"
 #import "Pages.h"
 
 static const CGFloat kRowHeight = 56;
@@ -71,9 +73,11 @@ static UIViewController *modSettingsPage(void) {
         pageRow(SGL(@"settings.main.tabbar.title", @"Tab bar"), @"rectangle.bottomthird.inset.filled", UIColor.systemGrayColor, ^UIViewController *{ return SGNavbarPage(); }),
     ], SGRestartNote)];
 
-    // Each look keeps its own screen builders; only the native look has a separate Playlists page.
-    SGModRow *playlists = pageRow(SGL(@"settings.home.playlists.row.title", @"Playlists"), @"music.note.list", UIColor.systemBlueColor, ^UIViewController *{ return SGPlaylistSettingsPage(); });
-    playlists.visible = native;
+    // Each look keeps its own screen builders; only the redesign has a Search page.
+    SGModRow *playlists = pageRow(SGL(@"settings.home.playlists.row.title", @"Playlists"), @"music.note.list", UIColor.systemBlueColor, ^UIViewController *{ return SGRedesignedUIStored() ? SGRPlaylistSettingsPage() : SGPlaylistSettingsPage(); });
+    SGModRow *search = pageRow(SGL(@"settings.main.search.title", @"Search"), @"magnifyingglass", UIColor.systemYellowColor, ^UIViewController *{ return SGRSearchSettingsPage(); });
+    search.visible = redesigned;
+    SGWithNew(search, @"searchPage");
     SGModRow *albums = pageRow(SGL(@"settings.main.albums.title", @"Albums"), @"square.stack.fill", SGColorRGB(0x34C759), ^UIViewController *{ return SGRedesignedUIStored() ? SGRAlbumSettingsPage() : SGAlbumSettingsPage(); });
     SGModRow *artists = pageRow(SGL(@"settings.main.artists.title", @"Artists"), @"music.mic", SGColorRGB(0x30B0C7), ^UIViewController *{ return SGRedesignedUIStored() ? SGRArtistSettingsPage() : SGArtistSettingsPage(); });
     SGModRow *home = pageRow(SGL(@"settings.main.home_library.title", @"Home & Library"), @"house.fill", UIColor.systemBrownColor, ^UIViewController *{ return SGHomeSettingsPage(); });
@@ -88,6 +92,7 @@ static UIViewController *modSettingsPage(void) {
         albums,
         artists,
         playlists,
+        search,
     ])];
 
     // Sing and the audio effects work on the sound, so both looks have them; Audio effects says how many are on.

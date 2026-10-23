@@ -61,9 +61,7 @@
 "settings.album.apple_music.header" = "Apple Music";
 "settings.album.apple_music.note" = "Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.";
 "settings.album.artwork_background.title" = "Artwork background";
-"settings.album.cover_viewer.close" = "Close";
 "settings.album.cover_viewer.cover" = "Album cover";
-"settings.album.cover_viewer.share" = "Share";
 "settings.album.header" = "Header";
 "settings.album.hide.add_to_library.title" = "Add to library";
 "settings.album.hide.concerts.title" = "Concerts";
@@ -1267,6 +1265,7 @@
 "settings.main.mod.title" = "Mod";
 "settings.main.player.title" = "Player";
 "settings.main.premium_ads_privacy.title" = "Premium, ads & privacy";
+"settings.main.search.title" = "Search";
 "settings.main.sing.title" = "Karaoke";
 "settings.main.spatial_voice.title" = "Spatial voice";
 "settings.main.tabbar.title" = "Tab bar";
@@ -1709,6 +1708,10 @@
 "settings.player.widget.header" = "Widget";
 
 "settings.playlist.artwork_background.title" = "Artwork background";
+"settings.playlist.cover.header" = "Cover";
+"settings.playlist.cover_viewer.cover" = "Playlist cover";
+"settings.playlist.full_screen_cover.subtitle" = "Tap the picture at the top of a playlist to zoom in or share it";
+"settings.playlist.full_screen_cover.title" = "Full screen cover";
 "settings.playlist.header" = "Header";
 "settings.playlist.hide.add_to_library.title" = "Add to library";
 "settings.playlist.hide.artwork.title" = "Cover artwork";
@@ -1718,12 +1721,18 @@
 "settings.playlist.hide.find_bar.title" = "Find and sort bar";
 "settings.playlist.hide.length.title" = "Length and saves";
 "settings.playlist.hide.more.title" = "More";
+"settings.playlist.hide.pills.subtitle" = "Add, Mix, Sort and the rest, over the first track";
 "settings.playlist.hide.pills.title" = "Curation pills";
 "settings.playlist.hide.share.title" = "Share";
 "settings.playlist.hide.video.title" = "Video";
 "settings.playlist.hide_above_tracks.header" = "Hide above the tracks";
 "settings.playlist.hide_buttons.header" = "Hide playlist buttons";
 "settings.playlist.hide_in_header.header" = "Hide in the playlist header";
+"settings.playlist.hide_on_page.header" = "Hide on a playlist's page";
+"settings.playlist.more_menu.header" = "More menu";
+"settings.playlist.sort_mix.note" = "The two curation pills the ⋯ menu does not already offer, so they stay a tap away with the pills hidden.";
+"settings.playlist.sort_mix.subtitle" = "At the top of a playlist's ⋯ menu";
+"settings.playlist.sort_mix.title" = "Sort and Mix";
 "settings.playlist.title" = "Playlists";
 
 "settings.privacy.ad_flags.row.title" = "Ad and upsell flags";
@@ -1794,6 +1803,17 @@
 
 "settings.search.none" = "No Results";
 "settings.search.placeholder" = "Search";
+
+"settings.search_tab.cards.header" = "Category cards";
+"settings.search_tab.glass_cards.subtitle" = "Each card as Liquid Glass in its own color. Off, the cards are Spotify's own.";
+"settings.search_tab.glass_cards.title" = "Tinted glass";
+"settings.search_tab.hide.header" = "Hide on Search";
+"settings.search_tab.hide.note" = "The category cards always stay.";
+"settings.search_tab.hide.other.subtitle" = "Promos and any other section Spotify sends";
+"settings.search_tab.hide.other.title" = "Everything else";
+"settings.search_tab.hide.watch_feeds.subtitle" = "Playlists you can watch, Explore episodes for you";
+"settings.search_tab.hide.watch_feeds.title" = "Video carousels";
+"settings.search_tab.title" = "Search";
 
 "settings.signing.action.copy_bundle_id" = "Copy the bundle id";
 "settings.signing.action.read_more" = "Read more";

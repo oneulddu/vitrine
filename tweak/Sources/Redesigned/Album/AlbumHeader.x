@@ -27,6 +27,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRCoverViewer.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Album.h"
 
@@ -116,7 +117,7 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
 // rather than a mask or a blur: a scrim over the top for the status bar, and under it a fade from the
 // picture to the very color the page's field is drawing, so the two meet with nothing to see.
 //
-// A tap on the picture, above where the title starts, opens the cover full screen (AlbumCover.m): the still
+// A tap on the picture, above where the title starts, opens the cover full screen (Kit/SGRCoverViewer.h): the still
 // cover, even while the animated one plays. The Kit's view over the header answers only its buttons and the
 // artist line and Spotify's column takes no touches, so the picture is what a tap anywhere else lands on; a
 // drag still scrolls the page, whose pan sees every touch under it.
@@ -207,7 +208,7 @@ static void *kReadyContext = &kReadyContext;
 }
 
 - (void)sgr_openCover {
-    SGRShowAlbumCover(_picture.image);
+    SGRShowCover(_picture.image, SGL(@"settings.album.cover_viewer.cover", @"Album cover"));
 }
 
 - (BOOL)isAccessibilityElement {

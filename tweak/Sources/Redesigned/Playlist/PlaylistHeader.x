@@ -30,6 +30,7 @@
 // fire Spotify's own concealed controls, so every action, state and language stays Spotify's.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRCoverViewer.h"
 #import "Playlist.h"
 #import <objc/message.h>
 
@@ -39,6 +40,9 @@ static const CGFloat kDissolve = 0.46, kTopScrim = 140, kTopScrimAlpha = 0.28;
 // A header whose cover square is smaller than this is one mid collapse or mid load, not one to measure
 // the hero from; and an artwork view narrower than this is a placeholder glyph rather than the cover.
 static const CGFloat kMinHero = 120, kMinCover = 80;
+
+// Whether a tap on the picture opens the cover full screen (SGRKeyPlaylistCoverViewer), read at launch.
+static BOOL sg_coverViewer;
 
 static char kCoverKey, kMetaKey, kPlayKey, kLayoutKey, kToolbarKey, kScrimKey, kBarScrimKey;
 static char kShuffleKey, kAddKey, kDownloadKey, kInfoKey, kBlockHeightKey, kBlockWatchedKey;
@@ -104,23 +108,34 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 // The picture across the top of the page, a scrim over its top for the status bar, and its bottom masked
 // away so the field shows through whatever color it is at that height: pulled down, the hero ends where
 // the field is already fading to black, and a fade to the field's flat color showed as an edge.
-@interface SGRPlaylistHero : UIView
+//
+// A tap on the picture, above where the title starts, opens the cover full screen (Kit/SGRCoverViewer.h), as on
+// an album (Album/AlbumHeader.x). The hero is drawn on the plane under Spotify's header layout, which takes the
+// touches over it, so the tap is the layout's and the hero only says which touches are the picture's: inside it,
+// above the title, and on none of Spotify's controls or the block's buttons. A drag still scrolls the page.
+@interface SGRPlaylistHero : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, readonly) UIImageView *picture;
 @property (nonatomic) CGFloat coverPixels;   // the widest copy of the artwork it has been shown
 // The cover in Spotify's artwork view, and every cover it puts there afterward: the hero keeps itself
 // right, rather than being handed a picture on each of the header's passes and staying empty between them.
 - (void)followCover:(UIImageView *)source;
+// The tap that opens the cover goes on `layout`, the header's content layout over the hero. The same layout
+// again is a no-op; nothing while the switch is off.
+- (void)openFrom:(UIView *)layout;
 @end
 
 @implementation SGRPlaylistHero {
     CAGradientLayer *_scrim, *_dissolve;   // the dissolve is the layer's mask
     __weak UIImageView *_cover;
+    UITapGestureRecognizer *_tap;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
     self.userInteractionEnabled = NO;
-    self.accessibilityElementsHidden = YES;
+    self.accessibilityElementsHidden = !sg_coverViewer;
+    self.accessibilityTraits = UIAccessibilityTraitButton | UIAccessibilityTraitImage;
+    self.accessibilityLabel = SGL(@"settings.playlist.cover_viewer.cover", @"Playlist cover");
     self.clipsToBounds = YES;
 
     _picture = [[UIImageView alloc] initWithFrame:self.bounds];
@@ -140,6 +155,53 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
                          (id)[UIColor colorWithWhite:0 alpha:0.28].CGColor, (id)UIColor.clearColor.CGColor];
     self.layer.mask = _dissolve;
     return self;
+}
+
+- (void)dealloc {
+    // The layout outlives the hero it was given; its tap must not call one that is gone.
+    [_tap.view removeGestureRecognizer:_tap];
+}
+
+- (void)openFrom:(UIView *)layout {
+    if (!sg_coverViewer || !layout || _tap.view == layout) return;
+    if (!_tap) {
+        _tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(sgr_openCover)];
+        _tap.delegate = self;
+    }
+    [_tap.view removeGestureRecognizer:_tap];
+    [layout addGestureRecognizer:_tap];
+}
+
+// The part of the picture over no text: the title and the creator start SGRHeaderInfoTitleRise above its bottom.
+- (CGRect)sgr_coverArea {
+    return CGRectMake(0, 0, self.bounds.size.width, MAX(0, self.bounds.size.height - SGRHeaderInfoTitleRise));
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
+    if (!_picture.image || !self.window || self.layer.hidden) return NO;
+    if (!CGRectContainsPoint([self sgr_coverArea], [touch locationInView:self])) return NO;
+    for (UIView *v = touch.view; v && v != gesture.view; v = v.superview) {
+        if ([v isKindOfClass:UIControl.class] || [v isKindOfClass:SGRHeaderInfo.class]) return NO;
+    }
+    return YES;
+}
+
+- (void)sgr_openCover {
+    SGRShowCover(_picture.image, SGL(@"settings.playlist.cover_viewer.cover", @"Playlist cover"));
+}
+
+- (BOOL)isAccessibilityElement {
+    return sg_coverViewer && _picture.image != nil;
+}
+
+- (CGRect)accessibilityFrame {
+    return UIAccessibilityConvertFrameToScreenCoordinates([self sgr_coverArea], self);
+}
+
+- (BOOL)accessibilityActivate {
+    if (!sg_coverViewer) return NO;
+    [self sgr_openCover];
+    return YES;
 }
 
 - (void)layoutSubviews {
@@ -233,6 +295,7 @@ static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *bloc
     if (!CGRectEqualToRect(hero.frame, frame)) hero.frame = frame;
 
     [hero followCover:coverImageIn(cover)];
+    [hero openFrom:layout];
     conceal(cover);
 }
 
@@ -624,6 +687,7 @@ static UIView *layoutIn(UIView *root) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    sg_coverViewer = SGEnabled(SGRKeyPlaylistCoverViewer);
     %init;
     SGRequireClasses(@[
         @"_TtC28EncoreConsumerMobile_BaseKit19HeaderContentLayout",

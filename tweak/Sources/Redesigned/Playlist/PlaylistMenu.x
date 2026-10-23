@@ -383,6 +383,8 @@ static void install(UIViewController *menu) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    // Switched off (SGRKeyPlaylistMenuSortMix), the sheet is Spotify's alone.
+    if (!SGEnabled(SGRKeyPlaylistMenuSortMix)) return;
     %init;
     SGRequireClasses(@[@"_TtC24ContextMenu_InternalImpl25ContextMenuViewController"]);
 }

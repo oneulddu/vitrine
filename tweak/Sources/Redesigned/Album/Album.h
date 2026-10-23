@@ -17,7 +17,6 @@
 //     AlbumSections.x  everything under the tracks dropped but the album's own line and its copyright: no
 //                      more by the artist, no videos, no concerts, no merch, no you might also like, each
 //                      back once its switch is off
-//     AlbumCover.m     the cover full screen, opened from the header's picture
 //     AlbumPlays.m     each track's plays from Listening stats, for the rows to show
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
@@ -59,9 +58,6 @@ NSUInteger SGRAlbumPlayCount(NSString *album, NSString *title);
 // Posted on the main thread, object nil, when the counts change: the log was read, grew, was imported into or
 // erased.
 extern NSNotificationName const SGRAlbumPlayCountsDidChangeNotification;
-
-// AlbumCover.m. The cover full screen over whatever is on top, dark; nil is a no-op.
-void SGRShowAlbumCover(UIImage *image);
 
 // The album page `view` is on, or nil: the CreativeWorkTemplateView that carries the header, the list and
 // the two floating controls (trees/clean/album/01.txt:22).

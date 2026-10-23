@@ -1,25 +1,27 @@
-// Album redesign: the cover full screen, opened from the header's picture (AlbumHeader.x). Black, the cover
-// fitted to the screen, pinched or double tapped to zoom, and dragged down or closed to go; Share hands the
-// picture to the system's share sheet, which saves it to Photos too.
+// The Kit's full screen cover (SGRCoverViewer.h). Black, the cover fitted to the screen, pinched or double tapped
+// to zoom, and dragged down or closed to go; Share hands the picture to the system's share sheet, which saves it to
+// Photos too.
 //
-// The picture is the one the header shows, the still cover even while Apple Music's animated one plays over
-// it: the largest Spotify has fetched for the page, as no larger size of its image addresses is known here.
+// The picture is the one the page's header shows -- on an album the still cover even while Apple Music's animated
+// one plays over it: the largest Spotify has fetched for the page, as no larger size of its image addresses is
+// known here.
 // Threading: main thread only.
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
-#import "Redesigned/Kit/SGRKit.h"
-#import "Album.h"
+#import "SGRKit.h"
+#import "SGRCoverViewer.h"
 
 // How far down a drag has to take the cover, or how fast, for it to go; and as far as it zooms.
 static const CGFloat kDismissDistance = 120, kDismissVelocity = 900, kMaxZoom = 4, kDoubleTapZoom = 2.5;
 static const CGFloat kButton = 44;
 
-@interface SGRAlbumCoverViewer : UIViewController <UIScrollViewDelegate, UIGestureRecognizerDelegate>
-- (instancetype)initWithImage:(UIImage *)image;
+@interface SGRCoverViewer : UIViewController <UIScrollViewDelegate, UIGestureRecognizerDelegate>
+- (instancetype)initWithImage:(UIImage *)image name:(NSString *)name;
 @end
 
-@implementation SGRAlbumCoverViewer {
+@implementation SGRCoverViewer {
     UIImage *_image;
+    NSString *_name;
     UIScrollView *_scroll;
     UIImageView *_picture;
     UIButton *_close, *_share;
@@ -27,9 +29,10 @@ static const CGFloat kButton = 44;
     BOOL _chromeHidden;
 }
 
-- (instancetype)initWithImage:(UIImage *)image {
+- (instancetype)initWithImage:(UIImage *)image name:(NSString *)name {
     if (!(self = [super initWithNibName:nil bundle:nil])) return nil;
     _image = image;
+    _name = [name copy];
     self.modalPresentationStyle = UIModalPresentationOverFullScreen;
     self.modalTransitionStyle = UIModalTransitionStyleCrossDissolve;
     self.modalPresentationCapturesStatusBarAppearance = YES;
@@ -81,7 +84,7 @@ static const CGFloat kButton = 44;
     _picture.contentMode = UIViewContentModeScaleAspectFit;
     _picture.isAccessibilityElement = YES;
     _picture.accessibilityTraits = UIAccessibilityTraitImage;
-    _picture.accessibilityLabel = SGL(@"settings.album.cover_viewer.cover", @"Album cover");
+    _picture.accessibilityLabel = _name;
     [_scroll addSubview:_picture];
 
     UITapGestureRecognizer *doubleTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(sgr_doubleTapped:)];
@@ -95,8 +98,8 @@ static const CGFloat kButton = 44;
     _drag.delegate = self;
     [self.view addGestureRecognizer:_drag];
 
-    _close = [self buttonWithSymbol:@"xmark" label:SGL(@"settings.album.cover_viewer.close", @"Close") action:@selector(sgr_close)];
-    _share = [self buttonWithSymbol:@"square.and.arrow.up" label:SGL(@"settings.album.cover_viewer.share", @"Share")
+    _close = [self buttonWithSymbol:@"xmark" label:SGL(@"settings.cover_viewer.close", @"Close") action:@selector(sgr_close)];
+    _share = [self buttonWithSymbol:@"square.and.arrow.up" label:SGL(@"settings.cover_viewer.share", @"Share")
                              action:@selector(sgr_share)];
     self.view.accessibilityElements = @[_close, _picture, _share];
 }
@@ -237,12 +240,13 @@ static const CGFloat kButton = 44;
 
 @end
 
-void SGRShowAlbumCover(UIImage *image) {
+void SGRShowCover(UIImage *image, NSString *accessibilityName) {
     if (!image) return;
     UIViewController *top = SGTopController();
     if (!top) return;
-    SGRAlbumCoverViewer *viewer = [[SGRAlbumCoverViewer alloc] initWithImage:image];
+    SGRCoverViewer *viewer = [[SGRCoverViewer alloc] initWithImage:image name:accessibilityName];
     SGPresentDark(viewer);
     [top presentViewController:viewer animated:YES completion:nil];
-    SGLog(@"redesign album: the cover full screen, %.0fx%.0f px", image.size.width * image.scale, image.size.height * image.scale);
+    SGLog(@"redesign: \"%@\" full screen, %.0fx%.0f px", accessibilityName ?: @"cover", image.size.width * image.scale,
+          image.size.height * image.scale);
 }

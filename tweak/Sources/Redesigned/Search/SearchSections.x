@@ -3,6 +3,7 @@
 // you), and the promos, showcases and ad cards the page can also carry (BrowseStructure's other cases in the binary,
 // swift-fields.txt 2026-09-17), and any kind the server adds later. An allow list, as for Home's sections
 // (Redesigned/Home/HomeSections.x): the page is the server's, and a new kind should not turn up on a redesigned Search.
+// The carousels and the rest each have a switch (Search.h); a kind switched off stays at Spotify's height.
 //
 // Tree (trees/clean/search/01.txt): a cell of the list (id=BrowsePage.ContentScrollView) is an
 // Element_List.CollectionViewCell whose content view is an ElementContentView over Browse_BrowsePageImpl.BrowseStructure,
@@ -64,9 +65,25 @@ static BOOL isBrowseCell(UIView *content) {
     return answer.boolValue;
 }
 
+// What collapses, read at launch: the watch feed carousels (SGRKeySearchHideWatchFeeds) and every other kind but the
+// cards (SGRKeySearchHideOther).
+static BOOL sg_hideWatchFeeds, sg_hideOther;
+
+// A carousel's cell holds its heading and WatchFeedCarouselEntryPointElement (01.txt:26-30, as on the artist page).
+static BOOL isWatchFeed(UIView *root) {
+    __block BOOL found = NO;
+    SGForEachView(root, ^(UIView *v) {
+        if (!found && [v.accessibilityIdentifier isEqualToString:@"WatchFeedCarouselEntryPointElement"]) found = YES;
+    });
+    return found;
+}
+
 static SGRSearchKind kindOf(UIView *root) {
     if (!root) return SGRSearchKindPending;
-    return [root.accessibilityIdentifier isEqualToString:@"Components.UI.CategoryCardBrowse"] ? SGRSearchKindKeep : SGRSearchKindDrop;
+    if ([root.accessibilityIdentifier isEqualToString:@"Components.UI.CategoryCardBrowse"]) return SGRSearchKindKeep;
+    // Both on, the default: no walk of the cell is needed to drop it.
+    if (sg_hideWatchFeeds == sg_hideOther) return sg_hideOther ? SGRSearchKindDrop : SGRSearchKindKeep;
+    return (isWatchFeed(root) ? sg_hideWatchFeeds : sg_hideOther) ? SGRSearchKindDrop : SGRSearchKindKeep;
 }
 
 // What a dropped cell holds, for the log: the first identifier in it, else its root's class.
@@ -207,6 +224,10 @@ static void measureSoon(void) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    sg_hideWatchFeeds = SGEnabled(SGRKeySearchHideWatchFeeds);
+    sg_hideOther = SGEnabled(SGRKeySearchHideOther);
+    // Both off, every cell is Spotify's to size.
+    if (!sg_hideWatchFeeds && !sg_hideOther) return;
     %init;
     SGRequireClasses(@[@"_TtC12Element_List18CollectionViewCell"]);
 }

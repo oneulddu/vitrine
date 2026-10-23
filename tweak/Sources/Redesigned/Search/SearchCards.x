@@ -224,6 +224,8 @@ static void style(UIView *box) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    // Switched off (SGRKeySearchGlassCards), the cards are Spotify's own.
+    if (!SGEnabled(SGRKeySearchGlassCards)) return;
     %init;
     SGRequireClasses(@[@"_TtCE16Encore_LayoutKitO16EncoreFoundation6Encore3Box"]);
 }

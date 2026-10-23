@@ -11,7 +11,7 @@
 // the Kit's would be cut off by the box the element framework measured for it.
 //
 // The pills over the first row (own-playlist/01.txt:33) are a cell of the list: Add, Mix, Notes, Video,
-// Edit, Sort and Name & details. The row is closed up -- ListUXPlatform_LayoutKit.ListLayout gives every
+// Edit, Sort and Name & details. Unless switched off (SGRKeyPlaylistHideCuration), the row is closed up -- ListUXPlatform_LayoutKit.ListLayout gives every
 // item its height, so the cell can only close up where the layout asks it how tall it wants to be -- and
 // Sort and Mix are put on the ⋯ sheet instead (PlaylistMenu.x), where the rest of the row already is. The
 // cell is handed over as it lays out, so the sheet has Spotify's own buttons to fire.
@@ -30,6 +30,9 @@
 static const CGFloat kHairline = 0.5, kHairlineGap = 12;
 
 static char kRowKey, kArtKey, kSubtitleKey, kLineKey, kToolbarKey;
+
+// Whether the curation pills close up (SGRKeyPlaylistHideCuration), read at launch.
+static BOOL sg_hideCuration;
 
 static UIView *identified(UIView *root, NSString *identifier, const void *cacheKey) {
     return SGRFindByIdentifier(root, identifier, cacheKey);
@@ -101,7 +104,7 @@ static void applyRow(UIView *cell) {
 
 - (UICollectionViewLayoutAttributes *)preferredLayoutAttributesFittingAttributes:(UICollectionViewLayoutAttributes *)attributes {
     UICollectionViewLayoutAttributes *result = %orig;
-    if (!SGRFindByIdentifier((UIView *)self, SGRPlaylistCurationIdentifier, &kToolbarKey)) return result;
+    if (!sg_hideCuration || !SGRFindByIdentifier((UIView *)self, SGRPlaylistCurationIdentifier, &kToolbarKey)) return result;
     result.size = CGSizeMake(result.size.width, 0);
     ((UIView *)self).clipsToBounds = YES;
     static dispatch_once_t once;
@@ -112,6 +115,7 @@ static void applyRow(UIView *cell) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    sg_hideCuration = SGEnabled(SGRKeyPlaylistHideCuration);
     %init;
     SGRequireClasses(@[@"_TtC35ListUXPlatform_FreeTierPlaylistImpl25ElementCollectionViewCell"]);
 }
