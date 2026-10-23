@@ -17,3 +17,19 @@ NSString *SGRegisterCustomFont(void) { return nil; }
 
 // MotionSources.m: Apple Music is on, as it is by default.
 BOOL SGMotionAppleMusicOn(void) { return YES; }
+
+// ListeningStats.x: the album's play counts read a log of the harness's own, in its temporary folder.
+#import "Shared/ListeningStats/SGPlayLog.h"
+SGPlayLog *SGListeningLog(void) {
+    static SGPlayLog *log;
+    if (!log) log = [[SGPlayLog alloc] initWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"plays.tsv"]];
+    return log;
+}
+
+// SGPageStyle.m: the cover viewer is presented over whatever is on top of the harness's window.
+UIViewController *SGTopController(void) {
+    UIWindowScene *scene = (UIWindowScene *)UIApplication.sharedApplication.connectedScenes.anyObject;
+    UIViewController *top = scene.windows.firstObject.rootViewController;
+    while (top.presentedViewController) top = top.presentedViewController;
+    return top;
+}

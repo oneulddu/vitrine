@@ -115,7 +115,12 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
 // The picture across the top of the page with the field showing through the bottom of it. Two gradients
 // rather than a mask or a blur: a scrim over the top for the status bar, and under it a fade from the
 // picture to the very color the page's field is drawing, so the two meet with nothing to see.
-@interface SGRAlbumHero : UIView
+//
+// A tap on the picture, above where the title starts, opens the cover full screen (AlbumCover.m): the still
+// cover, even while the animated one plays. The Kit's view over the header answers only its buttons and the
+// artist line and Spotify's column takes no touches, so the picture is what a tap anywhere else lands on; a
+// drag still scrolls the page, whose pan sees every touch under it.
+@interface SGRAlbumHero : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, readonly) UIImageView *picture;
 @property (nonatomic, copy) UIColor *fieldColor;
 // The cover in Spotify's artwork view, and every cover it puts there afterward: the hero keeps itself
@@ -139,9 +144,12 @@ static void *kReadyContext = &kReadyContext;
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
-    self.userInteractionEnabled = NO;
-    self.accessibilityElementsHidden = YES;
     self.clipsToBounds = YES;
+    self.accessibilityTraits = UIAccessibilityTraitButton | UIAccessibilityTraitImage;
+    self.accessibilityLabel = SGL(@"settings.album.cover_viewer.cover", @"Album cover");
+    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(sgr_openCover)];
+    tap.delegate = self;
+    [self addGestureRecognizer:tap];
 
     _picture = [[UIImageView alloc] initWithFrame:self.bounds];
     _picture.contentMode = UIViewContentModeScaleAspectFill;
@@ -187,6 +195,32 @@ static void *kReadyContext = &kReadyContext;
 
 - (void)sgr_fieldColorDidChange {
     if (self.superview) self.fieldColor = SGRAlbumFieldColor(self);
+}
+
+// The part of the picture over no text: the title and the artist start SGRHeaderInfoTitleRise above its bottom.
+- (CGRect)sgr_coverArea {
+    return CGRectMake(0, 0, self.bounds.size.width, MAX(0, self.bounds.size.height - SGRHeaderInfoTitleRise));
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
+    return _picture.image && CGRectContainsPoint([self sgr_coverArea], [touch locationInView:self]);
+}
+
+- (void)sgr_openCover {
+    SGRShowAlbumCover(_picture.image);
+}
+
+- (BOOL)isAccessibilityElement {
+    return _picture.image != nil;
+}
+
+- (CGRect)accessibilityFrame {
+    return UIAccessibilityConvertFrameToScreenCoordinates([self sgr_coverArea], self);
+}
+
+- (BOOL)accessibilityActivate {
+    [self sgr_openCover];
+    return YES;
 }
 
 - (void)setFieldColor:(UIColor *)color {
@@ -401,6 +435,16 @@ static NSString *firstText(UIView *root) {
     return found;
 }
 
+// The first label under `root` with any text at all, one letter included: an album can be called "X".
+static NSString *anyText(UIView *root) {
+    __block NSString *found = nil;
+    SGForEachView(root, ^(UIView *v) {
+        if (found || ![v isKindOfClass:UILabel.class]) return;
+        found = trimmed(((UILabel *)v).text);
+    });
+    return found;
+}
+
 // The kind and the date ("Album • 31. 1. 2025", "Single • 2024") are cells of a collection view, a label each;
 // read in the order they are drawn in.
 static NSString *metadataText(UIView *metadata) {
@@ -450,6 +494,8 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
              length:length about:nil];
     // The line as it reads, without the accessibility label to fall back on: no line, no row loses its artist.
     SGRAlbumSetArtist(page, firstText(parent));
+    // And the title, for the rows to find their plays by.
+    SGRAlbumSetTitle(page, anyText(title));
     // The kind and the date are cells the metadata row's collection view makes on its own pass, after the
     // header's, and nothing lays the header out again when they arrive; the collection is Spotify's own Swift
     // class, which cannot be watched. So an empty row is read again a moment later, a few times at most.

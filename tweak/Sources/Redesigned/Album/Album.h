@@ -17,6 +17,8 @@
 //     AlbumSections.x  everything under the tracks dropped but the album's own line and its copyright: no
 //                      more by the artist, no videos, no concerts, no merch, no you might also like, each
 //                      back once its switch is off
+//     AlbumCover.m     the cover full screen, opened from the header's picture
+//     AlbumPlays.m     each track's plays from Listening stats, for the rows to show
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
 // Threading: main thread only.
@@ -44,6 +46,22 @@ void SGRAlbumSetArtist(UIView *view, NSString *artist);
 // AlbumCredits.m. Whether a row's artist line says nothing the album's header does not: it is the album's
 // artist, or the album's artist and the guests the title names after "feat.", "ft.", "featuring" or "with".
 BOOL SGRCreditRepeatsAlbum(NSString *albumArtist, NSString *rowArtist, NSString *title);
+
+// AlbumRows.x. How many times each track was played, trailing on its row before ⋯ (AlbumPlays.m counts them);
+// on until switched off (AlbumSettings.m).
+#define SGRKeyAlbumPlayCounts @"spotifyglass.redesign.album.playCounts"
+// The album's title as the header of the page `view` is on shows it, for the rows to match their plays by. A
+// change lays the page's track rows out again; the same title again is a no-op.
+void SGRAlbumSetTitle(UIView *view, NSString *title);
+// AlbumPlays.m. The plays in Listening stats of the track `title` on the album `album`, matched folded and
+// trimmed; 0 for none, and until the log has been read. The first call starts reading it.
+NSUInteger SGRAlbumPlayCount(NSString *album, NSString *title);
+// Posted on the main thread, object nil, when the counts change: the log was read, grew, was imported into or
+// erased.
+extern NSNotificationName const SGRAlbumPlayCountsDidChangeNotification;
+
+// AlbumCover.m. The cover full screen over whatever is on top, dark; nil is a no-op.
+void SGRShowAlbumCover(UIImage *image);
 
 // The album page `view` is on, or nil: the CreativeWorkTemplateView that carries the header, the list and
 // the two floating controls (trees/clean/album/01.txt:22).

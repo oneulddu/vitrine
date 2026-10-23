@@ -61,6 +61,9 @@
 "settings.album.apple_music.header" = "Apple Music";
 "settings.album.apple_music.note" = "Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.";
 "settings.album.artwork_background.title" = "Artwork background";
+"settings.album.cover_viewer.close" = "Close";
+"settings.album.cover_viewer.cover" = "Album cover";
+"settings.album.cover_viewer.share" = "Share";
 "settings.album.header" = "Header";
 "settings.album.hide.add_to_library.title" = "Add to library";
 "settings.album.hide.concerts.title" = "Concerts";
@@ -84,7 +87,11 @@
 "settings.album.motion_low_data.title" = "Download in Low Data Mode";
 "settings.album.native.hide_on_page.header" = "Hide on the page";
 "settings.album.native.title" = "Album";
+"settings.album.play_counts.note" = "Counted from Listening stats on this phone, matched by the album's and the track's names. With Record plays off, the counts stay as they are.";
+"settings.album.play_counts.subtitle" = "How many times you played each track";
+"settings.album.play_counts.title" = "Play counts";
 "settings.album.title" = "Albums";
+"settings.album.tracks.header" = "Tracks";
 
 "settings.appearance.accent.choice.custom" = "Custom";
 "settings.appearance.accent_color.title" = "Accent color";

@@ -97,6 +97,13 @@
 "settings.addtab.this_tab.default_name" = "이 탭";
 "settings.album.animated_covers.subtitle" = "해당 기능이 있는 앨범 상단에 표시되며 각 약 5MB입니다";
 "settings.album.animated_covers.title" = "움직이는 커버";
+"settings.album.cover_viewer.cover" = "앨범 커버";
+"settings.album.cover_viewer.close" = "닫기";
+"settings.album.cover_viewer.share" = "공유";
+"settings.album.tracks.header" = "트랙";
+"settings.album.play_counts.title" = "재생 횟수";
+"settings.album.play_counts.subtitle" = "각 트랙을 재생한 횟수";
+"settings.album.play_counts.note" = "이 iPhone의 청취 통계에서 앨범과 트랙 이름으로 찾아 셉니다. 재생 기록이 꺼져 있어도 지금까지의 횟수는 그대로 보입니다.";
 "settings.album.apple_music.header" = "Apple Music";
 "settings.album.apple_music.note" = "앨범 이름만 Apple Music으로 전송됩니다. 저전력 모드에서는 커버가 움직이지 않습니다.";
 "settings.album.artwork_background.title" = "아트워크 배경";

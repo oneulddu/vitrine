@@ -1,5 +1,5 @@
 // The redesign's Albums page: Apple Music's animated covers on album pages, whether their downloads run in Low
-// Data Mode, and what the redesign takes off the page.
+// Data Mode, each track's play count, and what the redesign takes off the page.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
@@ -11,6 +11,9 @@ UIViewController *SGRAlbumSettingsPage(void) {
             SGSwitchRow(SGL(@"settings.album.animated_covers.title", @"Animated covers"), SGL(@"settings.album.animated_covers.subtitle", @"At the top of an album that has one, about 5 MB each"), SGRKeyAlbumMotion),
             SGOptionRow(SGL(@"settings.album.motion_low_data.title", @"Download in Low Data Mode"), SGL(@"settings.album.motion_low_data.subtitle", @"Applies to animated artwork throughout Vitrine."), SGKeyMotionLowData),
         ], SGL(@"settings.album.apple_music.note", @"Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.")),
+        SGNotedSection(SGL(@"settings.album.tracks.header", @"Tracks"), @[
+            SGSwitchRow(SGL(@"settings.album.play_counts.title", @"Play counts"), SGL(@"settings.album.play_counts.subtitle", @"How many times you played each track"), SGRKeyAlbumPlayCounts),
+        ], SGL(@"settings.album.play_counts.note", @"Counted from Listening stats on this phone, matched by the album's and the track's names. With Record plays off, the counts stay as they are.")),
         SGSection(SGL(@"settings.album.hide_on_page.header", @"Hide on an album's page"), @[
             SGSwitchRow(SGL(@"settings.album.hide_track_artists.title", @"Repeated track artists"), SGL(@"settings.album.hide_track_artists.subtitle", @"The artist under a track when it is the album's own"), SGRKeyAlbumHideTrackArtists),
         ]),

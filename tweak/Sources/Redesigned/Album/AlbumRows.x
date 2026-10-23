@@ -23,6 +23,13 @@
 // badge's room so a long one cannot run under it or under ⋯. Right to left, all of it the other way round.
 // The row's own accessibility label still names the artists and says explicit; the picture is not an element.
 //
+// **Play counts.** A track played in Listening stats says how many times, "12 plays", in the secondary color on
+// the row's middle just before ⋯, as small as the row's own type allows; none for a track never played. The
+// count is the album's title and the row's title matched in the log (AlbumPlays.m), so the rows are laid out
+// again when the header's title arrives and when the counts change. The title and the artist line are narrowed
+// so neither runs under it. This is done before the artist line's change, which then measures the narrowed
+// title, and put back after it.
+//
 // Everything changed is put back at the start of the cell's next pass and when the cell is prepared for reuse,
 // which also asks for a pass: Spotify can show a cached row again at the same size without one, and the last
 // row's state would stay on it.
@@ -35,8 +42,11 @@
 static const CGFloat kHairline = 0.5;
 // Between the end of the title's text and the badge drawn after it.
 static const CGFloat kBadgeGap = 4;
+// Between the play count and ⋯'s box, whose glyph is inset in it already, and between the text and the count.
+static const CGFloat kCountGap = 2, kCountTextGap = 8;
 
 static char kRowKey, kSubtitleKey, kLineKey, kTitleKey, kBadgeKey, kArtistKey, kChangeKey;
+static char kAlbumKey, kMenuKey, kCountKey, kCountChangeKey;
 
 static void clearSurface(UIView *view) {
     UIColor *color = view.backgroundColor;
@@ -122,16 +132,19 @@ static BOOL restoreCredit(UIView *cell) {
     return YES;
 }
 
+// The rows on screen were laid out against what the header said before; the rest are laid out as they come.
+static void layOutRowsAgain(UIView *page) {
+    SGForEachView(page, ^(UIView *v) {
+        if ([v isKindOfClass:%c(_TtC12Element_List18CollectionViewCell)]) [v setNeedsLayout];
+    });
+}
+
 void SGRAlbumSetArtist(UIView *view, NSString *artist) {
     UIView *page = SGRAlbumPageOf(view);
     NSString *known = objc_getAssociatedObject(page, &kArtistKey);
     if (!page || known == artist || [known isEqualToString:artist]) return;
     objc_setAssociatedObject(page, &kArtistKey, artist, OBJC_ASSOCIATION_COPY_NONATOMIC);
-    // The rows on screen were laid out against the artist before; the rest are laid out as they come.
-    if (!hidesCredits()) return;
-    SGForEachView(page, ^(UIView *v) {
-        if ([v isKindOfClass:%c(_TtC12Element_List18CollectionViewCell)]) [v setNeedsLayout];
-    });
+    if (hidesCredits()) layOutRowsAgain(page);
 }
 
 static void applyCredit(UIView *cell, UIView *row, UIView *page) {
@@ -205,6 +218,120 @@ static void applyCredit(UIView *cell, UIView *row, UIView *page) {
     }
 }
 
+#pragma mark - play counts
+
+static BOOL showsCounts(void) {
+    static NSInteger on = -1;
+    if (on < 0) on = SGEnabled(SGRKeyAlbumPlayCounts);
+    return on;
+}
+
+// The album pages that have had a title, to lay out again when the counts change.
+static NSHashTable<UIView *> *countedPages(void) {
+    static NSHashTable<UIView *> *pages;
+    if (!pages) pages = [NSHashTable weakObjectsHashTable];
+    return pages;
+}
+
+void SGRAlbumSetTitle(UIView *view, NSString *title) {
+    UIView *page = SGRAlbumPageOf(view);
+    NSString *known = objc_getAssociatedObject(page, &kAlbumKey);
+    if (!page || !showsCounts() || known == title || [known isEqualToString:title]) return;
+    objc_setAssociatedObject(page, &kAlbumKey, title, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    [countedPages() addObject:page];
+    layOutRowsAgain(page);
+}
+
+// What a row's count narrowed, each label's frame before and after, to be put back.
+@interface SGRCountChange : NSObject
+@property (nonatomic, strong) UILabel *count;
+@property (nonatomic, strong) NSMapTable<UILabel *, NSArray<NSValue *> *> *frames;
+@end
+
+@implementation SGRCountChange
+@end
+
+static BOOL restoreCount(UIView *cell) {
+    SGRCountChange *change = objc_getAssociatedObject(cell, &kCountChangeKey);
+    if (!change) return NO;
+    objc_setAssociatedObject(cell, &kCountChangeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [change.count removeFromSuperview];
+    // Only where the frame is still this change's: a pass of Spotify's since may have put its own there.
+    for (UILabel *label in change.frames) {
+        NSArray<NSValue *> *frames = [change.frames objectForKey:label];
+        if (CGRectEqualToRect(label.frame, frames[1].CGRectValue)) label.frame = frames[0].CGRectValue;
+    }
+    return YES;
+}
+
+static void applyCount(UIView *cell, UIView *row, UIView *page) {
+    NSString *album = objc_getAssociatedObject(page, &kAlbumKey);
+    if (!album) return;
+    [((UICollectionViewCell *)cell).contentView layoutIfNeeded];
+    UILabel *title = onlyLabel(SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Title", &kTitleKey));
+    if (!title) return;
+    NSUInteger plays = SGRAlbumPlayCount(album, title.text);
+    if (!plays) return;
+    UIView *menu = SGRFindByIdentifier(row, @"Components.UI.ContextMenuButton*", &kMenuKey);
+    if (!menu || menu.alpha < 0.01 || CGRectIsEmpty(menu.bounds)) return;
+    if (!CGAffineTransformIsIdentity(title.transform) || title.layer.animationKeys.count) return;
+
+    UILabel *count = objc_getAssociatedObject(cell, &kCountKey);
+    if (!count) {
+        count = [UILabel new];
+        count.userInteractionEnabled = NO;
+        count.isAccessibilityElement = NO;
+        objc_setAssociatedObject(cell, &kCountKey, count, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    // The row is measured for Spotify's fixed type, so the count grows with Dynamic Type only up to Large.
+    count.font = SGRMonospacedDigitsFont(SGRFont(UIFontTextStyleCaption1, UIFontWeightRegular, UIContentSizeCategoryLarge));
+    count.textColor = SGRSecondary();
+    count.text = [NSString stringWithFormat:plays == 1 ? SGL(@"settings.stats.plays.singular", @"%lu play")
+                                                       : SGL(@"settings.stats.plays.plural", @"%lu plays"), (unsigned long)plays];
+    CGSize size = [count sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)];
+    size = CGSizeMake(ceil(size.width), ceil(size.height));
+
+    BOOL rtl = row.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+    CGRect menuFrame = [menu.superview convertRect:menu.frame toView:row];
+    CGFloat x = rtl ? CGRectGetMaxX(menuFrame) + kCountGap : CGRectGetMinX(menuFrame) - kCountGap - size.width;
+    CGFloat scale = row.window.screen.scale ?: UIScreen.mainScreen.scale;
+    CGFloat y = round((CGRectGetMidY(row.bounds) - size.height / 2) * scale) / scale;
+    CGRect frame = CGRectMake(x, y, size.width, size.height);
+    CGFloat limit = rtl ? CGRectGetMaxX(frame) + kCountTextGap : CGRectGetMinX(frame) - kCountTextGap;
+
+    // The title and every label of the artist line kept clear of the count; a row with no room for the title
+    // goes without it.
+    NSMutableArray<UILabel *> *labels = [NSMutableArray arrayWithObject:title];
+    SGForEachView(SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Subtitle", &kSubtitleKey), ^(UIView *v) {
+        if ([v isKindOfClass:UILabel.class] && ((UILabel *)v).text.length) [labels addObject:(UILabel *)v];
+    });
+    NSMapTable<UILabel *, NSArray<NSValue *> *> *frames = [NSMapTable weakToStrongObjectsMapTable];
+    for (UILabel *label in labels) {
+        CGRect inRow = [label.superview convertRect:label.frame toView:row];
+        CGFloat over = rtl ? limit - CGRectGetMinX(inRow) : CGRectGetMaxX(inRow) - limit;
+        if (over <= 0) continue;
+        CGRect narrow = label.frame;
+        narrow.size.width -= over;
+        if (rtl) narrow.origin.x += over;
+        if (label == title && narrow.size.width < title.font.lineHeight * 3) return;
+        [frames setObject:@[[NSValue valueWithCGRect:label.frame], [NSValue valueWithCGRect:narrow]] forKey:label];
+    }
+
+    SGRCountChange *change = [SGRCountChange new];
+    change.count = count;
+    change.frames = frames;
+    for (UILabel *label in frames) label.frame = [frames objectForKey:label][1].CGRectValue;
+    count.frame = frame;
+    [row addSubview:count];
+    objc_setAssociatedObject(cell, &kCountChangeKey, change, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    static BOOL logged;
+    if (!logged) {
+        logged = YES;
+        SGLog(@"redesign album: a track's plays shown, %lu, %lu label(s) narrowed", (unsigned long)plays, (unsigned long)frames.count);
+    }
+}
+
 #pragma mark - the rows
 
 static void applyRow(UIView *cell, UIView *page) {
@@ -225,6 +352,7 @@ static void applyRow(UIView *cell, UIView *page) {
     });
 
     applyHairline(row);
+    if (showsCounts()) applyCount(cell, row, page);
     if (hidesCredits()) applyCredit(cell, row, page);
 }
 
@@ -248,7 +376,9 @@ static BOOL isTrackContent(UIView *content) {
 
 %hook _TtC12Element_List18CollectionViewCell
 - (void)layoutSubviews {
+    // In the reverse of the order they were made: the artist line's change measured the narrowed title.
     restoreCredit((UIView *)self);
+    restoreCount((UIView *)self);
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
     if (!isTrackContent(cell.contentView.subviews.firstObject)) return;
@@ -259,12 +389,21 @@ static BOOL isTrackContent(UIView *content) {
 - (void)prepareForReuse {
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
-    if (restoreCredit(cell) || isTrackContent(cell.contentView.subviews.firstObject)) [cell setNeedsLayout];
+    BOOL changed = restoreCredit(cell);
+    changed = restoreCount(cell) || changed;
+    if (changed || isTrackContent(cell.contentView.subviews.firstObject)) [cell setNeedsLayout];
 }
 %end
 
 %ctor {
     if (!SGRedesignedUI()) return;
     %init;
+    if (showsCounts()) {
+        // Posted on the main thread (AlbumPlays.m).
+        [NSNotificationCenter.defaultCenter addObserverForName:SGRAlbumPlayCountsDidChangeNotification object:nil
+                                                         queue:nil usingBlock:^(NSNotification *note) {
+            for (UIView *page in countedPages().allObjects) layOutRowsAgain(page);
+        }];
+    }
     SGRequireClasses(@[@"_TtC12Element_List18CollectionViewCell"]);
 }
