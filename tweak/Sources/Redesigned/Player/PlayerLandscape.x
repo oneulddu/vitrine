@@ -408,6 +408,8 @@ void SGRPlayerLandscapeLinesChanged(void) {
 }
 
 void SGRPlayerShowLandscape(BOOL show) {
+    // iPad rotates Spotify's own player; never replace it with the portrait-only iPhone workaround.
+    if (UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone) return;
     UIWindowScene *scene = (UIWindowScene *)UIApplication.sharedApplication.connectedScenes.anyObject;
     if (![scene isKindOfClass:UIWindowScene.class]) return;
     if (show && !sg_window) {
@@ -458,6 +460,7 @@ static void orientationChanged(void) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    if (UIDevice.currentDevice.userInterfaceIdiom != UIUserInterfaceIdiomPhone) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         [UIDevice.currentDevice beginGeneratingDeviceOrientationNotifications];
         [NSNotificationCenter.defaultCenter addObserverForName:UIDeviceOrientationDidChangeNotification object:nil queue:nil

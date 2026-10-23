@@ -759,6 +759,10 @@
 "settings.karaoke.model.stop.alert.message" = "이미 수신된 내용은 보관되므로 다음 다운로드 시 이어서 진행됩니다.";
 "settings.karaoke.model.stop.alert.title" = "다운로드를 중단하겠습니까?";
 "settings.karaoke.model.switch.action" = "전환";
+"settings.keyboard.play_pause" = "재생 또는 일시 정지";
+"settings.keyboard.next" = "다음 곡";
+"settings.keyboard.previous" = "이전 곡";
+"settings.keyboard.like" = "현재 곡 좋아요";
 "settings.karaoke.model.switch.stop.message" = "다운로드 중인 음성 모델이 중단되며, 이미 수신된 내용은 나중에 다시 선택할 때를 위해 보관됩니다.";
 "settings.karaoke.model.switch.stop.title" = "다운로드를 중단하겠습니까?";
 "settings.karaoke.note.buffering_quiet_start" = "노래방 기능은 보컬을 분리하기 위해 재생 위치보다 앞서 오디오를 분석합니다. ‘원곡 그대로’가 아니면 최대 6초 동안 노래가 작게 재생된 뒤 보컬이 분리된 소리로 부드럽게 넘어가고, 분리가 늦어지면 원래 음량으로 돌아갑니다.";

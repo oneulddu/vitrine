@@ -10,6 +10,8 @@ NSString *SGURIString(id uri) {
 
 static NSHashTable<id<SGPlayerStateObserver>> *sg_stateObservers;
 static SPTPlayerState *sg_playerState;
+// The first player seen, weak: the app owns it.
+static __weak id sg_playerInstance;
 static NSString *sg_stateKey;
 // Set once the now playing platform has reported; the mod's own observer on the player stands down.
 static BOOL sg_platformReported = NO;
@@ -22,6 +24,10 @@ void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer) {
 
 SPTPlayerState *SGPlayerState(void) {
     return sg_playerState;
+}
+
+id SGPlayerInstance(void) {
+    return sg_playerInstance;
 }
 
 // What an observer is told about; the state object itself is new with every position report.
@@ -82,6 +88,9 @@ static SGPlayerObserver *sg_ownObserver;
 - (void)addPlayerObserver:(id)observer {
     %orig;
     id player = self;
+    // Kept outside the dispatch_once: the players after the first are the mod's own observer being
+    // added, and the hook must still see them should the first one go.
+    if (!sg_playerInstance) sg_playerInstance = player;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         dispatch_async(dispatch_get_main_queue(), ^{

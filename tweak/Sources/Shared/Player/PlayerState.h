@@ -14,6 +14,11 @@
 // A URI Spotify types as id (NSURL or NSString) as a string; nil for anything else.
 NSString *SGURIString(id uri);
 
+// The first SPTEsperantoPlayer the app added an observer to, weak and nil until then. Unlike
+// SGKaraokePlayer it is there under either look and with the lyrics features off, for the commands
+// that only need a player (the keyboard's). Responds to SPTPlayer's own selectors.
+id SGPlayerInstance(void);
+
 @protocol SGPlayerStateObserver <NSObject>
 // Called when the track, the context, paused, playing, loading or shuffle changed, not for position.
 - (void)playerStateDidChange:(SPTPlayerState *)state;
