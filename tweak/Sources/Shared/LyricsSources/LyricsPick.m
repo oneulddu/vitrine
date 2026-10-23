@@ -92,7 +92,8 @@ static void askMissing(SGLyricsOfferAsk *ask) {
     }
 }
 
-void SGLyricsOffers(NSString *trackID, NSTimeInterval wait, void (^done)(NSDictionary<NSString *, SGLyricsResult *> *offers)) {
+// The track's ask, made if new, with every source missing an answer asked.
+static SGLyricsOfferAsk *askFor(NSString *trackID) {
     if (!sg_asks) sg_asks = [NSMutableDictionary dictionary];
     SGLyricsOfferAsk *ask = sg_asks[trackID];
     if (!ask) {
@@ -104,6 +105,17 @@ void SGLyricsOffers(NSString *trackID, NSTimeInterval wait, void (^done)(NSDicti
         ask.waiting = [NSMutableArray array];
     }
     askMissing(ask);
+    return ask;
+}
+
+NSDictionary<NSString *, SGLyricsResult *> *SGLyricsOffersSoFar(NSString *trackID, NSArray<NSString *> **asking) {
+    SGLyricsOfferAsk *ask = askFor(trackID);
+    if (asking) *asking = ask.asking.allObjects;
+    return offersIn(ask);
+}
+
+void SGLyricsOffers(NSString *trackID, NSTimeInterval wait, void (^done)(NSDictionary<NSString *, SGLyricsResult *> *offers)) {
+    SGLyricsOfferAsk *ask = askFor(trackID);
     __block BOOL called = NO;
     void (^once)(void) = ^{
         if (called) return;

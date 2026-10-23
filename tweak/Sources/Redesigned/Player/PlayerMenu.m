@@ -9,7 +9,7 @@
 //                             a button for each of the two the background is not, while it is one of the
 //                             three, named for what it switches to
 //     Lyrics Source           a song's lyrics from another source than the one the order chose (issue #67): its
-//                             items are the sources with lines for the song, asked only once the submenu opens
+//                             items are the sources with lines for the song so far, asked as the ⋯ opens
 //
 // The item says under its name what is not as Spotify plays it, so the menu reads as a settings summary.
 #import "Core/SGCore.h"
@@ -61,21 +61,13 @@ static UIAction *soundMenu(void) {
     return open;
 }
 
-// How long the submenu shows its loading row for the slowest sources before it lists the ones that answered.
-static const NSTimeInterval kOffersWait = 4;
 static NSString *sheetKind(void);
 
-static NSString *timingText(NSArray<SGKaraokeLine *> *lines) {
-    switch (SGKaraokeLinesTiming(lines)) {
-        case SGKaraokeTimingWords: return SGL(@"settings.lyricssources.timing.words", @"Word by word");
-        case SGKaraokeTimingLine: return SGL(@"settings.lyricssources.timing.lines", @"Line by line");
-        default: return SGL(@"settings.lyricssources.timing.none", @"Not synced");
-    }
-}
-
 // Automatic, checked while nothing is picked and naming what the order chose, then the sources with lines for
-// the track, in the order, the one picked checked.
-static NSArray<UIMenuElement *> *sourceItems(NSString *track, NSDictionary<NSString *, SGLyricsResult *> *offers) {
+// the track, in the order, the one picked checked, and the ones still asked named in a row of their own. The
+// sources' rows are one line each, so the list fits without scrolling: a scrolled list runs under the
+// submenu's title.
+static NSArray<UIMenuElement *> *sourceItems(NSString *track, NSDictionary<NSString *, SGLyricsResult *> *offers, NSArray<NSString *> *asking) {
     NSString *current = SGLyricsChosenSource(track);
     UIAction *automatic = [UIAction actionWithTitle:SGL(@"settings.lyricssources.pick.automatic", @"Automatic") image:nil identifier:nil
                                             handler:^(UIAction *action) { SGLyricsChooseAutomatic(track); }];
@@ -88,11 +80,17 @@ static NSArray<UIMenuElement *> *sourceItems(NSString *track, NSDictionary<NSStr
         SGLyricsProvider *provider = SGLyricsProviderFor(key);
         UIAction *pick = [UIAction actionWithTitle:provider.name image:nil identifier:nil
                                            handler:^(UIAction *action) { SGLyricsChooseSource(track, key); }];
-        pick.subtitle = timingText(offer.karaokeLines);
         pick.state = [key isEqualToString:current] ? UIMenuElementStateOn : UIMenuElementStateOff;
         [items addObject:pick];
     }
-    if (items.count == 1) {
+    if (asking.count) {
+        NSMutableArray<NSString *> *names = [NSMutableArray array];
+        for (NSString *key in SGLyricsOrder()) if ([asking containsObject:key]) [names addObject:SGLyricsProviderFor(key).name];
+        UIAction *waiting = [UIAction actionWithTitle:SGL(@"settings.lyricssources.offers.asking", @"Still Asking") image:nil identifier:nil handler:^(UIAction *action) {}];
+        waiting.subtitle = [names componentsJoinedByString:@", "];
+        waiting.attributes = UIMenuElementAttributesDisabled;
+        [items addObject:waiting];
+    } else if (items.count == 1) {
         UIAction *none = [UIAction actionWithTitle:SGL(@"settings.lyricssources.offers.empty", @"No Source Has Lyrics") image:nil identifier:nil handler:^(UIAction *action) {}];
         none.attributes = UIMenuElementAttributesDisabled;
         [items addObject:none];
@@ -103,10 +101,14 @@ static NSArray<UIMenuElement *> *sourceItems(NSString *track, NSDictionary<NSStr
 static UIMenu *lyricsSourceMenu(void) {
     NSString *track = SGKaraokePlayingTrack();
     if (!SGLyricsEnabled() || !track.length || [sheetKind() isEqualToString:@"episode"]) return nil;
+    // The sources are asked as the ⋯ opens, and the submenu lists what has answered by the time it opens,
+    // at once: a loading row swapped for the items changes its size under the finger, which clips it. A
+    // source still out is named, and shows the next time.
+    SGLyricsOffersSoFar(track, NULL);
     UIDeferredMenuElement *sources = [UIDeferredMenuElement elementWithUncachedProvider:^(void (^completion)(NSArray<UIMenuElement *> *)) {
-        SGLyricsOffers(track, kOffersWait, ^(NSDictionary<NSString *, SGLyricsResult *> *offers) {
-            completion(sourceItems(track, offers));
-        });
+        NSArray<NSString *> *asking = nil;
+        NSDictionary<NSString *, SGLyricsResult *> *offers = SGLyricsOffersSoFar(track, &asking);
+        completion(sourceItems(track, offers, asking));
     }];
     UIMenu *menu = [UIMenu menuWithTitle:SGL(@"settings.lyricssources.pick.menu", @"Lyrics Source") image:symbol(@"quote.bubble") identifier:nil options:0 children:@[sources]];
     menu.subtitle = SGLyricsCreditFor(track);
