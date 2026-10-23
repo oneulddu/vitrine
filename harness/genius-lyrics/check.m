@@ -17,6 +17,8 @@
 @implementation SGLyricsQuery
 @end
 NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+NSString *SGL(NSString *key, NSString *english) { return english; }
+void SGLyricsSourceRequest(NSURL *url, NSDictionary *headers, NSData *body, void (^done)(NSData *, NSInteger)) { done(nil, 404); }
 SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray<NSString *> *choices, NSInteger fallback) { return nil; }
 SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) { return nil; }
 void SGLyricsPageLines(NSArray<SGKaraokeLine *> *lines, NSArray<NSNumber *> **starts, NSArray<NSString *> **texts) {}

@@ -394,6 +394,7 @@ BOOL SGLyricsPin(NSString *trackID, NSDictionary *record) {
     SGLyricsResult *result = SGLrcLibRecordResult(record);
     if (!result.instrumental && !result.karaokeLines.count) return NO;
     setUp();
+    SGLyricsDropChoice(trackID, SGLyricsChosenSource(trackID));
     @synchronized (sg_pins) {
         sg_pinGenerations[trackID] = @(sg_pinGenerations[trackID].unsignedIntegerValue + 1);
         sg_pins[trackID] = identifier;
@@ -608,12 +609,17 @@ static BOOL releaseAnswer(SGLyricsWalk *walk) {
         // Release the card request now, but keep this array as the walk's identity. A reload or
         // pin still retires it, and requests arriving meanwhile get the best answer kept so far.
         walk.answered = YES;
-        if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
-        sg_kept[query.trackID] = merged;
+        id kept = sg_kept[query.trackID];
+        BOOL picked = SGLyricsChosenSource(query.trackID) && [kept isKindOfClass:SGLyricsResult.class] && [(SGLyricsResult *)kept picked];
+        if (!picked) {
+            if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
+            sg_kept[query.trackID] = merged;
+        }
         while (walk.waiting.count && sg_waiting[query.trackID] == walk.waiting) {
             void (^done)(SGLyricsResult *) = walk.waiting.firstObject;
             [walk.waiting removeObjectAtIndex:0];
-            done(merged);
+            id current = sg_kept[query.trackID];
+            done(SGLyricsChosenSource(query.trackID) && [current isKindOfClass:SGLyricsResult.class] && [(SGLyricsResult *)current picked] ? current : merged);
         }
         // A waiter may itself have pinned or reloaded the track.
         if (!currentWalk(walk)) return NO;
@@ -681,7 +687,9 @@ static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyrics
         if (!merged.provider) merged.provider = fresh.provider ?: provider.name;
         merged.pageProvider = fresh.provider ?: provider.name;
     }
-    if (walk.answered && finer) {
+    id kept = sg_kept[query.trackID];
+    BOOL picked = SGLyricsChosenSource(query.trackID) && [kept isKindOfClass:SGLyricsResult.class] && [(SGLyricsResult *)kept picked];
+    if (walk.answered && finer && !picked) {
         if (sg_kept.count >= kKeptTracks && !sg_kept[query.trackID]) [sg_kept removeAllObjects];
         sg_kept[query.trackID] = merged;
         SGLyricsSetCredit(query.trackID, merged.provider);
@@ -755,6 +763,20 @@ static void askAll(SGLyricsWalk *walk) {
         if ([walk.started containsObject:key]) continue;
         SGLyricsProvider *provider = SGLyricsProviderFor(key);
         if (provider.needsName && !named(walk.query)) continue;
+        // Genius is a fallback even in concurrent mode, not another speculative request.
+        if (provider.untimed && ![key isEqualToString:walk.picked]) {
+            if (walk.merged.karaokeLines.count || walk.merged.texts.count || SGLyricsSpotifyHas(walk.query.trackID) == 1) {
+                [walk.started addObject:key];
+                continue;
+            }
+            BOOL pending = walk.inFlight.count != 0;
+            for (NSString *other in walk.originalOrder) {
+                SGLyricsProvider *candidate = SGLyricsProviderFor(other);
+                if (!candidate.untimed && ![walk.started containsObject:other] &&
+                    (!candidate.needsName || named(walk.query))) pending = YES;
+            }
+            if (pending) continue;
+        }
         [walk.started addObject:key];
         [walk.inFlight addObject:key];
         provider.ask(walk.query, ^(SGLyricsResult *fresh) {
@@ -817,7 +839,7 @@ static void startWalk(NSString *trackID, SGLyricsQuery *query) {
     walk.merged = [SGLyricsResult new];
     walk.passedOver = [NSMutableArray array];
     walk.failuresAtStart = atomic_load(&sg_failures);
-    NSNumber *pin = SGLyricsPinnedID(trackID);
+    NSNumber *pin = chosen ? nil : SGLyricsPinnedID(trackID);
     if (pin) {
         SGLrcLibGetID(pin, ^(SGLyricsResult *result) {
             if (!currentWalk(walk)) return;

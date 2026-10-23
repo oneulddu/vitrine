@@ -26,12 +26,14 @@ void HarnessGetID(NSNumber *identifier, void (^done)(SGLyricsResult *)) { sg_ask
 static void (^sg_providerReply)(SGLyricsResult *);
 SGLyricsAsk SGMusixmatchAsk = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { sg_providerReply = done; };
 SGLyricsAsk SGBiniLyricsAsk, SGUnisonAsk, SGNetEaseAsk, SGSpicyLyricsAsk, SGQQMusicAsk, SGKuGouAsk;
-SGLyricsAsk SGBugsAsk, SGGenieAsk, SGLyricsPlusAsk, SGDeezerAsk, SGImportedLRCAsk;
+SGLyricsAsk SGBugsAsk, SGGenieAsk, SGLyricsPlusAsk, SGDeezerAsk, SGImportedLRCAsk, SGGeniusAsk;
 NSString *const SGSpicyLyricsKey = @"spicylyrics", *const SGImportedLRCKey = @"importedlrc";
 @implementation SGSource
 + (instancetype)sourceWithKey:(NSString *)key name:(NSString *)name detail:(NSString *)detail { return [self new]; }
 @end
 NSString *SGL(NSString *key, NSString *english) { return english; }
+// Song matching is covered by lyrics-sources/genius-lyrics; this fixture's artist is always Singer.
+NSString *SGLyricsLeadArtist(NSString *artist) { return artist; }
 void SGMusixmatchTranslations(NSString *track, NSString *language, void (^done)(NSDictionary *)) { done(nil); }
 NSArray *SGMusixmatchTranslatedLines(NSArray *lines, NSDictionary *byLine) { return nil; }
 NSString *SGSpicyLyricsStatus(void) { return nil; }
@@ -66,11 +68,12 @@ double SGSingLeadOf(SPTPlayerState *state) { return 0; }
 @end
 static HarnessRoute *sg_fakeRoute;
 static id fakeRoute(id self, SEL selector) { return sg_fakeRoute; }
-static void pumpUntil(BOOL (^ready)(void)) {
+static void pumpUntilAt(BOOL (^ready)(void), int caller) {
     NSDate *limit = [NSDate dateWithTimeIntervalSinceNow:3];
     while (!ready() && [limit timeIntervalSinceNow] > 0) [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.005]];
-    CHECK(ready());
+    if (!ready()) { fprintf(stderr, "FAILED wait at line %d\n", caller); exit(1); }
 }
+#define pumpUntil(ready) pumpUntilAt(ready, __LINE__)
 
 @interface HarnessTask : NSObject
 @property (nonatomic, strong) NSURLRequest *originalRequest, *currentRequest;
@@ -174,9 +177,13 @@ static void checkHookPins(void) {
 
 static NSUserDefaults *sg_testDefaults;
 static NSString *sg_testSuite;
+static NSString *sg_testStore;
 static NSUInteger sg_defaultsReads;
 static id fakeDefaults(id self, SEL selector) { sg_defaultsReads++; return sg_testDefaults; }
-static void removeTestDefaults(void) { [sg_testDefaults removePersistentDomainForName:sg_testSuite]; }
+static void removeTestDefaults(void) {
+    [sg_testDefaults removePersistentDomainForName:sg_testSuite];
+    if (sg_testStore) [NSFileManager.defaultManager removeItemAtPath:sg_testStore error:nil];
+}
 
 static void checkLanguageStore(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
@@ -400,7 +407,7 @@ static void drainReplies(void) {
 static void checkAskModeMigration(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     NSArray *expected = @[SGImportedLRCKey, SGSpicyLyricsKey, @"binilyrics", @"lyricsplus",
-        @"musixmatch", @"unison", @"deezer", @"netease", @"lrclib", @"bugs", @"genie", @"qqmusic", @"kugou"];
+        @"musixmatch", @"unison", @"deezer", @"netease", @"lrclib", @"bugs", @"genie", @"qqmusic", @"kugou", @"genius"];
     CHECK([SGLyricsOrder() isEqual:expected]);
     // Exercise both early returns in the migration, and a pre-existing new preference.
     for (NSArray *stored in @[@[], @[@"unison"]]) {
@@ -742,6 +749,13 @@ int main(void) {
         // A separate suite makes the default writes real without touching the app's or the user's.
         sg_testSuite = [@"com.vitrine.lyrics-state-check." stringByAppendingString:NSUUID.UUID.UUIDString];
         sg_testDefaults = [[NSUserDefaults alloc] initWithSuiteName:sg_testSuite];
+        // A previous harness run's offline answer must not bypass this run's held providers.
+        // Pin/reload invalidation also stays out of the user's real lyrics directory.
+        char store[] = "/tmp/vitrine-lyrics-state.XXXXXX";
+        CHECK(mkdtemp(store));
+        sg_testStore = @(store);
+        SGLyricsStoreConfigureForTests([NSURL fileURLWithPath:sg_testStore], 1000, 30 * 1024 * 1024);
+        [sg_testDefaults setBool:NO forKey:SGKeyLyricsOffline];
         atexit(removeTestDefaults);
         Method defaultsMethod = class_getClassMethod(NSUserDefaults.class, @selector(standardUserDefaults));
         method_setImplementation(defaultsMethod, (IMP)fakeDefaults);
@@ -812,7 +826,7 @@ int main(void) {
         CHECK([SGLyricsPinnedID(@"song") isEqual:@123] && answer.karaokeLines.count == 1 && pinNotes == 1);
         CHECK([SGLyricsCreditFor(@"song") isEqual:@"LRCLIB"]);
         SGLyricsResult *chosen = answer;
-        oldReply(SGLyricsPlainResult(@"Late wrong words", @"Old provider"));
+        oldReply(SGLyricsPlainTextResult(@"Late wrong words", @"Old provider"));
         CHECK(sg_kept[@"song"] == chosen && [SGKaraokeLineText(SGKaraokeLinesForTrack(@"song").firstObject) isEqual:@"Chosen line"]);
         CHECK(!SGLyricsPin(@"song", @{@"id": @456}) && [SGLyricsPinnedID(@"song") isEqual:@123] && pinNotes == 1);
         SGLyricsUnpin(@"song");

@@ -18,6 +18,9 @@
 NSString *const SGSpicyLyricsKey = @"spicylyrics";
 NSString *const SGImportedLRCKey = @"importedLRC";
 NSString *SGSpicyLyricsStatus(void) { return nil; }
+NSString *SGL(NSString *key, NSString *english) { return english; }
+void SGLrcLibGetID(NSNumber *identifier, void (^done)(SGLyricsResult *)) { done(nil); }
+SGLyricsResult *SGLrcLibRecordResult(NSDictionary *record) { return nil; }
 BOOL SGLocalFileIs(NSString *uri) { return NO; }
 NSDictionary<NSString *, id> *SGLocalFileInfo(NSString *uri) { return @{@"title": @"a", @"artist": @"b", @"seconds": @200}; }
 SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) { return nil; }
@@ -42,6 +45,8 @@ void SGKaraokeAskAgain(NSString *track) {
     [sg_askedAgain addObject:track];
     [sg_shown removeObjectForKey:track];
 }
+void SGKaraokeForgetLyrics(NSString *track) { [sg_shown removeObjectForKey:track]; }
+void SGKaraokeRequestLyrics(NSString *track) { [sg_askedAgain addObject:track]; }
 
 // The sources, answered by key: a fresh result each ask, nil for none. One key may be held until release()
 // runs, for what lands while the walk waits on it. Every ask is listed as "key:track".
@@ -71,6 +76,10 @@ ASK(SGQQMusicAsk, @"qqmusic")
 ASK(SGKuGouAsk, @"kugou")
 ASK(SGImportedLRCAsk, @"importedLRC")
 ASK(SGGeniusAsk, @"genius")
+ASK(SGBugsAsk, @"bugs")
+ASK(SGGenieAsk, @"genie")
+ASK(SGLyricsPlusAsk, @"lyricsplus")
+ASK(SGDeezerAsk, @"deezer")
 
 // Two lines, timed by the line or not at all, with the page's text made from them as a source would.
 static SGAnswer lines(BOOL timed) {
@@ -142,7 +151,7 @@ int main(int argc, char **argv) {
         sg_answers = [NSMutableDictionary dictionary];
         sg_asked = [NSMutableArray array];
         // The order, read from the defaults, without writing the Mac's.
-        [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGKeyLyricsProviders: @[@"musixmatch", @"lrclib", @"netease", @"genius"]}
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGKeyLyricsAskMode: @0, SGKeyLyricsProviders: @[@"musixmatch", @"lrclib", @"netease", @"genius"]}
                                                        forName:NSArgumentDomain];
         sg_answers[@"musixmatch"] = lines(YES);
         sg_answers[@"lrclib"] = lines(YES);
@@ -228,6 +237,31 @@ int main(int argc, char **argv) {
         CHECK(!SGLyricsChosenSource(@"t3") && [sg_askedAgain isEqualToArray:@[@"t3"]] && !sg_shown[@"t3"]);
         CHECK(!fetch(@"t3"));
 
+        // The fork's early-release schedulers must not overwrite a pick made while their first
+        // timed answer is still pending. Genius remains a fallback in concurrent mode too.
+        for (NSNumber *mode in @[@1, @2]) {
+            [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGKeyLyricsAskMode: mode,
+                SGKeyLyricsProviders: @[@"musixmatch", @"lrclib", @"genius"]} forName:NSArgumentDomain];
+            NSString *track = [NSString stringWithFormat:@"picked-mode-%@", mode];
+            sg_answers[@"musixmatch"] = lines(YES);
+            sg_answers[@"lrclib"] = lines(NO);
+            offers(track);
+            sg_held = @"musixmatch";
+            sg_release = nil;
+            __block SGLyricsResult *answer = nil;
+            SGLyricsFetch(track, ^(SGLyricsResult *result) { answer = result; });
+            pump(^BOOL { return sg_release != nil; });
+            SGLyricsChooseSource(track, @"lrclib");
+            [sg_asked removeAllObjects];
+            sg_held = nil;
+            sg_release();
+            sg_release = nil;
+            pump(^BOOL { return answer != nil; });
+            [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+            CHECK(answer.picked && [answer.provider isEqual:@"LRCLIB"]);
+            CHECK([(SGLyricsResult *)SGLyricsKeptAnswer(track) picked]);
+            CHECK(![sg_asked containsObject:[@"genius:" stringByAppendingString:track]]);
+        }
         printf("lyrics-walk: all checks passed\n");
     }
     return 0;
