@@ -665,6 +665,9 @@ static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyrics
         merged.karaokeLines = fresh.karaokeLines;
         merged.wordTimed = timing == SGKaraokeTimingWords;
         merged.provider = fresh.provider ?: provider.name;
+        if (walk.typeFirst && !walk.concurrent && timing == SGKaraokeTimingLine && walk.index < walk.order.count) {
+            SGLog(@"lyrics: %@ line timed by %@, asking on for words timed", query.trackID, merged.provider);
+        }
     }
     if (replaceText) {
         walk.pageRank = rank;
