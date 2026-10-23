@@ -25,12 +25,24 @@
 // ponytail: the hills follow what the output is handed, which a Bluetooth headset plays a fifth of a second or
 // so later. Music Haptics schedules for the output latency; do the same here if the beat looks early on AirPods.
 //
+// The fifth style, Lyrics, draws the same hills at a reduced height under the line being sung, large and
+// centered, white at a third of its strength: the lyrics set in the player's background. The line is the one
+// SGKaraokeLeadLine names for the playing track's kept lines (Shared/Lyrics/Lyrics.h), so only synced lyrics
+// show; a track without them, a break or the moments before the first line are just the quieter hills. The
+// text changes only when the line index does, crossfading and rising in with two labels made once, and its
+// own alpha and scale breathe with the level the bands are already at. While the player's own lyrics are
+// open the text is put away (the field blurs then), leaving the hills. The settings card's preview has no
+// track to read, so it falls back to LyricsLook's sample lines; it uses this view's frame clock, never one
+// of its own.
+//
 // Threading: main thread only, but for the reader, which runs on the render thread.
-// Hills retains the drawing below. Bars, Nebula and Halo share its envelopes and lifecycle, using only
-// finite layer paths/transforms driven here. Silence stops drawing; a low-frequency timer watches for sound.
+// Hills retains the drawing below. Bars, Nebula, Halo and Lyrics share its envelopes and lifecycle, using
+// only finite layer paths/transforms driven here. Silence stops drawing; a low-frequency timer watches for sound.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Lyrics/LyricsLook.h"
 #import "Shared/AudioEffects/AudioEffects.h"
+#import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Player/PlayerEvents.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
@@ -39,8 +51,8 @@
 
 NSNotificationName const SGRVisualiserStyleDidChangeNotification = @"spotifyglass.visualizer.styleDidChange";
 
-NSArray<NSString *> *SGRVisualiserStyleNames(void) { return @[SGL(@"settings.visualizer.style.choice.hills", @"Hills"), SGL(@"settings.visualizer.style.choice.bars", @"Bars"), SGL(@"settings.visualizer.style.choice.nebula", @"Nebula"), SGL(@"settings.visualizer.style.choice.halo", @"Halo")]; }
-NSArray<NSString *> *SGRVisualiserStyleIDs(void) { return @[@"builtin:hills", @"builtin:bars", @"builtin:nebula", @"builtin:halo"]; }
+NSArray<NSString *> *SGRVisualiserStyleNames(void) { return @[SGL(@"settings.visualizer.style.choice.hills", @"Hills"), SGL(@"settings.visualizer.style.choice.bars", @"Bars"), SGL(@"settings.visualizer.style.choice.nebula", @"Nebula"), SGL(@"settings.visualizer.style.choice.halo", @"Halo"), SGL(@"settings.visualizer.style.choice.lyrics", @"Lyrics")]; }
+NSArray<NSString *> *SGRVisualiserStyleIDs(void) { return @[@"builtin:hills", @"builtin:bars", @"builtin:nebula", @"builtin:halo", @"builtin:lyrics"]; }
 
 NSString *SGRVisualiserStyle(void) {
     id value = [NSUserDefaults.standardUserDefaults objectForKey:SGRKeyVisualiserStyle];
@@ -59,7 +71,7 @@ void SGRSetVisualiserStyle(NSString *identifier) {
     else dispatch_async(dispatch_get_main_queue(), apply);
 }
 
-typedef NS_ENUM(NSUInteger, SGRVisualiserStyleKind) { SGRHills, SGRBars, SGRNebula, SGRHalo };
+typedef NS_ENUM(NSUInteger, SGRVisualiserStyleKind) { SGRHills, SGRBars, SGRNebula, SGRHalo, SGRLyricsStyle };
 
 // The two bands under 80 Hz stay out of the picture: sub-bass is quieter than the kick above it in most mixes,
 // so drawn at the middle it cut a notch into the crest right under the play button.
@@ -97,6 +109,15 @@ static const float kSettled = 0.02f;
 // Each band shares this much with either neighbor, three times over, so one loud band is a hill and not a spike.
 static const float kSpread = 0.25f;
 static const NSTimeInterval kTransitionSlack = 0.05;
+// Lyrics: the sung line, large and bold, three lines at the most, centered on the visible player, white at
+// kLyricAlpha so it is read as the background rather than as text to read. It rises in and crossfades at each
+// new line over SGRMotionFade's time, and its own alpha swells a fifth and its scale a few percent with the
+// level the hills are drawn at. Under it the hills are drawn at kLyricHills of their height.
+static const CGFloat kLyricSize = 44, kLyricMargin = 26, kLyricAlpha = 0.35f, kLyricRise = 14;
+static const CGFloat kLyricHills = 0.5, kLyricAnchor = 0.44;
+// A line whose singing ended this long ago, with the next this far off, is an instrumental break: the words
+// go and only the hills show, as the lock screen keeps the cover.
+static const NSInteger kLyricBreakMs = 4000;
 
 static NSUInteger sg_readers;
 
@@ -128,6 +149,9 @@ static NSDictionary *noActions(void) {
 // The height the hills are a share of; 0 is the bounds' height.
 @property (nonatomic) CGFloat screenHeight;
 @property (nonatomic, readonly) BOOL blurred;
+// The settings card's preview: nothing plays there, so the Lyrics style reads LyricsLook's sample lines on a
+// clock of its own instead of the player's.
+@property (nonatomic) BOOL sample;
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated;
 - (void)appear:(BOOL)animated;
 - (void)disappear:(void (^)(void))done;
@@ -155,6 +179,18 @@ static NSDictionary *noActions(void) {
     float _wave[SGRSpectrumWaveformSamples];
     double _phase;
     NSString *_trackURI;
+    // Lyrics: the sung line in two labels, the one rising in and the one it replaces; the lines read from the
+    // playing track (or the sample, in the settings card) and the line shown, so nothing is set while it stays.
+    UIView *_words;      // the words' host, over the hills and away from their crest mask
+    UIView *_lyricBox;   // the words' alpha and scale breathe with the bands; the labels crossfade inside it
+    NSArray<UILabel *> *_lyricLabels;
+    UILabel *_lyricFront;
+    NSArray<SGKaraokeLine *> *_lines;
+    NSString *_linesTrack;
+    NSInteger _lineIndex;
+    BOOL _asked;   // the playing track was asked for lyrics once
+    CFTimeInterval _sampleEpoch, _delayAt;
+    NSInteger _delayMs;
 }
 
 // As PlayerMotion.x: what fades is the effect view's effect, never its alpha or an ancestor's.
@@ -210,11 +246,40 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     _frontFill = fill(_frontShape);
     [_content.layer addSublayer:_frontFill];
     [self addSubview:_content];
+    // The Lyrics style's words, over the hills and under the blur, so opening the player's own lyrics blurs
+    // them away: a box whose alpha and scale follow the bands, holding two labels made once, so a line change
+    // only hands them text and fades one over the other.
+    _words = [[UIView alloc] initWithFrame:CGRectZero];
+    _words.userInteractionEnabled = NO;
+    _words.accessibilityElementsHidden = YES;
+    [self addSubview:_words];
+    _lyricBox = [[UIView alloc] initWithFrame:CGRectZero];
+    _lyricBox.userInteractionEnabled = NO;
+    _lyricBox.accessibilityElementsHidden = YES;
+    [_words addSubview:_lyricBox];
     _lyricsBlur = [[UIVisualEffectView alloc] initWithEffect:nil];
     _lyricsBlur.userInteractionEnabled = NO;
     _lyricsBlur.accessibilityElementsHidden = YES;
     _lyricsBlur.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     [self addSubview:_lyricsBlur];
+    NSMutableArray *lyricLabels = [NSMutableArray array];
+    for (int i = 0; i < 2; i++) {
+        UILabel *label = [[UILabel alloc] initWithFrame:CGRectZero];
+        label.font = [UIFont systemFontOfSize:kLyricSize weight:UIFontWeightBold];
+        label.textColor = [UIColor colorWithWhite:1 alpha:kLyricAlpha];
+        label.textAlignment = NSTextAlignmentCenter;
+        label.numberOfLines = 3;
+        label.lineBreakMode = NSLineBreakByWordWrapping;
+        label.alpha = 0;
+        label.userInteractionEnabled = NO;
+        label.accessibilityElementsHidden = YES;
+        [_lyricBox addSubview:label];
+        [lyricLabels addObject:label];
+    }
+    _lyricLabels = lyricLabels;
+    _lyricFront = lyricLabels.firstObject;
+    _lineIndex = -1;
+    _words.hidden = YES;
     [self applyColors:@[UIColor.darkGrayColor, UIColor.darkGrayColor, UIColor.darkGrayColor, UIColor.darkGrayColor, UIColor.darkGrayColor]];
 
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
@@ -226,6 +291,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [center addObserver:self selector:@selector(becomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
     [center addObserver:self selector:@selector(artworkChanged) name:SGRNowPlayingArtworkDidChangeNotification object:nil];
     [center addObserver:self selector:@selector(styleChanged) name:SGRVisualiserStyleDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(lyricsKept:) name:SGKaraokeLinesKeptNotification object:nil];
     SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; }, ^(id owner) { [owner updateMotion]; });
     SGAddPlayerStateObserver(self);
     [self styleChanged];
@@ -270,7 +336,8 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [CATransaction setDisableActions:YES];
     _record.contents = (id)recordImage.CGImage;
     [CATransaction commit];
-    if (_style != SGRHills) image = recordImage;
+    // Hills draws the cover's palette; Lyrics draws the same hills, so it reads the cover too.
+    if (_style != SGRHills && _style != SGRLyricsStyle) image = recordImage;
     if (!image) return;
     SGRPaletteRequest request = {CGSizeZero, NO, YES, YES, NO};
     __weak SGRVisualiserView *weakSelf = self;
@@ -300,7 +367,9 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 - (void)styleChanged {
     SGRVisualiserStyleKind next = (SGRVisualiserStyleKind)[SGRVisualiserStyleIDs() indexOfObject:SGRVisualiserStyle()];
     self.accessibilityValue = SGRVisualiserStyleNames()[next];
-    if (_style == next && (next == SGRHills || _styleLayer)) return;
+    // Lyrics draws the hills themselves, so it owns them as Hills does.
+    BOOL hills = next == SGRHills || next == SGRLyricsStyle;
+    if (_style == next && (hills || _styleLayer)) return;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _style = next;
@@ -310,9 +379,18 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     _styleShape = nil; _reflectionShape = nil; _waveShape = nil; _clouds = nil;
     _phase = 0;
     memset(_wave, 0, sizeof _wave);
-    _backFill.hidden = _frontFill.hidden = next != SGRHills;
-    _content.layer.mask = next == SGRHills ? _crestFade : nil;
-    if (next != SGRHills) {
+    _backFill.hidden = _frontFill.hidden = !hills;
+    _content.layer.mask = hills ? _crestFade : nil;
+    // The words belong to Lyrics alone; nothing is read or shown for another style.
+    _words.hidden = next != SGRLyricsStyle;
+    if (next != SGRLyricsStyle) {
+        for (UILabel *label in _lyricLabels) label.alpha = 0;
+        _lines = nil; _linesTrack = nil; _lineIndex = -1; _asked = NO;
+    } else {
+        [self takeUpTrack];
+        [self readLine];
+    }
+    if (!hills) {
         _styleLayer = [CALayer layer];
         _styleLayer.actions = noActions();
         _styleLayer.masksToBounds = YES;
@@ -364,6 +442,150 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [self updateMotion];
 }
 
+- (void)setSample:(BOOL)sample {
+    if (_sample == sample) return;
+    _sample = sample;
+    // The card's lines are the sample's, never the playing song's.
+    _lines = nil;
+    _linesTrack = nil;
+    _asked = NO;
+    _lineIndex = -1;
+    _sampleEpoch = 0;
+    for (UILabel *label in _lyricLabels) label.alpha = 0;
+    _lyricFront = _lyricLabels.firstObject;
+    [self readLine];
+    [self updateMotion];
+}
+
+#pragma mark - the words
+
+// The lines the style reads: the playing track's kept ones, or LyricsLook's sample lines in the settings card,
+// which has no track. The track is taken up on a state change, so a frame only looks the kept lines up by a
+// string it already holds; a track with none is asked for lyrics once, and the answer comes as
+// SGKaraokeLinesKeptNotification.
+- (NSArray<SGKaraokeLine *> *)lyricLines {
+    if (_sample) return _lines ?: (_lines = SGRLyricsSampleLines());
+    // A view made while a track plays has had no state change yet to take it up; a track change does.
+    if (!_linesTrack) [self takeUpTrack];
+    if (!_lines && _linesTrack && !_asked) {
+        _asked = YES;
+        _lines = SGKaraokeLinesForTrack(_linesTrack);
+        if (!_lines) SGKaraokeRequestLyrics(_linesTrack);
+    }
+    return _lines;
+}
+
+// The track the words are for; a new one drops the old lines and the old words with them.
+- (void)takeUpTrack {
+    NSString *track = SGKaraokePlayingTrack();
+    if (_linesTrack == track || [_linesTrack isEqualToString:track]) return;
+    _linesTrack = [track copy];
+    _lines = nil;
+    _asked = NO;
+    _lineIndex = -1;
+    for (UILabel *label in _lyricLabels) {
+        label.text = nil;
+        label.alpha = 0;
+    }
+    _lyricFront = _lyricLabels.firstObject;
+}
+
+- (NSInteger)lyricPositionMs {
+    if (_sample) {
+        if (!_sampleEpoch) _sampleEpoch = CACurrentMediaTime();
+        return (NSInteger)fmod((CACurrentMediaTime() - _sampleEpoch) * 1000, SGRLyricsSampleLength());
+    }
+    NSInteger ms = SGKaraokePositionMs();
+    if (ms < 0) return ms;
+    // The delay takes a lock and reads the offsets; once a second is enough for a change of it to land, and it
+    // keeps a lock off every frame. The frame itself only needs a line to move when the clock passes it.
+    CFTimeInterval now = CACurrentMediaTime();
+    if (!_delayAt || now - _delayAt > 1) {
+        _delayAt = now;
+        _delayMs = SGKaraokeDelayMs();
+    }
+    return ms - _delayMs;
+}
+
+// The line the clock names, or -1 for the hills alone: no synced lyrics, before the first, in a break, or while
+// the player's own lyrics are open. No text is built here.
+- (NSInteger)lineAt:(NSInteger)ms lines:(NSArray<SGKaraokeLine *> *)lines {
+    if (!lines.count || ms < 0 || self.blurred) return -1;
+    if (SGKaraokeLinesTiming(lines) == SGKaraokeTimingNone) return -1;
+    NSInteger index = SGKaraokeLeadLine(lines, ms);
+    if (index < 0) return -1;
+    SGKaraokeLine *line = lines[(NSUInteger)index];
+    BOOL nextFarOff = index + 1 >= (NSInteger)lines.count || lines[(NSUInteger)index + 1].start - ms > kLyricBreakMs;
+    if (ms > SGKaraokeSungEnd(line) + kLyricBreakMs && nextFarOff) return -1;
+    return index;
+}
+
+// Reads the line for the clock and, only when the line index changed, hands the new text to the label that is
+// not in front and fades it over the old one, rising in. Nothing is allocated from frame to frame: the line's
+// text is built only when the index moves.
+- (void)readLine {
+    if (_style != SGRLyricsStyle) return;
+    NSArray<SGKaraokeLine *> *lines = [self lyricLines];
+    NSInteger ms = [self lyricPositionMs];
+    NSInteger index = [self lineAt:ms lines:lines];
+    if (index == _lineIndex) return;
+    _lineIndex = index;
+    NSString *text = nil;
+    if (index >= 0) {
+        text = [SGKaraokeLineText(lines[(NSUInteger)index]) stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (!text.length) text = nil;
+    }
+    UILabel *old = _lyricFront;
+    UILabel *next = _lyricLabels.firstObject == old ? _lyricLabels.lastObject : _lyricLabels.firstObject;
+    BOOL still = SGRReduceMotion();
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    next.text = text;
+    next.transform = still || !text ? CGAffineTransformIdentity : CGAffineTransformMakeTranslation(0, kLyricRise);
+    [self layoutLyrics];
+    [CATransaction commit];
+    if (!text) {
+        SGRAnimate(SGRMotionFade, ^{ old.alpha = 0; next.alpha = 0; }, nil);
+        _lyricFront = next;
+        return;
+    }
+    next.alpha = 0;
+    SGRAnimate(SGRMotionFade, ^{
+        old.alpha = 0;
+        next.alpha = 1;
+        next.transform = CGAffineTransformIdentity;
+    }, nil);
+    _lyricFront = next;
+}
+
+// The words' box, centered over the player's visible field, three lines tall at the most.
+- (void)layoutLyrics {
+    CGRect bounds = self.bounds;
+    CGFloat width = MAX(0, bounds.size.width - 2 * kLyricMargin);
+    CGFloat tallest = ceil(kLyricSize * 1.25 * 3);
+    CGFloat height = kLyricSize * 1.25;
+    for (UILabel *label in _lyricLabels) {
+        if (!label.text.length) continue;
+        height = MAX(height, MIN(tallest, ceil([label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height)));
+    }
+    CGFloat baseline = _baseline > 0 ? _baseline : bounds.size.height;
+    CGSize size = CGSizeMake(width, height);
+    _lyricBox.bounds = CGRectMake(0, 0, size.width, size.height);
+    _lyricBox.center = CGPointMake(CGRectGetMidX(bounds), baseline * kLyricAnchor);
+    for (UILabel *label in _lyricLabels) {
+        label.bounds = CGRectMake(0, 0, size.width, size.height);
+        label.center = CGPointMake(size.width / 2, size.height / 2);
+    }
+}
+
+- (void)lyricsKept:(NSNotification *)note {
+    if (_sample || ![note.object isEqual:SGKaraokePlayingTrack()]) return;
+    _lines = nil;
+    _asked = NO;
+    _lineIndex = -1;
+    [self readLine];
+}
+
 #pragma mark - showing
 
 - (void)setBaseline:(CGFloat)baseline {
@@ -376,24 +598,30 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [super layoutSubviews];
     CGRect bounds = self.bounds;
     _content.frame = bounds;
+    _words.frame = bounds;
     _lyricsBlur.frame = bounds;
     _backFill.frame = bounds;
     _frontFill.frame = bounds;
     _backShape.frame = bounds;
     _frontShape.frame = bounds;
     _crestFade.frame = bounds;
+    if (_style == SGRLyricsStyle) [self layoutLyrics];
     [self draw];
 }
 
 - (void)appear:(BOOL)animated {
-    _content.alpha = 0;
-    if (animated) SGRAnimate(SGRMotionFade, ^{ self->_content.alpha = 1; }, nil);
-    else _content.alpha = 1;
+    _content.alpha = _words.alpha = 0;
+    if (animated) SGRAnimate(SGRMotionFade, ^{
+        self->_content.alpha = 1;
+        self->_words.alpha = 1;
+    }, nil);
+    else _content.alpha = _words.alpha = 1;
 }
 
 - (void)disappear:(void (^)(void))done {
     SGRAnimate(SGRMotionFade, ^{
         self->_content.alpha = 0;
+        self->_words.alpha = 0;
         self->_lyricsBlur.effect = nil;
     }, ^(BOOL finished) { done(); });
 }
@@ -406,6 +634,8 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     void (^apply)(void) = ^{ self->_lyricsBlur.effect = blurred ? blurEffect() : nil; };
     if (animated) SGRAnimate(SGRMotionFade, apply, nil);
     else apply();
+    // The words go while the player's own lyrics are open, and come back when they close.
+    [self readLine];
     [self updateMotion];
 }
 
@@ -418,7 +648,15 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
         [self artworkChanged];
     }
     if (!state.isPaused) _idle = NO;
+    // A pause leaves the link down, so the new track's line (or the same one, a pause into the song) is read here.
+    [self takeUpTrack];
+    [self readLine];
     [self updateMotion];
+}
+
+// With the link down (a pause, a scrub while paused) a position report is the only clock there is.
+- (void)playerStateDidReport:(SPTPlayerState *)state {
+    if (_style == SGRLyricsStyle && (!_link || _sample)) [self readLine];
 }
 
 - (void)didMoveToWindow {
@@ -472,9 +710,15 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     }
     SPTPlayerState *state = SGPlayerState();
     BOOL playing = state && !state.isPaused;
+    // The settings card's sample has no track to play: its clock steps the lines for as long as it is on screen.
+    BOOL sampleTicking = _sample && _style == SGRLyricsStyle;
+    // Lyrics keeps its clock while the song plays even through a quiet passage, since the next line must come
+    // in then; the other styles may stop once the hills have settled.
+    BOOL moving = sampleTicking || (_style == SGRLyricsStyle && playing) || (playing && !_idle) || !self.settled;
+    // The card's preview reads the same sound as the player's, so its hills move there too.
     [self setReading:may && playing];
-    [self setMoving:may && ((playing && !_idle) || !self.settled)];
-    BOOL waiting = may && playing && _idle;
+    [self setMoving:may && moving];
+    BOOL waiting = may && playing && _idle && !moving;
     if (waiting && !_wakeTimer) {
         __weak SGRVisualiserView *weakSelf = self;
         _wakeTimer = [NSTimer timerWithTimeInterval:0.25 repeats:YES block:^(NSTimer *timer) {
@@ -592,6 +836,7 @@ static float ease(float value, float target, double dt, double up, double down) 
     }
     float beat = silent ? 0 : fminf(1, fmaxf(0, (kick - (_peak - kPulseRange)) / kPulseRange));
     _pulse = ease(_pulse, beat, dt, still ? kStillEase : kPulseUp, still ? kStillEase : kPulseDown);
+    if (_style == SGRLyricsStyle) [self readLine];
     if (_style == SGRBars) {
         float samples[SGRSpectrumWaveformSamples];
         uint64_t waveGeneration = silent ? 0 : SGRSpectrumReadWaveform(samples);
@@ -661,14 +906,23 @@ static void shape(CAShapeLayer *layer, const float *bands, CGFloat width, CGFloa
     CGFloat foot = MAX(baseline, bounds.size.height), rest = round(screen * kRestHeight);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    if (_style != SGRHills) {
+    // Lyrics draws the hills too, at a share of their height and with the words over them.
+    if (_style != SGRHills && _style != SGRLyricsStyle) {
         [self drawStyleWithBaseline:baseline screen:screen];
         [CATransaction commit];
         return;
     }
-    shape(_backShape, _back, bounds.size.width, baseline, foot, screen * kBackHeight, rest * 1.5);
-    shape(_frontShape, _front, bounds.size.width, baseline, foot, screen * kFrontHeight, rest);
+    BOOL calm = _style == SGRLyricsStyle;
+    CGFloat share = calm ? kLyricHills : 1;
+    shape(_backShape, _back, bounds.size.width, baseline, foot, screen * kBackHeight * share, rest * 1.5);
+    shape(_frontShape, _front, bounds.size.width, baseline, foot, screen * kFrontHeight * share, rest);
     _frontFill.opacity = kPulseFloor + (1 - kPulseFloor) * _pulse;
+    if (calm) {
+        // The words breathe with the kick: a little brighter and a little larger, never much either way.
+        CGFloat pulse = SGRReduceMotion() ? 0 : _pulse;
+        _lyricBox.alpha = 0.84f + 0.16f * pulse;
+        _lyricBox.transform = CGAffineTransformMakeScale(1 + 0.03f * pulse, 1 + 0.03f * pulse);
+    }
     _crestFade.startPoint = CGPointMake(0.5, (baseline - screen * kFadeTop) / bounds.size.height);
     _crestFade.endPoint = CGPointMake(0.5, (baseline - screen * kFadeFoot) / bounds.size.height);
     [CATransaction commit];
@@ -750,7 +1004,10 @@ BOOL SGRPlayerVisualiserShowing(void) {
 }
 
 UIView *SGRPlayerVisualiserPreview(void) {
-    return [[SGRVisualiserView alloc] initWithFrame:CGRectZero];
+    SGRVisualiserView *view = [[SGRVisualiserView alloc] initWithFrame:CGRectZero];
+    // No track plays in the card, so the Lyrics style reads LyricsLook's sample lines there.
+    view.sample = YES;
+    return view;
 }
 
 // The hills from the top of the field to the foot of its bleed, standing on the screen's foot.

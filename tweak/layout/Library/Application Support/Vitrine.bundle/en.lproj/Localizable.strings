@@ -2234,6 +2234,7 @@
 "settings.visualizer.style.choice.bars" = "Bars";
 "settings.visualizer.style.choice.halo" = "Halo";
 "settings.visualizer.style.choice.hills" = "Hills";
+"settings.visualizer.style.choice.lyrics" = "Lyrics";
 "settings.visualizer.style.choice.nebula" = "Nebula";
 
 "settings.workshop.audio_presets.title" = "Audio presets";

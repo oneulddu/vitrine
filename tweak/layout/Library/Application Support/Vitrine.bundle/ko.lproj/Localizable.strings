@@ -1947,6 +1947,7 @@
 "settings.visualizer.style.choice.bars" = "막대";
 "settings.visualizer.style.choice.halo" = "헤일로";
 "settings.visualizer.style.choice.hills" = "언덕";
+"settings.visualizer.style.choice.lyrics" = "가사";
 "settings.visualizer.style.choice.nebula" = "성운";
 "settings.workshop.audio_presets.title" = "오디오 프리셋";
 "settings.workshop.free_fonts.title" = "무료 서체";
