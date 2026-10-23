@@ -81,6 +81,7 @@ SGModRow *SGChoiceRow(NSString *t, NSString *s, NSString *k, NSArray *c, NSInteg
 @implementation SGLyricsResult
 @end
 void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {}
+SGLyricsResult *SGLyricsPlainResult(NSArray<NSString *> *rows) { return nil; }
 static NSString *testLanguage;
 NSString *SGLyricsTranslationLanguage(void) { return testLanguage; }
 SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { SGModRow *r = [SGModRow new]; r.title = t; r.subtitle = s; r.value = v; r.action = a; return r; }

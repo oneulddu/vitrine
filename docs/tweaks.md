@@ -227,7 +227,7 @@ Shared:
                   The old Type first boolean migrates to 0/1. Stored source orders are unchanged; unset
                   orders prioritize Imported LRC, Spicy Lyrics, BiniLyrics, LyricsPlus, Musixmatch, Unison,
                   Deezer, NetEase, LRCLIB, Bugs, Genie, QQ Music, KuGou and Genius. Genius.m, last: untimed words for a track no
-                  other source has, the song found by the line meanings' search (SGGeniusSongIn in LyricsMeanings/Meanings.m, the match itself in SongMatch.m, which LRCLIB's search shares)
+                  other source has, the song found by the search the line meanings share (SGGeniusSongIn in SongMatch.m, whose match LRCLIB's search shares too)
                   and the words read from its embed script, which is scraping (no API gives the text); checked on
                   the Mac against harness/genius-lyrics/. color-lyrics is answered with whichever won
                   (LyricsHook.x): Spotify's own 200 gets our lines swapped in; a track Spotify's metadata says has none has
