@@ -745,7 +745,7 @@ Redesigned:
                   plays a square clip (Apple Music's square animated cover, no taller than 1.05:1) inside the cover
                   itself, a subview of the cover on screen that takes its corners, paused shrink and swipe, over the
                   field as it is; any taller clip
-                  runs edge to edge from the top over its own last rows drawn on down, with a blur coming in
+                  runs edge to edge from the top over the color of its last rows drawn on down, with a blur coming in
                   from the seam under the controls and over the whole clip behind the lyrics. The clip and the cover
                   cross over as one comes and the other goes, the clip from its poster frame before the video has
                   decoded one, and the Fluid field under a clip holds still and, once the clip has faded in, is hidden
