@@ -672,6 +672,8 @@
             const q = new URLSearchParams(location.search);
             if (q.get('seed')) params.seed = parseInt(q.get('seed'));
             for (const id of paramIds) if (q.get(id)) params[id] = parseFloat(q.get(id));
+            // &palette=RRGGBB,RRGGBB,RRGGBB swaps the three light colors, for the alternate icons.
+            if (q.get('palette')) params.colorPalette = q.get('palette').split(',').map(c => '#' + c);
             if (q.get('render')) {
                 const st = document.createElement('style');
                 st.textContent = '.sidebar{display:none}.container{padding:0}#canvas-container{max-width:none;width:1024px;border-radius:0;box-shadow:none}body{background:#000;margin:0}';
