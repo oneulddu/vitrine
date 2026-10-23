@@ -9,6 +9,9 @@ void SGRSystemMenuWatch(UIView *button, SGRMenuItems items, SGRMenuKind kind) {
 UIAction *SGRLyricsSearchAction(NSString *track) {
     return [UIAction actionWithTitle:@"Search Lyrics" image:nil identifier:nil handler:^(UIAction *action) {}];
 }
+// LyricsStyle.m and PlayerQueue.m: the lyrics style submenu and Playing Next, whose own items are not under test.
+UIMenu *SGRLyricsStyleMenu(NSString *title) { return [UIMenu menuWithTitle:title children:@[]]; }
+void SGRPlayerShowQueue(UIView *from) {}
 SGRPlayerBackgroundKind SGRPlayerBackground(void) { return SGRPlayerBackgroundFluid; }
 void SGRPlayerMenuSetBackground(SGRPlayerBackgroundKind kind) {}
 
@@ -22,9 +25,12 @@ void SGTestRedesignMenu(void) {
     SGRPlayerMenuWatch(source);
     SGTestPiPState(NO, NO, NO);
     NSArray *items = menuItems();
-    SGTestAssert(items.count == 5 && [((UIAction *)items[0]).title isEqual:@"Speed, Pitch & Reverb"]
-        && [((UIAction *)items[2]).title isEqual:@"Search Lyrics"] && [menuKind() isEqual:@"track"],
-        @"redesign preserves sound, lyric search and alternate artwork items");
+    // Sound, PiP, Playing Next, Search Lyrics, Lyrics Style, then the two backgrounds the player is not showing.
+    SGTestAssert(items.count == 7 && [((UIAction *)items[0]).title isEqual:@"Speed, Pitch & Reverb"]
+        && [((UIAction *)items[2]).title isEqual:@"Playing Next"]
+        && [((UIAction *)items[3]).title isEqual:@"Search Lyrics"] && [items[4] isKindOfClass:UIMenu.class]
+        && [menuKind() isEqual:@"track"],
+        @"redesign preserves sound, queue, lyric search, lyric style and alternate artwork items");
     UIAction *pip = items[1];
     SGTestAssert([pip.title isEqual:@"Open lyrics Picture in Picture"] && !(pip.attributes & UIMenuElementAttributesDisabled),
         @"redesign exposes enabled action even when launch flag is off");
@@ -41,6 +47,6 @@ void SGTestRedesignMenu(void) {
     SGTestPiPState(YES, YES, NO);
     SGTestAssert([((UIAction *)menuItems()[1]).title isEqual:@"Close lyrics Picture in Picture"], @"redesign active entry is close");
     SGTestSetTrack(@"spotify:episode:episode", nil);
-    SGTestAssert(menuItems().count == 4 && [menuKind() isEqual:@"episode"], @"podcast keeps PiP and still excludes lyric search");
+    SGTestAssert(menuItems().count == 5 && [menuKind() isEqual:@"episode"], @"podcast keeps PiP and Playing Next, and still excludes lyric search and style");
     SGTestPiPState(NO, NO, NO);
 }
