@@ -167,6 +167,7 @@ void SGLyricsChooseSource(NSString *trackID, NSString *key) {
         sg_automatic[trackID] = automatic;
     }
     sg_chosen[trackID] = key;
+    SGLyricsInvalidateDelivery(trackID);
     SGLog(@"lyrics: %@ picked for %@, %lu lines", key, trackID, (unsigned long)lyrics.karaokeLines.count);
     SGLyricsKeepChosen(trackID, lyrics);
     show(trackID, lyrics.provider, lyrics.karaokeLines);
@@ -193,6 +194,10 @@ void SGLyricsChooseAutomatic(NSString *trackID) {
     [sg_chosen removeObjectForKey:trackID];
     [sg_automatic removeObjectForKey:trackID];
     // The order's answer when it was learned, else nothing, so the next request walks the order again.
+    SGLyricsInvalidateDelivery(trackID);
+    // A pick is saved offline too. Cancel pending writes/reads and delete its disk entry before
+    // restoring or asking again, so an evicted Automatic snapshot cannot resurrect the pick.
+    SGKaraokeForgetLyrics(trackID);
     SGLyricsRestoreKept(trackID, automatic.kept);
     if (!automatic.lines) {
         // What the track showed is gone with its record, or was nothing while its walk ran: the lyrics are

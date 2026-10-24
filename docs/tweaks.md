@@ -240,9 +240,10 @@ Shared:
                   source is on. In the redesign, with a translation language chosen, lines kept for the lyrics view with
                   no translation of their own take Musixmatch's community translations (Musixmatch.m), whichever
                   source won, Spotify's own included: matched by the line's folded text, as copies kept in place of the
-                  lines (KaraokeSource.x), which the view picks up. The walk stops at the first timed answer; with
-                  Prefer word-by-word timing (off by default, read by every walk) it asks on to the first source with
-                  words timed and else keeps the finest it saw, the highest among equals (settled()). The redesigned
+                  lines (KaraokeSource.x), which the view picks up. The default Word timing first mode asks
+                  sequentially for word timing; In order and All at once follow the rules above.
+                  Prefer word-by-word timing (off by default) changes In order mode only: it asks on for
+                  word-timed lines, otherwise keeping the finest timing found with ties going to source priority. The redesigned
                   player's ⋯ has Lyrics Source (LyricsPick.m): every source asked at once for the song playing, a pick
                   shown at once and kept in memory until Spotify quits, and Automatic putting back what the order chose
     LyricsTranslation/ a song's lines translated from the lyrics' corner menu, for the lines no source translated, three
@@ -1162,7 +1163,9 @@ bar (off, the bar is Spotify's own tabs in Spotify's order, the list kept); two 
 Icons and names or Icons only (the glass bar's names hidden, applying straight away); the tabs, each with a
 check circle that shows or hides it, its glyph (TabBar.x draws Spotify's own off their items on the bar) and
 the drag handle, a tap on a tab of the mod's own opening the Add a Tab sheet as Edit Tab, with Save and Remove
-Tab; Add a tab and Use Spotify's tabs; and Split tabs. Spotify's own tabs keep their names and icons. Checked
+Tab; Add a tab and Use Spotify's tabs; and Split tabs. The redesign's split-list migration
+(`SGRMigrateNavbarSplit` in `Redesigned/Navbar/NavbarLayout.m`) is one-way: downgrading to a build before
+it loses split placement and custom split tabs. Spotify's own tabs keep their names and icons. Checked
 in the simulator against harness/addtab/ (`navbar`, `icons`, `off`, `hide`, `edit`, `remove`, `links`).
 
 ## Localization

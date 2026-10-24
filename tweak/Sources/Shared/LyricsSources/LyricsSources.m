@@ -341,7 +341,7 @@ static NSMutableDictionary<NSString *, id> *sg_kept;
 static NSMutableDictionary<NSString *, NSMutableArray *> *sg_waiting;
 static NSMutableSet<NSString *> *sg_missing;
 static NSMutableDictionary<NSString *, NSNumber *> *sg_pins;
-// Guarded by sg_pins; generations survive unpinning to reject old hook deliveries.
+// Guarded by sg_pins; generations survive unpinning and source picks to reject old hook deliveries.
 static NSMutableDictionary<NSString *, NSNumber *> *sg_pinGenerations;
 NSNotificationName const SGLyricsPinDidChangeNotification = @"spotifyglass.lyrics.pinDidChange";
 NSNotificationName const SGLyricsDidReloadNotification = @"spotifyglass.lyrics.didReload";
@@ -381,6 +381,14 @@ NSNumber *SGLyricsPinnedID(NSString *trackID) {
 NSUInteger SGLyricsPinGeneration(NSString *trackID) {
     setUp();
     @synchronized (sg_pins) { return trackID ? sg_pinGenerations[trackID].unsignedIntegerValue : 0; }
+}
+
+void SGLyricsInvalidateDelivery(NSString *trackID) {
+    if (!trackID.length) return;
+    setUp();
+    @synchronized (sg_pins) {
+        sg_pinGenerations[trackID] = @(sg_pinGenerations[trackID].unsignedIntegerValue + 1);
+    }
 }
 
 static void whenNamed(NSString *trackID, NSTimeInterval waited, NSMutableArray *waiting);
@@ -1049,10 +1057,18 @@ id SGLyricsKeptAnswer(NSString *trackID) {
 
 void SGLyricsRestoreKept(NSString *trackID, id kept) {
     setUp();
+    // Automatic changes the order, even when a saved answer can be shown immediately.
+    // Retire the promoted-source walk, preserving its consumers for a fresh configured-order walk.
+    NSMutableArray *waiting = [sg_waiting[trackID] mutableCopy];
+    [sg_waiting removeObjectForKey:trackID];
     if (kept) sg_kept[trackID] = kept;
     else [sg_kept removeObjectForKey:trackID];
     @synchronized (sg_missing) {
         if (kept == NSNull.null) [sg_missing addObject:trackID];
         else [sg_missing removeObject:trackID];
+    }
+    if (waiting) {
+        sg_waiting[trackID] = waiting;
+        whenNamed(trackID, 0, waiting);
     }
 }

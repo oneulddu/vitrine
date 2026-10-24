@@ -47,6 +47,8 @@ void SGLrcLibSearch(NSString *title, NSString *artist, NSInteger seconds, void (
 NSNumber *SGLyricsPinnedID(NSString *trackID);
 // Safe from any thread. A hook request must discard its delivery if this changes.
 NSUInteger SGLyricsPinGeneration(NSString *trackID);
+// Main queue: a menu source pick or Automatic also invalidates in-flight hook deliveries.
+void SGLyricsInvalidateDelivery(NSString *trackID);
 // Keeps the record's lines and LRCLIB credit now, replacing the walk's kept answer too. NO, changing
 // nothing, for a record with no lines that is not instrumental. Main queue.
 BOOL SGLyricsPin(NSString *trackID, NSDictionary *record);

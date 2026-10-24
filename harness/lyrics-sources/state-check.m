@@ -744,6 +744,137 @@ static void checkReload(void) {
     printf("reload: cleared caches, request generations, notification order, kept pin and stale reply rejection passed\n");
 }
 
+// Both providers are real walk/menu entries; only their network callbacks are controlled here.
+// Run one race in isolation with VITRINE_PICK_RACE=1, 2 or 3 to check it against pre-fix sources.
+static void checkPickRaces(NSUInteger only) {
+    NSArray *keys = @[@"musixmatch", @"netease"];
+    NSMutableArray *saved = [NSMutableArray array];
+    NSMutableDictionary *pending = [NSMutableDictionary dictionary];
+    __block BOOL hold = NO;
+    for (NSString *key in keys) {
+        SGLyricsProvider *provider = SGLyricsProviderFor(key);
+        [saved addObject:(id)provider.ask ?: NSNull.null];
+        provider.ask = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *)) {
+            if (hold) pending[key] = [done copy];
+            else done(madeUpLyrics(key, SGKaraokeTimingWords));
+        };
+    }
+    SGLyricsSetOrder(keys);
+    SGSetInt(SGKeyLyricsAskMode, 0);
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:SGKeyLyricsPreferWordTiming];
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:SGKeyLyricsOffline];
+    void (^prepare)(NSString *) = ^(NSString *track) {
+        SGKaraokeRequestLyrics(track);
+        pumpUntil(^BOOL { return SGKaraokeLinesForTrack(track) != nil; });
+        CHECK([SGLyricsCreditFor(track) isEqual:keys[0]]);
+        SGLyricsAskOffers(track);
+    };
+    void (^evictAutomatic)(void) = ^{
+        // Exercise the real 40-song snapshot bound, not a test-only cache deletion.
+        for (NSUInteger i = 0; i < 40; i++) {
+            NSString *other = NSUUID.UUID.UUIDString;
+            SGLyricsAskOffers(other);
+            SGLyricsChooseSource(other, keys[1]);
+        }
+    };
+    if (!only || only == 1) {
+        for (NSNumber *pendingWrite in @[@NO, @YES]) {
+            NSString *track = NSUUID.UUID.UUIDString;
+            prepare(track);
+            SGLyricsChooseSource(track, keys[1]);
+            evictAutomatic();
+            [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGKeyLyricsOffline];
+            // Re-open after menu eviction, and save the pick with no Automatic snapshot left.
+            SGLyricsAskOffers(track);
+            SGLyricsChooseSource(track, keys[1]);
+            if (!pendingWrite.boolValue) {
+                drainReplies();
+                __block BOOL loaded = NO;
+                SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *credit) {
+                    CHECK(lines.count && [credit isEqual:keys[1]]); loaded = YES;
+                });
+                pumpUntil(^BOOL { return loaded; });
+            } else CHECK(sg_storeWrites[track] != nil);
+            SGLyricsChooseAutomatic(track);
+            SGKaraokeRequestLyrics(track);
+            pumpUntil(^BOOL { return SGKaraokeLinesForTrack(track) != nil; });
+            CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(track).firstObject) isEqual:keys[0]]);
+            CHECK([SGLyricsCreditFor(track) isEqual:keys[0]] && !SGLyricsChosenSource(track));
+            drainReplies();
+            __block BOOL loaded = NO;
+            SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *credit) {
+                CHECK([SGKaraokeLineText(lines.firstObject) isEqual:keys[0]] && [credit isEqual:keys[0]]);
+                loaded = YES;
+            });
+            pumpUntil(^BOOL { return loaded; });
+            [NSUserDefaults.standardUserDefaults setBool:NO forKey:SGKeyLyricsOffline];
+        }
+        printf("pick race 1: evicted Automatic snapshot rejects persisted pick and pending offline write passed\n");
+    }
+    if (!only || only == 2) {
+        NSString *track = NSUUID.UUID.UUIDString;
+        prepare(track);
+        for (id choice in @[keys[1], keys[0], NSNull.null]) {
+            SGLyricsTaskState *state = [SGLyricsTaskState new];
+            state.kind = SGLyricsTaskDonor; state.track = track;
+            state.pinGeneration = SGLyricsPinGeneration(track);
+            __block BOOL forwarded = NO;
+            answerDonor(nil, state, sg_kept[track], nil, nil, ^(NSURLResponse *response, SGDisposition handler) { forwarded = YES; });
+            CHECK(forwarded && state.chain.texts.count);
+            if (choice == NSNull.null) SGLyricsChooseAutomatic(track);
+            else SGLyricsChooseSource(track, choice);
+            NSArray *lines = SGKaraokeLinesForTrack(track);
+            NSString *credit = SGLyricsCreditFor(track);
+            HarnessDelegate *delegate = [HarnessDelegate new];
+            __block NSError *ended;
+            finishDonor(delegate, nil, nil, state, nil, nil, ^(NSError *error) { ended = error; });
+            CHECK(ended.code == NSURLErrorCancelled && !delegate.deliveries);
+            CHECK(SGKaraokeLinesForTrack(track) == lines && [SGLyricsCreditFor(track) isEqual:credit]);
+        }
+        printf("pick race 2: donor body held across source pick, another pick and Automatic is cancelled without changing lines/credit passed\n");
+    }
+    if (!only || only == 3) {
+        for (NSNumber *mode in @[@0, @1, @2]) {
+            SGSetInt(SGKeyLyricsAskMode, mode.integerValue);
+            NSString *track = NSUUID.UUID.UUIDString;
+            prepare(track);
+            SGLyricsChooseSource(track, keys[1]);
+            // Replay after the walk/line caches have been evicted, with its original snapshot intact.
+            [sg_kept removeObjectForKey:track];
+            [sg_lyrics removeObjectForKey:track];
+            [sg_requested removeObject:track];
+            [pending removeAllObjects]; hold = YES;
+            __block NSUInteger deliveries = 0;
+            for (NSUInteger i = 0; i < 2; i++) SGLyricsFetch(track, ^(SGLyricsResult *result) {
+                CHECK([result.provider isEqual:keys[0]]); deliveries++;
+            });
+            SGKaraokeRequestLyrics(track);
+            pumpUntil(^BOOL { return pending[keys[1]] && sg_waiting[track].count == 3; });
+            CHECK(!pending[keys[0]]);
+            void (^old)(SGLyricsResult *) = pending[keys[1]];
+            SGLyricsChooseAutomatic(track);
+            CHECK([SGLyricsCreditFor(track) isEqual:keys[0]]);
+            old(madeUpLyrics(@"stale promoted provider", SGKaraokeTimingWords));
+            drainReplies();
+            CHECK(!deliveries && [SGLyricsCreditFor(track) isEqual:keys[0]]);
+            CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(track).firstObject) isEqual:keys[0]]);
+            CHECK(pending[keys[0]] != nil);
+            void (^first)(SGLyricsResult *) = pending[keys[0]];
+            first(madeUpLyrics(keys[0], SGKaraokeTimingWords));
+            pumpUntil(^BOOL { return deliveries == 2; });
+            CHECK(!sg_waiting[track] && [((SGLyricsResult *)sg_kept[track]).provider isEqual:keys[0]]);
+            old(madeUpLyrics(@"stale again", SGKaraokeTimingWords));
+            CHECK(deliveries == 2 && [SGLyricsCreditFor(track) isEqual:keys[0]]);
+            hold = NO;
+        }
+        printf("pick race 3: Automatic retires promoted walk in all three modes, restarts configured order and serves both waiters once passed\n");
+    }
+    for (NSUInteger i = 0; i < keys.count; i++)
+        SGLyricsProviderFor(keys[i]).ask = saved[i] == NSNull.null ? nil : saved[i];
+    SGSetInt(SGKeyLyricsAskMode, 0);
+    SGLyricsSetOrder(@[@"musixmatch"]);
+}
+
 int main(void) {
     @autoreleasepool {
         // A separate suite makes the default writes real without touching the app's or the user's.
@@ -769,6 +900,8 @@ int main(void) {
         sg_requested = [NSMutableSet set]; sg_asking = [NSMutableSet set]; sg_looking = [NSMutableSet set];
         sg_losses = [NSMutableDictionary dictionary]; sg_ownSources = YES;
         sg_lastSeenID = @"song";
+        const char *race = getenv("VITRINE_PICK_RACE");
+        if (race) { checkPickRaces((NSUInteger)atoi(race)); return 0; }
         HarnessPort *port = [HarnessPort new]; port.UID = @"headphones-one"; port.portName = @"Headphones"; port.portType = AVAudioSessionPortBluetoothA2DP;
         sg_fakeRoute = [HarnessRoute new]; sg_fakeRoute.outputs = @[port];
         Method routeMethod = class_getInstanceMethod(AVAudioSession.class, @selector(currentRoute));
@@ -864,6 +997,7 @@ int main(void) {
         checkWalkEarlyAnswer();
         checkConcurrentWalk();
         checkReload();
+        checkPickRaces(0);
         for (NSUInteger i = 0; i < 501; i++) CHECK(SGLyricsPin([@(i) stringValue], record));
         CHECK([defaults dictionaryForKey:SGKeyLyricsPins].count == 500 && [SGLyricsPinnedID(@"500") isEqual:@123]);
         [NSNotificationCenter.defaultCenter removeObserver:observer];
