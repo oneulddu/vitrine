@@ -11,6 +11,9 @@
 #pragma mark - SGRAccent.x, SGRRepaint.x
 
 UIColor *SGRAccentColor(void) { return nil; }
+// Spotify's own green is kept, so no color is swapped (PlayerCoverAccent.x asks).
+NSInteger SGRAccentRGB(void) { return 0x1ED760; }
+BOOL SGRAccentSwap(CGFloat *r, CGFloat *g, CGFloat *b) { return NO; }
 __weak UIView *sgr_nowPlayingRoot = nil;
 NSHashTable<UIView *> *sgr_nowPlayingPainted = nil;
 __weak UIView *sgr_lyricsPageRoot = nil;
@@ -106,7 +109,7 @@ NSNotificationName const SGKaraokeLinesKeptNotification = @"harness.karaokeLines
 BOOL SGKaraokeLooking(NSString *trackID) { return NO; }
 id SGKaraokePlayer(void) { return nil; }
 SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) { return nil; }
-void SGKaraokeRememberTrack(SPTPlayerTrack *track) {}
+void SGKaraokeRememberTrack(SPTPlayerTrack *track, NSString *trackID) {}
 
 // The song runs on from the moment the harness started it, so the sweep is alive in a screenshot.
 NSInteger SGKaraokeDelayMs(void) { return [NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsDelay]; }
@@ -140,6 +143,27 @@ void SGLyricsMeaningsFor(NSString *trackID, NSArray<SGKaraokeLine *> *lines,
                               progress:(void (^)(NSArray<NSString *> *))progress
                                   done:(void (^)(NSArray<NSString *> *, NSString *))done { done(nil, @"harness"); }
 @end
+// Upstream's AI API is not linked by this fork; keep its harness-only stubs as well.
+BOOL SGAITranslatorReady(void) { return NO; }
+NSString *SGLyricsTranslationTarget(void) { return @"en"; }
+void SGLyricsTranslateWithAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
+                             void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+NSString *SGAITranslatorName(void) { return @"Gemini"; }
+NSString *SGAITranslatorRecipient(void) { return @"Google"; }
+@interface SGTranslationSource : NSObject
+@property (nonatomic, copy, readonly) NSString *by, *model;
+@property (nonatomic, readonly) NSDate *made;
++ (instancetype)by:(NSString *)by model:(NSString *)model made:(NSDate *)made;
+@property (nonatomic, readonly) NSString *name;
+@property (nonatomic, readonly) BOOL deletable;
+@end
+@implementation SGTranslationSource
++ (instancetype)by:(NSString *)by model:(NSString *)model made:(NSDate *)made { return [self new]; }
+- (NSString *)name { return @"Unknown"; }
+- (BOOL)deletable { return NO; }
+@end
+SGTranslationSource *SGAITranslatorSource(void) { return [SGTranslationSource by:@"gemini" model:nil made:nil]; }
+void SGLyricsDeleteSavedTranslation(NSString *track, NSString *language) {}
 
 // Local files: no edits in the harness, so the name is all PlayerLyrics.x needs to watch for one.
 #import "Shared/LocalFiles/LocalFiles.h"
@@ -283,6 +307,7 @@ NSString *SGSingModelError(void) { return nil; }
 NSString *SGSingModelSizeText(void) { return @""; }
 void SGSingDownloadModel(void) {}
 void SGSingCancelModelDownload(void) {}
+NSNotificationName const SGSingButtonDidChangeNotification = @"harness.singButtonDidChange";
 
 // MotionSources.m: the default order, Canvas then Apple Music, over the catalog the harness builds. No
 // Canvas service: a track whose metadata names no Canvas goes to Apple Music.

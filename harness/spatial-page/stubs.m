@@ -40,11 +40,16 @@ void SGSetSingSpatial(BOOL on) {
     SGSetEnabled(SGKeySingSpatial, on);
     NSLog(@"[harness] spatial voice %@", on ? @"on" : @"off");
 }
-// Sing.x's stored spatial values, kept in the defaults the page's sliders write.
-double SGSingSpatialDistance(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialDistance] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialDistance] : 1.5; }
-double SGSingSpatialRoom(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialRoom] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialRoom] : 25; }
-double SGSingSpatialFront(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialFront] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialFront] : 5; }
-double SGSingSpatialWidth(void) { return [NSUserDefaults.standardUserDefaults objectForKey:SGKeySingSpatialWidth] ? [NSUserDefaults.standardUserDefaults doubleForKey:SGKeySingSpatialWidth] : 110; }
+// Sing.x's stored sound, with its defaults and ranges; no engine to hand it to.
+static double storedNumber(NSString *key, double fallback, double low, double high) {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:key];
+    double number = [value isKindOfClass:NSNumber.class] ? [value doubleValue] : fallback;
+    return isfinite(number) ? fmin(high, fmax(low, number)) : fallback;
+}
+double SGSingSpatialDistance(void) { return storedNumber(SGKeySingSpatialDistance, 1.5, 1, 6.5); }
+double SGSingSpatialRoom(void) { return storedNumber(SGKeySingSpatialRoom, 25, 0, 100); }
+double SGSingSpatialFront(void) { return storedNumber(SGKeySingSpatialFront, 5, 5, 60); }
+double SGSingSpatialWidth(void) { return storedNumber(SGKeySingSpatialWidth, 110, 0, 200); }
 void SGSetSingSpatialSound(double meters, double roomPercent, double frontSeconds, double widthPercent) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     [defaults setDouble:meters forKey:SGKeySingSpatialDistance];

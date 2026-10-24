@@ -6,7 +6,7 @@ OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/PlayerHarness.app"
 
 for f in Redesigned/Player/PlayerLyrics.x Redesigned/Player/PlayerArtwork.x Redesigned/Player/PlayerFooter.x \
-         Redesigned/Player/PlayerScroll.x Redesigned/Player/PlayerField.x Redesigned/Player/PlayerMotion.x Redesigned/Player/PlayerLandscape.x Redesigned/Player/PlayerControls.x Redesigned/Player/PlayerHeader.x Redesigned/Kit/SGRBridges.x; do
+         Redesigned/Player/PlayerScroll.x Redesigned/Player/PlayerField.x Redesigned/Player/PlayerMotion.x Redesigned/Player/PlayerLandscape.x Redesigned/Player/PlayerControls.x Redesigned/Player/PlayerHeader.x Redesigned/Player/PlayerCoverAccent.x Redesigned/Kit/SGRBridges.x; do
     name=$(basename "$f" .x)
     "$THEOS/bin/logos.pl" -c generator=internal "$SRC/$f" > "$OUT/gen/$name.m"
 done
@@ -24,15 +24,15 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     "$SRC"/Shared/AnimatedArtwork/SGMotionFollower.m "$SRC"/Shared/AnimatedArtwork/SGMotionClip.m "$SRC"/Shared/Player/SGLastTrack.m \
     "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Settings/SGMarquee.m "$SRC"/Redesigned/Kit/SGRGlyph.m "$SRC"/Redesigned/Kit/SGRRestyle.m \
     "$SRC"/Redesigned/Kit/SGRedesign.m \
-    "$SRC"/Redesigned/Player/PlayerSettings.m "$SRC"/Redesigned/Player/PlayerVisualiser.m "$SRC"/Redesigned/Player/SGRSpectrum.m "$SRC"/Redesigned/NowPlayingBar/NowPlayingBarSettings.m \
+    "$SRC"/Redesigned/Player/PlayerSettings.m "$SRC"/Redesigned/Player/PlayerVisualiser.m "$SRC"/Redesigned/Player/SGRSpectrum.m "$SRC"/Redesigned/Player/PlayerVolume.m "$SRC"/Redesigned/NowPlayingBar/NowPlayingBarSettings.m \
     $( [ -f "$SRC"/Redesigned/Player/PlayerBackdrop.m ] && echo "$SRC"/Redesigned/Player/PlayerBackdrop.m ) \
     "$SRC"/Settings/SGPage.m "$SRC"/Settings/SGPageStyle.m "$SRC"/Settings/SGModPage.m "$SRC"/Settings/SGGlowSwitch.m \
     $( [ -f "$SRC"/Settings/SGSettingsSearch.m ] && echo "$SRC"/Settings/SGSettingsSearch.m ) \
     $( [ -f "$SRC"/Redesigned/Lyrics/AutoTranslation.m ] && echo "$SRC"/Redesigned/Lyrics/AutoTranslation.m ) $( [ -f "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ] && echo "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ) "$SRC"/Redesigned/Lyrics/SGRKaraokeView.m "$SRC"/Redesigned/Lyrics/LyricsLook.m "$SRC"/Redesigned/Lyrics/LyricsStyle.m "$SRC"/Redesigned/Kit/SGRPress.m "$SRC"/Redesigned/Lyrics/SGRSingButton.m "$SRC"/Redesigned/Lyrics/MeaningSheet.m "$SRC"/Redesigned/Lyrics/LyricsText.m "$SRC"/Shared/Lyrics/KaraokeTiming.m "$SRC"/Shared/Lyrics/Romanise.m "$SRC"/Shared/AdBlock/Protobuf.m \
     "$SRC"/Shared/Lyrics/LyricsLanguage.m "$SRC"/Shared/Lyrics/LyricsSettings.m "$SRC"/Redesigned/Lyrics/SongLanguage.m "$SRC"/Redesigned/Lyrics/LyricsTools.m \
     "$SRC"/Shared/LyricsTranslation/LyricsTranslation.m "$SRC"/Shared/LyricsTranslation/SavedTranslations.m "$SRC"/Shared/LyricsTranslation/TranslatedTitles.m "$SRC"/Shared/LyricsTranslation/AIServices.m "$SRC"/Shared/LyricsTranslation/OpenAITranslate.m "$SRC"/Shared/LyricsTranslation/BingTranslate.m "$SRC"/Shared/LyricsTranslation/ClaudeTranslate.m "$SRC"/Shared/LyricsTranslation/DeepL.m "$SRC"/Shared/LyricsTranslation/GoogleTranslate.m \
-    \
-    -framework UIKit -framework IOKit -framework QuartzCore -framework Metal -framework CoreGraphics -framework CoreImage -framework Foundation -framework NaturalLanguage -framework Symbols -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework Accelerate -framework PhotosUI -framework Security \
+    "$SRC"/Shared/LyricsSources/SGTTML.m \
+    -framework UIKit -framework IOKit -framework QuartzCore -framework Metal -framework CoreGraphics -framework CoreImage -framework Foundation -framework NaturalLanguage -framework Symbols -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework Accelerate -framework PhotosUI -framework Security -framework MediaPlayer \
     -o "$OUT/PlayerHarness.app/PlayerHarness"
 
 cat > "$OUT/PlayerHarness.app/Info.plist" <<'PLIST'

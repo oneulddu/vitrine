@@ -34,6 +34,9 @@ __attribute__((constructor)) static void underneath(void) {
 
 #pragma mark - stubs
 
+// These preference stubs read live values or fallbacks, so there is no cache to invalidate.
+void SGPrefsChanged(void) {}
+
 BOOL SGFlag(NSString *key, BOOL fallback) {
     return [key isEqual:SGKeyLockScreenLyrics] ? getenv("LSL") != NULL : fallback;
 }
@@ -72,6 +75,8 @@ id SGKaraokePlayer(void) { return sg_player; }
 NSString *SGKaraokePlayingTrack(void) { return sg_player.state.track.URI; }
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) { return sg_lines; }
 void SGKaraokeRequestLyrics(NSString *trackID) {}
+// The lines are there from the start, so nothing is posted under it.
+NSNotificationName const SGKaraokeLinesKeptNotification = @"harness.karaokeLinesKept";
 NSInteger SGKaraokeDelayMs(void) { return [NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsDelay]; }
 // The artist row's translation (LockScreenLyrics.x): the Lyrics line choice stays Original, so the line checked here is
 // the one sung, and nothing is translated.

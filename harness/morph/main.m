@@ -26,6 +26,9 @@ CGRect SGRPlayerCoverFrameIn(UIView *host) {
     return sg_cover.window ? [host convertRect:sg_cover.bounds fromView:sg_cover] : CGRectNull;
 }
 void SGRPlayerSetCoverHidden(BOOL hidden) { sg_cover.alpha = hidden ? 0 : 1; }
+// A playing cover at full size, and no animated artwork over it (PlayerMotion.x).
+CGFloat SGRPlayerCoverScale(void) { return 1; }
+BOOL SGRPlayerMotionShowing(void) { return NO; }
 id SGRPlayerField(void) { return nil; }
 BOOL SGRPlayerBackdropShowing(void) { return NO; }
 // PlayerArtwork.x and PlayerMotion.x, which this harness does not build: the cover fills its frame and

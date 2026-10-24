@@ -23,6 +23,7 @@
 #import "TranslationStatusView.h"
 #import "Settings/SGPageStyle.h"
 #import "Shared/Player/PlayerEvents.h"
+#import "Shared/Player/PlayerState.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Redesigned/Kit/SGRGlass.h"
 #import "Redesigned/Kit/SGRTokens.h"
@@ -113,9 +114,9 @@ static const double kBreakOut = 0.35, kBreakSwell = 1.2, kBreakSwellShare = 0.35
 static const double kBreakSlack = 0.03;
 // A position that has not moved for this long is a paused player, not two frames between readings.
 static const CFTimeInterval kStillFor = 0.1;
-// A song paused this long leaves nothing moving on the page, so its link drops to a few frames a second
-// until the song or the page is touched again.
-static const CFTimeInterval kIdleAfterPause = 1.0;
+// How long after the last thing set moving the page's link drops its rate: past the longest placement
+// (0.3 s of delay and a 0.7 s spring) and a sung line's 0.9 s sink.
+static const CFTimeInterval kCalmAfter = 1.5;
 
 @interface CAFilter : NSObject
 + (instancetype)filterWithType:(NSString *)type;
@@ -637,10 +638,11 @@ typedef struct {
 } SGRPlace;
 
 static NSUInteger flow(NSArray<SGKaraokeWord *> *words, UIFont *font, CGFloat width, SGRPlace *places) {
-    CGFloat space = ceil([@" " sizeWithAttributes:@{NSFontAttributeName: font}].width), x = 0, offset = 0;
+    NSDictionary *attributes = @{NSFontAttributeName: font};
+    CGFloat space = ceil([@" " sizeWithAttributes:attributes].width), x = 0, offset = 0;
     NSUInteger row = 0;
     for (NSUInteger i = 0; i < words.count; i++) {
-        CGFloat wide = ceil([words[i].text sizeWithAttributes:@{NSFontAttributeName: font}].width);
+        CGFloat wide = ceil([words[i].text sizeWithAttributes:attributes].width);
         CGFloat lead = x > 0 && !words[i].joined ? space : 0;
         if (x > 0 && x + lead + wide > width) {
             x = lead = 0;
@@ -810,11 +812,15 @@ static SGRKaraokeLayout *layOut(SGKaraokeLine *line, CGFloat width, SGRKaraokeSt
     layout.right = right >= 0 ? right : alignsRight(line);
     layout.translation = layout.romanised = layout.note = CGRectNull;
     NSArray<SGKaraokeWord *> *spoken = style.pronunciation ? line.pronunciation.words : nil;
-    NSString *translation = style.translation ? SGLyricsShownTranslation(line) : nil;
+    NSString *translation = style.translation ? line.translation : nil;
+    // A translator hands back a line already in the language as it was; the line says it once. It stays
+    // translated, so it is not asked again.
+    NSString *lineText = translation.length || style.romanised ? SGKaraokeLineText(line) : nil;
+    if (translation.length && [SGLyricsBareText(translation) isEqualToString:SGLyricsBareText(lineText)]) translation = nil;
     // A source's own pronunciation, hidden, still reads better than the transform's.
     if (style.romanised && !spoken.count) {
         layout.romanisedText = line.pronunciation ? SGKaraokeLineText(line.pronunciation)
-                                                  : SGLyricsRomanised(SGKaraokeLineText(line), style.japanese);
+                                                  : SGLyricsRomanised(lineText, style.japanese);
     }
     NSMutableArray<NSNumber *> *parts = [NSMutableArray array];
     for (NSNumber *text in style.order) {
@@ -1566,7 +1572,7 @@ typedef struct {
 - (BOOL)accessibilityActivate { return self.activate ? self.activate() : NO; }
 @end
 
-@interface SGRKaraokeView () <UIScrollViewDelegate>
+@interface SGRKaraokeView () <UIScrollViewDelegate, SGPlayerStateObserver>
 @end
 
 @implementation SGRKaraokeView {
@@ -1578,7 +1584,8 @@ typedef struct {
     CGFloat _browseAnchor;
     NSInteger _browseBreak;
     CADisplayLink *_link;
-    BOOL _idleRate;   // whether the link is at the paused rate, so it is only asked for when that changes
+    NSTimer *_poll;              // looking a few times a second while the link is paused, nothing on the page moving
+    CFTimeInterval _stirredAt;   // when something last set the page moving
     NSString *_track;
     NSArray<SGKaraokeLine *> *_lines;
     // The song is placed from its lines' heights alone; views exist for the lines in and near sight.
@@ -1651,6 +1658,7 @@ typedef struct {
     [self takeLook];
     _shown = [NSMutableDictionary dictionary];
     _sightArrangement = NSUIntegerMax;
+    SGAddPlayerStateObserver(self);
     _fade = [CAGradientLayer layer];
     _fade.colors = @[(id)UIColor.clearColor.CGColor, (id)UIColor.whiteColor.CGColor,
                      (id)UIColor.whiteColor.CGColor, (id)UIColor.clearColor.CGColor, (id)UIColor.clearColor.CGColor];
@@ -1819,6 +1827,7 @@ typedef struct {
 }
 
 - (void)tapped:(UITapGestureRecognizer *)tap {
+    [self stir];
     if (_extrasBox && !_extrasBox.hidden && CGRectContainsPoint(_extrasBox.frame, [tap locationInView:self])) return;
     if (_status.showsNote && _statusBox.userInteractionEnabled && CGRectContainsPoint(_statusBox.frame, [tap locationInView:self])) return;
     if (_sing.userInteractionEnabled && [_sing pointInside:[tap locationInView:_sing] withEvent:nil]) return;
@@ -1854,6 +1863,7 @@ typedef struct {
 }
 
 - (void)held:(UILongPressGestureRecognizer *)hold {
+    [self stir];
     if (hold.state != UIGestureRecognizerStateBegan || !_meanings.count) return;
     if (_sing.userInteractionEnabled && [_sing pointInside:[hold locationInView:_sing] withEvent:nil]) return;
     CGPoint point = [hold locationInView:_scroll];
@@ -1892,13 +1902,13 @@ typedef struct {
 // Lines are placed for a content offset of 0, so following the song means scrolling back to 0.
 // While the user browses, placement stands still and every line is sharp.
 - (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
+    [self stir];
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
     if (!_browsing) {
         _browseAnchor = self.bounds.size.height * kAnchor;
         _browseBreak = _openBreak;
     }
     _browsing = YES;
-    [self updateFrameRate];   // a scroll is drawn at full rate from its first frame, not from the next tick
     if (self.browsingBegan) self.browsingBegan();
     for (SGRKaraokeLineView *view in _shown.allValues) view.blur = 0;
 }
@@ -1906,6 +1916,7 @@ typedef struct {
 // In the caller's animation: the glass dematerializes by its effect and the glyph fades by its alpha, the
 // one view of the two with no glass in it.
 - (void)setExtrasHidden:(BOOL)hidden {
+    [self stir];
     _extrasHidden = hidden;
     if (_extrasBox) {
         SGRShowGlass(SGRGlassInside(_extrasBox, &kExtrasGlassKey, kExtrasSide), !hidden);
@@ -1944,9 +1955,9 @@ typedef struct {
 // the player reports the seek, which takes a few frames. Read before then, the position still on the line
 // being sung put the stack back on it, and the seek's arrival then jumped it over to the tapped one.
 - (void)glideTo:(NSInteger)ms {
+    [self stir];
     _seekTo = ms;
     _seekAt = CACurrentMediaTime();
-    [self updateFrameRate];   // the glide to the tapped line needs every frame
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(followSong) object:nil];
     if (_browsing) {
         _browsing = NO;
@@ -1987,6 +1998,8 @@ typedef struct {
 // scripts/battery-probe.sh. Nothing of the card is seen from the background, so nothing is drawn.
 - (void)scheduleLink {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(startLink) object:nil];
+    [_poll invalidate];
+    _poll = nil;
     [_link invalidate];
     _link = nil;
     SGRLyricsHoldAwake(self, NO);   // held again by the next frame, while the song plays
@@ -2012,9 +2025,48 @@ typedef struct {
     if (_inactive || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
     _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick)];
     _link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
-    _idleRate = NO;   // a new link starts full, whatever the last one was left at
+    _stirredAt = CACurrentMediaTime();
     [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     [self queueAutomaticTranslation];
+}
+
+// The frame being drawn, or now while the link is paused.
+- (CFTimeInterval)frameTime {
+    return _link && !_link.paused ? _link.targetTimestamp : CACurrentMediaTime();
+}
+
+// Nothing on the page moves: the link is paused rather than slowed, because a link asking for a low rate,
+// even uncapped, holds the player's 120 Hz animations back (see scheduleLink). A timer, which asks the display
+// for nothing, still watches the track, its lines and the clock a few times a second.
+- (void)calmDown {
+    _link.paused = YES;
+    __weak typeof(self) weakSelf = self;
+    _poll = [NSTimer timerWithTimeInterval:0.2 repeats:YES block:^(NSTimer *timer) { [weakSelf tick]; }];
+    [NSRunLoop.mainRunLoop addTimer:_poll forMode:NSRunLoopCommonModes];
+}
+
+// Something is about to move: the link back at the display's rate before its next frame.
+- (void)stir {
+    _stirredAt = CACurrentMediaTime();
+    if (!_link.paused) return;
+    [_poll invalidate];
+    _poll = nil;
+    _link.paused = NO;
+}
+
+// Play, pause, a new track: the clock is about to move, or the page to change.
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    [self stir];
+}
+
+// A seek while paused, from Spotify's own scrubber: a report that moves the position. A report that
+// leaves it where it was lets the link stay calm.
+- (void)playerStateDidReport:(SPTPlayerState *)state {
+    if (_plain) return;
+    // The player's position less the Delay, as positionMs reads it, from the state reported.
+    NSInteger ms = _sample ? [self positionMs]
+                           : (NSInteger)((state.isPaused ? state.positionAsOfTimestamp : state.position) * 1000) - SGKaraokeDelayMs();
+    if (ms != _reported) [self stir];
 }
 
 - (void)playerTransitionChanged:(NSNotification *)note {
@@ -2920,6 +2972,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 // later, the further down the later, as Apple Music's do. A line sung over it stays where it is
 // below, lit; the stack moves on to it once the line at the anchor is sung out.
 - (void)placeLinesAnimated:(BOOL)animated {
+    [self stir];
     if (_browsing || !_tops.count) return;
     _focusTop = _tops[(NSUInteger)MAX(_focus, 0)].doubleValue;
     [self showLinesInSight];
@@ -3031,7 +3084,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
 // corrections. A seek or a new track is too far off to ease and is taken at once.
 - (double)clockMs {
     NSInteger raw = [self positionMs];
-    CFTimeInterval shown = _link ? _link.targetTimestamp : CACurrentMediaTime();
+    CFTimeInterval shown = [self frameTime];
     if (_seekAt) {
         // A paused player never moves, so the hold ends by the position or the time, not by motion.
         BOOL reported = raw >= 0 && labs(raw - _seekTo) <= kSeekNearMs;
@@ -3044,7 +3097,10 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
         _seekAt = 0;
     }
     BOOL running = raw != _reported;   // a paused player reports the same position every frame
-    if (running) _stillSince = 0;
+    if (running) {
+        _stillSince = 0;
+        [self stir];
+    }
     else if (!_stillSince) _stillSince = shown;
     double reported = raw + (running ? (shown - CACurrentMediaTime()) * 1000 : 0);
     double predicted = _clock + (running ? (shown - _clockTime) * 1000 : 0);
@@ -3052,31 +3108,20 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     _clock = raw < 0 || fabs(error) > kClockSnapMs ? reported : predicted + error * kClockPull;
     _reported = raw;
     _clockTime = shown;
-    [self updateFrameRate];
     return _clock;
 }
 
-// A paused song stops the sweep and the dots settle, so the page has nothing more to draw than a still
-// picture: a few frames a second are enough then, and the phone spends less of its battery on the link.
-// Anything that moves the page again puts it back to full at once, so nothing looks late.
-- (void)updateFrameRate {
-    if (!_link) return;
-    BOOL idle = !_sample && !_browsing && !_seekAt && _stillSince
-        && _link.targetTimestamp - _stillSince >= kIdleAfterPause;
-    if (idle == _idleRate) return;
-    _idleRate = idle;
-    _link.preferredFrameRateRange = idle ? CAFrameRateRangeMake(10, 15, 15) : CAFrameRateRangeMake(80, 120, 120);
-    if (idle) SGLog(@"karaoke: frame rate idle (paused)");
-    else SGLog(@"karaoke: frame rate full");
-}
-
 - (void)tick {
+    // A paused clock and a page at rest draw nothing new: once what was last set moving has finished, a few
+    // frames a second still watch the track, its lines and the clock, and whatever moves stirs it back.
+    if (_seekAt || _scroll.isTracking || _scroll.isDecelerating) [self stir];
+    else if (_link && !_link.paused && [self frameTime] - _stirredAt > kCalmAfter) [self calmDown];
     NSString *track = _sample ? @"sample" : SGKaraokePlayingTrack();
     if (!(track == _track || [track isEqualToString:_track])) {
         SGLog(@"karaoke: page shows track %@, lyrics %@", track, [self linesFor:track] ? @"captured" : @"not captured yet");
         _track = track;
         _stillSince = 0;   // the last song's pause says nothing of this one's
-        [self updateFrameRate];   // a new song is drawn at full rate, paused or not
+        [self stir];   // a new song is drawn at full rate, paused or not
         [self dropLines];
     }
     NSArray<SGKaraokeLine *> *kept = _lines && track ? [self linesFor:track] : nil;
@@ -3117,7 +3162,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     [self setShowing:_tops != nil];
     // Keep screen on: held while lines are shown and the song moves, let go a few seconds into a pause.
     if (!_sample && SGRLyricsKeepAwakeOn())
-        SGRLyricsHoldAwake(self, _showing && !(_stillSince && _link.targetTimestamp - _stillSince > kAwakeAfterPause));
+        SGRLyricsHoldAwake(self, _showing && !(_stillSince && [self frameTime] - _stillSince > kAwakeAfterPause));
     // The source is settled a moment after the lines are, so it is asked for until it answers.
     if (!_sample && _lines && !_creditSource) [self creditTo:SGLyricsCreditFor(track)];
     if (!_tops) return;
@@ -3132,7 +3177,8 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     double now = [self clockMs];
     [self arrangeAt:now glide:_sample != nil];   // the preview coming round glides back to its first line
     for (NSUInteger i = 0; i < _sungCount; i++) [_shown[@(_sung[i])] showTime:now];
-    if (_dots.superview) [_dots showTime:now running:!_stillSince || _link.targetTimestamp - _stillSince < kStillFor at:_link.targetTimestamp];
+    CFTimeInterval frame = [self frameTime];
+    if (_dots.superview) [_dots showTime:now running:!_stillSince || frame - _stillSince < kStillFor at:frame];
 }
 
 // What is sung at `now` lit and the stack arranged around it; a jump of more than a couple of lines is

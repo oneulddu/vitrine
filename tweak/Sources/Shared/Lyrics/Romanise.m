@@ -11,12 +11,21 @@
 
 NSNotificationName const SGLyricsRomanisedDidChangeNotification = @"spotifyglass.lyricsRomanisedDidChange";
 
-static BOOL has(NSString *text, NSString *pattern) {
-    return [text rangeOfString:pattern options:NSRegularExpressionSearch].location != NSNotFound;
+typedef NS_ENUM(NSUInteger, SGScript) { SGScriptKana, SGScriptNotLatin, SGScriptHan, SGScriptHiragana };
+
+// Compiled once: every line on the page is looked at.
+static BOOL has(NSString *text, SGScript script) {
+    static NSRegularExpression *patterns[4];
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSArray<NSString *> *sources = @[@"[\\p{Hiragana}\\p{Katakana}]", @"[\\p{L}&&[^\\p{Latin}]]", @"\\p{Han}", @"\\p{Hiragana}"];
+        for (NSUInteger i = 0; i < 4; i++) patterns[i] = [NSRegularExpression regularExpressionWithPattern:sources[i] options:0 error:NULL];
+    });
+    return [patterns[script] rangeOfFirstMatchInString:text options:0 range:NSMakeRange(0, text.length)].location != NSNotFound;
 }
 
 static BOOL hasKana(NSString *text) {
-    return has(text, @"[\\p{Hiragana}\\p{Katakana}]");
+    return has(text, SGScriptKana);
 }
 
 BOOL SGLyricsLooksJapanese(NSArray<SGKaraokeLine *> *lines) {
@@ -61,7 +70,7 @@ static NSString *readHiragana(NSString *text) {
         CFRange range = CFStringTokenizerGetCurrentTokenRange(words);
         [read appendString:[text substringWithRange:NSMakeRange(from, range.location - from)]];
         NSString *word = [text substringWithRange:NSMakeRange(range.location, range.length)];
-        if (has(word, @"\\p{Han}")) {
+        if (has(word, SGScriptHan)) {
             NSString *latin = CFBridgingRelease(CFStringTokenizerCopyCurrentTokenAttribute(words, kCFStringTokenizerAttributeLatinTranscription));
             word = [latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO] ?: word;
         }
@@ -75,8 +84,7 @@ static NSString *readHiragana(NSString *text) {
 }
 
 NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
-    // Only a line with a letter of another script: Latin with accents (German, Vietnamese) is left alone.
-    if (!text.length || !has(text, @"[\\p{L}&&[^\\p{Latin}]]")) return nil;
+    if (!text.length) return nil;
     static NSCache<NSString *, NSString *> *kept;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = 1000; });
@@ -84,6 +92,11 @@ NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
     NSString *key = [NSString stringWithFormat:@"%@:%@", hiragana ? @"hiragana" : japanese ? @"ja" : @"latin", text];
     NSString *romanised = [kept objectForKey:key];
     if (romanised) return romanised.length ? romanised : nil;
+    // Cache Latin-only misses as well as readings.
+    if (!has(text, SGScriptNotLatin)) {
+        [kept setObject:@"" forKey:key];
+        return nil;
+    }
     if (hiragana) {
         romanised = readHiragana(text);
         if ([romanised isEqualToString:text]) romanised = @"";
@@ -93,7 +106,7 @@ NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
     BOOL kana = japanese || hasKana(text);
     NSString *source = kana ? readJapanese(text) : text;
     // Han left over is Chinese: its pinyin keeps the tones, and only its punctuation is made ASCII.
-    NSString *transform = !kana && has(text, @"\\p{Han}") ? @"Any-Latin; [[:P:][:Zs:]] Latin-ASCII" : @"Any-Latin; Latin-ASCII";
+    NSString *transform = !kana && has(text, SGScriptHan) ? @"Any-Latin; [[:P:][:Zs:]] Latin-ASCII" : @"Any-Latin; Latin-ASCII";
     romanised = [[source stringByApplyingTransform:transform reverse:NO]
                  stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet] ?: @"";
     if ([romanised caseInsensitiveCompare:text] == NSOrderedSame) romanised = @"";
@@ -119,10 +132,10 @@ NSArray<SGLyricsRuby *> *SGLyricsFurigana(NSString *text) {
         CFRange token = CFStringTokenizerGetCurrentTokenRange(words);
         NSRange range = NSMakeRange(token.location, token.length);
         NSString *word = [text substringWithRange:range];
-        if (!has(word, @"\\p{Han}")) continue;
+        if (!has(word, SGScriptHan)) continue;
         NSString *latin = CFBridgingRelease(CFStringTokenizerCopyCurrentTokenAttribute(words, kCFStringTokenizerAttributeLatinTranscription));
         NSString *reading = [latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO];
-        if (!reading.length || !has(reading, @"\\p{Hiragana}")) continue;
+        if (!reading.length || !has(reading, SGScriptHiragana)) continue;
         // Compare kana in hiragana so a katakana affix can be trimmed too. Han never shares a
         // character with the reading, so these bounds cannot cut into the kanji's pronunciation.
         NSString *kana = [word stringByApplyingTransform:@"Katakana-Hiragana" reverse:NO];
