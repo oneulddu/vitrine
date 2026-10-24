@@ -19,6 +19,7 @@ static NSString *const adFlags[] = {
     @"ios-feature-adssponsoredcontext.sponsored_playlist_v2_enabled",
     @"ios-feature-adssponsoredcontext.sponsored_context_mismatch_aderror_enabled",
     @"ios-feature-adssponsoredcontextnpbattachment.sponsored_npb_slot_fetch_enabled",
+    @"ios-feature-nowplaying.keep_fullscreen_during_video_ads",   // 9.1.94's
 };
 
 static NSString *const upsellFlags[] = {
@@ -42,6 +43,13 @@ static NSString *const upsellFlags[] = {
     @"ios-feature-premium-destination-badge.badge_enabled",
     @"ios-account-common.premium_plans_entry_point_row_enabled",
     @"ios-account-common.premium_referrals_settings_item_enabled",
+    // 9.1.94's, all off by default.
+    @"ios-reinventfree-contextualupsellpremiumpromo-impl.is_promo_checkout_link_enabled",
+    @"ios-reinventfree-controllerui-impl.route_search_upsell_to_track_selected",
+    @"ios-reinventfree-timecapupsellpage-impl.track_selected_artwork_enabled",
+    @"ios-nowplaying-scroll-impl.membership_upsell_banner_in_about_card_enabled",
+    @"ios-settings-rootpage-impl.use_compact_upsell",
+    @"ios-premiumvalue.enable_premium_value",
 };
 
 // More of what Hide ads sets, by value: the ad features off, their guards and Skip buttons pinned on, and the
