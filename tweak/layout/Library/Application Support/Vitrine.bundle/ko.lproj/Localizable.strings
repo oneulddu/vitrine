@@ -846,6 +846,7 @@
 "settings.labs.intro" = "아직 출시되지 않은 기능입니다. 일부 기능은 현재 버전에서 작동하지 않을 수 있습니다. 스위치를 켜면 기능을 강제로 켜고, 끄면 Spotify에 맡기므로 Spotify가 켤 수도 있습니다. 변경 사항은 Spotify를 다시 시작한 후에 적용됩니다.";
 "settings.labs.library.header" = "라이브러리";
 "settings.labs.local_files.title" = "파일 앱의 로컬 파일";
+"settings.labs.martini.agent_button.title" = "에이전트 버튼";
 "settings.labs.martini.backend.title" = "Martini 연동";
 "settings.labs.martini.chat_section.header" = "채팅";
 "settings.labs.martini.entry_point.title" = "채팅 시작 위치";

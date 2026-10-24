@@ -790,6 +790,7 @@
 "settings.labs.intro" = "Unreleased features; some do nothing on your version. A switch that is on forces the feature on; off leaves it to Spotify, which may still turn it on. Changes apply after you restart Spotify.";
 "settings.labs.library.header" = "Library";
 "settings.labs.local_files.title" = "Local files from the Files app";
+"settings.labs.martini.agent_button.title" = "Agent button";
 "settings.labs.martini.backend.title" = "Martini behind it";
 "settings.labs.martini.chat_section.header" = "The chat";
 "settings.labs.martini.entry_point.title" = "Chat entry point";

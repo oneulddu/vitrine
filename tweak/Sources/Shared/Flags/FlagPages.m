@@ -3,8 +3,27 @@
 #import "Settings/SGModPage.h"
 #import "Flags.h"
 
+static int compareKey(const void *key, const void *def) {
+    return strcmp(key, ((const SGFlagDef *)def)->key);
+}
+
+// Only the rows for flags this Spotify has: the table comes from the IPA the build is for, and a flag
+// it lacks would force nothing. A section left empty goes too.
+static NSArray<SGModSection *> *known(NSArray<SGModSection *> *sections) {
+    NSMutableArray<SGModSection *> *kept = [NSMutableArray array];
+    for (SGModSection *section in sections) {
+        NSIndexSet *rows = [section.rows indexesOfObjectsPassingTest:^BOOL(SGModRow *row, NSUInteger i, BOOL *stop) {
+            return !row.flag || bsearch(row.key.UTF8String, SGFlagTable, SGFlagCount, sizeof *SGFlagTable, compareKey);
+        }];
+        if (!rows.count) continue;
+        section.rows = [section.rows objectsAtIndexes:rows];
+        [kept addObject:section];
+    }
+    return kept;
+}
+
 static UIViewController *martiniPage(void) {
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.labs.martini.title", @"AI Chat (Martini)") intro:SGRestartNote sections:@[
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.labs.martini.title", @"AI Chat (Martini)") intro:SGRestartNote sections:known(@[
         SGSection(SGL(@"settings.labs.martini.on_home.header", @"On Home"), @[
             SGFlagRow(SGL(@"settings.labs.martini.entry_point.title", @"Chat entry point"), @"ios-home-evopage-impl.interactive_entrypoint_enabled"),
             SGFlagRow(SGL(@"settings.labs.martini.backend.title", @"Martini behind it"), @"ios-home-evopage-impl.interactive_entrypoint_martini_enabled"),
@@ -19,12 +38,13 @@ static UIViewController *martiniPage(void) {
         ]),
         SGSection(SGL(@"settings.labs.martini.in_player.header", @"In the player"), @[
             SGFlagRow(SGL(@"settings.labs.martini.entry_point.title", @"Chat entry point"), @"ios-martini-npvcardprovider-impl.floating_chat_entry_point_enabled"),
+            SGFlagRow(SGL(@"settings.labs.martini.agent_button.title", @"Agent button"), @"ios-martini-npvcardprovider-impl.npv_agent_button_enabled"),
         ]),
-    ] footer:nil];
+    ]) footer:nil];
 }
 
 UIViewController *SGLabsPage(void) {
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.labs.title", @"Labs") intro:SGL(@"settings.labs.intro", @"Unreleased features; some do nothing on your version. A switch that is on forces the feature on; off leaves it to Spotify, which may still turn it on. Changes apply after you restart Spotify.") sections:@[
+    return [[SGModPage alloc] initWithTitle:SGL(@"settings.labs.title", @"Labs") intro:SGL(@"settings.labs.intro", @"Unreleased features; some do nothing on your version. A switch that is on forces the feature on; off leaves it to Spotify, which may still turn it on. Changes apply after you restart Spotify.") sections:known(@[
         SGSection(nil, @[
             SGWithSymbol(SGPageRow(SGL(@"settings.labs.martini.row.title", @"AI Chat (Martini)"), ^UIViewController *{ return martiniPage(); }), @"bubble.left.and.bubble.right"),
         ]),
@@ -51,5 +71,5 @@ UIViewController *SGLabsPage(void) {
             SGFlagRow(SGL(@"settings.labs.pinned_comments.title", @"Pinned comments"), @"ios-feature-comments.enable_pinned_comments"),
             SGFlagRow(SGL(@"settings.labs.multi_reactions.title", @"Several reactions"), @"ios-feature-comments.enable_multi_reactions"),
         ]),
-    ] footer:nil];
+    ]) footer:nil];
 }
