@@ -17,6 +17,18 @@ extern NSNotificationName const SGLyricsTranslationSavedNotification;
 #define SGKeyLyricsTranslateEverySong @"spotifyglass.lyrics.translateEverySong"
 SGModRow *SGTranslateEverySongRow(void);
 
+// Off: the translate menu and automatic translation leave out Apple's Translate, or Apple Intelligence.
+// Both on until switched off.
+#define SGKeyLyricsTranslateOnDevice @"spotifyglass.lyrics.translateOnDevice"
+#define SGKeyLyricsAppleIntelligence @"spotifyglass.lyrics.appleIntelligence"
+NSArray<SGModRow *> *SGOnDeviceTranslatorRows(void);
+
+// Mod > Clear Keychain: each service's own items go, every account in it and no other app's.
+void SGGeminiForgetKey(void);
+void SGClaudeForgetKey(void);
+void SGOpenAIForgetKeys(void);
+void SGDeepLForgetKey(void);
+
 // One translation per line, in order, or nil and a message to show. New remote AI lyric requests use
 // immutable indexed rows; a malformed answer is rejected in full. Saved translations are unchanged.
 // Main queue. The same song in the same language is asked once a launch.

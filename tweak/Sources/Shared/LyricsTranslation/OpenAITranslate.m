@@ -173,6 +173,13 @@ static NSString *storedKey(NSString *base) {
     return host ? readKey(host, &status) : nil;
 }
 BOOL SGOpenAIKeySet(void) { return storedKey(setting(SGKeyLyricsOpenAIBaseURL, kBase)) != nil; }
+// Clear Keychain: every account under the service goes (the legacy key and each host-bound one), so no
+// server's key outlives it; answers kept for the launch go too.
+void SGOpenAIForgetKeys(void) {
+    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                              (__bridge id)kSecAttrService: kService});
+    [sg_done removeAllObjects];
+}
 NSString *SGOpenAIModel(void) {
     return SGLyricsAICleanModel([NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsOpenAIModel]) ?: kModel;
 }

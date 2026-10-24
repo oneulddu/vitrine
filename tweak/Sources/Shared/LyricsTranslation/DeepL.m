@@ -185,6 +185,12 @@ static void storeKey(NSString *key) {
     if (status != errSecSuccess) SGLog(@"deepl: the key could not be kept (%d)", (int)status);
 }
 BOOL SGDeepLKeySet(void) { return storedKey() != nil; }
+// Clear Keychain: the service's own items go, every account in it; answers kept for the launch go too.
+void SGDeepLForgetKey(void) {
+    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                              (__bridge id)kSecAttrService: kService});
+    [sg_done removeAllObjects];
+}
 
 #pragma mark - asking
 

@@ -86,6 +86,7 @@ static NSString *testLanguage;
 NSString *SGLyricsTranslationLanguage(void) { return testLanguage; }
 SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { SGModRow *r = [SGModRow new]; r.title = t; r.subtitle = s; r.value = v; r.action = a; return r; }
 SGModRow *SGOptionRow(NSString *t, NSString *s, NSString *k) { return nil; }
+SGModRow *SGSwitchRow(NSString *t, NSString *s, NSString *k) { SGModRow *r = [SGModRow new]; r.title = t; r.subtitle = s; r.key = k; return r; }
 id SGKaraokeTrackFor(NSString *trackID) { return nil; }
 static BOOL bingEnabled, titlesEnabled, autoRetryEnabled;
 NSString *SGKaraokePlayingTrack(void) { return nil; }

@@ -42,6 +42,12 @@ static BOOL storeKey(NSString *key) {
     return status == errSecSuccess;
 }
 BOOL SGClaudeKeySet(void) { return storedKey() != nil; }
+// Clear Keychain: the service's own items go, every account in it; answers kept for the launch go too.
+void SGClaudeForgetKey(void) {
+    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                              (__bridge id)kSecAttrService: kService});
+    [sg_done removeAllObjects];
+}
 NSString *SGClaudeModel(void) {
     return SGLyricsAICleanModel([NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsClaudeModel]) ?: kModel;
 }

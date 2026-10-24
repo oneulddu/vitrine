@@ -45,6 +45,25 @@ NSString *SGKaraokeLineText(SGKaraokeLine *line) {
     return text;
 }
 
+// The letters and digits alone, lowercased: a pronunciation or a translation that reads the same as its
+// line is the line again, as an English line of a Japanese song is spelled out as itself.
+NSString *SGLyricsBareText(NSString *text) {
+    NSMutableString *bare = [NSMutableString string];
+    NSCharacterSet *kept = NSCharacterSet.alphanumericCharacterSet;
+    NSString *lower = text.lowercaseString;
+    for (NSUInteger i = 0; i < lower.length; i++) {
+        unichar c = [lower characterAtIndex:i];
+        if ([kept characterIsMember:c]) [bare appendFormat:@"%C", c];
+    }
+    return bare;
+}
+
+NSString *SGLyricsShownTranslation(SGKaraokeLine *line) {
+    NSString *translation = line.translation;
+    if (!translation.length) return nil;
+    return [SGLyricsBareText(translation) isEqualToString:SGLyricsBareText(SGKaraokeLineText(line))] ? nil : translation;
+}
+
 NSInteger SGKaraokeSungEnd(SGKaraokeLine *line) {
     return line.backing ? MAX(line.end, line.backing.end) : line.end;
 }

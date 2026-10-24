@@ -421,7 +421,7 @@ void SGLyricsPiPToggle(UIView *from) {
     BOOL currentMetadata = metadata.current && [metadata.uri isEqual:artworkTrack];
     NSArray<NSString *> *content = @[current ?: @"", next ?: @"", credit ?: @"",
         showPronunciation ? SGKaraokeLineText(selected.pronunciation) ?: @"" : @"",
-        showTranslation ? selected.translation ?: @"" : @"",
+        showTranslation ? SGLyricsShownTranslation(selected) ?: @"" : @"",
         currentMetadata ? metadata.title ?: @"" : @"", currentMetadata ? metadata.artist ?: @"" : @""];
     if (_background.image && (![_shown isEqualToArray:content] || _shownBackgroundRevision != _background.revision ||
         ![_shownStyle isEqual:_style.identity]))

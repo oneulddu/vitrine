@@ -1292,6 +1292,10 @@
 "settings.mod.import_settings.title" = "Import settings";
 "settings.mod.include_betas.subtitle" = "Offer test builds ahead of each release";
 "settings.mod.include_betas.title" = "Include betas";
+"settings.mod.keychain.action.clear" = "Clear Keychain";
+"settings.mod.keychain.alert.message" = "The Gemini, Claude, OpenAI-compatible and DeepL API keys, the Spicy Lyrics key and the Deezer ARL are removed from this iPhone. Settings stay as they are.";
+"settings.mod.keychain.alert.title" = "Clear Keychain?";
+"settings.mod.keychain.title" = "Clear Keychain";
 "settings.mod.licenses.autoeq.subtitle" = "Headphone corrections · MIT License";
 "settings.mod.licenses.bs2b.subtitle" = "Crossfeed · MIT License";
 "settings.mod.licenses.eevee.note" = "By whoeevee (whoeevee/EeveeSpotify), under the GNU General Public License v3.0, as Vitrine is.\n\nPorted from it, on the Premium, ads & privacy page: Hide ads (the ad services kept from starting, ad components taken out of Home and Search, ad sections out of the feeds, ad requests answered empty), Hide upsells (the Premium pop-ups, and the ad and upsell flags it turns off) and Spoof Premium (the account attributes and flag rules it rewrites, and crossfade under it).";
@@ -2130,6 +2134,8 @@
 "settings.translation.google.error.unreadable" = "Google Translate's answer could not be read. Try again.";
 "settings.translation.google.subtitle" = "Sends the song's lyrics to Google Translate's public web endpoint";
 "settings.translation.google.title" = "Google Translate";
+"settings.translation.intelligence.subtitle" = "Apple Intelligence in the lyrics' translate menu and automatic translation";
+"settings.translation.intelligence.title" = "Apple Intelligence";
 "settings.translation.models.current" = "Selected: %@";
 "settings.translation.models.empty" = "The service lists no models";
 "settings.translation.models.error.ats" = "This iPhone blocks plain HTTP to that address. Use an HTTPS address, or a host allowed by the app's transport security.";
@@ -2155,6 +2161,8 @@
 "settings.translation.models.search" = "Search models";
 "settings.translation.notes.subtitle" = "An AI service explains references under the lines when asked from the lyrics' menu";
 "settings.translation.notes.title" = "Cultural notes";
+"settings.translation.ondevice.subtitle" = "Apple's Translate in the lyrics' translate menu and automatic translation";
+"settings.translation.ondevice.title" = "Translate on iPhone";
 "settings.translation.openai.base.invalid" = "Check it";
 "settings.translation.openai.base.message" = "The service's base URL, before /chat/completions. Use HTTPS; HTTP is also allowed for localhost, 127.0.0.1, .local hosts and Tailscale IPv4 addresses (100.64.0.0/10). Each host keeps its own key.";
 "settings.translation.openai.base.title" = "Address";

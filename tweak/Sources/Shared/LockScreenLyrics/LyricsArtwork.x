@@ -213,7 +213,7 @@ static NSString *textAt(NSArray<SGKaraokeLine *> *lines, NSInteger index) {
 static NSString *translationAt(NSArray<SGKaraokeLine *> *lines, NSInteger index, BOOL resting) {
     if (resting || index < 0 || index >= (NSInteger)lines.count) return nil;
     if (!textAt(lines, index).length || !SGFlag(SGKeyLockScreenTranslation, NO)) return nil;
-    return lines[index].translation;
+    return SGLyricsShownTranslation(lines[index]);
 }
 
 // The translation's part of an artwork ID: nothing without one, else t and a short hex of its hash, the same

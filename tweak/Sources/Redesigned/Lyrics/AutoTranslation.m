@@ -201,8 +201,10 @@ void SGRSetAutoTranslationOrder(NSArray<NSNumber *> *order) {
 SGRAutoTranslationState SGRAutoTranslationStateOf(SGRAutoTranslator provider, NSString *language) {
     switch (provider) {
         case SGRAutoTranslatorOnDevice:
+            if (!SGFlag(SGKeyLyricsTranslateOnDevice, YES)) return SGRAutoTranslationNeedsSwitch;
             return SGOnDeviceTranslation.translationAvailable ? SGRAutoTranslationReady : SGRAutoTranslationUnavailableDevice;
         case SGRAutoTranslatorAppleIntelligence:
+            if (!SGFlag(SGKeyLyricsAppleIntelligence, YES)) return SGRAutoTranslationNeedsSwitch;
             return [SGOnDeviceTranslation appleIntelligenceAvailable:language] ? SGRAutoTranslationReady : SGRAutoTranslationUnavailableDevice;
         case SGRAutoTranslatorGoogle:
             if (!SGFlag(SGKeyLyricsGoogleTranslate, NO)) return SGRAutoTranslationNeedsSwitch;

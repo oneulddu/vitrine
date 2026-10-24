@@ -808,7 +808,7 @@ static SGRKaraokeLayout *layOut(SGKaraokeLine *line, CGFloat width, SGRKaraokeSt
     layout.right = right >= 0 ? right : alignsRight(line);
     layout.translation = layout.romanised = layout.note = CGRectNull;
     NSArray<SGKaraokeWord *> *spoken = style.pronunciation ? line.pronunciation.words : nil;
-    NSString *translation = style.translation ? line.translation : nil;
+    NSString *translation = style.translation ? SGLyricsShownTranslation(line) : nil;
     // A source's own pronunciation, hidden, still reads better than the transform's.
     if (style.romanised && !spoken.count) {
         layout.romanisedText = line.pronunciation ? SGKaraokeLineText(line.pronunciation)
@@ -1710,6 +1710,8 @@ typedef struct {
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsStyleDidChangeNotification object:nil];
     // The menu says the song's offsets and whether its lyrics were picked by hand.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(offerExtras) name:SGLyricsOffsetsDidChangeNotification object:nil];
+    // A translator switched on or off on the Lyrics page leaves or joins the menu.
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(offerExtras) name:SGLyricsTranslationServiceSettingsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pinChanged:) name:SGLyricsPinDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pinChanged:) name:SGLyricsDidReloadNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(translationsChanged) name:SGLyricsLanguageDidChangeNotification object:nil];
@@ -2258,8 +2260,8 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 // what the song has: a switch for each, reading what tapping it will do.
 - (void)offerExtras {
     NSString *language = SGLyricsGeminiLanguage();
-    BOOL gemini = SGGeminiKeySet(), onDevice = SGOnDeviceTranslation.translationAvailable;
-    BOOL intelligence = [SGOnDeviceTranslation appleIntelligenceAvailable:language];
+    BOOL gemini = SGGeminiKeySet(), onDevice = SGFlag(SGKeyLyricsTranslateOnDevice, YES) && SGOnDeviceTranslation.translationAvailable;
+    BOOL intelligence = SGFlag(SGKeyLyricsAppleIntelligence, YES) && [SGOnDeviceTranslation appleIntelligenceAvailable:language];
     // A translator is offered only for a song in another language than the one it would translate into.
     BOOL deepl = SGDeepLKeySet(), google = SGFlag(SGKeyLyricsGoogleTranslate, NO), openai = SGOpenAIKeySet();
     BOOL bing = SGFlag(SGKeyLyricsBingTranslate, NO), claude = SGClaudeKeySet();

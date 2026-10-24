@@ -178,9 +178,7 @@ BOOL SGLyricsReplyFailed(NSURLResponse *response, NSError *error);
 // line's translation and pronunciation added where the head has them; nil when the document holds no
 // line the page could show.
 NSArray<SGKaraokeLine *> *SGTTMLLines(NSString *xml);
-// The letters and digits of a text alone, lowercased: a pronunciation or a translation equal to its
-// line's this way reads the same as the line and is left out.
-NSString *SGLyricsBareText(NSString *text);
+// SGLyricsBareText and SGLyricsShownTranslation are declared in Lyrics.h, beside the lines they read.
 // A line's pronunciation: timed `words` where the source has them, else `plain` estimated across the
 // line's own time; nil when it has neither or reads the same as `of`.
 SGKaraokeLine *SGLyricsPronunciation(NSArray<SGKaraokeWord *> *words, NSString *plain, SGKaraokeLine *of);
@@ -284,6 +282,8 @@ SGLyricsResult *SGDeezerResult(id root);
 @class SGModRow;
 SGModRow *SGDeezerARLRow(void);
 BOOL SGDeezerARLSet(void);
+// Removes the ARL from the Keychain and the login it signed in with (Mod > Clear Keychain); the order stays.
+void SGDeezerForgetKey(void);
 extern SGLyricsAsk SGGeniusAsk;
 // Genius.m. The rows of the lyrics in Genius's embed script, "" between stanzas and the [Chorus]
 // headings left out; nil when the script is not the shape it reads or holds no line.
@@ -335,6 +335,8 @@ NSNumber *SGGeniusSongIn(NSDictionary *response, NSString *title, NSString *arti
 // lines, nil when it has none.
 extern NSString *const SGSpicyLyricsKey;
 BOOL SGSpicyLyricsKeySet(void);
+// Removes the key from the Keychain and forgets a refusal (Mod > Clear Keychain); the order stays.
+void SGSpicyLyricsForgetKey(void);
 NSString *SGSpicyLyricsStatus(void);
 @class SGModRow;
 SGModRow *SGSpicyLyricsKeyRow(void);

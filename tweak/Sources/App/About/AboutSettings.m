@@ -4,6 +4,9 @@
 #import "App/Onboarding/Onboarding.h"
 #import "Shared/AutoMix/AutoMix.h"
 #import "Shared/Lossless/LosslessQuality.h"
+#import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsSources/LyricsSources.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 
 // Every key of the mod's is under one prefix, so a reset is a sweep of the defaults with the stock
 // marker of SGPrefs.h left behind; the hooks read them at launch, so it ends in a restart.
@@ -32,6 +35,31 @@ static void confirmReset(void) {
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
+// Reset all leaves the Keychain alone, so a key outlives a reset; this takes every item Vitrine keeps there,
+// by each service's own name, and keeps the settings.
+static void confirmClearKeychain(void) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.mod.keychain.alert.title", @"Clear Keychain?")
+                                                                  message:SGL(@"settings.mod.keychain.alert.message", @"The Gemini, Claude, OpenAI-compatible and DeepL API keys, the Spicy Lyrics key and the Deezer ARL are removed from this iPhone. Settings stay as they are.")
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.mod.keychain.action.clear", @"Clear Keychain") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        SGGeminiForgetKey();
+        SGClaudeForgetKey();
+        SGOpenAIForgetKeys();
+        SGDeepLForgetKey();
+        SGSpicyLyricsForgetKey();
+        SGDeezerForgetKey();
+        // The translators' rows, their pages and the lyrics menu follow this notification, as their own
+        // Remove does. The lyrics sources read their key at each ask; their rows and the lyrics view hear
+        // the sources' own change, so the track playing is announced reloaded and builds its lines again.
+        SGLyricsTranslationServiceSettingsChanged();
+        NSString *playing = SGKaraokePlayingTrack();
+        if (playing.length) [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsDidReloadNotification object:playing];
+        SGLog(@"reset: keychain cleared");
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:alert animated:YES completion:nil];
+}
+
 static SGModRow *withSymbol(SGModRow *row, NSString *symbol) {
     row.symbol = symbol;
     return row;
@@ -42,6 +70,9 @@ static SGModRow *withSymbol(SGModRow *row, NSString *symbol) {
 UIViewController *SGAboutPage(void) {
     SGModRow *reset = withSymbol(SGActionRow(SGL(@"settings.mod.reset.title", @"Reset all settings"), nil, ^{ confirmReset(); }), @"trash");
     reset.color = SGRed();
+    // Reset all removes the settings; the keys live in the Keychain, which it leaves alone, so this takes them.
+    SGModRow *clearKeys = withSymbol(SGActionRow(SGL(@"settings.mod.keychain.title", @"Clear Keychain"), nil, ^{ confirmClearKeychain(); }), @"key");
+    clearKeys.color = SGRed();
     NSString *spotify = SGSpotifyVersion();
     if ([SGSpotifyLikelyWorksVersions containsObject:spotify]) spotify = [spotify stringByAppendingString:SGL(@"settings.mod.spotify_version.likely_works", @", likely works")];
     else if (![SGSpotifySupportedVersions containsObject:spotify]) spotify = [NSString stringWithFormat:SGL(@"settings.mod.spotify_version.made_for", @"%@, made for %@"), spotify, SGSpotifyMadeFor];
@@ -75,6 +106,6 @@ UIViewController *SGAboutPage(void) {
                                    ^{ SGShareDiagnostics(); }), @"stethoscope"),
             SGWithNew(withSymbol(SGPageRow(SGL(@"settings.mod.report.title", @"Report a problem"), ^UIViewController *{ return SGReportListPage(); }), @"exclamationmark.bubble"), @"reportProblem"),
         ]),
-        SGSection(nil, @[reset]),
+        SGSection(nil, @[clearKeys, reset]),
     ] footer:nil];
 }

@@ -71,7 +71,7 @@ void SGLyricsTranslationServiceSettingsChanged(void) {
 }
 
 static NSArray *titleConfiguration(void) {
-    BOOL local = SGOnDeviceTranslation.translationAvailable;
+    BOOL local = SGFlag(SGKeyLyricsTranslateOnDevice, YES) && SGOnDeviceTranslation.translationAvailable;
     NSString *online = nil, *base = @"", *model = @"";
     if (SGFlag(SGKeyLyricsBingTranslate, NO)) online = @"bing";
     else if (SGFlag(SGKeyLyricsGoogleTranslate, NO)) online = @"google";
@@ -162,7 +162,7 @@ NSString *SGLyricsTranslatedTitle(NSString *trackID, NSString *title, NSString *
     };
     dispatch_async(dispatch_get_main_queue(), ^{
         if (sg_pending[identity] != ticket || !SGFlag(SGKeyLyricsTranslateTitles, NO) || ![SGLyricsGeminiLanguage() isEqual:language]) { done(nil, nil); return; }
-        if (SGOnDeviceTranslation.translationAvailable) {
+        if (SGFlag(SGKeyLyricsTranslateOnDevice, YES) && SGOnDeviceTranslation.translationAvailable) {
             [SGOnDeviceTranslation translate:@[title, artist] to:language done:^(NSArray *answer, NSString *problem) {
                 if (sg_pending[identity] != ticket || !SGFlag(SGKeyLyricsTranslateTitles, NO) || ![SGLyricsGeminiLanguage() isEqual:language]) { done(nil, nil); return; }
                 if (answer.count == 2 && [answer[0] length]) done(answer, problem);

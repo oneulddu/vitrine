@@ -27,6 +27,15 @@ static NSString *storedARL(void) {
 
 BOOL SGDeezerARLSet(void) { return storedARL().length > 0; }
 
+// Clear Keychain: the ARL goes and the JWT signed in with it is dropped, so no request uses either; the
+// order is a setting, so it stays.
+void SGDeezerForgetKey(void) {
+    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                              (__bridge id)kSecAttrService: @"Vitrine.Deezer"});
+    sg_jwt = nil;
+    sg_generation++;
+}
+
 static BOOL safeARL(NSString *arl) {
     NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:@"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~"];
     return arl.length > 0 && arl.length <= 4096 && [arl rangeOfCharacterFromSet:allowed.invertedSet].location == NSNotFound;

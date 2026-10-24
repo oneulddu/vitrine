@@ -138,8 +138,9 @@ static NSString *lineFor(NSDictionary *info, double elapsed) {
     } else {
         translatedTrack = nil;
     }
-    if (wantTranslation && current.translation.length) {
-        NSArray<NSString *> *pieces = translationPieces(current.translation);
+    NSString *shownTranslation = wantTranslation ? SGLyricsShownTranslation(current) : nil;
+    if (shownTranslation.length) {
+        NSArray<NSString *> *pieces = translationPieces(shownTranslation);
         NSInteger start = current.start, end = MAX(SGKaraokeSungEnd(current), start);
         NSUInteger shownIndex = 0;
         for (NSUInteger i = 0; i < pieces.count; i++) {

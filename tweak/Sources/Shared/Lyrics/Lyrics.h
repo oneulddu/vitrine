@@ -131,6 +131,13 @@ typedef NS_ENUM(NSUInteger, SGKaraokeAlign) {
 
 // The line as one string, a space between the words that are not joined.
 NSString *SGKaraokeLineText(SGKaraokeLine *line);
+// The letters and digits of a text alone, lowercased: a pronunciation or a translation that reads the
+// same as its line is the line again, as an English line of a Japanese song is spelled out as itself.
+NSString *SGLyricsBareText(NSString *text);
+// The translation a drawing site shows under the line: its own, or nil when it only repeats the line
+// (a translator can hand back a line already in the language as it was). The line still counts as
+// translated, so the translation stays on it and is not asked for again.
+NSString *SGLyricsShownTranslation(SGKaraokeLine *line);
 // When the singing of a line is over: its own end, or its backing's when that runs on past it.
 NSInteger SGKaraokeSungEnd(SGKaraokeLine *line);
 // The one line a place with room for one names as the one being sung at `ms`. Two voices can sing

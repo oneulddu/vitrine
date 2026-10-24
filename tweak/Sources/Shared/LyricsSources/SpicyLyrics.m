@@ -441,6 +441,13 @@ static void setKey(NSString *key) {
     SGLyricsSetOrder(order);
 }
 
+// Clear Keychain: the key goes and the refusal it earned is forgotten; the lyrics order is a setting, so it stays.
+void SGSpicyLyricsForgetKey(void) {
+    storeKey(nil);
+    sg_refused = nil;
+    sg_refusedUntil = 0;
+}
+
 static void askForKey(NSString *problem) {
     NSString *how = SGL(@"settings.lyricssources.spicy.alert.instructions", @"Sign up at Spicy Lyrics for Developers, create an application, turn on client access with "
                     @"No origin header allowed, and paste its publishable key (sl_pk_). The key stays on this iPhone.");

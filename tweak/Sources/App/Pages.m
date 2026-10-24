@@ -144,13 +144,15 @@ UIViewController *SGWorkshopPage(void) {
 }
 
 static UIViewController *translationPage(void) {
+    // The on-device translators lead the services: they need no key or account.
+    NSArray<SGModRow *> *services = [SGOnDeviceTranslatorRows() arrayByAddingObjectsFromArray:
+        @[SGLyricsAIServiceRow(SGLyricsAIGemini), SGLyricsAIServiceRow(SGLyricsAIClaude), SGLyricsAIServiceRow(SGLyricsAIOpenAI),
+          SGDeepLKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGLyricsPronunciationNotationRow(), SGLyricsCulturalNotesRow()]];
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.lyrics.translation_ai.title", @"Translation & AI") intro:nil sections:@[
         SGSection(SGL(@"settings.lyrics.translation_ai.automatic.header", @"Automatic translation"),
                   @[SGLyricsTranslationLanguageRow(), SGRAutoTranslationRow(), SGRAutoTranslationOrderRow(),
                     SGTranslateEverySongRow(), SGLyricsLanguageRulesRow(), SGTranslateTitlesRow()]),
-        SGNotedSection(SGL(@"settings.lyrics.translation_ai.services.header", @"Services"),
-                       @[SGLyricsAIServiceRow(SGLyricsAIGemini), SGLyricsAIServiceRow(SGLyricsAIClaude), SGLyricsAIServiceRow(SGLyricsAIOpenAI),
-                         SGDeepLKeyRow(), SGBingTranslateRow(), SGGoogleTranslateRow(), SGLyricsPronunciationNotationRow(), SGLyricsCulturalNotesRow()],
+        SGNotedSection(SGL(@"settings.lyrics.translation_ai.services.header", @"Services"), services,
                        SGL(@"settings.lyrics.ai.footer", @"Write Pronunciation and Explain References in the lyrics' menu use Gemini, Claude or your AI service, on your own key. What they write is kept for the song.")),
         SGSection(SGL(@"settings.lyrics.translation_ai.saved.header", @"Saved translations"), @[SGSavedTranslationsRow()]),
     ] footer:nil];

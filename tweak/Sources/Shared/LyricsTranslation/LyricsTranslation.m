@@ -172,6 +172,14 @@ static void sendToGemini(NSURLRequest *request, NSURLRequest *plain, NSUInteger 
 
 static NSMutableDictionary<NSString *, NSDictionary *> *sg_done;   // per launch, by track and language; source texts must still match
 
+// Clear Keychain: the service's own items go, the account left out so every one in it does, and with them
+// the answers kept for the launch, which were made with that key.
+void SGGeminiForgetKey(void) {
+    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                              (__bridge id)kSecAttrService: kService});
+    [sg_done removeAllObjects];
+}
+
 void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                  void (^done)(NSArray<NSString *> *translations, NSString *error)) {
     SGLyricsTranslateWithGeminiFormat(trackID, lines, languageTag, SGLyricsReplyIndexed, done);
@@ -285,6 +293,18 @@ SGModRow *SGTranslateEverySongRow(void) {
         [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
     };
     return row;
+}
+
+NSArray<SGModRow *> *SGOnDeviceTranslatorRows(void) {
+    SGModRow *onDevice = SGSwitchRow(SGL(@"settings.translation.ondevice.title", @"Translate on iPhone"),
+        SGL(@"settings.translation.ondevice.subtitle", @"Apple's Translate in the lyrics' translate menu and automatic translation"),
+        SGKeyLyricsTranslateOnDevice);
+    SGModRow *intelligence = SGSwitchRow(SGL(@"settings.translation.intelligence.title", @"Apple Intelligence"),
+        SGL(@"settings.translation.intelligence.subtitle", @"Apple Intelligence in the lyrics' translate menu and automatic translation"),
+        SGKeyLyricsAppleIntelligence);
+    // SGSwitchRow is already on by default, as SGFlag(key, YES) reads an unset one.
+    onDevice.changed = intelligence.changed = ^(BOOL on) { SGLyricsTranslationServiceSettingsChanged(); };
+    return @[onDevice, intelligence];
 }
 
 SGModRow *SGGeminiKeyRow(void) {
