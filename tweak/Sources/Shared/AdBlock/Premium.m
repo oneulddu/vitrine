@@ -348,6 +348,7 @@ static const SGRule rules[] = {
     {"ios-feature-search", "prompted_playlist_merchandizing_enabled", SGRuleSet, NO, NULL},
     {NULL, "should_nova_scroll_use_scrollsita", SGRuleRemove, NO, NULL},
     {"ios-sociallistening-configuration-impl", "premium_gated_start_jam_buttons_enabled", SGRuleForce, NO, NULL},
+    {"ios-endless-djmusic-impl", "is_premium_only", SGRuleForce, NO, NULL},
 };
 static const size_t ruleCount = sizeof(rules) / sizeof(rules[0]);
 

@@ -39,6 +39,10 @@ UIViewController *SGLabsPage(void) {
             SGFlagRow(SGL(@"settings.labs.sleep_one_minute.title", @"One minute option"), @"ios-feature-sleeptimer.enable_one_minute_option"),
             SGFlagRow(SGL(@"settings.labs.sleep_options_sheet.title", @"Options sheet"), @"ios-feature-sleeptimer.use_options_sheet"),
         ], SGL(@"settings.labs.sleep_options_sheet.footer", @"Options sheet is always on in Redesigned UI.")),
+        SGSection(SGL(@"settings.labs.dj.header", @"DJ"), @[
+            SGFlagRow(SGL(@"settings.labs.dj_auto_mix.title", @"Auto mix"), @"ios-playlistcuration-mats.auto_mix_enabled_for_dj"),
+            SGFlagRow(SGL(@"settings.labs.dj_auto_mix_menu.title", @"Auto mix in the context menu"), @"ios-playlistcuration-mats.dj_auto_mix_context_menu_enabled"),
+        ]),
         SGSection(SGL(@"settings.labs.player.header", @"Player"), @[
             SGFlagRow(SGL(@"settings.labs.snake_cover.title", @"Snake on the cover art"), @"ios-feature-cover-art-snake.enabled"),
         ]),
