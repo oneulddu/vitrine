@@ -13,6 +13,9 @@ static const NSTimeInterval kTokenMargin = 3600;
 
 // Main queue only. NSNull is kept for an album or artist that has nothing.
 static NSMutableDictionary<NSString *, id> *sg_kept;
+static NSMutableArray<NSString *> *sg_keptOrder;
+static NSUInteger sg_logoBytes;
+static const NSUInteger kKeptEntries = 200, kLogoBytes = 16 * 1024 * 1024, kAlbumAnswers = 200;
 static NSMutableDictionary<NSString *, NSMutableArray *> *sg_waiting;
 static NSMutableArray<void (^)(NSString *)> *sg_tokenWaiting;
 
@@ -21,15 +24,59 @@ static NSMutableArray<void (^)(NSString *)> *sg_tokenWaiting;
 static const NSTimeInterval kAlbumAnswerLife = 7 * 24 * 3600;
 
 static NSURL *albumAnswersFile(void) {
+#ifdef SG_MOTION_TEST_STORE
+    extern NSURL *SGMotionTestAlbumAnswersFile(void);
+    return SGMotionTestAlbumAnswersFile();
+#else
     NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
     return [caches URLByAppendingPathComponent:@"Vitrine/Motion/album answers.plist"];
+#endif
 }
 
 // Key to {url: the address, "" for none; at: when it was asked}.
 static NSMutableDictionary<NSString *, NSDictionary *> *sg_albumAnswers;
 
+static NSUInteger logoBytes(id value) {
+    if (![value isKindOfClass:UIImage.class]) return 0;
+    CGImageRef image = [value CGImage];
+    return image ? CGImageGetBytesPerRow(image) * CGImageGetHeight(image) : 0;
+}
+
+static void keepValue(NSString *key, id value) {
+    id previous = sg_kept[key];
+    sg_logoBytes -= logoBytes(previous);
+    [sg_kept removeObjectForKey:key];
+    [sg_keptOrder removeObject:key];
+    NSUInteger bytes = logoBytes(value);
+    if (bytes > kLogoBytes) return; // still delivered to the caller, never retained by the catalog
+    while (sg_keptOrder.count && (sg_kept.count >= kKeptEntries || bytes > kLogoBytes - sg_logoBytes)) {
+        NSString *oldest = sg_keptOrder.firstObject;
+        sg_logoBytes -= logoBytes(sg_kept[oldest]);
+        [sg_kept removeObjectForKey:oldest];
+        [sg_keptOrder removeObjectAtIndex:0];
+    }
+    sg_kept[key] = value ?: NSNull.null;
+    sg_logoBytes += bytes;
+    [sg_keptOrder addObject:key];
+}
+
+static void pruneAlbumAnswers(void) {
+    NSDate *now = NSDate.date;
+    for (NSString *key in sg_albumAnswers.allKeys) {
+        if ([now timeIntervalSinceDate:sg_albumAnswers[key][@"at"]] > kAlbumAnswerLife)
+            [sg_albumAnswers removeObjectForKey:key];
+    }
+    if (sg_albumAnswers.count <= kAlbumAnswers) return;
+    NSArray *oldest = [sg_albumAnswers.allKeys sortedArrayUsingComparator:^NSComparisonResult(NSString *a, NSString *b) {
+        return [sg_albumAnswers[a][@"at"] compare:sg_albumAnswers[b][@"at"]];
+    }];
+    NSUInteger excess = oldest.count - kAlbumAnswers;
+    for (NSUInteger i = 0; i < excess; i++) [sg_albumAnswers removeObjectForKey:oldest[i]];
+}
+
 static void keepAlbumAnswer(NSString *key, NSURL *remote) {
     sg_albumAnswers[key] = @{@"url": remote.absoluteString ?: @"", @"at": NSDate.date};
+    pruneAlbumAnswers();
     // Catalog answers arrive on main. Keep its dictionary there, but serialize
     // immutable snapshots off main in order so an older write cannot win.
     NSDictionary *answers = [sg_albumAnswers copy];
@@ -49,6 +96,7 @@ static void setUp(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         sg_kept = [NSMutableDictionary dictionary];
+        sg_keptOrder = [NSMutableArray array];
         sg_albumAnswers = [NSMutableDictionary dictionary];
         NSDictionary *stored = [NSDictionary dictionaryWithContentsOfURL:albumAnswersFile()];
         for (NSString *key in stored) {
@@ -57,7 +105,11 @@ static void setUp(void) {
             NSString *url = [at isKindOfClass:NSDate.class] ? answer[@"url"] : nil;
             if (![url isKindOfClass:NSString.class] || -at.timeIntervalSinceNow > kAlbumAnswerLife) continue;
             sg_albumAnswers[key] = answer;
-            sg_kept[key] = url.length ? ([NSURL URLWithString:url] ?: NSNull.null) : NSNull.null;
+        }
+        pruneAlbumAnswers();
+        for (NSString *key in sg_albumAnswers) {
+            NSString *url = sg_albumAnswers[key][@"url"];
+            keepValue(key, url.length ? [NSURL URLWithString:url] : nil);
         }
         sg_waiting = [NSMutableDictionary dictionary];
         sg_tokenWaiting = [NSMutableArray array];
@@ -342,7 +394,7 @@ static void lookUp(NSString *key, void (^done)(id value), void (^look)(void (^an
     }
     sg_waiting[key] = [NSMutableArray arrayWithObject:[done copy]];
     look(^(id value, BOOL keep) {
-        if (keep) sg_kept[key] = value ?: NSNull.null;
+        if (keep) keepValue(key, value);
         if (keep && [key hasPrefix:@"album\n"] && (!value || [value isKindOfClass:NSURL.class])) keepAlbumAnswer(key, value);
         NSArray *callers = sg_waiting[key];
         [sg_waiting removeObjectForKey:key];

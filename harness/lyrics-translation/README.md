@@ -7,6 +7,12 @@ An explicit `--bing-live` run, described below, contacts Bing.
 
 The checks cover:
 
+- Kept target-language lines: `bash harness/lyrics-translation/ondevice-kept-check.sh` exercises the
+  actual Swift provider's all-target-language result without downloaded languages. Run
+  `harness/lyrics-translation/build.sh --kept-only` for the automatic chain's completion count,
+  duplicate suppression, saved/restored originals, no repeat automatic request, and deletion.
+  The latter uses a provider stand-in for a mixed-language result; it does not exercise Apple's
+  downloaded translation models.
 - Musixmatch's community translations matched onto copies of a song's lines by folded text, leaving
   the original lines untouched (`SGMusixmatchTranslatedLines`).
 - Gemini's reply and reasons for failure (`SGGeminiTranslationsIn`): a blocked prompt, a recitation or

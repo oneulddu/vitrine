@@ -469,6 +469,7 @@ static void checkProviders(void) {
 #include "check-ai.m"
 #include "check-connection.m"
 #include "check-auto-retry.m"
+#include "check-kept.m"
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
@@ -483,7 +484,9 @@ int main(int argc, const char **argv) {
             return 0;
         }
         if (argc > 1 && strcmp(argv[1], "--auto-retry-only") == 0) { checkAutoRetry(); return 0; }
+        if (argc > 1 && strcmp(argv[1], "--kept-only") == 0) { checkKeptTranslation(); return 0; }
         if (argc > 1 && strcmp(argv[1], "--connection-only") == 0) { checkConnection(); return 0; }
+        if (argc > 1 && strcmp(argv[1], "--gemini-memo-only") == 0) { checkGeminiMemoBound(); return 0; }
         // Musixmatch's translations go on copies of the lines they match, by the folded text.
         NSArray<SGKaraokeLine *> *lines = SGKaraokeEstimatedLines(@[@0, @2000, @4000, @6000],
                                                                   @[@"Où est l'amour ?", @"Yeah", @"Rien", @""]);

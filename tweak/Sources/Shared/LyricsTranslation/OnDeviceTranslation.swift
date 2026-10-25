@@ -130,7 +130,8 @@ public final class SGOnDeviceTranslation: NSObject {
         return false
     }
 
-    // One translation per line, "" for a line with no words; or nil and why not.
+    // One translation per line, the original text when already in the target language, "" for a line
+    // with no words; or nil and why not. A kept original is a completed result, like the AI services'.
     @objc public static func translate(_ lines: [String], to languageTag: String, done: @escaping ([String]?, String?) -> Void) {
         translate(lines, to: languageTag, from: nil, done: done)
     }
@@ -139,7 +140,7 @@ public final class SGOnDeviceTranslation: NSObject {
         guard #available(iOS 26.0, *) else { return finish(done, nil, "Translating on this iPhone needs iOS 26.") }
         let target = Locale.Language(identifier: languageTag)
         guard let source = sourceLanguage(lines, target: target) else { return finish(done, nil, "The song's language could not be told from its words.") }
-        if same(source, target) { return finish(done, nil, "The song is already in \(name(target)).") }
+        if same(source, target) { return finish(done, lines, nil) }
         Task {
             switch await LanguageAvailability().status(from: source, to: target) {
             case .unsupported:
@@ -159,16 +160,21 @@ public final class SGOnDeviceTranslation: NSObject {
                 break
             }
             // Lines already in the target language are left as they are, not run through the other language.
-            let requests = lines.enumerated().compactMap { index, line in
-                line.trimmingCharacters(in: .whitespaces).isEmpty || line == "♪" || languageOf(line).map({ same($0, target) }) == true ? nil
-                    : TranslationSession.Request(sourceText: line, clientIdentifier: String(index))
+            var kept = [String](repeating: "", count: lines.count)
+            let requests: [TranslationSession.Request] = lines.enumerated().compactMap { index, line in
+                if line.trimmingCharacters(in: .whitespaces).isEmpty || line == "♪" { return nil }
+                if languageOf(line).map({ same($0, target) }) == true {
+                    kept[index] = line
+                    return nil
+                }
+                return TranslationSession.Request(sourceText: line, clientIdentifier: String(index))
             }
             let started = Date()
             // A first ask can fail while Translate loads its languages; the second, a moment later, finds them in.
             for attempt in 1...2 {
                 do {
                     let session = TranslationSession(installedSource: source, target: target)
-                    var out = [String](repeating: "", count: lines.count)
+                    var out = kept
                     for response in try await session.translations(from: requests) {
                         if let id = response.clientIdentifier, let index = Int(id) { out[index] = response.targetText }
                     }

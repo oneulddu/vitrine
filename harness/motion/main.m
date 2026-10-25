@@ -116,7 +116,7 @@ static CGSize shownSize(AVAssetTrack *track) {
     return CGSizeMake(fabs(shown.size.width), fabs(shown.size.height));
 }
 
-int main(void) {
+int main(int argc, const char **argv) {
     @autoreleasepool {
         printf("the cut\n");
         check(CGSizeEqualToSize(SGMotionClipCut(CGSizeMake(720, 1280), 0.75), CGSizeMake(720, 960)), @"a 9:16 Canvas to 3:4 keeps its width");
@@ -126,7 +126,8 @@ int main(void) {
         check((int)odd.width % 2 == 0 && (int)odd.height % 2 == 0 && odd.width <= 721 && odd.height <= 1281, @"odd sides come out even, inside the picture");
         check(CGSizeEqualToSize(SGMotionClipCut(CGSizeZero, 0.75), CGSizeZero), @"no picture, no cut");
 
-        NSURL *folder = [NSURL fileURLWithPath:@"build/clips" isDirectory:YES];
+        NSString *here = [[NSString stringWithUTF8String:argv[0]] stringByDeletingLastPathComponent];
+        NSURL *folder = [NSURL fileURLWithPath:[here stringByAppendingPathComponent:@"clips"] isDirectory:YES];
         [NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil];
         NSURL *tall = [folder URLByAppendingPathComponent:@"canvas-9x16.mp4"], *cut = [folder URLByAppendingPathComponent:@"canvas-3x4.mp4"];
         printf("a 9:16 Canvas cut to 3:4\n");

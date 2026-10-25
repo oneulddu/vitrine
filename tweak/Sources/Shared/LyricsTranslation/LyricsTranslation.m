@@ -260,7 +260,10 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
         if (!translations && !problem) problem = SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.");
         SGLog(@"gemini: %@ lines into %@: %@", @(texts.count), languageTag, translations ? @"translated" : problem);
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (translations && trackID) sg_done[memo] = @{@"texts": texts, @"model": model, @"answer": translations};
+            if (translations && trackID) {
+                if (sg_done.count >= 32) [sg_done removeAllObjects];
+                sg_done[memo] = @{@"texts": texts, @"model": model, @"answer": translations};
+            }
             done(translations, problem);
         });
     });

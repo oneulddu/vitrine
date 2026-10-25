@@ -22,12 +22,16 @@
 #import "Shared/LockScreenLyrics/SGLyricsClip.h"
 #import "Shared/Player/NowPlayingExtras.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/Player/SGLastTrack.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
 
 // How far a clip's width over height may be from its key's and still be taken as it is.
 static const CGFloat kSameShape = 0.02;
 
 static NSString *sg_title;
+static NSString *sg_trackURI;
+static NSArray *sg_coverSource;
+static NSUInteger sg_coverRequest;
 static NSString *sg_picture;   // the picture the track names, for the cover's clip
 static NSUInteger sg_walk;   // presentation generation: track, choice and plain/lyrics ownership
 static SGLockArtwork sg_choice;
@@ -187,16 +191,44 @@ static void showCover(NSString *picture) {
     retryPresentation();
 }
 
+static BOOL currentCoverRequest(NSUInteger request, SGShownTrack *track) {
+    SGShownTrack *now = SGShownTrackNow();
+    return request == sg_coverRequest && sg_fallbackPicture && SGLockScreenArtwork() == SGLockArtworkEverySong
+        && now.current && [now.uri isEqual:sg_trackURI] && [now.uri isEqual:track.uri]
+        && [now.artworkURL isEqual:track.artworkURL];
+}
+
+// The system dictionary can still contain a same-title predecessor or a placeholder.
+// Only the current player's metadata identifies the cover; source changes retire pending renders.
+API_AVAILABLE(ios(26.0))
+static void refreshCover(void) {
+    SGShownTrack *track = SGShownTrackNow();
+    NSURL *url = track.current && [track.uri isEqual:sg_trackURI] ? track.artworkURL : nil;
+    NSArray *source = @[sg_trackURI ?: @"", url.absoluteString ?: @""];
+    if ([sg_coverSource isEqual:source]) return;
+    sg_coverSource = source;
+    sg_fallbackCover = nil;
+    NSUInteger request = ++sg_coverRequest;
+    cancelPresentation();
+    sg_pendingPicture = sg_fallbackPicture;
+    if (!url) return;
+    SGShownTrackArtworkBounded(track, ^BOOL {
+        return currentCoverRequest(request, track);
+    }, ^(UIImage *cover) {
+        if (!cover || !currentCoverRequest(request, track)) return;
+        sg_fallbackCover = cover;
+        cancelPresentation();
+        sg_pendingPicture = sg_fallbackPicture;
+        retryPresentation();
+    });
+}
+
 API_AVAILABLE(ios(26.0))
 static void offerCover(void) {
     if (![MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys containsObject:MPNowPlayingInfoProperty3x4AnimatedArtwork]) return;
     if (sg_loadingCover) return;
     CGSize size = SGLyricsClipSize(UIScreen.mainScreen.nativeBounds.size.width);
-    NSDictionary *info = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
-    MPMediaItemArtwork *native = info[MPMediaItemPropertyArtwork];
     UIImage *cover = sg_fallbackCover;
-    if (!cover && [info[MPMediaItemPropertyTitle] isEqual:sg_title] && [native isKindOfClass:MPMediaItemArtwork.class])
-        cover = [native imageWithSize:CGSizeMake(size.height, size.height)];
     if (!cover && sg_emptyOffered) return;
     if (cover && sg_emptyOffered) {
         NSString *picture = sg_pendingPicture;
@@ -251,6 +283,7 @@ static void retryPresentation(void) {
     // No polling and no decoding while unsupported. Repeated native updates only check capability.
     // A queued notification from before a setting change must not revive the old presentation.
     if (sg_settingsPending || SGLockScreenArtwork() != sg_choice) return;
+    if (sg_fallbackPicture) refreshCover();
     if (sg_pendingPicture) offerCover();
     else if (sg_pendingFile) {
         CGFloat ratio;
@@ -271,9 +304,12 @@ static void retryPresentation(void) {
             sg_plainShown = NO;
             sg_fallbackPicture = nil;
             sg_fallbackCover = nil;
+            sg_coverSource = nil;
+            sg_coverRequest++;
             sg_settingsPending = NO;
             NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
             sg_title = state.track.trackTitle;
+            sg_trackURI = uri;
             sg_picture = pictureOf(state.track, metadata);
             sg_choice = SGLockScreenArtwork();
             return motionOn(sg_choice);

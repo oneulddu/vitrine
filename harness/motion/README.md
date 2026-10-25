@@ -9,5 +9,8 @@ the sources.
 
     ./build.sh && build/motion
 
-The clips land in `build/clips/`. It prints how long the cut took,
+The build also runs `state-check`: the production follower receives a metadata-only Canvas report,
+and the catalog uses offline HTTP replies to check launch-cache eviction, the logo pixel budget,
+and pruning an isolated album plist. `OUT=<unique directory>` isolates binaries and clips.
+The clips land beside the executable in `clips/`. It prints how long the cut took,
 on the Mac this was written on (about 10 s for a 10 s clip); it was not timed on a phone.

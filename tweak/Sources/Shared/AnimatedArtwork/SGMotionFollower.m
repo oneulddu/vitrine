@@ -29,6 +29,10 @@
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
+    [self playerStateDidReport:state];
+}
+
+- (void)playerStateDidReport:(SPTPlayerState *)state {
     NSString *uri = SGURIString(state.track.URI);
     if (!uri) return;
     NSURL *canvas = SGMotionCanvasIn(state.track.metadata);

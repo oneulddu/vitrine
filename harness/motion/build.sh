@@ -3,8 +3,19 @@
 # protobuf reader it uses, and main.m.
 set -e
 cd "$(dirname "$0")"
-mkdir -p build
+OUT=${OUT:-build}
+mkdir -p "$OUT"
 xcrun clang -fobjc-arc -O2 -I ../../tweak/Sources \
     -framework Foundation -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework CoreGraphics \
     main.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionClip.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m \
-    -o build/motion
+    -o "$OUT/motion"
+xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi \
+    -isysroot "$(xcrun --sdk macosx --show-sdk-path)" \
+    -iframework "$(xcrun --sdk macosx --show-sdk-path)/System/iOSSupport/System/Library/Frameworks" \
+    -fobjc-arc -DSG_MOTION_TEST_STORE -I ../../tweak/Sources \
+    -framework UIKit -framework Foundation -framework CoreGraphics -framework AVFoundation -framework CoreMedia -framework CoreVideo \
+    state-check.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionFollower.m \
+    ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionCatalog.m \
+    ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionClip.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m \
+    -o "$OUT/state-check"
+"$OUT/state-check"

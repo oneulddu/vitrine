@@ -23,7 +23,7 @@ static NSObject *sg_lock;
 static NSDictionary *sg_spotifyInfo;
 static CFAbsoluteTime sg_spotifyInfoAt;
 static NSString *sg_shownLine;
-static BOOL sg_resending;
+static _Thread_local BOOL sg_resending;
 static dispatch_source_t sg_timer;
 static CFAbsoluteTime sg_due;
 
@@ -302,6 +302,7 @@ static void lookNow(void) {
         dispatch_async(dispatch_get_main_queue(), ^{
             NSString *track = note.object;
             if (![track isEqualToString:SGKaraokePlayingTrack()]
+                || ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()]
                 || SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) != SGLockScreenLyricsLineTranslation) return;
             SGLyricsSyncSavedTranslation(track, note.userInfo[@"language"], SGKaraokeLinesForTrack(track));
             sg_shownLine = nil;
@@ -310,7 +311,7 @@ static void lookNow(void) {
     }];
     // Lines kept for a track, or replaced by better timed ones, can change the line at once.
     [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesKeptNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
-        lookNow();
+        if (!note.object || [note.object isEqual:SGKaraokePlayingTrack()]) tick();
     }];
     // The lyrics' delay applies at once, and moves the next change. Every write in the app posts this, so it is
     // compared on the writing thread and handed to main without waiting only when it moved (AGENTS.md).

@@ -85,6 +85,8 @@ static void markMotionFailed(NSURL *file, NSString *artworkID) {
     tickSoon();
 }
 static NSString *sg_track;     // the track the clips are for
+static NSArray<SGKaraokeLine *> *sg_lines;
+static NSString *sg_lyricsKey;
 static UIImage *sg_cover;      // the cover named by this track's metadata, never a system placeholder
 static NSURL *sg_coverURL;     // attempted once per track/source, including a failed load
 static NSString *sg_coverKey;  // content identity, including no-cover, in both disk and preview keys
@@ -128,7 +130,13 @@ static CFAbsoluteTime sg_askedAt, sg_previewAskedAt;
 static NSCache<NSString *, UIImage *> *sg_previews;
 
 static NSURL *clipFile(NSString *artworkID) {
-    return [folder() URLByAppendingPathComponent:[artworkID stringByAppendingPathExtension:@"mp4"]];
+    // Local-track identities contain full metadata; only their digest belongs in a filename.
+    NSData *data = [artworkID dataUsingEncoding:NSUTF8StringEncoding];
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *name = [NSMutableString string];
+    for (NSUInteger i = 0; i < sizeof(digest); i++) [name appendFormat:@"%02x", digest[i]];
+    return [folder() URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"mp4"]];
 }
 
 // On sg_previewQueue. Moving artwork that will not read uses the selected fallback background.
@@ -255,6 +263,20 @@ static NSString *coverKey(UIImage *cover) {
     return key;
 }
 
+// Source lines are immutable once built; generated translations have their own tag below.
+// Include the timing that chooses a line and the motion interval, not just its array index.
+static NSString *lyricsKey(NSArray<SGKaraokeLine *> *lines) {
+    NSMutableArray *rows = [NSMutableArray arrayWithCapacity:lines.count];
+    for (SGKaraokeLine *line in lines)
+        [rows addObject:@[SGKaraokeLineText(line) ?: @"", @(line.start), @(line.end), @(SGKaraokeSungEnd(line))]];
+    NSData *data = [NSJSONSerialization dataWithJSONObject:rows options:0 error:nil];
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *key = [NSMutableString string];
+    for (NSUInteger i = 0; i < sizeof(digest); i++) [key appendFormat:@"%02x", digest[i]];
+    return key;
+}
+
 static BOOL currentCoverRequest(NSUInteger generation, NSString *trackID, SGShownTrack *track) {
     if (generation != sg_coverGeneration || ![trackID isEqual:SGKaraokePlayingTrack()]) return NO;
     SGShownTrack *now = SGShownTrackNow();
@@ -311,6 +333,8 @@ static NSTimeInterval update(void) {
         }
         if (![trackID isEqualToString:sg_track]) {
             sg_track = trackID;
+            sg_lines = nil;
+            sg_lyricsKey = nil;
             sg_cover = nil;
             sg_coverURL = nil;
             sg_coverKey = @"no-cover";
@@ -323,6 +347,14 @@ static NSTimeInterval update(void) {
             });
         }
         NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(trackID);
+        if (sg_lines != lines) {
+            NSString *key = lyricsKey(lines);
+            sg_lines = lines;
+            if (![key isEqual:sg_lyricsKey]) {
+                sg_lyricsKey = key;
+                invalidateRenders();
+            }
+        }
         if (!lines) SGKaraokeRequestLyrics(trackID);
         // Plain text has no line being sung, nor has a song whose lines are not in yet: the lock screen keeps the cover,
         // or under Moving artwork with lyrics shows the moving artwork plain (LockScreenMotion.x, which has it).
@@ -416,8 +448,8 @@ static NSTimeInterval update(void) {
             }
         }
         NSString *backgroundID = [NSString stringWithFormat:@"%@-%gx%g", SGLyricsBackgroundIdentity(background), size.width, size.height];
-        NSString *artworkID = [NSString stringWithFormat:@"%@-%ld%@%@-%@-%@-%@", trackID, (long)index, resting ? @"r" : @"",
-                               translationTag(translationAt(lines, index, resting)), sg_coverKey, backgroundID, look];
+        NSString *artworkID = [NSString stringWithFormat:@"%@-%ld%@%@-%@-%@-%@-%@", trackID, (long)index, resting ? @"r" : @"",
+                               translationTag(translationAt(lines, index, resting)), sg_lyricsKey, sg_coverKey, backgroundID, look];
         if ([artworkID isEqualToString:sg_shownID]) return wait;
         if (![sg_shownID hasPrefix:trackID]) SGLog(@"lock lyrics: lines offered for %@", trackID);
         if (motion && ![sg_shownID hasSuffix:[@"-" stringByAppendingString:look]]) SGLog(@"lock lyrics: the lines of %@ over %@", trackID, motion.lastPathComponent);
@@ -427,8 +459,8 @@ static NSTimeInterval update(void) {
                                                artworkFor(artworkID, lineAt(lines, index, resting, motion, sg_cover, style, layout, background, size))},
                               state.track.trackTitle);
         if (index + 1 < (NSInteger)lines.count) {
-            NSString *ahead = [NSString stringWithFormat:@"%@-%ld%@-%@-%@-%@", trackID, (long)index + 1,
-                               translationTag(translationAt(lines, index + 1, NO)), sg_coverKey, backgroundID, look];
+            NSString *ahead = [NSString stringWithFormat:@"%@-%ld%@-%@-%@-%@-%@", trackID, (long)index + 1,
+                               translationTag(translationAt(lines, index + 1, NO)), sg_lyricsKey, sg_coverKey, backgroundID, look];
             drawAhead(ahead, lineAt(lines, index + 1, NO, motion, sg_cover, style, layout, background, size));
         }
         return wait;
@@ -530,6 +562,7 @@ static void tick(void) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 NSString *track = note.object;
                 if (![track isEqualToString:SGKaraokePlayingTrack()] || !SGLockArtworkShowsLyrics(SGLockScreenArtwork())
+                    || ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()]
                     || !SGFlag(SGKeyLockScreenTranslation, NO)) return;
                 NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(track);
                 SGLyricsSyncSavedTranslation(track, note.userInfo[@"language"], lines);
@@ -584,7 +617,8 @@ static void tick(void) {
         // Lines kept for the track, or better timed ones in their place, are posted on main.
         [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesKeptNotification object:nil queue:nil
                                                     usingBlock:^(NSNotification *note) {
-            if (sg_running) tick();
+            if (SGLockArtworkShowsLyrics(SGLockScreenArtwork())
+                && (!note.object || [note.object isEqual:SGKaraokePlayingTrack()])) tick();
         }];
         // A hot phone puts the lines over the cover, and they go back over the motion once it cools.
         [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoThermalStateDidChangeNotification object:nil queue:nil

@@ -1172,6 +1172,28 @@ static void checkGeminiTitleMetadata(void) {
     titlesEnabled = deviceAvailable = NO; testLanguage = nil;
     puts("Gemini title metadata: changed title/artist bypass stale cache; identical source reuses it");
 }
+static void checkGeminiMemoBound(void) {
+    testKeys = [NSSet setWithObject:@"Vitrine.Gemini"];
+    CHECK([NSURLProtocol registerClass:SGGeminiTitleProtocol.class]);
+    NSArray *lines = aiLines(@[@"Blue robot"]);
+    NSString *problem = nil;
+    geminiTitleReplies = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 33; i++) {
+        [geminiTitleReplies addObject:@"L0001\t파란 로봇"];
+        NSString *track = [NSString stringWithFormat:@"memo-bound-%lu", (unsigned long)i];
+        CHECK(([askLyrics(SGLyricsAIGemini, track, lines, SGLyricsReplyIndexed, &problem) isEqual:@[@"파란 로봇"]]));
+    }
+    // A recent result remains usable without another reply being supplied.
+    CHECK(([askLyrics(SGLyricsAIGemini, @"memo-bound-32", lines, SGLyricsReplyIndexed, &problem) isEqual:@[@"파란 로봇"]]));
+    // The oldest identity must be fetched again after exceeding the provider's 32-result budget.
+    [geminiTitleReplies addObject:@"L0001\t새 답변"];
+    CHECK(([askLyrics(SGLyricsAIGemini, @"memo-bound-0", lines, SGLyricsReplyIndexed, &problem) isEqual:@[@"새 답변"]]));
+    [NSURLProtocol unregisterClass:SGGeminiTitleProtocol.class];
+    geminiTitleReplies = nil;
+    testKeys = [NSSet set];
+    puts("Gemini memo: evicted song refreshes; recent song remains reusable");
+}
+
 static void checkNewAI(void) {
     NSArray *keys = @[SGKeyLyricsOpenAIBaseURL, SGKeyLyricsOpenAIModel, SGKeyLyricsClaudeModel, SGKeyLyricsGeminiModel, SGKeyLyricsPronunciationNotation];
     NSMutableDictionary *before = [NSMutableDictionary dictionary];
@@ -1186,6 +1208,7 @@ static void checkNewAI(void) {
     checkTitles();
     checkTitleTransitions();
     checkGeminiTitleMetadata();
+    checkGeminiMemoBound();
     for (NSString *key in keys) {
         if (before[key] == NSNull.null) [NSUserDefaults.standardUserDefaults removeObjectForKey:key];
         else [NSUserDefaults.standardUserDefaults setObject:before[key] forKey:key];
