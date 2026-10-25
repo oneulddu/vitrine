@@ -9,6 +9,8 @@ BOOL SGGeminiKeySet(void);
 // Posted on the main thread when the saved translations are deleted or Translate any song changes: the lyrics
 // page syncs its song again and redraws.
 extern NSNotificationName const SGLyricsTranslationsDidChangeNotification;
+// Main-thread publication of the asynchronously refreshed saved-file count/size.
+extern NSNotificationName const SGLyricsSavedSummaryDidChangeNotification;
 // Posted on the main thread after SGLyricsSaveTranslation queues a save, object the track ID and userInfo
 // @{@"language": language}: a reader with no lyrics view (the lock screen) syncs and redraws at once.
 extern NSNotificationName const SGLyricsTranslationSavedNotification;

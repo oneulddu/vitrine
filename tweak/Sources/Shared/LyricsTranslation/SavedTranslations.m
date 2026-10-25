@@ -31,6 +31,12 @@ static void translationMutated(NSURL *file) {
 }
 
 NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
+NSNotificationName const SGLyricsSavedSummaryDidChangeNotification = @"spotifyglass.lyricsSavedSummaryDidChange";
+
+// Only main reads/publishes these; directory enumeration stays on writes().
+static NSString *sg_savedSummary;
+static NSUInteger sg_savedCount;
+static void refreshSummary(void); // called on writes(); coalesces queued mutations
 
 static NSURL *cacheRoot(void) {
 #ifdef SG_LYRICS_TEST_STORE
@@ -72,6 +78,10 @@ static NSURL *fileFor(NSString *track, NSString *language) {
 }
 
 static NSArray<NSURL *> *filesIn(NSURL *directory) {
+#ifdef SG_LYRICS_TEST_STORE
+    extern void SGLyricsTestStoreEnumeration(void);
+    SGLyricsTestStoreEnumeration();
+#endif
     return [NSFileManager.defaultManager contentsOfDirectoryAtURL:directory includingPropertiesForKeys:@[NSURLContentModificationDateKey, NSURLFileSizeKey]
                                                           options:NSDirectoryEnumerationSkipsHiddenFiles error:nil] ?: @[];
 }
@@ -131,6 +141,7 @@ void SGLyricsDeleteTranslation(NSString *track, NSString *language) {
     dispatch_sync(writes(), ^{
         BOOL removed = [NSFileManager.defaultManager removeItemAtURL:file error:nil];
         rememberUnsaved(file, removed || ![NSFileManager.defaultManager fileExistsAtPath:file.path] ? nil : @{});
+        refreshSummary();
     });
 }
 
@@ -222,14 +233,14 @@ void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKara
         BOOL written = [data writeToURL:file atomically:YES];
         rememberUnsaved(file, written ? nil : saved);
         if (written) trim(folder());
+        refreshSummary();
     });
     // Readers enqueue after this write, preserving read-after-write order without blocking main.
     [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationSavedNotification object:track
                                                       userInfo:@{@"language": language}];
 }
 
-static NSString *summary(void) {
-    NSArray<NSURL *> *all = files();
+static NSString *summary(NSArray<NSURL *> *all) {
     if (!all.count) return SGL(@"settings.translation.savedtranslations.value.none", @"None");
     long long bytes = 0;
     for (NSURL *file in all) {
@@ -241,10 +252,30 @@ static NSString *summary(void) {
             [NSByteCountFormatter stringFromByteCount:bytes countStyle:NSByteCountFormatterCountStyleFile]];
 }
 
+static void refreshSummary(void) {
+    static BOOL queued;
+    if (queued) return;
+    queued = YES;
+    dispatch_async(writes(), ^{
+        queued = NO;
+        NSArray<NSURL *> *all = files();
+        NSString *value = summary(all);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            sg_savedCount = all.count;
+            if ([sg_savedSummary isEqualToString:value]) return;
+            sg_savedSummary = value;
+            // The live settings row reads this cache on its next value refresh.
+            [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsSavedSummaryDidChangeNotification object:nil];
+        });
+    });
+}
+
 SGModRow *SGSavedTranslationsRow(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ dispatch_async(writes(), ^{ refreshSummary(); }); });
     return SGStatActionRow(SGL(@"settings.translation.savedtranslations.title", @"Saved translations"), SGL(@"settings.translation.savedtranslations.aisubtitle", @"Saved translations, pronunciations and cultural notes"),
-                           ^NSString *{ return summary(); }, ^{
-        if (!files().count) return;
+                           ^NSString *{ return sg_savedSummary; }, ^{
+        if (!sg_savedCount) return;
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.savedtranslations.alert.title", @"Delete saved translations?")
             message:SGL(@"settings.translation.savedtranslations.alert.message", @"Songs translated before are translated again the next time you ask.") preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.delete", @"Delete") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
@@ -314,6 +345,7 @@ void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictio
         [NSFileManager.defaultManager createDirectoryAtURL:aiFolder() withIntermediateDirectories:YES attributes:nil error:nil];
         [data writeToURL:file atomically:YES];
         trim(aiFolder());
+        refreshSummary();
     });
 }
 
@@ -326,6 +358,7 @@ void SGLyricsDeleteSavedTranslations(void) {
         [sg_unsavedOrder removeAllObjects];
         [NSFileManager.defaultManager removeItemAtURL:folder() error:nil];
         [NSFileManager.defaultManager removeItemAtURL:aiFolder() error:nil];
+        refreshSummary();
     });
     [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsAIResultDidChangeNotification object:nil];
 }

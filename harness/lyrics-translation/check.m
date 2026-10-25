@@ -11,6 +11,10 @@
 
 static dispatch_semaphore_t storeEntered, storeRelease;
 static BOOL holdStore;
+static NSUInteger mainStoreEnumerations;
+void SGLyricsTestStoreEnumeration(void) {
+    if (NSThread.isMainThread) mainStoreEnumerations++;
+}
 NSURL *SGLyricsTestCacheRoot(void) {
     if (!NSThread.isMainThread && holdStore) {
         holdStore = NO;

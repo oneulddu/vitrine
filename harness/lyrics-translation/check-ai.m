@@ -949,7 +949,31 @@ static void checkAsyncTranslationMutation(void) {
     puts("Async translation reads: unrelated track/language/AI saves preserve results; same-key changes and delete-all retire stale applications");
 }
 
+static void checkSavedSummary(void) {
+    SGLyricsDeleteSavedTranslations();
+    SGModRow *row = SGSavedTranslationsRow();
+    NSUInteger enumerations = mainStoreEnumerations;
+    for (NSUInteger i = 0; i < 100; i++) row.value();
+    CHECK(mainStoreEnumerations == enumerations);
+    waitFor(^BOOL { return [row.value() isEqual:@"None"]; });
+    __block BOOL announced = NO;
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsSavedSummaryDidChangeNotification
+        object:nil queue:nil usingBlock:^(NSNotification *note) {
+            CHECK(NSThread.isMainThread);
+            if ([row.value() hasPrefix:@"1 ·"]) announced = YES;
+        }];
+    SGLyricsSaveAI(@"notes", @"summary-song", @"ko", @{@"line": @"note"});
+    waitFor(^BOOL { return announced && [row.value() hasPrefix:@"1 ·"]; });
+    for (NSUInteger i = 0; i < 100; i++) CHECK([row.value() hasPrefix:@"1 ·"]);
+    CHECK(mainStoreEnumerations == enumerations);
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    SGLyricsDeleteSavedTranslations();
+    waitFor(^BOOL { return [row.value() isEqual:@"None"]; });
+    puts("Saved summary: repeated main-thread reads never enumerate; save/delete asynchronously publish count changes");
+}
+
 static void checkAIStore(void) {
+    checkSavedSummary();
     checkAsyncTranslationMutation();
     SGLyricsDeleteSavedTranslations();
     NSArray *written = aiLines(@[@"async line"]), *loaded = aiLines(@[@"async line"]);
@@ -993,7 +1017,7 @@ static void checkAIStore(void) {
     ((SGKaraokeLine *)lines[0]).translationMade = YES;
     SGLyricsSaveTranslation(@"store-test", @"ko", lines);
     SGLyricsSavedAI(@"notes", @"barrier", @"ko");
-    CHECK([SGSavedTranslationsRow().value() hasPrefix:@"2 ·"]);
+    waitFor(^BOOL { return [SGSavedTranslationsRow().value() hasPrefix:@"2 ·"]; });
     NSURL *directory = [SGLyricsTestCacheRoot() URLByAppendingPathComponent:@"AI"];
     NSURL *file = [NSFileManager.defaultManager contentsOfDirectoryAtURL:directory includingPropertiesForKeys:nil options:0 error:nil].firstObject;
     [@"{\"bad\":42}" writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
@@ -1007,7 +1031,7 @@ static void checkAIStore(void) {
     testLanguage = @"ko";
     CHECK([SGLyricsSavedAI(@"pronunciation", @"script-zero", @"0") isEqual:values]);
     SGLyricsDeleteSavedTranslations();
-    CHECK([SGSavedTranslationsRow().value() isEqual:@"None"]);
+    waitFor(^BOOL { return [SGSavedTranslationsRow().value() isEqual:@"None"]; });
     SGLyricsSaveAI(@"notes", @"ancient", @"ko", values);
     CHECK(SGLyricsSavedAI(@"notes", @"ancient", @"ko"));
     file = [NSFileManager.defaultManager contentsOfDirectoryAtURL:directory includingPropertiesForKeys:nil options:0 error:nil].firstObject;
