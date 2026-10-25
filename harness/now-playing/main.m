@@ -78,9 +78,11 @@ void SGKaraokeRequestLyrics(NSString *trackID) {}
 // The lines are there from the start, so nothing is posted under it.
 NSNotificationName const SGKaraokeLinesKeptNotification = @"harness.karaokeLinesKept";
 NSInteger SGKaraokeDelayMs(void) { return [NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsDelay]; }
-// The artist row's translation (LockScreenLyrics.x): the Lyrics line choice stays Original, so the line checked here is
-// the one sung, and nothing is translated.
-NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+// Only the translation check selects the translated artist row.
+static BOOL sg_showTranslation;
+NSInteger SGInt(NSString *key, NSInteger fallback) {
+    return [key isEqual:SGKeyLockScreenLyricsLine] && sg_showTranslation ? SGLockScreenLyricsLineTranslation : fallback;
+}
 NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
 void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void)) {}
@@ -157,6 +159,27 @@ static void progressBar(void) {
     SGNowPlayingSetExtras(@"haptics", nil, nil);
 }
 
+// Lock screen translation: a translation longer than the row is cut by its own
+// length, not the line's, and its pieces follow the line's clock.
+static void translation(void) {
+    sg_showTranslation = YES;
+    MPNowPlayingInfoCenter *center = MPNowPlayingInfoCenter.defaultCenter;
+    NSArray<SGKaraokeLine *> *was = sg_lines;
+    SGKaraokeLine *line = lineOf(@"Hola", 0, 4000);
+    line.translation = @"This translation runs well past what the lock screen's artist row holds";
+    sg_lines = @[line];
+    center.nowPlayingInfo = spotifyInfo(@"Song", 0, 0);
+    NSString *first = sg_system[MPMediaItemPropertyArtist];
+    check(first.length > 0 && first.length <= 30 && [line.translation hasPrefix:first],
+          [NSString stringWithFormat:@"the translation's first piece shows: \"%@\"", first]);
+    center.nowPlayingInfo = spotifyInfo(@"Song", 3.9, 0);
+    NSString *last = sg_system[MPMediaItemPropertyArtist];
+    check(last.length > 0 && last.length <= 30 && [line.translation hasSuffix:last],
+          [NSString stringWithFormat:@"its last piece shows by the line's end: \"%@\"", last]);
+    sg_lines = was;
+    sg_showTranslation = NO;
+}
+
 // Two tracks with one title: what the first had must not stay on the second's info once it is cleared.
 static void sameTitle(void) {
     MPNowPlayingInfoCenter *center = MPNowPlayingInfoCenter.defaultCenter;
@@ -207,6 +230,7 @@ int main(void) {
         BOOL lyrics = getenv("LSL") != NULL;
         printf("lock screen lyrics %s\n", lyrics ? "on" : "off");
         if (lyrics) progressBar();
+        if (lyrics) translation();
         sameTitle();
         artworkChecks();
         printf(failures ? "%d failed\n" : "all passed\n", failures);

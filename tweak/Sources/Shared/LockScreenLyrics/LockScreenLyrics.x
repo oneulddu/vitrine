@@ -101,8 +101,9 @@ static double elapsedAt(NSDictionary *info, CFAbsoluteTime reportedAt, CFAbsolut
 }
 
 // nil between lines and for a track without synced lyrics, plain text included. Past a line's end by
-// SGKaraokeBreakMs, with the next line at least that far off, the artist comes back. `wait` is the playback
-// time in seconds until it can change: kTick while it cannot be worked out yet, negative for not again.
+// SGKaraokeBreakMs, with the next line at least that far off, the artist comes back. With translations on, a
+// line that has one shows it instead. `wait` is the playback time in seconds until it can change: kTick while it
+// cannot be worked out yet, negative for not again.
 static NSString *lineFor(NSDictionary *info, double elapsed, NSTimeInterval *wait) {
     *wait = kTick;
     SPTPlayerState *state = [(id<SPTPlayer>)SGKaraokePlayer() state];
