@@ -65,7 +65,9 @@
 // button, one size, one place on the playlist, the album and the artist. It is added to `page` -- the
 // page's own root view, outside anything that scrolls -- so it stays where it is however far the page is
 // scrolled, which is what Spotify's own does not (the navigation bar's slot is emptied on the way down,
-// trees/continuous/1.txt 2026-09-20, issue #57) and what a button in a scrolling header cannot.
+// trees/continuous/1.txt 2026-09-20, issue #57) and what a button in a scrolling header cannot. On a page laid out
+// right to left the corner is the left one, opposite the mirrored back button, read from the page's own
+// effectiveUserInterfaceLayoutDirection.
 //
 // `source` is Spotify's own ⋯, wherever the page keeps it; nil hides the button until one is found. Kept
 // on `page` under `key` and cheap to call again on every pass.

@@ -69,6 +69,12 @@ The owner's picture is an image view inside the creator button's facepile, fille
 laid out. At 2.2 s the log line "owner picture" says where the redesign drew it: round, a line high, just before
 the name, the two centered together. "none" means the late image was missed.
 
+"pinned hold" lines, in every mode with a ⋯: after every Core Animation commit from the first frame until a second past
+the veil, ⋯ has glass behind it, its own or download's capsule with download right under ⋯ in the page and the veil
+under both; `verify-actions` asserts it. `rtl` lays the page out right to left, and `verify-actions` then expects ⋯
+16pt in from the left edge and, with download pinned (`other`, `mix`), the 88x44 capsule the left-to-right one
+mirrored. `freeze` pauses the veil's fade and holds the first frame under it 4 s, for a screenshot.
+
 "whole page" lines, in every mode: just after launch the page is under the field's veil, below the pinned ⋯, and at
 3 s there is "no veil". The redesign's own line says why it lifted (`log stream`, "page shown whole"): "its artwork
 was read" for a playlist and a mix, "it has no artwork" for Liked Songs, a few tens of ms after its title.

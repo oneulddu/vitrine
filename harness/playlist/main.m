@@ -7,6 +7,98 @@
 #import "Redesigned/Kit/SGRActionRow.h"
 #include <assert.h>
 
+// A button's glass is first in its subviews; its glyph is first when it has never made one.
+static UIView *glassOf(UIView *button) {
+    UIView *glass = button.subviews.firstObject;
+    return [glass isKindOfClass:UIImageView.class] ? nil : glass;
+}
+
+// The pinned pair on `page`: download by its identifier, ⋯ the other mirror button the page holds.
+static void pinnedOn(UIView *page, SGRMirrorButton **download, SGRMirrorButton **more) {
+    *download = nil;
+    *more = nil;
+    for (UIView *v in page.subviews) {
+        if (![v isKindOfClass:SGRMirrorButton.class]) continue;
+        if ([v.accessibilityIdentifier isEqualToString:@"Vitrine.Album.Download"]) *download = (id)v;
+        else *more = (id)v;
+    }
+}
+
+// The page's first frames, while the field holds it under its veil (SGRFieldHoldLimit) and a beat past: on every
+// frame drawn the pinned ⋯ is never its glyph alone. Either its own glass shows, or download's capsule is under it
+// and covers it, download right under ⋯ in the page so that nothing -- the veil -- is between the two. Read after
+// each Core Animation commit. `freeze` stops the main thread for 4 s on the first frame under the veil, so that a
+// screenshot catches it. The verdict is logged and kept for verifyMixActions.
+static BOOL sg_holdChecked, sg_holdPassed;
+static void watchPinnedHold(UIView *page, BOOL freeze) {
+    __block NSUInteger frames = 0, veiled = 0, onCapsule = 0;
+    __block BOOL failed = NO, frozen = !freeze, done = NO;
+    __block CFTimeInterval start = 0;
+    CFRunLoopObserverRef observer = CFRunLoopObserverCreateWithHandler(NULL, kCFRunLoopBeforeWaiting | kCFRunLoopExit, true, 2000001,
+                                                                       ^(CFRunLoopObserverRef obs, CFRunLoopActivity activity) {
+        if (done) return;
+        SGRMirrorButton *download, *more;
+        pinnedOn(page, &download, &more);
+        if (!more || more.hidden || !more.window) return;
+        if (!start) start = CACurrentMediaTime();
+        UIView *veil = nil;
+        for (UIView *v in page.subviews) if ([NSStringFromClass(v.class) isEqualToString:@"SGRFieldVeil"]) veil = v;
+        if (!veil && CACurrentMediaTime() - start > 1) {
+            done = YES;
+            sg_holdChecked = YES;
+            sg_holdPassed = !failed && veiled > 0;
+            NSLog(@"[harness] %@ pinned hold: %lu frames, %lu under the veil, %lu with ⋯ on download's capsule; ⋯ %@",
+                  sg_holdPassed ? @"PASS" : @"FAIL", (unsigned long)frames, (unsigned long)veiled, (unsigned long)onCapsule,
+                  failed ? @"was drawn without glass" : @"never without glass");
+            return;
+        }
+        frames++;
+        if (veil) veiled++;
+        // The veil itself: right under the pinned run (download, when the page has it, then ⋯), over everything else.
+        if (veil && !failed) {
+            NSUInteger v = [page.subviews indexOfObjectIdenticalTo:veil], lowest = [page.subviews indexOfObjectIdenticalTo:more];
+            if (download) lowest = MIN(lowest, [page.subviews indexOfObjectIdenticalTo:download]);
+            if (v + 1 != lowest) {
+                failed = YES;
+                NSLog(@"[harness] FAIL pinned hold: frame %lu, the veil at %lu is not right under the pinned buttons (lowest at %lu)",
+                      (unsigned long)frames, (unsigned long)v, (unsigned long)lowest);
+            }
+        }
+        UIView *own = glassOf(more);
+        BOOL covered = own && !own.hidden;
+        if (!covered && download && !download.hidden) {
+            UIView *capsule = glassOf(download);
+            NSUInteger d = [page.subviews indexOfObjectIdenticalTo:download], m = [page.subviews indexOfObjectIdenticalTo:more];
+            CGRect shape = capsule ? [download convertRect:capsule.frame toView:page] : CGRectNull;
+            covered = capsule && !capsule.hidden && d + 1 == m && CGRectContainsRect(CGRectInset(shape, -0.5, -0.5), more.frame);
+            if (covered) onCapsule++;
+        }
+        if (!covered && !failed) {
+            failed = YES;
+            NSMutableArray *order = [NSMutableArray array];
+            for (UIView *v in page.subviews) [order addObject:v == more ? @"more" : v == download ? @"download" : NSStringFromClass(v.class)];
+            NSUInteger n = MIN(order.count, (NSUInteger)4);
+            NSLog(@"[harness] FAIL pinned hold: frame %lu at %.0f ms, ⋯ drawn without glass; the page's top subviews %@", (unsigned long)frames,
+                  (CACurrentMediaTime() - start) * 1000, [[order subarrayWithRange:NSMakeRange(order.count - n, n)] componentsJoinedByString:@" < "]);
+        }
+        if (!frozen && veil) {
+            frozen = YES;
+            // The veil's fade, already running in the harness, which reads its cover before the window shows, is
+            // paused where it is, so the frame stays the one a held page draws while the main thread waits.
+            CALayer *layer = veil.layer;
+            layer.timeOffset = [layer convertTime:CACurrentMediaTime() fromLayer:nil];
+            layer.speed = 0;
+            [CATransaction flush];
+            NSLog(@"[harness] first frame under the veil held 4 s for a screenshot, veil a=%.2f", layer.presentationLayer.opacity);
+            [NSThread sleepForTimeInterval:4];
+            layer.speed = 1;
+            layer.timeOffset = 0;
+        }
+    });
+    CFRunLoopAddObserver(CFRunLoopGetMain(), observer, kCFRunLoopCommonModes);
+    CFRelease(observer);
+}
+
 static void verifyMixActions(UIView *root, BOOL independent) {
     NSMutableArray *pending = [NSMutableArray arrayWithObject:root];
     SGRHeaderInfo *info = nil;
@@ -35,28 +127,38 @@ static void verifyMixActions(UIView *root, BOOL independent) {
     }
     assert(more && !more.hidden);
     [more.superview layoutIfNeeded];
-    // A button's glass is first in its subviews; its glyph is first when it has never made one.
-    UIView *(^glassOf)(UIView *) = ^UIView *(UIView *button) {
-        UIView *glass = button.subviews.firstObject;
-        return [glass isKindOfClass:UIImageView.class] ? nil : glass;
-    };
+    // `rtl`: the page laid out right to left, where the pair is mirrored.
+    BOOL rtl = [NSProcessInfo.processInfo.arguments containsObject:@"rtl"];
+    UIView *page = more.superview;
+    CGFloat W = page.bounds.size.width;
+    NSLog(@"[harness] pinned frames %@: download %@, more %@, capsule %@, more's glass %@", rtl ? @"rtl" : @"ltr",
+          download && !download.hidden ? NSStringFromCGRect(download.frame) : @"none", NSStringFromCGRect(more.frame),
+          download && !download.hidden && glassOf(download) && !glassOf(download).hidden ? NSStringFromCGRect([download convertRect:glassOf(download).frame toView:page]) : @"none",
+          glassOf(more) && !glassOf(more).hidden ? NSStringFromCGRect([more convertRect:glassOf(more).frame toView:page]) : @"none");
+    assert((page.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft) == rtl);
+    assert(sg_holdChecked && sg_holdPassed);
+    // ⋯ 16pt in from the page's right edge, or from its left one right to left.
+    assert(rtl ? fabs(CGRectGetMinX(more.frame) - 16) < 0.5 : fabs(CGRectGetMaxX(more.frame) - (W - 16)) < 0.5);
     if (independent) {
         assert(trailing.source && !trailing.hidden && download.source && !download.hidden && download.source != trailing.source);
         // Download and ⋯ one glass capsule: adjacent, level, one 88x44 shape under both carried by download,
-        // ⋯ drawing none, the trailing edge 16pt in from the page's.
-        UIView *page = more.superview;
+        // ⋯ drawing none, ⋯ outermost; right to left the left-to-right capsule reflected across the page.
         assert(download.superview == page && [page.subviews indexOfObject:download] < page.subviews.count - 1);
-        assert(fabs(CGRectGetMinX(more.frame) - CGRectGetMaxX(download.frame)) < 0.5);
+        assert(fabs(rtl ? CGRectGetMinX(download.frame) - CGRectGetMaxX(more.frame) : CGRectGetMinX(more.frame) - CGRectGetMaxX(download.frame)) < 0.5);
         assert(fabs(CGRectGetMinY(more.frame) - CGRectGetMinY(download.frame)) < 0.5);
         assert(fabs(more.frame.size.height - download.frame.size.height) < 0.5);
-        assert(fabs(CGRectGetMaxX(more.frame) - (page.bounds.size.width - 16)) < 0.5);
         UIView *capsule = glassOf(download);
         assert(capsule && !capsule.hidden && (!glassOf(more) || glassOf(more).hidden));
         CGRect shape = [download convertRect:capsule.frame toView:page];
         assert(fabs(shape.size.width - 88) < 0.5 && fabs(shape.size.height - 44) < 0.5);
-        assert(fabs(CGRectGetMinX(shape) - CGRectGetMinX(download.frame)) < 0.5);
-        assert(fabs(CGRectGetMaxX(shape) - CGRectGetMaxX(more.frame)) < 0.5 && fabs(CGRectGetMinY(shape) - CGRectGetMinY(more.frame)) < 0.5);
+        assert(fabs(CGRectGetMinX(shape) - CGRectGetMinX(rtl ? more.frame : download.frame)) < 0.5);
+        assert(fabs(CGRectGetMaxX(shape) - CGRectGetMaxX(rtl ? download.frame : more.frame)) < 0.5 && fabs(CGRectGetMinY(shape) - CGRectGetMinY(more.frame)) < 0.5);
+        CGRect ltr = CGRectMake(W - 16 - 88, CGRectGetMinY(more.frame), 88, 44);
+        CGFloat expected = rtl ? W - CGRectGetMaxX(ltr) : ltr.origin.x;
+        assert(fabs(shape.origin.x - expected) < 0.5);
         assert(capsule.layer.cornerRadius == 0 || fabs(capsule.layer.cornerRadius - 22) < 0.5);
+        NSLog(@"[harness] PASS pinned capsule %@: 88x44 at %@, 16pt in from the %@ edge%@", rtl ? @"rtl" : @"ltr",
+              NSStringFromCGRect(shape), rtl ? @"left" : @"right", rtl ? @", the left-to-right frame mirrored" : @"");
         UIControl *source = (id)download.source;
         __block NSUInteger fired = 0;
         [source addAction:[UIAction actionWithHandler:^(UIAction *action) { fired++; }]
@@ -463,6 +565,10 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
     UIViewController *page = [_TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController new];
     page.view.backgroundColor = [UIColor colorWithWhite:0.07 alpha:1];
     self.window.rootViewController = page;
+    // `rtl`: the page laid out right to left, as in Arabic or Hebrew; `freeze`: its first frame under the veil held.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"rtl"])
+        page.view.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft;
+    watchPinnedHold(page.view, [NSProcessInfo.processInfo.arguments containsObject:@"freeze"]);
     // The device's page counts the navigation bar into its own safe area -- 116 against the window's 62 --
     // which is what put the pinned ⋯ a bar's height below the back button (trees/continuous/1.txt 2026-09-20).
     page.additionalSafeAreaInsets = UIEdgeInsetsMake(54, 0, 0, 0);

@@ -196,6 +196,9 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
 // glass of its own (⋯, its half drawn by download's). 0, the default, is the button's own circle. While it is
 // not 0 a press scales only the glyph, so the capsule both share stays still.
 @property (nonatomic) CGFloat sgr_glassReach;
+// The reach runs to the left instead: on a page laid out right to left, where ⋯ is pinned in the left corner and
+// download on its right (SGRPinnedDownload). Set by whoever places the pair, from the page's own direction.
+@property (nonatomic) BOOL sgr_glassReachesLeft;
 @end
 
 @implementation SGRMirrorButton {
@@ -241,7 +244,8 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
     } else {
         CGFloat side = SGRGlassCircleSize;
         UIView *glass = SGRGlassCapsuleInside(self, &kMirrorGlassKey, CGSizeMake(side + reach, side), NO);
-        CGPoint middle = CGPointMake(CGRectGetMidX(bounds) + reach / 2, CGRectGetMidY(bounds));
+        CGFloat shift = self.sgr_glassReachesLeft ? -reach / 2 : reach / 2;
+        CGPoint middle = CGPointMake(CGRectGetMidX(bounds) + shift, CGRectGetMidY(bounds));
         if (!CGPointEqualToPoint(glass.center, middle)) glass.center = middle;
     }
     // By bounds and center, not frame: a press scales the glyph itself while the button is paired.
@@ -260,6 +264,12 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
     self.transform = CGAffineTransformIdentity;
     _glyph.transform = CGAffineTransformIdentity;
     _download.transform = CGAffineTransformIdentity;
+    [self setNeedsLayout];
+}
+
+- (void)setSgr_glassReachesLeft:(BOOL)left {
+    if (_sgr_glassReachesLeft == left) return;
+    _sgr_glassReachesLeft = left;
     [self setNeedsLayout];
 }
 
@@ -523,11 +533,19 @@ static void keepOnTop(UIView *page, UIView *button) {
 // window, and a frame converted from the window's x would hold the button still while the page left under
 // it, over the screen below, until the page was gone and took it along.
 // `along` moves the button that much further in from the trailing edge, for a second button beside ⋯.
+//
+// Right to left (Arabic, Hebrew) the page mirrors, the back button to the right with it, so ⋯ takes the left corner,
+// kCornerSide in from the page's left edge, and download sits on its right. Read from the page's own direction,
+// which follows the app's language and any semantic content attribute put on the page or above it.
+static BOOL laidOutRightToLeft(UIView *page) {
+    return page.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+}
+
 static void placeInCorner(UIView *page, UIView *button, CGFloat along) {
     UIWindow *window = page.window;
     UIView *space = window ?: page;
     CGFloat side = SGRGlassCircleSize;
-    CGFloat x = page.bounds.size.width - kCornerSide - side - along;
+    CGFloat x = laidOutRightToLeft(page) ? kCornerSide + along : page.bounds.size.width - kCornerSide - side - along;
     CGFloat y = space.safeAreaInsets.top;
     if (window) y = [page convertPoint:CGPointMake(0, y) fromView:nil].y;
     CGRect frame = CGRectMake(x, y, side, side);
@@ -556,11 +574,12 @@ SGRMirrorButton *SGRPinnedMore(UIView *page, const void *key, UIView *source) {
     return button;
 }
 
-// Just under ⋯, which is the page's top subview once it has brought itself to the front, with nothing between
-// the two but the field's veil (SGRField.m -holdPage: lays it right under the top pinned button, so the download
-// is veiled with the header it used to sit in, and with it the capsule it carries: for the hold, at most
-// SGRFieldHoldLimit, ⋯ is its glyph alone over the veil). Moved only when out of place, as ⋯ is: a move lays the page out
-// again, and two buttons each taking the top would trade places on every pass.
+// Right under ⋯, which is the page's top subview once it has brought itself to the front, with nothing between
+// the two: the capsule download carries is ⋯'s glass as well, ⋯ drawing none of its own, so anything laid between
+// them would cover that half of the capsule and leave ⋯ its glyph alone. The field's veil was, for the hold of a
+// page opening (up to SGRFieldHoldLimit); SGRField.m -holdPage: now lays it under every pinned button at the top of
+// the page, so the pair is drawn whole over the veil from the first frame. Moved only when out of place, as ⋯ is: a
+// move lays the page out again, and two buttons each taking the top would trade places on every pass.
 static void keepUnderMore(UIView *page, UIView *button) {
     NSArray<UIView *> *subviews = page.subviews;
     UIView *top = subviews.lastObject;
@@ -568,14 +587,7 @@ static void keepUnderMore(UIView *page, UIView *button) {
         keepOnTop(page, button);
         return;
     }
-    static Class veil;
-    if (!veil) veil = NSClassFromString(@"SGRFieldVeil");
-    NSUInteger index = [subviews indexOfObjectIdenticalTo:button];
-    BOOL placed = index != NSNotFound;
-    for (NSUInteger i = index + 1; placed && i + 1 < subviews.count; i++) {
-        if (!veil || ![subviews[i] isKindOfClass:veil]) placed = NO;
-    }
-    if (!placed) [page insertSubview:button belowSubview:top];
+    if (subviews.count < 2 || subviews[subviews.count - 2] != button) [page insertSubview:button belowSubview:top];
 }
 
 SGRMirrorButton *SGRPinnedDownload(UIView *page, const void *key, UIView *source) {
@@ -601,6 +613,7 @@ SGRMirrorButton *SGRPinnedDownload(UIView *page, const void *key, UIView *source
     }
     BOOL paired = more && !more.hidden && !button.hidden;
     button.sgr_glassReach = paired ? SGRGlassCircleSize : 0;
+    button.sgr_glassReachesLeft = laidOutRightToLeft(page);
     more.sgr_glassReach = paired ? -1 : 0;
     placeInCorner(page, button, SGRGlassCircleSize);
     return button;

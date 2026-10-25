@@ -288,17 +288,20 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
         });
     }
     if (!CGRectEqualToRect(_veil.frame, page.bounds)) _veil.frame = page.bounds;
-    // On top of everything the page holds but its pinned ⋯, which brings itself to the front on the header's
-    // passes. Moved only when out of place: a move lays the page out again. The class is looked up by name so a
+    // On top of everything the page holds but its pinned buttons, which bring themselves to the front on the
+    // header's passes: ⋯, and download right under it carrying the glass capsule the two share (SGRActionRow.m).
+    // Under both, not between them, or the veil would cover ⋯'s half of the capsule and leave ⋯ a bare glyph for
+    // the hold. Moved only when out of place: a move lays the page out again. The class is looked up by name so a
     // screen that has a field and no action row (the player) does not have to link SGRActionRow.m.
     static Class pinned;
     if (!pinned) pinned = NSClassFromString(@"SGRMirrorButton");
     NSArray<UIView *> *subviews = page.subviews;
-    UIView *top = subviews.lastObject;
-    if (pinned && [top isKindOfClass:pinned]) {
-        if (subviews.count < 2 || subviews[subviews.count - 2] != _veil) [page insertSubview:_veil belowSubview:top];
-    } else if (top != _veil) {
-        [page addSubview:_veil];
+    NSUInteger lowest = subviews.count;
+    while (pinned && lowest > 0 && [subviews[lowest - 1] isKindOfClass:pinned]) lowest--;
+    if (lowest == subviews.count) {
+        if (subviews.lastObject != _veil) [page addSubview:_veil];
+    } else if (lowest == 0 || subviews[lowest - 1] != _veil) {
+        [page insertSubview:_veil belowSubview:subviews[lowest]];
     }
 }
 

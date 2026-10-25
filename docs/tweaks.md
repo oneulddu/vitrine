@@ -881,8 +881,10 @@ Redesigned:
                   is decoded and moving only in front of the app with Reduce Motion and Low Power Mode off and Auto-Play
                   Video Previews on), the title, the artist and the kind and date centered under it, and the same row of glass
                   controls, shuffle, Play and add -- play and shuffle float over the album page outside its header, so they are concealed
-                  there and the row carries the Kit's stand-ins, which draw their glyph and fire them; download is a
-                  second glass circle pinned beside ⋯ in the top corner (Kit/SGRActionRow.m). A track's artist line
+                  there and the row carries the Kit's stand-ins, which draw their glyph and fire them; download is
+                  pinned beside ⋯ in the top corner, the two one 88x44 glass capsule that download carries, laid right
+                  under ⋯ and, while the page fades in, over the field's veil, so ⋯ is never its glyph alone; right to
+                  left the pair mirrors into the left corner, ⋯ outermost (Kit/SGRActionRow.m). A track's artist line
                   goes where it only repeats the album's artist (with the guests the title names after "feat." and the
                   like), its explicit badge drawn after the title instead (AlbumCredits.m decides, checked on the Mac
                   by harness/album-credits/; a switch on the Albums page). Under the tracks
