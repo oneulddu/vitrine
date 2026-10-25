@@ -497,6 +497,19 @@ static void checkLanguagesAndTitles(void) {
 }
 
 static void checkMalformedTiming(void) {
+    // The unpacked 100k-piece sheet is below KuGou's 1 MiB input bound.
+    for (NSNumber *size in @[@25000, @100000]) {
+        NSUInteger count = size.unsignedIntegerValue;
+        NSMutableString *krc = [NSMutableString stringWithString:@"[0,1]"];
+        for (NSUInteger i = 0; i < count; i++) [krc appendString:@"<0,1,0>a"];
+        NSString *content = packed(krc, @"krc1");
+        NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;
+        NSArray<SGKaraokeLine *> *joined = SGKuGouLines(content);
+        NSTimeInterval elapsed = NSProcessInfo.processInfo.systemUptime - began;
+        CHECK(joined.count == 1 && joined[0].words.count == 1);
+        CHECK([joined[0].words[0].text isEqual:[@"" stringByPaddingToLength:count withString:@"a" startingAtIndex:0]]);
+        printf("KRC scaling: %lu pieces, %.3fs, %.3fus/piece\n", (unsigned long)count, elapsed, elapsed * 1e6 / count);
+    }
     for (id rows in @[NSNull.null, @"not rows", @{}, @[]]) {
         NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"lyrics": @{@"syncType": @"LINE_SYNCED", @"lines": rows}} options:0 error:nil];
         CHECK(!SGKaraokeLinesFromBody(json));

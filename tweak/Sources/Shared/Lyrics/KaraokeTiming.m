@@ -125,33 +125,41 @@ BOOL SGKaraokeUnspacedScript(NSString *text) {
 SGKaraokeLine *SGKaraokePieceLine(NSArray<SGKaraokePiece *> *pieces, NSInteger start, NSInteger end) {
     NSMutableArray<SGKaraokeWord *> *words = [NSMutableArray array];
     SGKaraokeWord *open = nil;   // the word the next piece runs on into
+    NSMutableString *openText = nil;
     BOOL spaced = YES;           // a space has gone by, so the next word is not joined to the last
     for (SGKaraokePiece *piece in pieces) {
         if (piece.spaceBefore) {
+            open.text = openText;
             open = nil;
+            openText = nil;
             spaced = YES;
         }
         // A source times a Chinese or Japanese syllable a piece at a time and never spaces them, so
         // running them together would light a line up whole instead of sweeping it.
         BOOL unspaced = SGKaraokeUnspacedScript(piece.text);
         if (piece.text.length && open && !unspaced) {
-            open.text = [open.text stringByAppendingString:piece.text];
+            [openText appendString:piece.text];
             open.end = MAX(open.end, piece.end);
         } else if (piece.text.length) {
+            open.text = openText;
             SGKaraokeWord *word = [SGKaraokeWord new];
-            word.text = piece.text;
+            if (unspaced) word.text = piece.text;
             word.start = piece.start;
             word.end = piece.end;
             word.joined = !spaced;
             [words addObject:word];
             open = unspaced ? nil : word;
+            openText = unspaced ? nil : [piece.text mutableCopy];
             spaced = NO;
         }
         if (!piece.text.length || piece.spaceAfter) {
+            open.text = openText;
             open = nil;
+            openText = nil;
             spaced = YES;
         }
     }
+    open.text = openText;
     if (!words.count) return nil;
     SGKaraokeLine *line = [SGKaraokeLine new];
     line.words = words;

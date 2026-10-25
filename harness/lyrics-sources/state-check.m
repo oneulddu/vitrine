@@ -90,7 +90,11 @@ static BOOL sg_testLocalFile;
 BOOL SGLocalFileIs(NSString *track) { return sg_testLocalFile; }
 NSString *SGLocalFileLyricsKey(NSString *track) { return nil; }
 NSDictionary *SGLocalFileInfo(NSString *track) { return @{@"title": @"Song", @"artist": @"Singer", @"seconds": @200}; }
-SGLyricsResult *SGImportedLRCFor(NSString *track, NSString *title, NSString *artist) { return nil; }
+static NSMutableDictionary<NSString *, void (^)(SGLyricsResult *)> *sg_importedReplies;
+void SGImportedLRCFetch(NSString *track, NSString *title, NSString *artist, void (^done)(SGLyricsResult *)) {
+    if (sg_importedReplies) sg_importedReplies[track] = done;
+    else dispatch_async(dispatch_get_main_queue(), ^{ done(nil); });
+}
 double SGSingHeldLead(void) { return 0; }
 double SGSingLeadOf(SPTPlayerState *state) { return 0; }
 
@@ -131,12 +135,18 @@ static id fakeApplication(id self, SEL selector) { return sg_testApplication; }
 @end
 static NSUInteger sg_spotifyAsks;
 static NSInteger sg_spotifyStatus = 404;
+static NSString *sg_holdSpotifyTrack;
+static dispatch_block_t sg_heldSpotifyReply;
 static id spotifyMiss(id self, SEL selector, NSURLRequest *request, void (^done)(NSData *, NSURLResponse *, NSError *)) {
     CHECK([request.URL.host isEqual:@"spclient.wg.spotify.com"]);
     sg_spotifyAsks++;
     HarnessLyricsTask *task = [HarnessLyricsTask new];
     task.reply = ^{
-        done(nil, [[NSHTTPURLResponse alloc] initWithURL:request.URL statusCode:sg_spotifyStatus HTTPVersion:@"HTTP/2" headerFields:nil], nil);
+        dispatch_block_t reply = ^{
+            done(nil, [[NSHTTPURLResponse alloc] initWithURL:request.URL statusCode:sg_spotifyStatus HTTPVersion:@"HTTP/2" headerFields:nil], nil);
+        };
+        if ([request.URL.lastPathComponent isEqual:sg_holdSpotifyTrack]) sg_heldSpotifyReply = reply;
+        else reply();
     };
     return task;
 }
@@ -351,6 +361,108 @@ static void checkSpicyCancellation(void) {
     SGLyricsSetOrder(@[@"musixmatch"]);
     SGSetInt(SGKeyLyricsAskMode, 0);
     puts("Spicy cancellation: all three walk modes retry the new credential after stale completion");
+}
+
+static void checkCompletedBounds(void) {
+    id oldPlayer = sg_player;
+    NSString *oldSeen = sg_lastSeenID;
+    HarnessPlayer *player = [HarnessPlayer new]; sg_player = player;
+    HarnessLyricsState *state = [HarnessLyricsState new]; player.state = state;
+    HarnessLyricsTrack *playing = [HarnessLyricsTrack new]; state.track = playing;
+    NSString *current = @"bounded-current", *active = @"bounded-active";
+    playing.URI = [@"spotify:track:" stringByAppendingString:current];
+    sg_lastSeenID = current;
+    SGLyricsProvider *provider = SGLyricsProviderFor(@"musixmatch");
+    SGLyricsAsk saved = provider.ask;
+    provider.ask = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { done(nil); };
+    void (^miss)(NSString *) = ^(NSString *track) {
+        __block BOOL ended = NO;
+        SGLyricsFetch(track, ^(SGLyricsResult *result) { CHECK(!result); ended = YES; });
+        pumpUntil(^BOOL { return ended; });
+    };
+    miss(current); miss(active);
+    for (NSUInteger i = 0; i < 45; i++) miss([NSString stringWithFormat:@"warm-miss-%lu", (unsigned long)i]);
+    __block void (^held)(SGLyricsResult *);
+    provider.ask = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) {
+        if ([q.trackID isEqual:active]) held = done;
+        else done(nil);
+    };
+    __block BOOL activeEnded = NO;
+    SGLyricsFetch(active, ^(SGLyricsResult *result) { activeEnded = YES; });
+    pumpUntil(^BOOL { return held != nil; });
+    NSMutableArray<NSString *> *tracks = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 250; i++) {
+        NSString *track = [NSString stringWithFormat:@"source-miss-%lu", (unsigned long)i];
+        [tracks addObject:track]; miss(track);
+    }
+    CHECK(sg_missing.count <= 201 && !activeEnded);
+    CHECK(!SGLyricsMayHave(current) && !SGLyricsMayHave(active));
+    NSString *evicted;
+    for (NSString *track in tracks) if (SGLyricsMayHave(track)) { evicted = track; break; }
+    CHECK(evicted);
+    provider.ask = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { done(madeUpLyrics(@"Asked again", SGKaraokeTimingLine)); };
+    __block SGLyricsResult *answer;
+    SGLyricsFetch(evicted, ^(SGLyricsResult *result) { answer = result; });
+    pumpUntil(^BOOL { return answer != nil; });
+    CHECK([answer.provider isEqual:@"Asked again"]);
+    held(nil); CHECK(activeEnded);
+    provider.ask = saved;
+
+    BOOL oldOwn = sg_ownSources; sg_ownSources = NO;
+    NSDictionary *oldHeaders = sg_spclientHeaders; sg_spclientHeaders = @{};
+    NSUInteger oldAsks = sg_spotifyAsks;
+    Method method = class_getInstanceMethod(NSURLSession.class, @selector(dataTaskWithRequest:completionHandler:));
+    IMP oldTask = method_setImplementation(method, (IMP)spotifyMiss);
+    SGKaraokeRequestLyrics(current);
+    pumpUntil(^BOOL { return !SGKaraokeLooking(current); });
+    sg_holdSpotifyTrack = active;
+    SGKaraokeRequestLyrics(active);
+    CHECK(sg_heldSpotifyReply && SGKaraokeLooking(active));
+    [tracks removeAllObjects];
+    for (NSUInteger i = 0; i < 250; i++) {
+        NSString *track = [NSString stringWithFormat:@"keeper-miss-%lu", (unsigned long)i];
+        [tracks addObject:track]; SGKaraokeRequestLyrics(track);
+        pumpUntil(^BOOL { return !SGKaraokeLooking(track); });
+    }
+    CHECK(sg_requested.count <= 201);
+    CHECK([sg_requested containsObject:current] && [sg_requested containsObject:active] && SGKaraokeLooking(active));
+    evicted = nil;
+    for (NSString *track in tracks) if (![sg_requested containsObject:track]) { evicted = track; break; }
+    CHECK(evicted);
+    NSUInteger before = sg_spotifyAsks;
+    SGKaraokeRequestLyrics(evicted);
+    pumpUntil(^BOOL { return !SGKaraokeLooking(evicted); });
+    CHECK(sg_spotifyAsks == before + 1);
+    sg_holdSpotifyTrack = nil;
+    sg_heldSpotifyReply(); sg_heldSpotifyReply = nil;
+    pumpUntil(^BOOL { return !SGKaraokeLooking(active); });
+    method_setImplementation(method, oldTask);
+    sg_spotifyAsks = oldAsks; sg_spclientHeaders = oldHeaders; sg_ownSources = oldOwn;
+    sg_player = oldPlayer; sg_lastSeenID = oldSeen;
+    puts("completed records: 200-record budgets, active/current protection and evicted misses re-requested");
+}
+
+static void checkImportedDelivery(void) {
+    sg_testLocalFile = YES;
+    sg_importedReplies = [NSMutableDictionary dictionary];
+    NSString *a = @"local-import-a", *b = @"local-import-b";
+    SGKaraokeRequestLyrics(a);
+    CHECK(SGKaraokeLooking(a) && !SGKaraokeLinesForTrack(a));
+    void (^stale)(SGLyricsResult *) = sg_importedReplies[a];
+    SGKaraokeRequestLyrics(b);
+    sg_importedReplies[b](madeUpLyrics(@"Track B", SGKaraokeTimingLine));
+    CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(b).firstObject) isEqual:@"Track B"]);
+    SGKaraokeForgetLyrics(a);
+    SGKaraokeRequestLyrics(a);
+    stale(madeUpLyrics(@"Retired import", SGKaraokeTimingLine));
+    CHECK(SGKaraokeLooking(a) && !SGKaraokeLinesForTrack(a));
+    sg_importedReplies[a](madeUpLyrics(@"Current import", SGKaraokeTimingLine));
+    CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(a).firstObject) isEqual:@"Current import"]);
+    CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(b).firstObject) isEqual:@"Track B"]);
+    SGKaraokeForgetLyrics(a); SGKaraokeForgetLyrics(b);
+    sg_importedReplies = nil;
+    sg_testLocalFile = NO;
+    puts("imported delivery: nonblocking lookup, track isolation and retired-token rejection passed");
 }
 
 static void checkMissingRecovery(void) {
@@ -1279,6 +1391,8 @@ int main(void) {
         sg_lastSeenID = @"song";
         checkMissingRecovery();
         checkSpicyCancellation();
+        checkCompletedBounds();
+        checkImportedDelivery();
         const char *race = getenv("VITRINE_PICK_RACE");
         if (race) { checkPickRaces((NSUInteger)atoi(race)); return 0; }
         HarnessPort *port = [HarnessPort new]; port.UID = @"headphones-one"; port.portName = @"Headphones"; port.portType = AVAudioSessionPortBluetoothA2DP;

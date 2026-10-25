@@ -20,6 +20,7 @@
 @implementation SGLyricsProvider
 @end
 static NSArray<NSString *> *sg_order;
+static atomic_bool sg_requireWorker;
 NSArray<NSString *> *SGLyricsOrder(void) { return sg_order ?: @[]; }
 void SGLyricsSetOrder(NSArray<NSString *> *keys) { sg_order = keys; }
 SGLyricsProvider *SGLyricsProviderFor(NSString *key) {
@@ -28,6 +29,7 @@ SGLyricsProvider *SGLyricsProviderFor(NSString *key) {
     return provider;
 }
 void SGLyricsPageLines(NSArray<SGKaraokeLine *> *lines, NSArray<NSNumber *> **starts, NSArray<NSString *> **texts) {
+    if (atomic_load(&sg_requireWorker)) CHECK(!NSThread.isMainThread);
     NSMutableArray *at = [NSMutableArray array], *said = [NSMutableArray array];
     for (SGKaraokeLine *line in lines) {
         [at addObject:@(line.start)];
@@ -50,7 +52,7 @@ static NSURL *lrc(NSString *name, NSString *text) {
 }
 
 // Hold a real file read after it obtained the old bytes, while main deletes/reimports its name.
-static void invalidationCheck(void) {
+static void invalidationCheck(BOOL asynchronous) {
     NSString *uri = @"spotify:local:Race:Album:Track:120";
     NSURL *source = lrc(@"race.lrc", @"[00:01]Old lyrics");
     CHECK(importLRC(source, uri, nil));
@@ -61,6 +63,7 @@ static void invalidationCheck(void) {
     static atomic_bool intercept;
     atomic_store(&intercept, true);
     IMP blocked = imp_implementationWithBlock(^id(id receiver, NSString *path, NSStringEncoding encoding, NSError **error) {
+        if (asynchronous) CHECK(!NSThread.isMainThread);
         id text = ((id (*)(id, SEL, id, NSStringEncoding, NSError **))original)(receiver, selector, path, encoding, error);
         if ([path.lastPathComponent isEqual:@"race.lrc"] && !NSThread.isMainThread && atomic_exchange(&intercept, false)) {
             dispatch_semaphore_signal(read);
@@ -72,20 +75,76 @@ static void invalidationCheck(void) {
     });
     method_setImplementation(method, blocked);
     __block SGLyricsResult *stale;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        stale = SGImportedLRCFor(uri, @"Track", @"Race");
-        dispatch_semaphore_signal(finished);
-    });
+    __block BOOL delivered = NO;
+    if (asynchronous) {
+        SGImportedLRCFetch(uri, @"Track", @"Race", ^(SGLyricsResult *result) {
+            CHECK(NSThread.isMainThread);
+            stale = result; delivered = YES;
+        });
+        CHECK(!delivered);
+    } else {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            stale = SGImportedLRCFor(uri, @"Track", @"Race");
+            dispatch_semaphore_signal(finished);
+        });
+    }
     CHECK(dispatch_semaphore_wait(read, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
     CHECK(SGDeleteImportedLRC(@"race.lrc"));
     CHECK([importLRC(lrc(@"race.lrc", @"[00:01]Replacement lyrics"), uri, nil) isEqual:@"race.lrc"]);
     dispatch_semaphore_signal(resume);
-    CHECK(dispatch_semaphore_wait(finished, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
+    if (asynchronous) {
+        NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
+        while (!delivered && deadline.timeIntervalSinceNow > 0)
+            [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+        CHECK(delivered && [stale.texts.firstObject isEqual:@"Replacement lyrics"]);
+    } else {
+        CHECK(dispatch_semaphore_wait(finished, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
+        CHECK(!stale);
+    }
     method_setImplementation(method, original);
     imp_removeBlock(blocked);
-    CHECK(!stale);
     CHECK([SGImportedLRCFor(uri, @"Track", @"Race").texts.firstObject isEqual:@"Replacement lyrics"]);
     CHECK(SGDeleteImportedLRC(@"race.lrc"));
+}
+
+static SGLyricsResult *asyncLyrics(NSString *track, NSString *title) {
+    __block BOOL done = NO;
+    __block SGLyricsResult *answer;
+    SGLyricsQuery *query = [SGLyricsQuery new];
+    query.trackID = track; query.title = title; query.artist = @"Cache";
+    SGImportedLRCAsk(query, ^(SGLyricsResult *result) {
+        CHECK(NSThread.isMainThread); answer = result; done = YES;
+    });
+    CHECK(!done);
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10];
+    while (!done && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    CHECK(done);
+    return answer;
+}
+
+static void asyncLibraryCheck(void) {
+    for (NSUInteger i = 0; i < 80; i++) {
+        NSString *name = [NSString stringWithFormat:@"cache-%02lu.lrc", (unsigned long)i];
+        NSString *uri = [NSString stringWithFormat:@"spotify:local:Cache:Album:Track%lu:120", (unsigned long)i];
+        CHECK(importLRC(lrc(name, [NSString stringWithFormat:@"[ti:Track%lu]\n[ar:Cache]\n[00:01]Cached words", (unsigned long)i]), uri, nil));
+    }
+    atomic_store(&sg_requireWorker, true);
+    // No link: the library scan and every parser run must happen off main.
+    CHECK([asyncLyrics(@"spotify:track:unlinked", @"Track79").texts.firstObject isEqual:@"Cached words"]);
+    NSHashTable *retainedLines = [NSHashTable weakObjectsHashTable];
+    for (NSUInteger i = 0; i < 80; i++) {
+        @autoreleasepool {
+            NSString *uri = [NSString stringWithFormat:@"spotify:local:Cache:Album:Track%lu:120", (unsigned long)i];
+            SGLyricsResult *result = asyncLyrics(uri, nil);
+            CHECK([result.texts.firstObject isEqual:@"Cached words"]);
+            [retainedLines addObject:result.karaokeLines];
+        }
+    }
+    CHECK(retainedLines.allObjects.count <= 40);
+    CHECK([asyncLyrics(@"spotify:local:Cache:Album:Track0:120", nil).texts.firstObject isEqual:@"Cached words"]);
+    atomic_store(&sg_requireWorker, false);
+    puts("LRC async: worker-only scanning/parsing, main completion and bounded retained sheets passed");
 }
 
 int main(void) {
@@ -159,7 +218,9 @@ int main(void) {
         NSString *kept = [NSString stringWithContentsOfFile:[documents stringByAppendingPathComponent:[@"Vitrine/Lyrics" stringByAppendingPathComponent:utf16]]
                                                    encoding:NSUTF8StringEncoding error:nil];
         CHECK([kept hasPrefix:@"[ti:Wide]"]);
-        invalidationCheck();
+        invalidationCheck(NO);
+        invalidationCheck(YES);
+        asyncLibraryCheck();
         [NSFileManager.defaultManager removeItemAtURL:temporaryDirectory error:nil];
         printf("lrc: all checks passed\n");
     }

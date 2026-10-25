@@ -1,8 +1,7 @@
 // LocalLyrics.h says what is kept and how a track finds its file.
 //
-// Threading: the lyrics engine and the sources ask on the main queue, the native look's metadata hook
-// on whatever thread Spotify reads a track on, so the links are swapped whole under a lock and the read
-// files are kept under one; the files are written on the main thread.
+// Playback snapshots names on main and reads files on a serial worker. The native lyrics page also
+// reads off main, so links and the bounded sheet cache are protected across both readers.
 #import <os/lock.h>
 #import "Core/SGCore.h"
 #import "Shared/Lyrics/Lyrics.h"
@@ -169,9 +168,10 @@ static SGLRCSheet *sheetFrom(NSString *lrc) {
     return sheet;
 }
 
-// Read once each; an import or a delete starts over.
+// Parsed sheets are bounded independently of the number of imported files.
 static NSMutableDictionary<NSString *, SGLRCSheet *> *sg_sheets;
 static NSUInteger sg_sheetGeneration;
+static const NSUInteger kKeptSheets = 40;
 
 static SGLRCSheet *sheetNamed(NSString *name) {
     NSUInteger generation;
@@ -186,6 +186,7 @@ static SGLRCSheet *sheetNamed(NSString *name) {
     if (!sheet) return nil;
     @synchronized (SGLRCSheet.class) {
         if (generation != sg_sheetGeneration) return nil;
+        if (sg_sheets.count >= kKeptSheets && !sg_sheets[name]) [sg_sheets removeAllObjects];
         sg_sheets[name] = sheet;
     }
     return sheet;
@@ -281,21 +282,49 @@ static SGLyricsResult *resultOf(SGLRCSheet *sheet, NSString *title, NSString *ar
     return result;
 }
 
-SGLyricsResult *SGImportedLRCFor(NSString *trackID, NSString *title, NSString *artist) {
-    NSString *linked = SGImportedLRCLinkedTo(trackID);
-    NSMutableArray<NSString *> *artists = [NSMutableArray array];
-    if (SGLocalFileIs(trackID) && !title.length) localNames(trackID, &title, artists);
-    else if (artist.length) [artists addObject:artist];
+static SGLyricsResult *lookup(NSString *linked, NSString *title, NSArray<NSString *> *artists) {
     if (linked) return resultOf(sheetNamed(linked), title, artists.firstObject);
     for (NSString *name in SGImportedLRCFiles()) {
-        SGLRCSheet *sheet = sheetNamed(name);
-        if (sheet.lines.count && sheetMatches(sheet, name, title, artists)) return resultOf(sheet, nil, nil);
+        @autoreleasepool {
+            SGLRCSheet *sheet = sheetNamed(name);
+            if (sheet.lines.count && sheetMatches(sheet, name, title, artists)) return resultOf(sheet, nil, nil);
+        }
     }
     return nil;
 }
 
+SGLyricsResult *SGImportedLRCFor(NSString *trackID, NSString *title, NSString *artist) {
+    NSMutableArray<NSString *> *artists = [NSMutableArray array];
+    if (SGLocalFileIs(trackID) && !title.length) localNames(trackID, &title, artists);
+    else if (artist.length) [artists addObject:artist];
+    return lookup(SGImportedLRCLinkedTo(trackID), title, artists);
+}
+
+void SGImportedLRCFetch(NSString *trackID, NSString *title, NSString *artist, void (^done)(SGLyricsResult *)) {
+    NSString *resolved = title, *linked = SGImportedLRCLinkedTo(trackID);
+    NSMutableArray<NSString *> *artists = [NSMutableArray array];
+    if (SGLocalFileIs(trackID) && !resolved.length) localNames(trackID, &resolved, artists);
+    else if (artist.length) [artists addObject:artist];
+    NSUInteger generation;
+    @synchronized (SGLRCSheet.class) { generation = sg_sheetGeneration; }
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("app.vitrine.imported-lyrics", DISPATCH_QUEUE_SERIAL); });
+    dispatch_async(queue, ^{
+        @autoreleasepool {
+            SGLyricsResult *result = lookup(linked, resolved, artists);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                BOOL changed;
+                @synchronized (SGLRCSheet.class) { changed = generation != sg_sheetGeneration; }
+                if (changed) { SGImportedLRCFetch(trackID, title, artist, done); return; }
+                done(result);
+            });
+        }
+    });
+}
+
 SGLyricsAsk SGImportedLRCAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
-    done(SGImportedLRCFor(query.trackID, query.title, query.artist));
+    SGImportedLRCFetch(query.trackID, query.title, query.artist, done);
 };
 
 #pragma mark - importing and deleting

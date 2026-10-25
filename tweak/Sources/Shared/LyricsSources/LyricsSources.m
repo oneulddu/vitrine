@@ -350,6 +350,24 @@ static NSMutableDictionary<NSString *, NSString *> *sg_credits;
 // times a second while a list scrolls, so a value already noted costs one lookup and no write.
 static NSMutableDictionary<NSString *, NSNumber *> *sg_spotifyHas;
 static const NSUInteger kNotedTracks = 200;
+static const NSUInteger kMissingTracks = 200;
+
+// Main queue; missing marks outlive the answer cache, but not an unlimited number of completed tracks.
+static void pruneMissing(NSString *newest) {
+    NSString *playing = SGKaraokePlayingTrack();
+    @synchronized (sg_missing) {
+        NSMutableSet<NSString *> *completed = [sg_missing mutableCopy];
+        [completed minusSet:[NSSet setWithArray:sg_waiting.allKeys]];
+        NSUInteger count = completed.count;
+        for (NSString *track in completed) {
+            if (count <= kMissingTracks) break;
+            if ([track isEqualToString:playing] || [track isEqualToString:newest]) continue;
+            [sg_missing removeObject:track];
+            if (sg_kept[track] == NSNull.null) [sg_kept removeObjectForKey:track];
+            count--;
+        }
+    }
+}
 
 static void setUp(void) {
     static dispatch_once_t once;
@@ -603,6 +621,7 @@ static void finish(SGLyricsWalk *walk) {
              [walk.passedOver componentsJoinedByString:@", "]]);
     NSArray *waiting = sg_waiting[trackID];
     [sg_waiting removeObjectForKey:trackID];
+    pruneMissing(trackID);
     for (void (^done)(SGLyricsResult *) in waiting) done(lyrics);
 }
 
@@ -1079,4 +1098,5 @@ void SGLyricsRestoreKept(NSString *trackID, id kept) {
         sg_waiting[trackID] = waiting;
         whenNamed(trackID, 0, waiting);
     }
+    pruneMissing(trackID);
 }

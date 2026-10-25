@@ -32,8 +32,11 @@ BOOL SGDeleteImportedLRC(NSString *name);
 NSString *SGImportedLRCLinkedTo(NSString *uri);
 // The lines for a track: its linked file, else the first file whose title and artist match the names
 // given (for a local file, nil names are read from the file's URI and the player's track). nil when no
-// file has it. Safe from any thread.
+// file has it. Synchronous: callers on the UI thread use SGImportedLRCFetch instead.
 SGLyricsResult *SGImportedLRCFor(NSString *trackID, NSString *title, NSString *artist);
+// Entry/completion on main; snapshot names there, then scan and parse files on a serial worker.
+// An import/delete during lookup restarts against the new library before completing.
+void SGImportedLRCFetch(NSString *trackID, NSString *title, NSString *artist, void (^done)(SGLyricsResult *result));
 // Posted on the main thread after an import or a delete.
 extern NSNotificationName const SGImportedLRCDidChangeNotification;
 

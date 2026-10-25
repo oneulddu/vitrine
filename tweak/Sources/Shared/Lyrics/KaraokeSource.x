@@ -21,6 +21,7 @@
 
 static const NSUInteger kKeptTracks = 40;
 static const NSUInteger kSeenTracks = 200;
+static const NSUInteger kCompletedRequests = 200;
 // A track whose request was lost may be asked for again after this long, twice as long after each loss
 // in a row up to the most: soon enough for the song still playing, not so soon that a busy server is pressed.
 static const NSTimeInterval kRetryPause = 10, kRetryPauseMost = 60;
@@ -245,8 +246,27 @@ static void translate(NSString *track) {
 
 NSNotificationName const SGKaraokeLinesKeptNotification = @"spotifyglass.karaoke.linesKept";
 
+// Request marks without a retained sheet need their own budget. Active asks/backoffs are never evicted.
+static void pruneRequested(NSString *newest) {
+    NSMutableSet<NSString *> *completed = [sg_requested mutableCopy];
+    [completed minusSet:sg_asking];
+    [completed minusSet:sg_looking];
+    NSString *playing;
+    @synchronized (sg_seenTracks) { playing = sg_lastSeenID; }
+    NSUInteger count = completed.count;
+    for (NSString *track in completed) {
+        if (count <= kCompletedRequests) break;
+        if ([track isEqualToString:playing] || [track isEqualToString:newest]) continue;
+        [sg_requested removeObject:track];
+        [sg_losses removeObjectForKey:track];
+        [sg_sourceRetries removeObjectForKey:track];
+        count--;
+    }
+}
+
 // Main queue only.
 static void announce(NSString *track) {
+    pruneRequested(track);
     [NSNotificationCenter.defaultCenter postNotificationName:SGKaraokeLinesKeptNotification object:track];
 }
 
@@ -551,17 +571,33 @@ static BOOL askLrcLib(NSString *trackID, void (^done)(SGLyricsResult *lyrics)) {
 }
 
 // Main queue only.
-static void requestLyrics(NSString *trackID, BOOL tryStore) {
+static void requestLyrics(NSString *trackID, BOOL tryStore, BOOL tryImported) {
     if (!trackID || sg_lyrics[trackID] || [sg_requested containsObject:trackID]
         || sg_sourceRetries[trackID].unsignedIntegerValue > kSourceRetries) return;
     // spclient has nothing for a local file, which only the sources can name. A file of the user's own,
     // linked to it or matching its names, comes before every source.
     BOOL local = SGLocalFileIs(trackID);
     BOOL pinned = SGLyricsPinnedID(trackID) != nil;
-    SGLyricsResult *imported = local && !pinned ? SGImportedLRCFor(trackID, nil, nil) : nil;
-    if (imported) {
-        keep(trackID, imported.karaokeLines, NO);
-        SGLyricsSetCredit(trackID, imported.provider);
+    if (local && !pinned && tryImported) {
+        if (!sg_requests) sg_requests = [NSMutableDictionary dictionary];
+        NSObject *token = [NSObject new];
+        sg_requests[trackID] = token;
+        [sg_requested addObject:trackID];
+        [sg_asking addObject:trackID];
+        [sg_looking addObject:trackID];
+        SGImportedLRCFetch(trackID, nil, nil, ^(SGLyricsResult *imported) {
+            if (sg_requests[trackID] != token) return;
+            [sg_requests removeObjectForKey:trackID];
+            [sg_asking removeObject:trackID];
+            [sg_looking removeObject:trackID];
+            if (imported) {
+                keep(trackID, imported.karaokeLines, NO);
+                SGLyricsSetCredit(trackID, imported.provider);
+                return;
+            }
+            [sg_requested removeObject:trackID];
+            requestLyrics(trackID, tryStore, NO);
+        });
         return;
     }
     if (tryStore && !local && SGFlag(SGKeyLyricsOffline, YES)) {
@@ -589,7 +625,7 @@ static void requestLyrics(NSString *trackID, BOOL tryStore) {
                 return;
             }
             [sg_requested removeObject:trackID];
-            requestLyrics(trackID, NO); // A miss continues exactly once, without another disk look.
+            requestLyrics(trackID, NO, NO); // A miss continues exactly once, without another disk look.
         });
         return;
     }
@@ -726,7 +762,7 @@ static NSString *idOf(SPTPlayerTrack *track) {
 // Tracks come in from the player and from every list that reads their metadata, so when the table
 // is full it is emptied, all but the track playing, whose name the next lyrics request needs.
 void SGKaraokeRequestLyrics(NSString *trackID) {
-    requestLyrics(trackID, YES);
+    requestLyrics(trackID, YES, YES);
 }
 
 static void remember(SPTPlayerTrack *track, NSString *trackID) {
