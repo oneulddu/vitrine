@@ -63,6 +63,10 @@ static BOOL isMusic(NSString *uri) {
     _play = nil;
 }
 
+- (void)playerStateDidReport:(SPTPlayerState *)state {
+    if ([SGURIString(state.track.URI) isEqualToString:_play.uri]) [self fill:state];
+}
+
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     NSTimeInterval now = NSDate.date.timeIntervalSince1970;
     NSTimeInterval elapsed = continuousSeconds();

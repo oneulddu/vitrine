@@ -41,6 +41,9 @@ unsupported items are skipped and reported. ZIP64 remains unsupported. Export re
 JSON rather than creating a backup the importer cannot read; the source history stays untouched.
 
 Initial TSV loading, JSON parsing, folder walking, aggregation and export serialization run off main.
+The build also runs the production Logos recorder in an isolated Catalyst home. Independent fake
+player reports and a continuous clock cover metadata arriving on report-only updates: an unnamed
+track receives its names and produces one forty-second play at the next track.
 `SGPlayLog` serializes loading and indexed imports on its IO queue, with main-queue completions and
 independently published snapshots/errors. A separate recorder queue appends and syncs each small
 journal row in order, without blocking main, queuing behind imports, or rewriting history.
