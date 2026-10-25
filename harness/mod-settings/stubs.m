@@ -24,6 +24,8 @@ PAGE(SGRHomeSettingsPage) PAGE(SGRVisualiserSettingsPage)
 PAGE(SGSingSettingsPage) PAGE(SGSpatialVoiceSettingsPage) PAGE(SGVibrationsSettingsPage)
 UIViewController *SGRPlayerSettingsPage(NSArray *more) { return blank(@"SGRPlayerSettingsPage"); }
 UIViewController *SGRLyricsSettingsPage(NSString *title, NSString *intro, NSArray<SGModSection *> *sections) { return blank(title); }
+// Redesigned/Lyrics/LyricsStylesSettings.m, whose cards play the real karaoke view: a blank page here.
+PAGE(SGRLyricsStylesSettingsPage)
 
 #define ROW(name) SGModRow *name(void) { return SGPageRow(@#name, ^UIViewController *{ return nil; }); }
 ROW(SGAppIconRow) ROW(SGGeminiKeyRow) ROW(SGGlassLyricsRow) ROW(SGLockScreenLyricsRow) ROW(SGLyricsMeaningsRow)
@@ -35,6 +37,15 @@ ROW(SGRLyricsKeepAwakeRow) ROW(SGSavedTranslationsRow) ROW(SGSimplifyTitlesRow) 
 ROW(SGTranslateTitlesRow)
 NSString *SGLyricsAIName(SGLyricsAI service) { return @[@"Gemini", @"Claude", @"OpenAI"][service]; }
 SGModRow *SGLyricsAIServiceRow(SGLyricsAI service) { return SGPageRow(SGLyricsAIName(service), ^UIViewController *{ return nil; }); }
+// Shared/LyricsTranslation/LyricsTranslation.m: its two switches, as a fresh install has them.
+NSArray<SGModRow *> *SGOnDeviceTranslatorRows(void) {
+    NSArray *rows = @[SGSwitchRow(@"Translate on iPhone", @"Apple's Translate in the lyrics' translate menu and automatic translation",
+                                  SGKeyLyricsTranslateOnDevice),
+                      SGSwitchRow(@"Apple Intelligence", @"Apple Intelligence in the lyrics' translate menu and automatic translation",
+                                  SGKeyLyricsAppleIntelligence)];
+    for (SGModRow *row in rows) row.changed = ^(BOOL on) {};
+    return rows;
+}
 SGModSection *SGSleepTimerSettingsSection(void) { return SGSection(nil, @[]); }
 SGAppFont SGAppFontChosen(void) { return SGAppFontSpotify; }
 NSArray<SGModRow *> *SGAppFontRows(void) { return @[]; }
