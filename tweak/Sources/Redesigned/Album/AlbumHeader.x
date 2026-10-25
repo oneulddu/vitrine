@@ -565,7 +565,7 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page, NSString **artist,
     UIView *parent = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.ParentRow", &kParentKey);
     UIView *metadata = SGRFindByIdentifier(header, @"Components.UI.MetadataRow", &kMetaKey);
     NSString *length = metadataText(metadata), *line = firstText(parent);
-    *album = firstText(title);
+    *album = anyText(title);
     *artist = line ?: trimmed(parent.accessibilityLabel);
     [info showTitle:*album creator:*artist length:length about:nil];
     // The line as it reads, without the accessibility label to fall back on: no line, no row loses its artist.

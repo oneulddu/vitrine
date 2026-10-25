@@ -463,7 +463,8 @@ static NSString *trailingLabel(UIView *root) {
     _titleBlock = box(groupStack, UIView.class, CGRectMake(0, 264, 215.33, 57.33), nil);
     _titleStack = box(_titleBlock, UIStackView.class, CGRectMake(16, 0, 183.33, 57.33), nil);
     label(_titleStack, CGRectZero, @"", 17, UIColor.whiteColor, @"CreativeWorkPlatform.Components.UI.PreTitleRow");
-    label(_titleStack, CGRectMake(0, 0, 183.33, 25.33), @"Hurry Up Tomorrow", 21, UIColor.whiteColor,
+    BOOL shortTitle = [NSProcessInfo.processInfo.arguments containsObject:@"short-title"];
+    label(_titleStack, CGRectMake(0, 0, 183.33, 25.33), shortTitle ? @"X" : @"Hurry Up Tomorrow", 21, UIColor.whiteColor,
           @"CreativeWorkPlatform.Components.UI.TitleRow");
     UIView *parentElement = box(_titleStack, UIView.class, CGRectMake(0, 33.33, 96, 24), nil);
     UIView *parentRow = box(parentElement, MockEncoreButton.class, parentElement.bounds, @"CreativeWorkPlatform.Components.UI.ParentRow");
@@ -739,6 +740,22 @@ static NSString *trailingLabel(UIView *root) {
 
     [self.window makeKeyAndVisible];
     if (downloads) downloadScript();
+
+    if (shortTitle) {
+        at(1, ^{
+            BOOL shown = NO;
+            for (UIView *info in header.subviews) {
+                if (![info isKindOfClass:SGRHeaderInfo.class]) continue;
+                for (UIView *text in info.subviews) {
+                    if ([text isKindOfClass:UILabel.class] && [((UILabel *)text).text isEqualToString:@"X"]
+                        && !text.hidden && text.alpha > 0) shown = YES;
+                }
+            }
+            HARNESS_CHECK(shown);
+            NSLog(@"[harness] PASS the redesigned album header displays X");
+            exit(0);
+        });
+    }
 
     // `addto`: saved from elsewhere at 3 s (the ⋯ sheet, nothing laid out), then Play's right tapped at 7 s.
     if ([NSProcessInfo.processInfo.arguments containsObject:@"addto"]) {

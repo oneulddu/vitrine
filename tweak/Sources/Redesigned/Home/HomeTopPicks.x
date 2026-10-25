@@ -219,12 +219,16 @@ static void move(UICollectionViewLayoutAttributes *attributes, CGRect grid, CGRe
     CGRect grid, shelf;
     CGFloat before;
     BOOL swap = blocks((UICollectionViewLayout *)self, &grid, &shelf, &before);
+    if (!swap) {
+        SGRHomeProbeEnd(SGRHomeProbeListAttrs, began);
+        return %orig;
+    }
     // Everything between the two blocks moves within their band, so the band is asked for whole. The moved blocks reach
     // kBandAbove past the layout's own: a rect that touches only that strip (the prefetch rect above the feed's top,
     // as Home is pulled to refresh) gets the shelf too, or the list takes its cell for gone and keeps it hidden.
     CGRect own = CGRectUnion(grid, shelf);
-    CGRect band = swap ? CGRectUnion(own, CGRectOffset(own, 0, kBandAbove)) : CGRectZero;
-    if (!swap || !CGRectIntersectsRect(rect, band)) {
+    CGRect band = CGRectUnion(own, CGRectOffset(own, 0, kBandAbove));
+    if (!CGRectIntersectsRect(rect, band)) {
         SGRHomeProbeEnd(SGRHomeProbeListAttrs, began);
         return %orig;
     }

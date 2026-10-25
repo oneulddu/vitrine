@@ -1012,6 +1012,11 @@ static NSString *storedKey(NSString *kind) {
 - (void)fire:(SGRSheetRow *)row {
     UIViewController *presented = self.presented;
     if (!presented.presentingViewController || self.revealed) return;
+    // A stored action can have been enabled for the previous track but disabled in this sheet.
+    if (!row.enabled) {
+        [self reveal];
+        return;
+    }
     sg_firing = self;
     _rowPresented = NO;
     if (row.control) {

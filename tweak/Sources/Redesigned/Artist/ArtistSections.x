@@ -22,7 +22,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Artist.h"
 
-static char kSettledKey, kKindsKey, kDroppedKey;
+static char kSettledKey, kKindsKey, kDroppedKey, kInvalidateKey;
 
 // The "You liked" row's heart sits on a 24pt black disc at the avatar's corner, a ring on any field but black
 // (device 2026-10-08). The disc goes; a soft shadow keeps the heart readable on the photo.
@@ -155,23 +155,55 @@ static NSIndexPath *before(UICollectionView *list, NSIndexPath *path, NSInteger 
     return item >= 0 ? [NSIndexPath indexPathForItem:item inSection:section] : nil;
 }
 
-// A video shelf takes its heading and the spacer over it with it. Those were sized before it, so the list lays
-// out again, once, to ask them again.
-static void dropHeadingOf(UICollectionView *list, NSIndexPath *path) {
+// Derive suppression from the current kinds, not from index paths that used to hold hidden content.
+// A heading can be measured before or after its content; either order reaches the same answer.
+static void recordKind(UICollectionView *list, NSIndexPath *path, SGRArtistCell kind) {
     NSMutableDictionary *kinds = kindsOf(list);
-    NSMutableSet *dropped = droppedOf(list);
-    BOOL added = NO;
-    NSIndexPath *heading = before(list, path, 1);
-    if (heading && [kinds[heading] integerValue] == SGRArtistCellHeading && ![dropped containsObject:heading]) {
+    if (kinds[path] && [kinds[path] integerValue] == kind) return;
+    kinds[path] = @(kind);
+    NSMutableSet *dropped = [NSMutableSet set];
+    for (NSIndexPath *content in kinds) {
+        if ([kinds[content] integerValue] < SGRArtistCellVideos) continue;
+        [dropped addObject:content];
+        NSIndexPath *heading = before(list, content, 1);
+        if (!heading || [kinds[heading] integerValue] != SGRArtistCellHeading) continue;
         [dropped addObject:heading];
-        added = YES;
-        NSIndexPath *spacer = before(list, path, 2);
+        NSIndexPath *spacer = before(list, content, 2);
         if (spacer && [kinds[spacer] integerValue] == SGRArtistCellSpacer) [dropped addObject:spacer];
     }
-    if (!added) return;
+    if ([dropped isEqualToSet:droppedOf(list)]) return;
+    objc_setAssociatedObject(list, &kDroppedKey, dropped, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (objc_getAssociatedObject(list, &kInvalidateKey)) return;
+    objc_setAssociatedObject(list, &kInvalidateKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     __weak UICollectionView *weakList = list;
-    dispatch_async(dispatch_get_main_queue(), ^{ [weakList.collectionViewLayout invalidateLayout]; });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UICollectionView *current = weakList;
+        objc_setAssociatedObject(current, &kInvalidateKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [current.collectionViewLayout invalidateLayout];
+    });
 }
+
+// Reloads and insert/delete/move/reload transactions change what every index path means. The layout
+// callback covers both ordinary updates and diffable-data-source transactions.
+static void forgetKinds(UICollectionView *list) {
+    if (!objc_getAssociatedObject(list, &kKindsKey)) return;
+    objc_setAssociatedObject(list, &kKindsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(list, &kDroppedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+%hook UICollectionView
+- (void)reloadData {
+    forgetKinds((UICollectionView *)self);
+    %orig;
+}
+%end
+
+%hook UICollectionViewLayout
+- (void)prepareForCollectionViewUpdates:(NSArray<UICollectionViewUpdateItem *> *)updates {
+    forgetKinds(((UICollectionViewLayout *)self).collectionView);
+    %orig;
+}
+%end
 
 static void logOnce(NSString *what) {
     static NSMutableSet<NSString *> *logged;
@@ -197,11 +229,9 @@ static void logOnce(NSString *what) {
     SGRArtistCell kind = kindOf(content, result.size.height);
     BOOL hide = kind >= SGRArtistCellVideos && hidden[kind];
     if (kind >= SGRArtistCellVideos && !hide) kind = SGRArtistCellOther;
-    kindsOf(list)[path] = @(kind);
+    recordKind(list, path, kind);
 
     if (hide) {
-        [droppedOf(list) addObject:path];
-        dropHeadingOf(list, path);
         logOnce([dropped[kind] stringByAppendingString:@" dropped from the Music list"]);
     }
     if (!hide && ![droppedOf(list) containsObject:path]) {

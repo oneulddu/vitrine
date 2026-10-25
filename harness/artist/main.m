@@ -7,6 +7,7 @@
 // The follow state comes from a mock of Spotify's collection platform under its real class and selector
 // names: `none` at once, or in `late` a second in; Following, as saved, after the tap made at 2.5 s.
 #import <UIKit/UIKit.h>
+#import "../harness-fail.h"
 
 #pragma mark - Spotify's classes, by name
 
@@ -348,13 +349,43 @@ static NSArray<NSArray *> *musicList(void) {
     list.scrollEnabled = NO;
     [list registerClass:_TtC12Element_List18CollectionViewCell.class forCellWithReuseIdentifier:@"cell"];
     self.source = [SGRListSource new];
-    self.source.items = musicList();
+    BOOL reloadSections = [NSProcessInfo.processInfo.arguments containsObject:@"reload-sections"];
+    self.source.items = reloadSections ? @[
+        @[@"", @16],
+        @[@"Components.UI.SectionHeadingHome", @36, @"Videos"],
+        @[@"Components.UI.MusicVideoShelfHeader", @224]
+    ] : musicList();
     list.dataSource = self.source;
     [listView addSubview:list];
     scroll.contentSize = CGSizeMake(W, 3000);
     if (collapsed) scroll.contentOffset = CGPointMake(0, 468);
 
     [self.window makeKeyAndVisible];
+
+    if (reloadSections) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            [list layoutIfNeeded];
+            for (NSInteger item = 0; item < 3; item++) {
+                UICollectionViewLayoutAttributes *a = [list layoutAttributesForItemAtIndexPath:[NSIndexPath indexPathForItem:item inSection:0]];
+                HARNESS_CHECK(a && a.size.height == 0);
+            }
+            self.source.items = @[
+                @[@"", @16],
+                @[@"Components.UI.SectionHeadingHome", @36, @"Popular"],
+                @[@"Components.UI.RetrievalRowElementUI", @64, @"Kept song"]
+            ];
+            [list reloadData];
+            [list layoutIfNeeded];
+            NSArray<NSNumber *> *heights = @[@16, @36, @64];
+            for (NSInteger item = 0; item < 3; item++) {
+                UICollectionViewLayoutAttributes *a = [list layoutAttributesForItemAtIndexPath:[NSIndexPath indexPathForItem:item inSection:0]];
+                HARNESS_CHECK(a && a.size.height == heights[item].doubleValue);
+            }
+            NSLog(@"[harness] PASS reloaded artist content and its heading/spacer keep their natural heights");
+            exit(0);
+        });
+        return YES;
+    }
 
     // `logo`: an artist's logo arriving with the page on screen, at 2.5 s, and taken away again at 4.5 s (run
     // with `-spotifyglass.redesign.artist.logo NO` so Apple Music's own does not arrive too). The logo and the

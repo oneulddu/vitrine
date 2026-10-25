@@ -3,7 +3,7 @@
 # on a mock of Spotify's context menu sheet.
 set -e
 SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)
-OUT=$(dirname "$0")/build
+OUT=${HARNESS_BUILD_DIR:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/SystemMenuHarness.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Redesigned/ContextMenu/ContextMenu.x" > "$OUT/gen/ContextMenu.m"
 

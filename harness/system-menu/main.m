@@ -16,6 +16,7 @@
 #import <objc/runtime.h>
 #import "Redesigned/ContextMenu/ContextMenu.h"
 #import "Shared/LyricsSources/LyricsSources.h"
+#import "../harness-fail.h"
 
 // The album footer is exercised by harness/album-queue and the Spotify simulator test. These
 // player-menu fixtures do not provide an album page or the shared album footer.
@@ -35,6 +36,7 @@ static BOOL is(NSString *run) {
 }
 
 static void check(BOOL ok, NSString *what) {
+    if (!ok) HARNESS_FAIL(@"%@", what);
     NSLog(@"[harness] %@ %@", ok ? @"PASS" : @"FAIL", what);
 }
 
@@ -84,6 +86,10 @@ NSString *SGLyricsChosenSource(NSString *trackID) { return nil; }
 NSDictionary<NSString *, SGLyricsResult *> *SGLyricsOffersSoFar(NSString *trackID, NSArray<NSString *> **asking) { return @{}; }
 void SGLyricsChooseSource(NSString *trackID, NSString *key) {}
 void SGLyricsChooseAutomatic(NSString *trackID) {}
+void SGLyricsAskOffers(NSString *trackID) {}
+NSNotificationName const SGLyricsOffersDidChangeNotification = @"harness.offers";
+SGKaraokeTiming SGKaraokeLinesTiming(NSArray<SGKaraokeLine *> *lines) { return SGKaraokeTimingNone; }
+void SGPresentPopover(UIViewController *panel, UIView *from) { HARNESS_FAIL(@"Unexpected lyrics popover"); }
 // The player's background (Redesigned/Player/Player.h's SGRPlayerBackgroundKind): Fluid, so the menu offers
 // Animated and the Visualizer; Show Animated Artwork switches it on.
 NSInteger SGRPlayerBackground(void) { return sg_background; }
@@ -95,10 +101,7 @@ UIView *SGRPinnedMoreRecentButton(void) { return nil; }
 void SGRAnimate(NSInteger motion, void (^animations)(void), void (^completion)(BOOL finished)) {
     [UIView animateWithDuration:0.2 animations:animations completion:completion];
 }
-// The redesign's own panels the menu opens; only their item's presence is checked here. KaraokeSource.x
-// and LyricsTools.m are not built: no track is playing and no lyrics action is offered.
-NSString *SGKaraokePlayingTrack(void) { return nil; }
-void SGPlayerShowSpeedPitchPanel(UIView *from) { NSLog(@"[harness] speed and pitch panel"); }
+// LyricsTools.m is not built; no lyrics action is offered.
 UIAction *SGRLyricsSearchAction(NSString *trackID) { return nil; }
 NSString *SGLyricsPiPMenuTitle(void) { return @"Open lyrics Picture in Picture"; }
 void SGLyricsPiPToggle(UIView *from) { NSLog(@"[harness] lyrics PiP"); }
@@ -503,6 +506,27 @@ static NSArray<NSString *> *quickTitles(void) {
     sg_rowsNever = is(@"quicklate");
     sg_rowsAfter = is(@"quick") ? 1.2 : is(@"loading") || is(@"podcast") ? 1.5 : 0;
 
+    if (is(@"stored-disabled")) {
+        sg_rowsHeld = YES;
+        [NSUserDefaults.standardUserDefaults setObject:@[@[@{@"title": @"Lyrics", @"enabled": @YES}]]
+                                               forKey:@"spotifyglass.redesign.player.menuRows.track"];
+        [self tap:^(CFTimeInterval took) {
+            check(took >= 0, @"menu opened with stored actions");
+            pick(@"More");
+            waitFor(^BOOL { return menuShows(@"Lyrics") && self.mockSheet != nil; }, 2, ^{
+                check(menuShows(@"Lyrics"), @"the previously enabled Lyrics action is offered");
+                pick(@"Lyrics");
+                after(0.5, ^{
+                    [self.mockSheet giveRows];
+                    waitFor(^BOOL { return self.sheetShown; }, 2, ^{
+                        check(!sg_selected && self.sheetShown, @"disabled live Lyrics is not fired; its sheet is shown");
+                        finish();
+                    });
+                });
+            });
+        }];
+        return;
+    }
     if ([run isEqualToString:@"arrow"]) {
         // The header's other button keeps its own touches: a finger on the down arrow runs Spotify's action and
         // opens no menu; one on the ⋯ then reaches the mod's button, whose touch down opens the menu.
