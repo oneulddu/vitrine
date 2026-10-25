@@ -22,6 +22,14 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -ifr
     -fobjc-arc -g -Wall -Werror -I"$SRC" "$HERE/cover.m" "$SRC/Shared/LocalFiles/LocalCover.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
     -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Foundation -framework ImageIO -o "$OUT/cover"
 CFFIXED_USER_HOME="$OUT/home" "$OUT/cover"
+# The actual redesigned bridge and field identity gate over the production local-cover resolver.
+"${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "$SRC/Redesigned/Kit/SGRBridges.x" > "$OUT/SGRBridges.m"
+xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
+    -fobjc-arc -g -Wall -Werror -I"$SRC" -I"$SRC/Redesigned/Kit" \
+    "$HERE/bridge.m" "$OUT/SGRBridges.m" "$SRC/Redesigned/Kit/SGRField.m" \
+    "$SRC/Shared/LocalFiles/LocalCover.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
+    -framework UIKit -framework MediaPlayer -framework QuartzCore -framework CoreGraphics -framework Foundation -framework ImageIO -o "$OUT/bridge"
+CFFIXED_USER_HOME="$OUT/home" "$OUT/bridge"
 # The actual Logos observer over a fake player and now-playing extras sink.
 "${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "$SRC/Shared/LocalFiles/LocalFileInfo.x" > "$OUT/LocalFileInfo.m"
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \

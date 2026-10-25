@@ -2,8 +2,8 @@
 // LocalCover.m finds it). Spotify's player keeps a list of covers scrolled sideways, a cell per track in
 // the queue (Native/Player/Player.x), and the cell under the list's middle is the one playing; the cover
 // is the largest image view in it, 354pt across, with a 64pt glyph standing in while it has no picture.
-// The cover is put into that image view only while it has none. A cover-tilt view outside the list (the
-// cover inspected full screen) gets the same.
+// The cover fills an empty view; a metadata thumbnail may upgrade our provisional system artwork.
+// A cover-tilt view outside the list (the cover inspected full screen) gets the same.
 //
 // A picture of the mod's is remembered with the track it was put in for, so a cell reused for another
 // track loses it, and Spotify's own picture, once it comes, is never replaced.
@@ -11,10 +11,11 @@
 #import "Headers/SPTPlayer.h"
 #import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/PlayerState.h"
+#import "LocalCoverFill.h"
 
 static const CGFloat kCoverMinWidth = 200;
-static char kImageKey, kTrackKey;
 static __weak UIScrollView *sg_list;
+static NSHashTable<UIView *> *sg_tilts;
 
 static BOOL isCoverCell(UIView *view) {
     static Class cell, legacy;
@@ -37,26 +38,12 @@ static UIImageView *largestImageIn(UIView *root) {
     return largest;
 }
 
-static void fill(UIImageView *view) {
-    if (!view) return;
-    BOOL ours = view.image && view.image == objc_getAssociatedObject(view, &kImageKey);
-    if (view.image && !ours) return;
-    SPTPlayerTrack *track = SGPlayerState().track;
-    NSString *uri = SGURIString(track.URI);
-    if (ours && [uri isEqualToString:objc_getAssociatedObject(view, &kTrackKey)]) return;
-    UIImage *cover = SGLocalFileFallbackCover(track);
-    if (!cover && !ours) return;
-    view.image = cover;
-    objc_setAssociatedObject(view, &kImageKey, cover, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    objc_setAssociatedObject(view, &kTrackKey, uri, OBJC_ASSOCIATION_COPY_NONATOMIC);
-}
-
 static void fillFront(UIScrollView *list) {
     CGFloat middle = list.contentOffset.x + list.bounds.size.width / 2;
     for (UIView *cell in list.subviews) {
         if (!isCoverCell(cell) || middle < CGRectGetMinX(cell.frame) || middle > CGRectGetMaxX(cell.frame)) continue;
         sg_list = list;
-        fill(largestImageIn(cell));
+        SGLocalCoverFill(largestImageIn(cell));
     }
 }
 
@@ -65,6 +52,13 @@ static void fillFront(UIScrollView *list) {
 @end
 
 @implementation SGLocalCoverWatcher
+- (void)coverLoaded:(NSNotification *)note {
+    if (![note.object isEqual:SGURIString(SGPlayerState().track.URI)]) return;
+    UIScrollView *list = sg_list;
+    if (list.window) fillFront(list);
+    for (UIView *tilt in sg_tilts) if (tilt.window) [tilt setNeedsLayout];
+}
+
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     for (NSNumber *delay in @[@0, @1.5]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -94,7 +88,11 @@ static void fillFront(UIScrollView *list) {
         if (isCoverCell(view)) return;
         player = player || SGClassNamed(view.class, @"NowPlaying");
     }
-    if (player) fill(largestImageIn(tilt));
+    if (player) {
+        if (!sg_tilts) sg_tilts = [NSHashTable weakObjectsHashTable];
+        [sg_tilts addObject:tilt];
+        SGLocalCoverFill(largestImageIn(tilt));
+    }
 }
 %end
 
@@ -104,6 +102,8 @@ static void fillFront(UIScrollView *list) {
     static SGLocalCoverWatcher *watcher;
     watcher = [SGLocalCoverWatcher new];
     SGAddPlayerStateObserver(watcher);
+    [NSNotificationCenter.defaultCenter addObserver:watcher selector:@selector(coverLoaded:)
+        name:SGLocalFileFallbackCoverDidChangeNotification object:nil];
     SGRequireClasses(@[
         @"_TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView",
         @"_TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView",

@@ -152,9 +152,14 @@ static void fetchPicture(NSString *key, NSURL *url, NSUInteger attempt) {
 // is none to publish.
 static BOOL publishLocalCover(void) {
     if (![sg_wantedKey hasPrefix:@"track:"]) return NO;
-    UIImage *cover = SGLocalFileFallbackCover(SGPlayerState().track);
+    BOOL isMetadata = NO;
+    UIImage *cover = SGLocalFileFallbackCover(SGPlayerState().track, &isMetadata);
     if (!cover) return NO;
-    if (cover != sg_artwork) publish(cover, sg_wantedKey, SGRArtworkQualityExact);
+    SGRArtworkQuality quality = isMetadata ? SGRArtworkQualityExact : SGRArtworkQualityLow;
+    BOOL samePicture = [sg_wantedKey isEqualToString:sg_artworkKey];
+    if (samePicture && quality < sg_artworkQuality) return YES;
+    if (!samePicture || cover != sg_artwork || quality != sg_artworkQuality)
+        publish(cover, sg_wantedKey, quality);
     return YES;
 }
 

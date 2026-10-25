@@ -39,6 +39,14 @@ unchecked `spt_localFileImagePath`. Before the fix, a one-part metadata URL repr
 paths/file URLs/escaped local-image URIs, the next metadata field, Now Playing fallback and an edited
 cover taking precedence. The resolver must never call the unchecked parser. These are resolver tests,
 not a full Spotify playback test on an iPhone.
+Metadata file covers use the bounded ImageIO reader on a worker; layouts synchronously reuse its
+current-track cache. The check rejects main-thread reads, retains cached images after file removal,
+remembers failed reads past the old retry interval, and drops an in-flight result across A → B → A.
+The native image-view publisher is exercised with the production resolver: provisional red system
+artwork upgrades to a late blue metadata thumbnail, but an image installed by Spotify remains intact.
+`bridge.m` compiles the real redesigned Logos artwork bridge, local resolver and `SGRArtworkField`.
+With palette rendering doubled, it verifies that provisional red and exact blue have different
+identities and the field accepts the upgrade, then rejects late provisional resolver/screen replies.
 
 ## Edit info in the simulator
 

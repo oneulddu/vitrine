@@ -63,6 +63,9 @@ void SGLocalFilePresentEditor(UIViewController *presenter, NSString *uri);
 
 // LocalCover.m: the file's own cover for a local track whose player shows Spotify's placeholder, from the
 // image fields of its metadata or the system's now playing artwork; nil for any other track, for one with a
-// cover picked in Edit info, and until one is found. Main thread.
+// cover picked in Edit info, and until one is found. Main thread. Optional isMetadata distinguishes
+// an authoritative metadata cover from provisional system now-playing artwork (or no image).
 @class SPTPlayerTrack;
-UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track);
+UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track, BOOL *isMetadata);
+// Main-thread notification after a metadata file's thumbnail becomes available; object is its URI.
+extern NSNotificationName const SGLocalFileFallbackCoverDidChangeNotification;

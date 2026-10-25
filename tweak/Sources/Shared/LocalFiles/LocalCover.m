@@ -3,20 +3,49 @@
 // of the track's metadata, read as a picture or a readable file, then in the system's now playing info,
 // taken only while its title and artist agree with the track's.
 //
-// Threading: main thread. A picture found is kept per track; a miss is tried again after a second, since
-// the now playing info may not have caught up with the track yet.
+// Cache and publication are main-thread only. Metadata files are thumbnailed on a worker once per
+// path/playing track, including failures. Only system now-playing misses are retried after a second.
 #import <MediaPlayer/MediaPlayer.h>
 #import "Core/SGCore.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Player/PlayerState.h"
 #import "LocalFiles.h"
 
-static const NSUInteger kKept = 8;
 static const NSTimeInterval kRetry = 1;
 static const CGFloat kSide = 1200;
 
-static NSMutableDictionary<NSString *, UIImage *> *sg_found;
-static NSMutableDictionary<NSString *, NSDate *> *sg_missed;
+NSNotificationName const SGLocalFileFallbackCoverDidChangeNotification = @"SGLocalFileFallbackCoverDidChange";
+
+@interface SGLocalCoverCache : NSObject <SGPlayerStateObserver>
+@property(nonatomic, copy) NSString *uri;
+@property(nonatomic) NSUInteger generation;
+@property(nonatomic, strong) NSMutableDictionary<NSString *, id> *paths;
+@property(nonatomic, strong) UIImage *systemCover;
+@property(nonatomic, strong) NSDate *systemMiss;
+@end
+
+@implementation SGLocalCoverCache
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    NSString *uri = SGURIString(state.track.URI);
+    if (_uri == uri || [_uri isEqualToString:uri]) return;
+    _uri = [uri copy];
+    _generation++;
+    _paths = [NSMutableDictionary dictionary];
+    _systemCover = nil;
+    _systemMiss = nil;
+}
+@end
+
+static SGLocalCoverCache *cache(void) {
+    static SGLocalCoverCache *kept;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        kept = [SGLocalCoverCache new];
+        SGAddPlayerStateObserver(kept);
+    });
+    [kept playerStateDidChange:SGPlayerState()];
+    return kept;
+}
 
 // Only local paths and Spotify's local-image URI carry a file to read. In 9.1.90,
 // spt_localFileImagePath blindly indexes spotifyURIComponents[2]; NSURL answering
@@ -35,14 +64,33 @@ static NSString *pathIn(id value) {
     return [path hasPrefix:@"/"] ? path : nil;
 }
 
-static UIImage *fromMetadata(NSDictionary *metadata) {
+static UIImage *fromMetadata(NSDictionary *metadata, SGLocalCoverCache *kept) {
     for (NSString *field in @[@"image_xlarge_url", @"image_large_url", @"image_url", @"image_small_url"]) {
         id value = metadata[field];
         if ([value isKindOfClass:UIImage.class]) return value;
         NSString *path = pathIn(value);
-        if (!path || ![NSFileManager.defaultManager isReadableFileAtPath:path]) continue;
-        UIImage *image = [UIImage imageWithContentsOfFile:path];
-        if (image) return image;
+        if (!path) continue;
+        id loaded = kept.paths[path];
+        if ([loaded isKindOfClass:UIImage.class]) return loaded;
+        if (loaded) continue; // NSNull remembers both pending reads and failed decodes.
+        kept.paths[path] = NSNull.null;
+        NSString *uri = kept.uri;
+        NSUInteger generation = kept.generation;
+        static dispatch_queue_t queue;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            queue = dispatch_queue_create("spotifyglass.localFiles.fallback", DISPATCH_QUEUE_SERIAL);
+        });
+        dispatch_async(queue, ^{
+            UIImage *image = SGLocalFileReadCover([NSURL fileURLWithPath:path]);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (generation != kept.generation ||
+                    ![uri isEqualToString:SGURIString(SGPlayerState().track.URI)]) return;
+                if (!image || SGLocalFileCoverPath(SGLocalFileEditFor(uri))) return;
+                kept.paths[path] = image;
+                [NSNotificationCenter.defaultCenter postNotificationName:SGLocalFileFallbackCoverDidChangeNotification object:uri];
+            });
+        });
     }
     return nil;
 }
@@ -61,33 +109,28 @@ static UIImage *fromNowPlaying(SPTPlayerTrack *track) {
     return [artwork imageWithSize:CGSizeMake(kSide, kSide)];
 }
 
-UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track) {
+UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track, BOOL *isMetadata) {
+    if (isMetadata) *isMetadata = NO;
     NSString *uri = SGURIString(track.URI);
+    SGLocalCoverCache *kept = cache();
     // A cover picked in Edit info comes through Spotify's own loader and wins.
-    if (!SGLocalFileIs(uri) || SGLocalFileCoverPath(SGLocalFileEditFor(uri))) return nil;
-    if (!sg_found) {
-        sg_found = [NSMutableDictionary dictionary];
-        sg_missed = [NSMutableDictionary dictionary];
-    }
-    UIImage *image = sg_found[uri];
-    if (image) return image;
-    NSDate *missed = sg_missed[uri];
-    if (missed && -missed.timeIntervalSinceNow < kRetry) return nil;
+    if (!SGLocalFileIs(uri) || ![uri isEqualToString:kept.uri] ||
+        SGLocalFileCoverPath(SGLocalFileEditFor(uri))) return nil;
     NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
-    image = fromMetadata(metadata);
-    NSString *source = @"its metadata";
-    if (!image) {
-        image = fromNowPlaying(track);
-        source = @"the system's now playing";
+    UIImage *image = fromMetadata(metadata, kept);
+    if (image) {
+        if (isMetadata) *isMetadata = YES;
+        return image;
     }
+    if (kept.systemCover) return kept.systemCover;
+    NSDate *missed = kept.systemMiss;
+    if (missed && -missed.timeIntervalSinceNow < kRetry) return nil;
+    image = fromNowPlaying(track);
     if (!image.CGImage && !image.CIImage) {
-        if (sg_missed.count >= kKept * 4) [sg_missed removeAllObjects];
-        sg_missed[uri] = NSDate.date;
+        kept.systemMiss = NSDate.date;
         return nil;
     }
-    if (sg_found.count >= kKept) [sg_found removeAllObjects];
-    sg_found[uri] = image;
-    [sg_missed removeObjectForKey:uri];
-    SGLog(@"local files: %@ has its cover from %@", uri, source);
+    kept.systemCover = image;
+    kept.systemMiss = nil;
     return image;
 }

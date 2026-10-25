@@ -169,7 +169,10 @@ void SGLyricsDeleteSavedTranslation(NSString *track, NSString *language) {}
 #import "Shared/LocalFiles/LocalFiles.h"
 NSNotificationName const SGLocalFileEditsDidChangeNotification = @"harness.localFileEditsDidChange";
 NSString *SGLocalFileCoverInURL(NSString *url) { return nil; }
-UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track) { return nil; }
+UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track, BOOL *isMetadata) {
+    if (isMetadata) *isMetadata = NO;
+    return nil;
+}
 
 // The lyrics source chain and its settings page (LyricsSources.m): no provider is asked here, the
 // harness feeds SGRKaraokeView its lines itself.
