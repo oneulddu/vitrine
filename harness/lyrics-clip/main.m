@@ -8,6 +8,8 @@
 #import "Shared/LyricsBackground/LyricsBackground.h"
 
 static int failures;
+// The words keep between the clock (the top 15% of the screen) and the media controls (the bottom 35%).
+static const CGFloat kWordsFrom = 0.15, kWordsTo = 0.65;
 
 static void check(BOOL ok, NSString *what) {
     printf("  %s %s\n", ok ? "ok  " : "FAIL", what.UTF8String);
@@ -106,14 +108,18 @@ static void verify(NSURL *url, CGImageRef backdrop, CGSize size, SGLyricsClipSty
     check(first && late, @"frames read back at the start and the end");
     if (first) {
         savePNG(first, [url URLByAppendingPathExtension:@"png"]);
-        double middle = wordsIn(first, backdrop, 0.3, 0.7), top = wordsIn(first, NULL, 0, 0.15), bottom = wordsIn(first, NULL, 0.85, 1);
-        if (hasWords) check(middle > 0.005, [NSString stringWithFormat:@"words in the middle band (%.2f%% white)", middle * 100]);
-        else check(middle < 0.001, [NSString stringWithFormat:@"no words when there are none (%.2f%% white)", middle * 100]);
-        check(top < 0.001 && bottom < 0.001, @"nothing white under the clock or the controls");
+        // Against the backdrop, so the dimmed lines count too.
+        double middle = wordsIn(first, backdrop, kWordsFrom, kWordsTo);
+        double top = wordsIn(first, backdrop, 0, kWordsFrom), bottom = wordsIn(first, backdrop, kWordsTo, 1);
+        // A lone next line, smaller and dimmed, lights about 0.3%.
+        if (hasWords) check(middle > 0.002,[NSString stringWithFormat:@"words between the clock and the controls (%.2f%% lit)", middle * 100]);
+        else check(middle < 0.001, [NSString stringWithFormat:@"no words when there are none (%.2f%% lit)", middle * 100]);
+        check(top < 0.001 && bottom < 0.001, [NSString stringWithFormat:@"no words under the clock or the controls (%.3f%% / %.3f%% lit)",
+                                                                        top * 100, bottom * 100]);
     }
     if (first && late) {
         // A still holds its frame to the end; it is the frame the preview image shows too.
-        double a = wordsIn(first, NULL, 0.3, 0.7), b = wordsIn(late, NULL, 0.3, 0.7);
+        double a = wordsIn(first, NULL, kWordsFrom, kWordsTo), b = wordsIn(late, NULL, kWordsFrom, kWordsTo);
         check(fabs(a - b) < 0.002, [NSString stringWithFormat:@"the words hold still to the end (%.3f%% / %.3f%%)", a * 100, b * 100]);
     }
     CGImageRelease(first);
@@ -135,7 +141,9 @@ int main(int argc, char **argv) {
         CGImageRef cover = argc > 1 ? newImageAt([NSString stringWithUTF8String:argv[1]]) : newCover();
         // Fallbacks use the screen raster, not the independent moving-artwork download width.
         CGSize size = SGLyricsClipSize(1206);
+        CFAbsoluteTime made = CFAbsoluteTimeGetCurrent();
         CGImageRef backdrop = SGLyricsClipBackdrop(cover, size);
+        printf("the default backdrop, %.0fx%.0f: %.0f ms\n", size.width, size.height, (CFAbsoluteTimeGetCurrent() - made) * 1000);
         CGImageRef plain = SGLyricsClipBackdrop(NULL, size);
         // name, line, its translation, next
         NSArray *cases = @[
@@ -180,10 +188,11 @@ int main(int argc, char **argv) {
             CGImageRef told = SGLyricsClipFrame(backdrop, @"Hold on", @"조금만 버텨", @"we're almost there", size);
             CGImageRef alone = SGLyricsClipFrame(backdrop, nil, @"조금만 버텨", @"we're almost there", size);
             CGImageRef next = SGLyricsClipFrame(backdrop, nil, nil, @"we're almost there", size);
-            double without = wordsIn(bare, backdrop, 0.3, 0.7), with = wordsIn(told, backdrop, 0.3, 0.7);
+            double without = wordsIn(bare, backdrop, kWordsFrom, kWordsTo), with = wordsIn(told, backdrop, kWordsFrom, kWordsTo);
             check(with > without, [NSString stringWithFormat:@"the translation adds words under the line (%.2f%% white, %.2f%% without)",
                                           with * 100, without * 100]);
-            check(fabs(wordsIn(alone, backdrop, 0.3, 0.7) - wordsIn(next, backdrop, 0.3, 0.7)) < 0.0001, @"no translation without its line");
+            check(fabs(wordsIn(alone, backdrop, kWordsFrom, kWordsTo) - wordsIn(next, backdrop, kWordsFrom, kWordsTo)) < 0.0001,
+                  @"no translation without its line");
             savePNG(told, [out URLByAppendingPathComponent:@"preview-translated.png"]);
             CGImageRelease(bare);
             CGImageRelease(told);

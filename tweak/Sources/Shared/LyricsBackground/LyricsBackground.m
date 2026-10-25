@@ -9,7 +9,7 @@ static double bounded(double value, double fallback, double maximum) {
 static SGLyricsBackgroundStyle normalized(SGLyricsBackgroundStyle style) {
     style.mode = MIN(MAX(style.mode, SGLyricsBackgroundCover), SGLyricsBackgroundSolid);
     style.darkness = bounded(style.darkness, .45, .85);
-    style.blur = bounded(style.blur, 20, 40);
+    style.blur = bounded(style.blur, 20, SGLyricsBackgroundMaxBlur);
     style.color &= 0xFFFFFF;
     return style;
 }
@@ -17,12 +17,18 @@ static double number(NSDictionary *values, NSString *key, double fallback) {
     id value = values[key];
     return [value isKindOfClass:NSNumber.class] && isfinite([value doubleValue]) ? [value doubleValue] : fallback;
 }
+SGLyricsBackgroundStyle SGLyricsBackgroundDefault(NSString *prefix) {
+    BOOL lock = [prefix isEqualToString:SGLyricsBackgroundLockScreen];
+    return (SGLyricsBackgroundStyle){lock ? SGLyricsBackgroundBlur : SGLyricsBackgroundCover, .45, lock ? 60 : 20, 0x18181B};
+}
 SGLyricsBackgroundStyle SGLyricsBackgroundRead(NSString *prefix) {
     NSDictionary *values = NSUserDefaults.standardUserDefaults.dictionaryRepresentation;
+    SGLyricsBackgroundStyle fallback = SGLyricsBackgroundDefault(prefix);
     SGLyricsBackgroundStyle style = {
-        .mode = (NSInteger)bounded(number(values, [prefix stringByAppendingString:@".mode"], 0), 0, 4),
-        .darkness = bounded(number(values, [prefix stringByAppendingString:@".darkness"], 45), 45, 85) / 100,
-        .blur = bounded(number(values, [prefix stringByAppendingString:@".blur"], 20), 20, 40),
+        .mode = (NSInteger)bounded(number(values, [prefix stringByAppendingString:@".mode"], fallback.mode), fallback.mode, 4),
+        .darkness = bounded(number(values, [prefix stringByAppendingString:@".darkness"], fallback.darkness * 100),
+                            fallback.darkness * 100, 85) / 100,
+        .blur = bounded(number(values, [prefix stringByAppendingString:@".blur"], fallback.blur), fallback.blur, SGLyricsBackgroundMaxBlur),
         .color = (uint32_t)bounded(number(values, [prefix stringByAppendingString:@".color"], 0x18181B), 0x18181B, 0xFFFFFF),
     };
     return style;

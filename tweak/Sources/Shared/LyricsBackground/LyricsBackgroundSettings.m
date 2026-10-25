@@ -10,7 +10,7 @@ NSArray<SGModRow *> *SGLyricsBackgroundRows(NSString *prefix) {
             SGL(@"settings.background.mode.monochrome", @"Monochrome album cover"),
             SGL(@"settings.background.mode.blur", @"Blurred album cover"),
             SGL(@"settings.background.mode.gradient", @"Album-color gradient"),
-            SGL(@"settings.background.mode.solid", @"Solid color")], SGLyricsBackgroundCover);
+            SGL(@"settings.background.mode.solid", @"Solid color")], SGLyricsBackgroundDefault(prefix).mode);
     SGModRow *darkness = SGSliderRow(SGL(@"settings.background.darkness.title", @"Darken background"),
         SGL(@"settings.background.darkness.subtitle", @"Keeps lyrics readable without hiding album details."),
         0, 85, 1, ^double { return SGLyricsBackgroundRead(prefix).darkness * 100; },
@@ -18,7 +18,7 @@ NSArray<SGModRow *> *SGLyricsBackgroundRows(NSString *prefix) {
         ^NSString *(double value) { return [NSString stringWithFormat:@"%.0f%%", value]; });
     SGModRow *blur = SGSliderRow(SGL(@"settings.background.blur.title", @"Blur strength"),
         SGL(@"settings.background.blur.subtitle", @"Only applies to the blurred album cover."),
-        0, 40, 1, ^double { return SGLyricsBackgroundRead(prefix).blur; },
+        0, SGLyricsBackgroundMaxBlur, 1, ^double { return SGLyricsBackgroundRead(prefix).blur; },
         ^(double value) { [NSUserDefaults.standardUserDefaults setDouble:value forKey:[prefix stringByAppendingString:@".blur"]]; },
         ^NSString *(double value) { return [NSString stringWithFormat:@"%.0f", value]; });
     blur.visible = ^BOOL { return SGLyricsBackgroundRead(prefix).mode == SGLyricsBackgroundBlur; };

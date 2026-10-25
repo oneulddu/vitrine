@@ -188,8 +188,10 @@ Shared:
                   another app). No automatic start, translation generation or word highlighting.
     LyricsBackground/ shared CPU-only cover, monochrome, blur, album-color gradient and solid renderer,
                   with independent spotifyglass.lockscreen.background and spotifyglass.lyrics.pip.background
-                  preference prefixes. Defaults: clear cover, 45% darkening, blur 20, solid RGB 18181B.
-                  Darkening ranges from 0 to 85%, blur from 0 to 40 at a reference width of 640; the color
+                  preference prefixes. Defaults: clear cover, 45% darkening, blur 20, solid RGB 18181B; the
+                  lock screen's prefix defaults to the blurred cover at blur 60 (soft colour fields), and a
+                  stored choice is kept. Darkening ranges from 0 to 85%, blur from 0 to 100 at a reference
+                  width of 640; the color
                   picker is shown only for Solid. Sharp modes render at the target size, not through a small
                   blur buffer. Cache identity includes source, normalized style and raster size; no cover
                   uses a dark fallback. Rendering uses CoreGraphics and Accelerate, not background GPU work.
@@ -337,8 +339,10 @@ Shared:
                   attempts and invalidate pending replies. Their replies are checked on the
                   Mac against the same harness
     LockScreenLyrics/ the line being sung in the system's now playing, and on iOS 26 the lyrics as the lock screen's
-                  full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line and the
-                  next one dimmed over the selected background, SGLyricsClip.m) written only when the lock screen asks for it,
+                  full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line in bold
+                  and the next one smaller, in the regular weight at 0.6 of its size and half white, over the selected
+                  background, SGLyricsClip.m; left-aligned 8% of the screen's width in, wrapping at 84% of it, the block
+                  centred 40% down and its top no higher than 17%, clear of the clock and the media controls) written only when the lock screen asks for it,
                   Still (one frame) or Animated (15 fps). Fallbacks use the screen's native width and the shared
                   CPU renderer. Cover backgrounds load the current URI's metadata artwork through
                   SGShownTrackArtwork, not title-matched system artwork that may be a placeholder or the

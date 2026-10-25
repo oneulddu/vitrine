@@ -18,8 +18,15 @@ typedef struct {
     uint32_t color;
 } SGLyricsBackgroundStyle;
 
+// The lock screen's prefix, whose default is the cover blurred to soft colour fields.
+#define SGLyricsBackgroundLockScreen @"spotifyglass.lockscreen.background"
+// Blur runs from 0 to this, in pixels at width 640.
+#define SGLyricsBackgroundMaxBlur 100
+
 // Keys: prefix + .mode/.darkness/.blur/.color. Darkness is stored as percent, returned as 0...0.85.
-// Defaults: Cover, 45%, blur 20 (pixels at width 640), RGB 0x18181B. Reads never write preferences.
+// Defaults (SGLyricsBackgroundDefault): Cover, 45%, blur 20, RGB 0x18181B; the lock screen's prefix
+// Blur at 60 instead. A value the user stored is kept as it is. Reads never write preferences.
+SGLyricsBackgroundStyle SGLyricsBackgroundDefault(NSString *prefix);
 SGLyricsBackgroundStyle SGLyricsBackgroundRead(NSString *prefix);
 // Includes every normalized field and a rendering revision; suitable for disk and preview cache keys.
 NSString *SGLyricsBackgroundIdentity(SGLyricsBackgroundStyle style);

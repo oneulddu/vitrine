@@ -152,7 +152,7 @@ void SGTestSettings(void) {
     NSArray<SGModRow *> *rows = page.sections[3].rows;
     SGTestAssert(rows.count == 4 && [rows[0].key isEqual:@"spotifyglass.lyrics.pip.background.mode"] && rows[0].menu.count == 5,
         @"page reuses all five shared background choices under PiP prefix");
-    SGTestAssert(rows[1].minimum == 0 && rows[1].maximum == 85 && rows[2].minimum == 0 && rows[2].maximum == 40,
+    SGTestAssert(rows[1].minimum == 0 && rows[1].maximum == 85 && rows[2].minimum == 0 && rows[2].maximum == 100,
         @"darkness and blur expose exact slider ranges");
     // Restore the persistent harness domain after exercising the actual setters.
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;

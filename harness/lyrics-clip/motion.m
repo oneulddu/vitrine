@@ -367,10 +367,12 @@ int motionMain(NSURL *out, int argc, char **argv) {
             }
             savePNG(first, [url URLByAppendingPathExtension:@"png"]);
             BOOL words = [c[1] length] || [c[2] length] || [c[3] length];
-            double band = [c[2] length] || ![c[3] length] ? whiteIn(first, 0.3, 0.7, 225) : whiteIn(first, 0.42, 0.58, 120);
-            if (words) check(band > 0.003, [NSString stringWithFormat:@"words in the middle band (%.2f%% white)", band * 100]);
+            // The words sit in the upper middle, between the clock (the top 15%) and the controls (the bottom 35%); a
+            // dimmed line alone is looked for where the picture is dimmed most, 0.24 to 0.48 of the height.
+            double band = [c[2] length] || ![c[3] length] ? whiteIn(first, 0.15, 0.65, 225) : whiteIn(first, 0.30, 0.50, 120);
+            if (words) check(band > 0.003, [NSString stringWithFormat:@"words in the upper middle (%.2f%% white)", band * 100]);
             else check(band < 0.0005, [NSString stringWithFormat:@"no words when there are none (%.3f%% white)", band * 100]);
-            check(whiteIn(first, 0, 0.15, 225) < 0.0005 && whiteIn(first, 0.85, 1, 225) < 0.0005, @"nothing white under the clock or the controls");
+            check(whiteIn(first, 0, 0.15, 225) < 0.0005 && whiteIn(first, 0.65, 1, 225) < 0.0005, @"nothing white under the clock or the controls");
             double moved = differ(first, middle);
             check(moved > 2, [NSString stringWithFormat:@"the picture moves (%.1f of 255 between the start and the middle)", moved]);
             CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from);
@@ -381,12 +383,12 @@ int motionMain(NSURL *out, int argc, char **argv) {
             CGImageRelease(preview);
             if ([c[0] isEqual:@"bare"]) {
                 // The picture under the words, as dimmed: white on its brightest 5%, and the dimmed lines' 40% white over it.
-                double mean, top = brightIn(first, 0.42, 0.58, &mean);
+                double mean, top = brightIn(first, 0.30, 0.50, &mean);
                 double dimTop = linear(255 * (0.4 + 0.6 * pow(top, 1 / 2.2)));
                 printf("  under the words: brightest 5%% at luminance %.3f, mean %.3f; white on it %.1f:1, white on the mean %.1f:1, "
                        "a dimmed line on the brightest %.1f:1\n", top, mean, contrast(1, top), contrast(1, mean), contrast(dimTop, top));
                 CGImageRef source = frameAt(video, from);
-                double sourceMean, sourceTop = brightIn(source, 0.42, 0.58, &sourceMean);
+                double sourceMean, sourceTop = brightIn(source, 0.30, 0.50, &sourceMean);
                 printf("  the same rows undimmed: brightest 5%% at %.3f, white on it %.1f:1\n", sourceTop, contrast(1, sourceTop));
                 CGImageRelease(source);
             }

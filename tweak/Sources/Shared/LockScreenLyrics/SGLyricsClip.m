@@ -6,18 +6,22 @@
 #import "SGLyricsClip.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
 
-// The lock screen fills the screen with a 3:4 clip, so a phone's taller screen cuts its sides off: the
-// words keep to this middle share of the width. The center of the words sits this far down, clear of
-// the clock above and the controls below.
-// ponytail: guessed from the screen's shape, not measured on a lock screen; tune both on a device.
-static const CGFloat kColumn = 0.56;
-static const CGFloat kCentreY = 0.5;
+// The lock screen fills a 9:19.5 screen with the 3:4 clip, scaled to its height, so only the middle kScreen of
+// the clip's width shows and heights map one to one. The words are left-aligned kMargin of that shown width in
+// from its left edge and wrap at kColumn of it; the middle of the words sits kCentreY down, in the upper middle,
+// their top no higher than kTop, clear of the clock above and the media controls (the bottom 35%) below.
+// ponytail: from the screen's shape and a reference picture, not measured on a lock screen; tune on a device.
+static const CGFloat kScreen = 9 / 19.5 * 4 / 3;
+static const CGFloat kMargin = 0.08, kColumn = 0.84;
+static const CGFloat kCentreY = 0.4, kTop = 0.17;
 // The words' size as a share of the width, made smaller down to kSmallest of it while they run taller
 // than kTallest of the height.
-static const CGFloat kFont = 0.05;
+static const CGFloat kFont = 0.047;
 static const CGFloat kSmallest = 0.6;
 static const CGFloat kTallest = 0.4;
-static const CGFloat kNextAlpha = 0.4;
+// The lines either side of the line (the next, and over moving artwork the one sung last) in the regular weight
+// at this share of its size, kNextAlpha white, kNextGap of the line's size from it.
+static const CGFloat kNextScale = 0.6, kNextAlpha = 0.5, kNextGap = 0.5;
 // A translation sits close under its line, in the regular weight at this share of the line's size and this white.
 static const CGFloat kTranslationScale = 0.62, kTranslationAlpha = 0.8, kTranslationGap = 0.15;
 // A still is one frame held this long; an animated clip breathes once over kLoopSeconds, which is all it
@@ -50,7 +54,7 @@ static CGContextRef newContext(CGSize size, void *data, size_t bytesPerRow) {
 }
 
 CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) {
-    return SGLyricsBackgroundCreate(cover, size, (SGLyricsBackgroundStyle){SGLyricsBackgroundCover, .45, 20, 0x18181B});
+    return SGLyricsBackgroundCreate(cover, size, SGLyricsBackgroundDefault(SGLyricsBackgroundLockScreen));
 }
 
 static BOOL isHangul(unichar c) {
@@ -71,14 +75,15 @@ static NSString *keptWhole(NSString *text) {
     return kept;
 }
 
-// The line sung last (dimmed), the line, its translation, and the next line (dimmed), each its own paragraph.
-// The translation goes only with the line it belongs to.
+// The line sung last (dimmed, smaller), the line, its translation, and the next line (dimmed, smaller), each its
+// own paragraph. The translation goes only with the line it belongs to.
 static NSAttributedString *wordsAt(NSString *previous, NSString *line, NSString *translation, NSString *next,
                                    CGFloat fontSize, CGFloat dimAlpha) {
     if (!line.length) translation = nil;
     CTFontRef font = CTFontCreateUIFontForLanguage(kCTFontUIFontEmphasizedSystem, fontSize, NULL);
     CTFontRef small = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize * kTranslationScale, NULL);
-    CGFloat spacing = fontSize * 0.6, gap = fontSize * kTranslationGap, tall = round(fontSize * kTranslationScale * 1.3);
+    CTFontRef aside = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize * kNextScale, NULL);
+    CGFloat spacing = fontSize * kNextGap, gap = fontSize * kTranslationGap, tall = round(fontSize * kTranslationScale * 1.3);
     CTParagraphStyleSetting settings[] = {
         {kCTParagraphStyleSpecifierParagraphSpacingBefore, sizeof(spacing), &spacing},
     };
@@ -100,7 +105,7 @@ static NSAttributedString *wordsAt(NSString *previous, NSString *line, NSString 
         if (!texts[i].length) continue;
         BOOL isTranslation = i == 2;
         NSMutableDictionary *attributes = [@{
-            (id)kCTFontAttributeName: (__bridge id)(isTranslation ? small : font),
+            (id)kCTFontAttributeName: (__bridge id)(i == 1 ? font : isTranslation ? small : aside),
             (id)kCTParagraphStyleAttributeName: (__bridge id)(isTranslation ? close : paragraph),
             (id)kCTForegroundColorAttributeName: (__bridge id)(i == 1 ? lit : isTranslation ? told : unlit),
         } mutableCopy];
@@ -109,6 +114,7 @@ static NSAttributedString *wordsAt(NSString *previous, NSString *line, NSString 
     }
     CFRelease(font);
     CFRelease(small);
+    CFRelease(aside);
     CFRelease(paragraph);
     CFRelease(close);
     CGColorRelease(lit);
@@ -124,7 +130,7 @@ static NSAttributedString *wordsAt(NSString *previous, NSString *line, NSString 
 static CGImageRef newWords(NSString *previous, NSString *line, NSString *translation, NSString *next, CGSize size,
                            CGRect *drawn) CF_RETURNS_RETAINED {
     if (!previous.length && !line.length && !next.length) return NULL;
-    CGFloat width = round(size.width * kColumn);
+    CGFloat screen = size.width * kScreen, width = round(screen * kColumn);
     CGFloat fontSize = size.width * kFont;
     CTFramesetterRef setter = NULL;
     CGSize fits = CGSizeZero;
@@ -137,8 +143,9 @@ static CGImageRef newWords(NSString *previous, NSString *line, NSString *transla
         if (fits.height <= size.height * kTallest) break;
     }
     CGFloat height = ceil(fits.height) + 1;
+    CGFloat top = MAX(size.height * kCentreY - height / 2, size.height * kTop);
     // Core Graphics counts up from the bottom.
-    CGRect box = CGRectMake(round((size.width - width) / 2), round(size.height * (1 - kCentreY) - height / 2), width, height);
+    CGRect box = CGRectMake(round((size.width - screen) / 2 + screen * kMargin), round(size.height - top - height), width, height);
     CGPathRef path = CGPathCreateWithRect(box, NULL);
     CTFrameRef frame = CTFramesetterCreateFrame(setter, CFRangeMake(0, 0), path, NULL);
     CGContextRef context = newContext(size, NULL, 0);
