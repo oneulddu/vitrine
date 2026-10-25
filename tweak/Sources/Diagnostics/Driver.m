@@ -157,33 +157,34 @@ static NSArray *pair(CGPoint p) {
 static NSDictionary *finger(CGPoint from, CGPoint to, NSTimeInterval duration, NSTimeInterval hold) {
     requireTouches();
     __block UITouch *touch = nil;
-    NSDictionary *down = onMain(^id {
-        UIWindow *window = windowAt(from);
-        if (!window) fail(@"no window takes a touch at {%.0f, %.0f}", from.x, from.y);
-        CGPoint at = [window convertPoint:from fromWindow:nil];
-        UIView *view = [window hitTest:at withEvent:nil];
-        touch = [UITouch new];
-        [touch setWindow:window];
-        [touch _setLocationInWindow:at resetPrevious:YES];
-        [touch setView:view];
-        if ([touch respondsToSelector:@selector(setGestureView:)]) [touch setGestureView:view];
-        [touch setPhase:UITouchPhaseBegan];
-        [touch _setIsFirstTouchForView:YES];
-        [touch setTapCount:1];
-        [touch setTimestamp:NSProcessInfo.processInfo.systemUptime];
-        deliver(touch);
-        return @{@"window" : NSStringFromClass(window.class), @"hit" : NSStringFromClass(view.class) ?: @"nil"};
-    });
-    void (^move)(CGPoint, UITouchPhase) = ^(CGPoint point, UITouchPhase phase) {
-        onMain(^id {
-            [touch setTimestamp:NSProcessInfo.processInfo.systemUptime];
-            [touch _setLocationInWindow:[touch.window convertPoint:point fromWindow:nil] resetPrevious:NO];
-            [touch setPhase:phase];
-            deliver(touch);
-            return nil;
-        });
-    };
+    NSDictionary *down = nil;
     @try {
+        down = onMain(^id {
+            UIWindow *window = windowAt(from);
+            if (!window) fail(@"no window takes a touch at {%.0f, %.0f}", from.x, from.y);
+            CGPoint at = [window convertPoint:from fromWindow:nil];
+            UIView *view = [window hitTest:at withEvent:nil];
+            touch = [UITouch new];
+            [touch setWindow:window];
+            [touch _setLocationInWindow:at resetPrevious:YES];
+            [touch setView:view];
+            if ([touch respondsToSelector:@selector(setGestureView:)]) [touch setGestureView:view];
+            [touch setPhase:UITouchPhaseBegan];
+            [touch _setIsFirstTouchForView:YES];
+            [touch setTapCount:1];
+            [touch setTimestamp:NSProcessInfo.processInfo.systemUptime];
+            deliver(touch);
+            return @{@"window" : NSStringFromClass(window.class), @"hit" : NSStringFromClass(view.class) ?: @"nil"};
+        });
+        void (^move)(CGPoint, UITouchPhase) = ^(CGPoint point, UITouchPhase phase) {
+            onMain(^id {
+                [touch setTimestamp:NSProcessInfo.processInfo.systemUptime];
+                [touch _setLocationInWindow:[touch.window convertPoint:point fromWindow:nil] resetPrevious:NO];
+                [touch setPhase:phase];
+                deliver(touch);
+                return nil;
+            });
+        };
         NSUInteger steps = duration > 0 ? MAX(2, (NSUInteger)(duration * 60)) : 0;
         for (NSUInteger i = 1; i <= steps; i++) {
             pause_(1.0 / 60);
@@ -198,8 +199,10 @@ static NSDictionary *finger(CGPoint from, CGPoint to, NSTimeInterval duration, N
         pause_(hold);
         move(to, UITouchPhaseEnded);
     } @catch (NSException *exception) {
-        // A finger left down would hold every later touch; lift it whatever happened.
+        // Queued after any timed-out begin on the same main queue, so a deferred begin is
+        // cancelled too. A failure before creating the touch has nothing to lift.
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (!touch) return;
             [touch setPhase:UITouchPhaseCancelled];
             deliver(touch);
         });

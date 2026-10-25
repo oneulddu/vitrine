@@ -62,7 +62,7 @@ static NSDictionary *readMeta(NSURL *folder) {
 }
 
 static void writeMeta(NSURL *folder, NSDictionary *meta) {
-    [NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil];
+    // Updates never recreate a deleted report; only ensureReport creates a new folder.
     NSData *data = [NSJSONSerialization dataWithJSONObject:meta options:NSJSONWritingPrettyPrinted | NSJSONWritingSortedKeys error:nil];
     [data writeToURL:[folder URLByAppendingPathComponent:kReportFile] atomically:YES];
 }
@@ -458,6 +458,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
     _meta[@"ios"] = UIDevice.currentDevice.systemVersion;
     _meta[@"text"] = @"";
     _meta[@"recordings"] = @[];
+    [NSFileManager.defaultManager createDirectoryAtURL:reportFolder(_identifier) withIntermediateDirectories:YES attributes:nil error:nil];
     writeMeta(reportFolder(_identifier), _meta);
     return _identifier;
 }
@@ -603,6 +604,13 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
 - (void)openReport:(NSString *)identifier {
     if ([identifier isEqualToString:_identifier]) return;
     [self saveText];
+    for (UIViewController *controller in self.navigationController.viewControllers) {
+        if (![controller isKindOfClass:SGReportPage.class]) continue;
+        SGReportPage *page = (SGReportPage *)controller;
+        if (![page->_identifier isEqualToString:identifier]) continue;
+        if (!page->_deleted) [self.navigationController popToViewController:page animated:YES];
+        return;
+    }
     [self.navigationController pushViewController:[[SGReportPage alloc] initWithReport:identifier] animated:YES];
 }
 
