@@ -117,6 +117,7 @@ void SGAutoEqLoadIndex(BOOL refresh, void (^done)(NSArray<SGAutoEqHeadphone *> *
 #pragma mark - a correction per output
 
 static NSString *sg_outputUID, *sg_outputName;
+static NSUInteger sg_pickGeneration;
 
 static NSDictionary<NSString *, NSDictionary *> *outputs(void) {
     id value = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyDSPOutputs];
@@ -165,6 +166,7 @@ static void rememberPick(void) {
 BOOL SGAutoEqApplyText(NSString *path, NSString *text) {
     NSString *line = SGDSPGraphicEqLine(text);
     if (!line || !path.length) return NO;
+    ++sg_pickGeneration;
     SGDSPSetString(SGKeyDSPGraphicEqNodes, line);
     SGDSPSetString(SGKeyDSPGraphicEqHeadphone, path);
     SGDSPSetSwitch(SGKeyDSPGraphicEq, YES);
@@ -175,12 +177,14 @@ BOOL SGAutoEqApplyText(NSString *path, NSString *text) {
 }
 
 void SGAutoEqTakeOff(void) {
+    ++sg_pickGeneration;
     takeOff();
     rememberPick();
 }
 
 void SGAutoEqOutputChanged(NSString *uid, NSString *name) {
     if (!uid.length || [uid isEqualToString:sg_outputUID]) return;
+    ++sg_pickGeneration;
     sg_outputUID = [uid copy];
     sg_outputName = name.length ? [name copy] : sg_outputUID;
     NSDictionary *entry = outputs()[uid];
@@ -258,8 +262,15 @@ void SGAutoEqApply(SGAutoEqHeadphone *headphone, void (^done)(NSString *)) {
         done(SGL(@"settings.audioeffects.autoeq.error.invalid_url", @"Its address could not be made"));
         return;
     }
+    NSString *outputUID = [sg_outputUID copy];
+    NSUInteger generation = ++sg_pickGeneration;
     fetchText(url, ^(NSString *text, NSString *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != sg_pickGeneration || !(outputUID == sg_outputUID || [outputUID isEqualToString:sg_outputUID])) {
+                // Complete the UI request without applying or remembering stale audio.
+                done(nil);
+                return;
+            }
             if (error) done(error);
             else done(SGAutoEqApplyText(headphone.path, text) ? nil : SGL(@"settings.audioeffects.autoeq.error.invalid_format", @"The file is not a GraphicEQ line"));
         });

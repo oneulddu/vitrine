@@ -122,8 +122,29 @@ SGTimePitch *SGTimePitchCreate(double sampleRate, UInt32 channels, SGTimePitchSo
     for (UInt32 c = 0; c < channels; c++) {
         if (!source) unit->fifo[c] = calloc(kFifoFrames, sizeof(float));
         unit->outputData[c] = calloc(kSGTimePitchMaxFrames, sizeof(float));
+        if ((!source && !unit->fifo[c]) || !unit->outputData[c]) {
+            SGTimePitchFree(unit);
+            return NULL;
+        }
     }
     return unit;
+}
+
+void SGTimePitchFree(SGTimePitch *unit) {
+    if (!unit) return;
+    if (unit->unit) {
+        AudioUnitUninitialize(unit->unit);
+        AudioComponentInstanceDispose(unit->unit);
+    }
+    if (unit->vari) {
+        AudioUnitUninitialize(unit->vari);
+        AudioComponentInstanceDispose(unit->vari);
+    }
+    for (UInt32 c = 0; c < unit->channels; c++) {
+        free(unit->fifo[c]);
+        free(unit->outputData[c]);
+    }
+    free(unit);
 }
 
 double SGTimePitchSampleRate(const SGTimePitch *unit) {

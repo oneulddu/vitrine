@@ -2,7 +2,7 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SRC="$HERE/../../tweak/Sources"
-OUT="$HERE/build/handoff"
+OUT=${OUT:-"$HERE/build/handoff"}
 APP="$OUT/LosslessHandoff.app"
 mkdir -p "$APP" "$OUT/gen"
 "${THEOS:?Set THEOS}/bin/logos.pl" -c generator=internal "$SRC/Shared/Player/SpeedPitch.x" > "$OUT/gen/SpeedPitch.m"

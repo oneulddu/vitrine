@@ -87,6 +87,7 @@ typedef struct {
 
 // Shared/Player/PlayerState.x's, which SpeedPitch.x reads for its clock away from 1x: the last mock report.
 static SPTPlayerState *sg_reportedState;
+void SGAddPlayerStateObserver(id observer) {}
 SPTPlayerState *SGPlayerState(void) {
     return sg_reportedState;
 }

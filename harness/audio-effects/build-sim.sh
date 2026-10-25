@@ -10,9 +10,8 @@ cd "$(dirname "$0")"
 SRC=../../tweak/Sources
 FX=$SRC/Shared/AudioEffects
 VENDOR=../../vendor/audio
-OUT=build/sim
+OUT=${OUT:-build/sim}
 make -s -C "$VENDOR" PLATFORM=sim -j8
-rm -rf "$OUT"
 mkdir -p "$OUT/gen" "$OUT/AudioEffectsHarness.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$FX/AudioEffects.x" > "$OUT/gen/AudioEffects.m"
 "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/Player/SpeedPitch.x" > "$OUT/gen/SpeedPitch.m"

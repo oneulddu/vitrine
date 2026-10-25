@@ -3,8 +3,8 @@
 # PlayerSpeedPitch.x's rebinding and render callback run on it for real.
 set -e
 SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)
-OUT=$(dirname "$0")/build
-rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/SpeedHarness.app"
+OUT=${OUT:-$(dirname "$0")/build}
+mkdir -p "$OUT/gen" "$OUT/SpeedHarness.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/Player/SpeedPitch.x" > "$OUT/gen/PlayerSpeedPitch.m"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O1 \

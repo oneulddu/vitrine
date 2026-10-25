@@ -237,28 +237,30 @@ static void realTests(void) {
             expect(atomic_load(&selected)==at,"native silent/stalled spans cannot be replaced");
             stallSelected=atomic_load(&selected);
             atomic_store(&mute,false);
+            // Recovery follows the actual unmute, not an absolute timer that
+            // can overtake this callback when the simulator's main queue stalls.
+            later(0.2,^{
+                expect(atomic_load(&selected)==stallSelected,"native recovery cannot reuse the pre-stall anchor");
+                uint64_t epoch=SGPlayerSourceEpoch();
+                AudioStreamBasicDescription format={44100,kAudioFormatLinearPCM,kAudioFormatFlagsNativeFloatPacked|kAudioFormatFlagIsNonInterleaved,4,1,4,2,32,0};
+                check(AudioUnitSetProperty(output,kAudioUnitProperty_StreamFormat,kAudioUnitScope_Input,0,&format,sizeof format),"format notification");
+                expect(SGPlayerSourceEpoch()!=epoch,"format notification invalidates prepared source");
+                later(0.5,^{
+                    uint64_t epoch=SGPlayerSourceEpoch();
+                    check(AudioComponentInstanceDispose(mixer),"dispose mixer during running output"); mixer=NULL;
+                    expect(SGPlayerSourceEpoch()!=epoch,"mixer disposal invalidates source");
+                    later(0.5,^{
+                        SGPCMReplacementCancel(); SGPlayerSetStage(NULL); SGPlayerSetSourceSelector(NULL);
+                        AudioOutputUnitStop(output); AudioComponentInstanceDispose(output); AudioComponentInstanceDispose(converter);
+                        printf("RESULT failures=%d nativeFrames=%llu replacementFrames=%llu stageFrames=%llu\n",failures,
+                            (unsigned long long)atomic_load(&decoded),(unsigned long long)atomic_load(&selected),
+                            (unsigned long long)atomic_load(&stageFrames)); fflush(stdout);
+                        if (failures) HARNESS_FAIL(@"RESULT failures=%d", failures);
+                        exit(0);
+                    });
+                });
+            });
         });
-    });
-    later(5.0,^{
-        expect(atomic_load(&selected)==stallSelected,"native recovery cannot reuse the pre-stall anchor");
-        uint64_t epoch=SGPlayerSourceEpoch();
-        AudioStreamBasicDescription format={44100,kAudioFormatLinearPCM,kAudioFormatFlagsNativeFloatPacked|kAudioFormatFlagIsNonInterleaved,4,1,4,2,32,0};
-        check(AudioUnitSetProperty(output,kAudioUnitProperty_StreamFormat,kAudioUnitScope_Input,0,&format,sizeof format),"format notification");
-        expect(SGPlayerSourceEpoch()!=epoch,"format notification invalidates prepared source");
-    });
-    later(5.5,^{
-        uint64_t epoch=SGPlayerSourceEpoch();
-        check(AudioComponentInstanceDispose(mixer),"dispose mixer during running output"); mixer=NULL;
-        expect(SGPlayerSourceEpoch()!=epoch,"mixer disposal invalidates source");
-    });
-    later(6.0,^{
-        SGPCMReplacementCancel(); SGPlayerSetStage(NULL); SGPlayerSetSourceSelector(NULL);
-        AudioOutputUnitStop(output); AudioComponentInstanceDispose(output); AudioComponentInstanceDispose(converter);
-        printf("RESULT failures=%d nativeFrames=%llu replacementFrames=%llu stageFrames=%llu\n",failures,
-            (unsigned long long)atomic_load(&decoded),(unsigned long long)atomic_load(&selected),
-            (unsigned long long)atomic_load(&stageFrames)); fflush(stdout);
-        if (failures) HARNESS_FAIL(@"RESULT failures=%d", failures);
-        exit(0);
     });
 }
 @interface LosslessHandoff : UIResponder <UIApplicationDelegate>

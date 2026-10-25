@@ -1,9 +1,10 @@
 // The audio effects' engine, for Core Audio's render thread: one per process, fed the finished output a slice
 // at a time. It re-blocks into kSGDSPEngineBlock frames, so the sound is exactly one block late whatever the
-// slices; with every effect off and the gain at 0 dB a block passes untouched.
+// slices; with every effect off and gain at 0 dB, samples below the limiter ceiling pass untouched.
 //
-// Threading: SGDSPEngineProcess never allocates, blocks, logs or messages; it only tries the lock the setters
-// hold for their swaps, and a block that finds it taken passes dry, as late. SGDSPEngineRestart and the
+// Threading: SGDSPEngineProcess never allocates, locks, blocks, logs or messages. Bounded atomic admission
+// adopts config changes; while closed, effects pass dry but gain and limiting still run with the last
+// adopted configuration. SGDSPEngineRestart and the
 // diagnostics are for any thread; the rest is the config side, one thread at a time.
 #import <stdbool.h>
 #import <stddef.h>
@@ -55,6 +56,9 @@ bool SGDSPEngineSetLiveprog(SGDSPEngine *engine, bool on, const char *script, ch
 
 // Replaces `frames` samples of each lane with the processed sound one block before them.
 void SGDSPEngineProcess(SGDSPEngine *engine, float *left, float *right, uint32_t frames);
+// For a host whose per-output stage owns mandatory output control. Use one
+// processing mode for an engine's stream; this variant does not apply gain/limiting.
+void SGDSPEngineProcessEffects(SGDSPEngine *engine, float *left, float *right, uint32_t frames);
 // The next SGDSPEngineProcess starts over from a block of silence, for a stream that stopped and starts
 // again (the sound held from before it would otherwise play first). Any thread.
 void SGDSPEngineRestart(SGDSPEngine *engine);

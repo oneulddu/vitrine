@@ -68,6 +68,8 @@
 #import "PlayerState.h"
 #import "SpeedPitch.h"
 #import "SGTimePitch.h"
+#import "SGRenderGate.h"
+#import "SGOutputControl.h"
 #import "Shared/Lossless/SGAnchor.h"
 
 // The unit stays in this long after speed and pitch both came back to normal.
@@ -108,6 +110,13 @@ typedef struct {
     // which render notifies get.
     Format client, hardware;
     atomic_bool running, busy;
+    SGOutputPublication outputPublication;
+    SGOutputSettings outputSettings;         // last complete snapshot, render-owned
+    SGOutputEnvelope outputEnvelope;         // render-owned, never shared between units
+    float sleepGain;                        // render-owned slew toward the global sleep level
+    atomic_bool sleepStarting;              // next render starts at the global level, not a saved level
+    BOOL musicBuffer;                       // ownership at this buffer's pre-render
+    BOOL controlledMusic;                   // previous buffer's output-control ownership
     atomic_uint_fast64_t loudAt;             // host time of its last rendered buffer with sound
     // Under sg_outputsLock: when Spotify last started or connected it, as an order and as a host time,
     // and whether its notify and listener are on.
@@ -117,10 +126,18 @@ typedef struct {
 
 static Output sg_outputs[kMaxOutputs];
 static _Atomic(Output *) sg_music;           // the output carrying the processors
+static SGRenderGate sg_processing;
+static pthread_mutex_t sg_processingChanges = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t sg_outputsLock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 static dispatch_queue_t sg_outputsQueue;
 static SGPlayerOutputWatcher sg_watchers[kMaxWatchers];
 static BOOL sg_reachable;                    // Spotify's AudioOutputUnitStart could be rebound
+static _Atomic(SGPlayerOutputProcessor) sg_outputEffects, sg_outputReader;
+// Under sg_outputsLock. Coefficients are made off render for each hardware rate.
+static double sg_outputGain = 1, sg_outputThreshold = INFINITY, sg_outputReleaseMS = 100;
+// The timer publishes the process-wide fade level through SGPlayerSetGain.
+// Outputs only read it; no output can overwrite it during a start or handoff.
+static atomic_uint sg_sleepLevelBits;
 
 // The unit in use and whether the render thread runs it: in the music's chain (pull), else in place (pitch only).
 static _Atomic(SGTimePitch *) sg_pull, sg_inPlace;
@@ -142,6 +159,38 @@ static OSStatus (*sg_setProperty)(AudioUnit, AudioUnitPropertyID, AudioUnitScope
 
 static Output *music(void) {
     return atomic_load(&sg_music);
+}
+
+BOOL SGPlayerBeginProcessing(AudioUnit unit) {
+    Output *output = music();
+    if (!output || atomic_load(&output->unit) != unit) return NO;
+    if (!SGRenderGateEnter(&sg_processing)) return NO;
+    output = music();
+    if (output && atomic_load(&output->unit) == unit) return YES;
+    SGRenderGateLeave(&sg_processing);
+    return NO;
+}
+
+void SGPlayerEndProcessing(void) {
+    SGRenderGateLeave(&sg_processing);
+}
+
+void SGPlayerSetOutputProcessing(SGPlayerOutputProcessor effects, SGPlayerOutputProcessor reader) {
+    atomic_store(&sg_outputEffects, effects);
+    atomic_store(&sg_outputReader, reader);
+}
+
+// Control side only. There is no deadline: a returned barrier proves that the
+// last reader, including a post-render notify, has actually left.
+static void closeProcessing(void) {
+    pthread_mutex_lock(&sg_processingChanges);
+    SGRenderGateClose(&sg_processing);
+    while (!SGRenderGateIdle(&sg_processing)) usleep(100);
+}
+
+static void openProcessing(void) {
+    SGRenderGateOpen(&sg_processing);
+    pthread_mutex_unlock(&sg_processingChanges);
 }
 
 // Microseconds of song the music's mixer has handed over with sound, the own clock's (sg_clock).
@@ -225,7 +274,7 @@ uint64_t SGSpeedProbeSilence(uint64_t *host, double *ms, bool *silentNow) {
 // The output's mixer's next `frames` frames into `data`, in chunks of at most its largest slice, each with a
 // sample time of the output's own, so Spotify's units never see a time twice (an AU renders a time it has
 // seen from cache). With `sounding`, it stops at the first chunk marked silent (SGPlayerPull).
-static OSStatus pullSource(Output *output, AudioUnit source, const AudioTimeStamp *outputTime, UInt32 frames, AudioBufferList *data, UInt32 *sounding) {
+static OSStatus pullSource(Output *output, AudioUnit source, const AudioTimeStamp *outputTime, UInt32 frames, AudioBufferList *data, UInt32 *sounding, BOOL processing) {
     enum { kMaxBuffers = 8 };
     UInt32 chunk = atomic_load_explicit(&output->chunk, memory_order_relaxed);
     if (data->mNumberBuffers > kMaxBuffers) chunk = frames;
@@ -267,14 +316,14 @@ static OSStatus pullSource(Output *output, AudioUnit source, const AudioTimeStam
         if ((status != noErr || (flags & kAudioUnitRenderAction_OutputIsSilence))
             && observesSource && output == music()) SGPlayerInvalidateSource();
         #if SG_DRIVER
-        if (output == music()) {
+        if (processing) {
             // Silent as flagged, or as heard: every sample of the first channel under -80 dBFS.
             bool quiet = status == noErr && !(flags & kAudioUnitRenderAction_OutputIsSilence) && target->mBuffers[0].mData;
             const float *samples = target->mBuffers[0].mData;
             for (UInt32 i = 0; quiet && i < count; i++) if (fabsf(samples[i]) > 1e-4f) quiet = false;
             noteSilence((flags & kAudioUnitRenderAction_OutputIsSilence) || status != noErr || quiet, count, rateOf(&output->client), anchorHost);
         }
-        if (output == music()) {
+        if (processing) {
             double rate = rateOf(&output->client);
             // About ten samples per second at the current speed. Sing's refill may burst.
             double speed = MAX(0.25, loadFloat(&sg_speedBits));
@@ -309,7 +358,7 @@ static OSStatus pullSource(Output *output, AudioUnit source, const AudioTimeStam
             if (rate > 0) atomic_fetch_add_explicit(&sg_playedMicros, (uint64_t)(count * 1e6 / rate), memory_order_relaxed);
         }
         SGPlayerSourceSelector selector = atomic_load(&sg_sourceSelector);
-        if (selector && output == music()) {
+        if (selector && processing) {
             // Keep output ownership based on Spotify's original samples, not the replacement's sound.
             BOOL audible = NO;
             for (UInt32 b = 0; !audible && b < target->mNumberBuffers; ++b) {
@@ -339,13 +388,13 @@ typedef struct {
 
 static OSStatus pullMixer(void *context, UInt32 frames, AudioBufferList *data, UInt32 *sounding) {
     MixerPull *mixer = context;
-    return pullSource(mixer->output, mixer->source, mixer->time, frames, data, sounding);
+    return pullSource(mixer->output, mixer->source, mixer->time, frames, data, sounding, YES);
 }
 
 // The music's mixer's sound, through the stage when one is set.
 static OSStatus pullChain(Output *output, AudioUnit source, const AudioTimeStamp *time, UInt32 frames, AudioBufferList *data) {
     SGPlayerStage stage = atomic_load_explicit(&sg_stage, memory_order_acquire);
-    if (!stage) return pullSource(output, source, time, frames, data, NULL);
+    if (!stage) return pullSource(output, source, time, frames, data, NULL, YES);
     MixerPull mixer = {output, source, time};
     return stage(frames, data, pullMixer, &mixer);
 }
@@ -384,13 +433,16 @@ static OSStatus feed(void *refCon, AudioUnitRenderActionFlags *flags, const Audi
     if (!source) {
         silence(data);
         *flags |= kAudioUnitRenderAction_OutputIsSilence;
-    } else if (output != music()) {
-        // Another chain plays as Spotify made it.
-        status = pullSource(output, source, timestamp, frames, data, NULL);
+    } else if (!SGPlayerBeginProcessing(atomic_load(&output->unit))) {
+        // Another chain, or a control-side handoff: native sound, no shared stage.
+        status = pullSource(output, source, timestamp, frames, data, NULL, NO);
     } else {
-        SGTimePitch *unit = atomic_load(&sg_pull);
+        // Read engagement before the pointer: disengage drains admitted users,
+        // and a replacement is published before engagement is enabled again.
+        BOOL engaged = atomic_load(&sg_engaged);
+        SGTimePitch *unit = engaged ? atomic_load(&sg_pull) : NULL;
         // A unit made for another rate passes the sound as it is, until the main thread makes one for the new rate.
-        BOOL tried = atomic_load(&sg_engaged) && unit && fitsUnit(data, frames, unit) && SGTimePitchSampleRate(unit) == rateOf(&output->client);
+        BOOL tried = unit && fitsUnit(data, frames, unit) && SGTimePitchSampleRate(unit) == rateOf(&output->client);
         sg_unitPulled = false;
         status = tried ? SGTimePitchRender(unit, frames, data) : -1;
         if (status != noErr && tried && sg_unitPulled) {
@@ -402,6 +454,7 @@ static OSStatus feed(void *refCon, AudioUnitRenderActionFlags *flags, const Audi
         } else if (status != noErr) {
             status = pullChain(output, source, timestamp, frames, data);
         }
+        SGPlayerEndProcessing();
     }
     atomic_store(&output->busy, false);
     return status;
@@ -488,56 +541,85 @@ static BOOL hasSound(Format *format, AudioUnitRenderActionFlags flags, const Aud
 
 #pragma mark - the render thread: the gain
 
-// The gain asked for (main thread writes, render thread reads) and the one the sound is at (the music's render
-// thread only). The sound moves toward the one asked for by at most the whole way in kGainSlew seconds, so a
-// fade that starts late, a timer canceled halfway or more time added never steps.
+// Each continuing output slews toward the timer's global fade level. A new
+// stream starts at that level directly; no output transfers an envelope.
 static const double kGainSlew = 0.5;
-static atomic_uint sg_gainBits;
-static float sg_gainNow = 1;
 
-// Scales a finished buffer, in the hardware's format, ramping each frame from where the last buffer left off.
-// Integers scale as they are, so a fixed point format needs no conversion.
-static void applyGain(Format *hardware, AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data) {
-    float target = loadFloat(&sg_gainBits);
-    if (target == 1 && sg_gainNow == 1) return;
+static void scaleSample(void *data, UInt32 at, UInt32 bytes, BOOL isFloat, float scale) {
+    if (scale == 1) return;
+    if (bytes == 4 && isFloat) ((float *)data)[at] *= scale;
+    else if (bytes == 4) ((int32_t *)data)[at] = (int32_t)llrint(fmax(-2147483648.0, fmin(2147483647.0, ((int32_t *)data)[at] * (double)scale)));
+    else ((int16_t *)data)[at] = (int16_t)lrintf(fmaxf(-32768, fminf(32767, ((int16_t *)data)[at] * scale)));
+}
+
+// Always runs, including when shared effects are unavailable during handoff.
+// No shared scratch or envelope; one output's render thread owns every field.
+static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data, BOOL musicBuffer) {
+    Format *hardware = &output->hardware;
     UInt32 bytes = atomic_load_explicit(&hardware->bytes, memory_order_relaxed);
     double rate = rateOf(hardware);
     if ((bytes != 2 && bytes != 4) || rate <= 0) return;
-    float from = sg_gainNow, most = (float)(frames / (kGainSlew * rate));
-    float to = from + fmaxf(-most, fminf(target - from, most));
-    sg_gainNow = to;
-    if (*flags & kAudioUnitRenderAction_OutputIsSilence) return;
-    BOOL isFloat = (atomic_load_explicit(&hardware->flags, memory_order_relaxed) & kAudioFormatFlagIsFloat) != 0;
+    UInt32 formatFlags = atomic_load_explicit(&hardware->flags, memory_order_relaxed);
+    BOOL isFloat = (formatFlags & kAudioFormatFlagIsFloat) != 0;
+    BOOL split = (formatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
+    UInt32 channels = atomic_load_explicit(&hardware->channels, memory_order_relaxed);
+    if (!channels || (split ? data->mNumberBuffers != channels : data->mNumberBuffers != 1)) return;
     for (UInt32 b = 0; b < data->mNumberBuffers; b++) {
-        AudioBuffer *buffer = &data->mBuffers[b];
-        UInt32 channels = MAX(buffer->mNumberChannels, 1u), samples = buffer->mDataByteSize / bytes;
-        if (!buffer->mData || samples < frames * channels) continue;
-        for (UInt32 i = 0; i < frames * channels; i++) {
-            float gain = from + (to - from) * (float)(i / channels) / (float)frames;
-            if (bytes == 2) ((int16_t *)buffer->mData)[i] = (int16_t)(((int16_t *)buffer->mData)[i] * gain);
-            else if (isFloat) ((float *)buffer->mData)[i] *= gain;
-            else ((int32_t *)buffer->mData)[i] = (int32_t)(((int32_t *)buffer->mData)[i] * (double)gain);
+        if (!data->mBuffers[b].mData || data->mBuffers[b].mDataByteSize / bytes / (split ? 1 : channels) < frames) return;
+    }
+    SGOutputRead(&output->outputPublication, &output->outputSettings);
+    SGOutputSettings settings = musicBuffer ? output->outputSettings : (SGOutputSettings){1, INFINITY, 0};
+    // A newly selected output starts at the configured gain, not at its former
+    // nonmusic unity level. Setting changes within one stream still ramp.
+    BOOL beginsMusic = musicBuffer && !output->controlledMusic;
+    if (beginsMusic)
+        output->outputEnvelope = (SGOutputEnvelope){settings.gain, 1};
+    output->controlledMusic = musicBuffer;
+    float from = output->outputEnvelope.gain, step = (settings.gain - from) / frames;
+    BOOL starting = atomic_exchange(&output->sleepStarting, false);
+    float target = loadFloat(&sg_sleepLevelBits);
+    float sleepFrom = starting || beginsMusic ? target : output->sleepGain;
+    float most = (float)(frames / (kGainSlew * rate));
+    float sleepTo = sleepFrom + fmaxf(-most, fminf(target - sleepFrom, most));
+    output->sleepGain = sleepTo;
+    UInt32 fraction = (formatFlags & kLinearPCMFormatFlagsSampleFractionMask) >> kLinearPCMFormatFlagsSampleFractionShift;
+    BOOL silent = (*flags & kAudioUnitRenderAction_OutputIsSilence) != 0;
+    for (UInt32 i = 0; i < frames; ++i) {
+        UInt32 at = split ? i : i * channels;
+        float l = silent ? 0 : readSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
+        float r = channels < 2 ? l : silent ? 0 : readSample(data->mBuffers[split ? 1 : 0].mData, split ? i : at + 1, bytes, isFloat, fraction);
+        float gain = from == settings.gain ? from : from + step * (i + 1);
+        float scale = SGOutputFrameScale(&output->outputEnvelope, settings, gain, l, r);
+        float sleep = sleepFrom + (sleepTo - sleepFrom) * (i + 1) / frames;
+        if (!silent) for (UInt32 c = 0; c < channels; ++c) {
+            scaleSample(data->mBuffers[split ? c : 0].mData, split ? i : at + c, bytes, isFloat, (c < 2 ? scale : 1) * sleep);
         }
     }
+    output->outputEnvelope.gain = settings.gain;
 }
 
 // On every started output, `refCon` its Output: notes when it has sound, and shifts the pitch on the music's
 // when it is not fed by the callback.
 static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const AudioTimeStamp *timestamp, UInt32 bus,
                          UInt32 frames, AudioBufferList *data) {
-    if (!(*flags & kAudioUnitRenderAction_PostRender) || bus != 0 || !data || !data->mNumberBuffers || !frames) return noErr;
     Output *output = refCon;
+    if (bus != 0) return noErr;
+    if (*flags & kAudioUnitRenderAction_PreRender) output->musicBuffer = output == music();
+    if (!(*flags & kAudioUnitRenderAction_PostRender) || !data || !data->mNumberBuffers || !frames) return noErr;
     BOOL sourceMetered = atomic_load(&sg_sourceSelector) && atomic_load(&output->taken) && output == music();
     if (!sourceMetered && hasSound(&output->hardware, *flags, data)) atomic_store_explicit(&output->loudAt, mach_absolute_time(), memory_order_relaxed);
-    if (output != music()) return noErr;
-    applyGain(&output->hardware, flags, frames, data);
-    if (atomic_load(&output->taken) || !atomic_load(&sg_engaged)) return noErr;
-    atomic_store(&output->busy, true);
-    SGTimePitch *unit = atomic_load(&sg_inPlace);
-    if (atomic_load(&sg_engaged) && output == music() && unit && SGTimePitchSampleRate(unit) == rateOf(&output->hardware)) {
-        shiftInPlace(unit, &output->hardware, flags, frames, data);
+    BOOL admitted = SGPlayerBeginProcessing(atomic_load(&output->unit));
+    BOOL musicBuffer = output->musicBuffer || output == music() || admitted;
+    if (admitted && !atomic_load(&output->taken) && atomic_load(&sg_engaged)) {
+        SGTimePitch *unit = atomic_load(&sg_inPlace);
+        if (unit && SGTimePitchSampleRate(unit) == rateOf(&output->hardware))
+            shiftInPlace(unit, &output->hardware, flags, frames, data);
     }
-    atomic_store(&output->busy, false);
+    SGPlayerOutputProcessor effects = atomic_load(&sg_outputEffects), reader = atomic_load(&sg_outputReader);
+    if (admitted && effects) effects(flags, frames, data);
+    applyOutputControl(output, flags, frames, data, musicBuffer);
+    if (admitted && reader) reader(flags, frames, data);
+    if (admitted) SGPlayerEndProcessing();
     return noErr;
 }
 
@@ -565,6 +647,13 @@ static Output *outputFor(AudioUnit unit) {
         atomic_store(&output->chunk, 1024);
         atomic_store(&output->loudAt, 0);
         output->sourceTime = 0;
+        output->outputSettings = (SGOutputSettings){1, INFINITY, 0};
+        output->outputEnvelope = (SGOutputEnvelope){1, 1};
+        output->sleepGain = 1;
+        atomic_store(&output->sleepStarting, true);
+        output->musicBuffer = NO;
+        output->controlledMusic = NO;
+        SGOutputPublish(&output->outputPublication, output->outputSettings);
         output->order = output->eventAt = 0;
         output->listened = NO;
         atomic_store(&output->unit, unit);
@@ -584,7 +673,8 @@ static void waitFor(Output *output) {
 // Stops the render threads using the unit, and returns once none is.
 static void disengage(void) {
     atomic_store(&sg_engaged, false);
-    for (int i = 0; i < kMaxOutputs; i++) waitFor(&sg_outputs[i]);
+    closeProcessing();
+    openProcessing();
 }
 
 static void readScope(AudioUnit unit, AudioUnitScope scope, Format *into, AudioStreamBasicDescription *format) {
@@ -599,6 +689,23 @@ static void readScope(AudioUnit unit, AudioUnitScope scope, Format *into, AudioS
     atomic_store(&into->flags, format->mFormatFlags);
     atomic_store(&into->channels, format->mChannelsPerFrame);
     atomic_store(&into->bytes, format->mBitsPerChannel / 8);
+}
+
+static void publishOutput(Output *output) {
+    double rate = rateOf(&output->hardware);
+    SGOutputSettings settings = {(float)sg_outputGain, (float)sg_outputThreshold,
+        rate > 0 ? (float)exp(-1000 / (sg_outputReleaseMS * rate)) : 0};
+    SGOutputPublish(&output->outputPublication, settings);
+}
+
+void SGPlayerSetOutputControl(BOOL on, double gainDB, double thresholdDB, double releaseMS) {
+    pthread_mutex_lock(&sg_outputsLock);
+    sg_outputGain = on ? pow(10, gainDB / 20) : 1;
+    sg_outputThreshold = on ? pow(10, fmin(thresholdDB, 0) / 20) : INFINITY;
+    sg_outputReleaseMS = fmax(releaseMS, 0.1);
+    for (int i = 0; i < kMaxOutputs; ++i)
+        if (atomic_load(&sg_outputs[i].unit)) publishOutput(&sg_outputs[i]);
+    pthread_mutex_unlock(&sg_outputsLock);
 }
 
 static NSString *formatText(const AudioStreamBasicDescription *format) {
@@ -632,6 +739,7 @@ static NSString *settle(Output *output, AudioStreamBasicDescription *client, Aud
     AudioUnit unit = atomic_load(&output->unit);
     readScope(unit, kAudioUnitScope_Input, &output->client, client);
     readScope(unit, kAudioUnitScope_Output, &output->hardware, hardware);
+    publishOutput(output);
     AudioUnit source = atomic_load(&output->source);
     if (!source) return @"not connected";
     UInt32 slice = 0, size = sizeof slice;
@@ -702,10 +810,13 @@ static Output *choose(void) {
 // `always` (a start of the music's output, a format change on it).
 static void reselect(BOOL always, NSString *why) {
     Output *previous = music(), *next = choose();
+    if (next == previous && !always) return;
+    closeProcessing();
     if (next != previous) {
-        disengage();
+        atomic_store(&sg_engaged, false);
         // The newest now, so it keeps the processors through a tie with the one it took them from.
         if (next) markEvent(next);
+        if (next) atomic_store(&next->sleepStarting, true);
         atomic_store(&sg_music, next);
         SGLog(@"audio: the processors move from %@ to %@%@", describe(previous), describe(next), why ? [@", " stringByAppendingString:why] : @"");
     }
@@ -714,6 +825,7 @@ static void reselect(BOOL always, NSString *why) {
         tellWatchers();
         applyToFormat();
     }
+    openProcessing();
 }
 
 static void checkSilence(void) {
@@ -854,6 +966,7 @@ static OSStatus startOutput(AudioUnit unit) {
         AudioStreamBasicDescription client, hardware;
         NSString *why = settle(output, &client, &hardware);
         markEvent(output);
+        atomic_store(&output->sleepStarting, true);
         atomic_store(&output->running, true);
         updateChecking();
         if (!output->listened) {
@@ -928,7 +1041,7 @@ static OSStatus disposeUnit(AudioComponentInstance unit) {
 #pragma mark - engaging the unit
 
 // The unit for the music's format and the way in use, made when there is none or the format changed. A
-// replaced one is never freed: the render thread may still hold it, and a format change is rare.
+// replaced one retires after disengage's admission barrier, never after waitFor's timeout.
 static SGTimePitch *unitForFormat(void) {
     Output *output = music();
     if (!output) return NULL;
@@ -943,6 +1056,7 @@ static SGTimePitch *unitForFormat(void) {
     if (!unit || SGTimePitchSampleRate(unit) != rate || SGTimePitchChannels(unit) != channels) {
         BOOL wasEngaged = atomic_load(&sg_engaged);
         disengage();
+        SGTimePitch *retired = unit;
         unit = SGTimePitchCreate(rate, channels, pull ? pullForUnit : NULL, NULL);
         if (unit) {
             SGTimePitchSetFollows(unit, SGPlayerPitchFollowsSpeed());
@@ -951,6 +1065,7 @@ static SGTimePitch *unitForFormat(void) {
             SGTimePitchReset(unit);
         }
         atomic_store(slot, unit);
+        SGTimePitchFree(retired);
         SGLog(@"redesign speed: %@ %@ for %.0f Hz, %u channels", unit ? @"a unit" : @"no unit", pull ? @"in the chain" : @"in place", rate, (unsigned)channels);
         if (unit && wasEngaged) atomic_store(&sg_engaged, true);
     }
@@ -1086,11 +1201,14 @@ static void rearmClock(void) {
 
 // Drops what the unit holds from before (93 ms when it is in).
 static void resetUnit(void) {
+    pthread_mutex_lock(&sg_buildLock);
     SGTimePitch *unit = atomic_load(tapped() ? &sg_pull : &sg_inPlace);
-    if (!unit) return;
-    disengage();
-    SGTimePitchReset(unit);
-    if (sg_speed != 1 || sg_semitones != 0) atomic_store(&sg_engaged, true);
+    if (unit) {
+        disengage();
+        SGTimePitchReset(unit);
+        if (sg_speed != 1 || sg_semitones != 0) atomic_store(&sg_engaged, true);
+    }
+    pthread_mutex_unlock(&sg_buildLock);
 }
 
 // Spotify's clock again from here, and the unit starts clean at the new place.
@@ -1149,7 +1267,7 @@ void SGPlayerSetGain(float gain) {
         static int logged;
         if (logged++ < 1) SGLog(@"audio: Spotify's output was not reached, the gain cannot apply");
     }
-    storeFloat(&sg_gainBits, fmaxf(0, fminf(gain, 1)));
+    storeFloat(&sg_sleepLevelBits, fmaxf(0, fminf(gain, 1)));
 }
 
 AudioUnit SGPlayerMusicOutput(void) {
@@ -1287,7 +1405,7 @@ BOOL SGPlayerWatchMusicOutput(SGPlayerOutputWatcher watcher) {
 
 %ctor {
     storeFloat(&sg_speedBits, 1);
-    storeFloat(&sg_gainBits, 1);
+    storeFloat(&sg_sleepLevelBits, 1);
     rebind();
     %init;
     SGRequireClasses(@[@"SPTPlayerState"]);

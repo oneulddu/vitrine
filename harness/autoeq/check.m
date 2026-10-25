@@ -13,6 +13,28 @@
 
 static int failures;
 
+// URLSession transport double: the test decides when each response arrives.
+static NSMutableArray<NSURLProtocol *> *pending;
+@interface AuditProtocol : NSURLProtocol
+- (void)finish;
+@end
+@implementation AuditProtocol
++ (BOOL)canInitWithRequest:(NSURLRequest *)request {
+    return [request.URL.path containsString:@"/Audit/"];
+}
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    dispatch_async(dispatch_get_main_queue(), ^{ [pending addObject:self]; });
+}
+- (void)stopLoading {}
+- (void)finish {
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:nil];
+    [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+    [self.client URLProtocol:self didLoadData:[@"GraphicEQ: 20 -9;" dataUsingEncoding:NSUTF8StringEncoding]];
+    [self.client URLProtocolDidFinishLoading:self];
+}
+@end
+
 static void check(BOOL ok, NSString *what) {
     printf("%s %s\n", ok ? "ok  " : "FAIL", what.UTF8String);
     failures += !ok;
@@ -129,6 +151,41 @@ static void checkPresets(void) {
     check([SGDSPUserPresetNames() isEqualToArray:@[@"Mine"]], @"a preset deleted");
 }
 
+static void checkStaleDownload(void) {
+    pending = [NSMutableArray array];
+    [NSURLProtocol registerClass:AuditProtocol.class];
+    SGAutoEqOutputChanged(@"audit-A", @"A");
+    SGAutoEqHeadphone *headphone = [SGAutoEqHeadphone new];
+    headphone.path = @"Audit/A";
+    __block BOOL done = NO;
+    SGAutoEqApply(headphone, ^(NSString *error) { done = YES; });
+    waitFor(^BOOL { return pending.count == 1; });
+    check(pending.count == 1, @"download intercepted without networking");
+    if (pending.count != 1) return;
+    SGAutoEqOutputChanged(@"audit-B", @"B");
+    SGAutoEqRememberOutput(YES);
+    SGAutoEqApplyText(@"Audit/B", @"GraphicEQ: 20 -3;");
+    [(AuditProtocol *)pending[0] finish];
+    waitFor(^BOOL { return done; });
+    check(done && [SGDSPString(SGKeyDSPGraphicEqNodes) isEqualToString:@"GraphicEQ: 20 -3;"],
+          @"A's late download leaves B's active correction unchanged");
+    SGAutoEqOutputChanged(@"audit-A", @"A");
+    SGAutoEqOutputChanged(@"audit-B", @"B");
+    check([SGDSPString(SGKeyDSPGraphicEqNodes) isEqualToString:@"GraphicEQ: 20 -3;"],
+          @"A's late download leaves B's remembered correction unchanged");
+
+    [pending removeAllObjects];
+    done = NO;
+    SGAutoEqApply(headphone, ^(NSString *error) { done = YES; });
+    waitFor(^BOOL { return pending.count == 1; });
+    if (pending.count != 1) { check(NO, @"second download intercepted"); return; }
+    SGAutoEqTakeOff();
+    [(AuditProtocol *)pending[0] finish];
+    waitFor(^BOOL { return done; });
+    check(done && !SGDSPSwitch(SGKeyDSPGraphicEq), @"a newer None pick cancels the pending correction");
+    [NSURLProtocol unregisterClass:AuditProtocol.class];
+}
+
 static void checkOnline(void) {
     clearDefaults();
     __block NSArray<SGAutoEqHeadphone *> *all;
@@ -185,6 +242,7 @@ int main(int argc, char **argv) {
         applied = [NSCountedSet set];
         checkParsing();
         checkPresets();
+        checkStaleDownload();
         if (argc > 1 && !strcmp(argv[1], "online")) checkOnline();
         clearDefaults();
         printf("%d failed\n", failures);

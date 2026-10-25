@@ -93,6 +93,18 @@ void SGPlayerInvalidateSource(void);
 // Haptics), NULL until Spotify connects or starts one. Any thread; the render thread compares it with a render
 // notify's unit to process the music's output alone.
 AudioUnit SGPlayerMusicOutput(void);
+// Shared processors, including post-render notifies, must hold this admission
+// for their entire access to render-owned state. False means pass through.
+// Nonblocking, no allocation; End only after a successful Begin. No nesting.
+BOOL SGPlayerBeginProcessing(AudioUnit output);
+void SGPlayerEndProcessing(void);
+// Called under shared admission: effects first, then mandatory per-output
+// control, then the reader. Register once at launch; callbacks never wait.
+typedef void (*SGPlayerOutputProcessor)(AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data);
+void SGPlayerSetOutputProcessing(SGPlayerOutputProcessor effects, SGPlayerOutputProcessor reader);
+// Control side only. Gain/limiter settings for music outputs, independent of
+// shared-effect admission. Sleep-timer gain remains independent of this switch.
+void SGPlayerSetOutputControl(BOOL on, double gainDB, double thresholdDB, double releaseMS);
 // The format Spotify hands the music's output (its input scope, element 0), the one the stage's buffers are
 // in. NO when there is no such output. Not on the render thread.
 BOOL SGPlayerMusicClientFormat(AudioStreamBasicDescription *format);

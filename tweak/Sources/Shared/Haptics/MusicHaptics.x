@@ -43,6 +43,7 @@
 #import "Shared/Player/SpeedPitch.h"
 #import "Haptics.h"
 #import "SGMusicAnalyzer.h"
+#import "SGMusicEventRing.h"
 
 // Core Haptics takes about this long from a scheduled time to the Taptic Engine's peak.
 static const double kHapticLead = 0.012;
@@ -63,7 +64,7 @@ static const double kQuietAfter = 0.1, kQuietAfterBuffers = 2.5, kEngineStopAfte
 // An engine that would not start is not asked again for this long.
 static const double kStartRetryAfter = 2;
 
-enum { kRingSize = 1024, kMonoFrames = 4096 };
+enum { kMonoFrames = 4096 };
 
 #pragma mark - shared between the threads
 
@@ -81,8 +82,7 @@ static atomic_int sg_follows;
 // A tap the Vibrations preview asked for, and whether it is watching the taps (SGMusicHapticsWatchTaps).
 static atomic_bool sg_previewAsked, sg_watched;
 
-static SGMusicEvent sg_ring[kRingSize];
-static atomic_uint sg_head, sg_tail;   // head moved by the render thread, tail by the player thread
+static SGMusicEventRing sg_ring;
 static dispatch_semaphore_t sg_wake;
 
 static double sg_secondsPerTick;
@@ -106,11 +106,7 @@ static SGMusicAnalyzer sg_analyzer;
 static float sg_mono[kMonoFrames];
 
 static void pushEvent(const SGMusicEvent *event, void *context) {
-    unsigned head = atomic_load_explicit(&sg_head, memory_order_relaxed);
-    unsigned tail = atomic_load_explicit(&sg_tail, memory_order_relaxed);
-    if (head - tail >= kRingSize) return;
-    sg_ring[head & (kRingSize - 1)] = *event;
-    atomic_store_explicit(&sg_head, head + 1, memory_order_relaxed);
+    SGMusicEventRingPush(&sg_ring, event);
 }
 
 static inline float sampleAt(const void *data, UInt32 index, UInt32 bytes, BOOL isFloat, UInt32 fraction) {
@@ -128,21 +124,26 @@ static inline float sampleAt(const void *data, UInt32 index, UInt32 bytes, BOOL 
 static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const AudioTimeStamp *timestamp, UInt32 bus,
                          UInt32 frames, AudioBufferList *data) {
     if (!(*flags & kAudioUnitRenderAction_PostRender) || bus != 0 || !data || !data->mNumberBuffers || !frames) return noErr;
-    if (!atomic_load_explicit(&sg_listening, memory_order_relaxed) || refCon != SGPlayerMusicOutput()) return noErr;
+    if (!atomic_load_explicit(&sg_listening, memory_order_relaxed)) return noErr;
     if (*flags & kAudioUnitRenderAction_OutputIsSilence) return noErr;
+    if (!SGPlayerBeginProcessing((AudioUnit)refCon)) return noErr;
 
     uint64_t layout = atomic_load_explicit(&sg_layout, memory_order_relaxed);
     UInt32 formatFlags = (UInt32)layout, channels = (UInt32)(layout >> 32) & 0xffff, bytes = (UInt32)(layout >> 48);
     BOOL isFloat = (formatFlags & kAudioFormatFlagIsFloat) != 0;
     BOOL split = (formatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
     UInt32 fraction = (formatFlags & kLinearPCMFormatFlagsSampleFractionMask) >> kLinearPCMFormatFlagsSampleFractionShift;
-    if ((bytes != 2 && bytes != 4) || channels < 1) return noErr;
+    if ((bytes != 2 && bytes != 4) || channels < 1) {
+        SGPlayerEndProcessing();
+        return noErr;
+    }
     BOOL fits = split ? data->mNumberBuffers == channels : data->mNumberBuffers == 1 && data->mBuffers[0].mNumberChannels == channels;
     for (UInt32 b = 0; fits && b < data->mNumberBuffers; b++) {
         fits = data->mBuffers[b].mData && data->mBuffers[b].mDataByteSize == frames * bytes * (split ? 1 : channels);
     }
     if (!fits) {
         atomic_fetch_add_explicit(&sg_skipped, 1, memory_order_relaxed);
+        SGPlayerEndProcessing();
         return noErr;
     }
 
@@ -150,7 +151,10 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
     static double analyzedRate;
     static unsigned analyzedGeneration;
     unsigned generation = atomic_load_explicit(&sg_generation, memory_order_relaxed);
-    if (sampleRate <= 0) return noErr;
+    if (sampleRate <= 0) {
+        SGPlayerEndProcessing();
+        return noErr;
+    }
     if (sampleRate != analyzedRate || generation != analyzedGeneration) {
         SGMusicAnalyzerReset(&sg_analyzer, sampleRate, 1 / sg_secondsPerTick);
         analyzedRate = sampleRate;
@@ -163,7 +167,7 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
     UInt32 stride = split ? 1 : channels, rightOffset = !split && channels > 1 ? 1 : 0;
 
     uint64_t hostTime = (timestamp->mFlags & kAudioTimeStampHostTimeValid) ? timestamp->mHostTime : mach_absolute_time();
-    unsigned headBefore = atomic_load_explicit(&sg_head, memory_order_relaxed);
+    unsigned headBefore = atomic_load_explicit(&sg_ring.head, memory_order_relaxed);
     for (UInt32 done = 0; done < frames;) {
         UInt32 count = MIN(frames - done, (UInt32)kMonoFrames);
         for (UInt32 i = 0; i < count; i++) {
@@ -174,7 +178,8 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
         SGMusicAnalyzerProcess(&sg_analyzer, sg_mono, count, chunkTime, pushEvent, NULL);
         done += count;
     }
-    if (atomic_load_explicit(&sg_head, memory_order_relaxed) != headBefore) dispatch_semaphore_signal(sg_wake);
+    if (atomic_load_explicit(&sg_ring.head, memory_order_relaxed) != headBefore) dispatch_semaphore_signal(sg_wake);
+    SGPlayerEndProcessing();
     return noErr;
 }
 
@@ -469,7 +474,7 @@ static void *playerLoop(void *unused) {
             double now = hostSeconds(mach_absolute_time());
             if (!atomic_load(&sg_listening)) {
                 atomic_store(&sg_previewAsked, false);
-                atomic_store(&sg_tail, atomic_load(&sg_head));
+                SGMusicEventRingDiscard(&sg_ring);
                 stopEngine();
                 idle = YES;
                 continue;
@@ -482,10 +487,11 @@ static void *playerLoop(void *unused) {
                 playPreview(rumbles);
                 any = YES;
             }
-            unsigned head = atomic_load(&sg_head), tail = atomic_load(&sg_tail);
+            unsigned head = atomic_load_explicit(&sg_ring.head, memory_order_acquire);
+            unsigned tail = atomic_load_explicit(&sg_ring.tail, memory_order_relaxed);
             if (tail != head && startEngine()) {
-                for (; tail != head; tail++) {
-                    SGMusicEvent event = sg_ring[tail & (kRingSize - 1)];
+                SGMusicEvent event;
+                for (; tail != head && SGMusicEventRingPop(&sg_ring, &event); tail++) {
                     if (event.kind == SGMusicEventLevel) {
                         if (rumbles) playLevel(&event);
                     } else if (event.kind == SGMusicEventKick || snares) {
@@ -493,8 +499,9 @@ static void *playerLoop(void *unused) {
                     }
                 }
                 any = YES;
+            } else if (tail != head) {
+                atomic_store_explicit(&sg_ring.tail, head, memory_order_release);
             }
-            atomic_store(&sg_tail, head);
             if (any) {
                 lastEvent = now;
                 idle = NO;

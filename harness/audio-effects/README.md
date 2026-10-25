@@ -8,7 +8,7 @@ The engine (`tweak/Sources/Shared/AudioEffects/SGDSP*.m`) as the tweak compiles 
 ExtAudioFile, and test signals, go through the engine in the slices iOS hands its output unit (1024, 4096, 470
 and 471 in turn, 512, and a mix down to single frames), and each check prints a line:
 
-- bypass exact to the sample one block late, hotter than full scale too, and again once effects are switched off;
+- bypass exact to the sample one block late below the limiter ceiling, and again once effects are switched off;
 - output gain, the limiter's ceiling with +12 dB into it, its release;
 - the equalizer's bands at their gains by a stepped sine (smile, all +12, alternating ±12, one band, random),
   the page's curve between them, at 44.1 kHz too; bass boost lifting a quiet 40 Hz tone by the shelf's gain and
@@ -41,6 +41,10 @@ are not a dictionary, nothing usable, over 256 KB) or trims (keys and types this
 or a dot first, a blank or long name).
 
 A last word `stress` runs the convolver, the threaded checks, rate changes and Liveprog only.
+
+`OUT=/tmp/audio-regression ./build.sh regression && /tmp/audio-regression` checks standalone limiting,
+attenuation while a real effect setter is held at the framework boundary, and nonblocking render admission
+across a control-side ownership transfer (including a reader held beyond the old 100 ms timeout).
 
 ## The hook in the simulator (`sim/main.m`)
 

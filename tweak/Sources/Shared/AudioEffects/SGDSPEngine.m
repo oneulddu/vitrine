@@ -7,6 +7,9 @@
 #import <stdio.h>
 #import <stdlib.h>
 #import <string.h>
+#import <unistd.h>
+#import "Shared/Player/SGRenderGate.h"
+#import "Shared/Player/SGOutputControl.h"
 #import "SGDSPConvolver.h"
 #import "SGDSPEffects.h"
 #import "SGDSPFilters.h"
@@ -56,17 +59,20 @@ typedef struct {
 } Effect;
 
 struct SGDSPEngine {
-    pthread_mutex_t lock;             // held by every setter, only ever tried by the render thread
+    pthread_mutex_t lock;             // config writers only
+    SGRenderGate effectsGate;         // bounded render admission; config waits for the old block
     atomic_uint_fast64_t rateBits;
     atomic_bool restart;
     double rate, releaseMS;           // the config side's
 
     // Under the lock.
     Effect effects[SlotCount];
-    float gainTarget, threshold, release;
-    float gain, limiter;              // the gain reached and the limiter's own, as the last block left them
+    SGOutputSettings configuredOutput;
+    bool resetOutput;
 
     // The render thread's alone.
+    SGOutputSettings outputSettings;
+    SGOutputEnvelope outputEnvelope;
     uint32_t fill;                    // frames in the block being gathered
     uint64_t written, read;           // frames into and out of the ring, the written ones a block ahead
     float blockLeft[kSGDSPEngineBlock], blockRight[kSGDSPEngineBlock];
@@ -108,6 +114,27 @@ static bool validRate(double rate) {
     return rate >= 8000 && rate <= 384000;
 }
 
+static void beginConfig(SGDSPEngine *engine) {
+    pthread_mutex_lock(&engine->lock);
+    SGRenderGateClose(&engine->effectsGate);
+    while (!SGRenderGateIdle(&engine->effectsGate)) usleep(100);
+}
+
+static void endConfig(SGDSPEngine *engine) {
+    SGRenderGateOpen(&engine->effectsGate);
+    pthread_mutex_unlock(&engine->lock);
+}
+
+// Copied only on admitted blocks. On a missed adoption the render thread keeps
+// its previous complete configuration, including gain and limiting.
+static void adoptOutput(SGDSPEngine *engine) {
+    engine->outputSettings = engine->configuredOutput;
+    if (engine->resetOutput) {
+        engine->outputEnvelope = (SGOutputEnvelope){engine->outputSettings.gain, 1};
+        engine->resetOutput = false;
+    }
+}
+
 #pragma mark - making one
 
 // The FIFO back to one block of silence ahead of the first frame in.
@@ -130,8 +157,9 @@ SGDSPEngine *SGDSPEngineCreate(double sampleRate) {
     }
     engine->rate = sampleRate;
     storeDouble(&engine->rateBits, sampleRate);
-    engine->gain = engine->gainTarget = engine->limiter = 1;
+    engine->outputEnvelope = (SGOutputEnvelope){1, 1};
     SGDSPEngineSetOutput(engine, 0, -0.1, 60);
+    adoptOutput(engine);
     startOver(engine);
     return engine;
 }
@@ -139,7 +167,7 @@ SGDSPEngine *SGDSPEngineCreate(double sampleRate) {
 // Every effect off at once, with nothing to fade: what was running is freed.
 static void dropAll(SGDSPEngine *engine, double rate) {
     void *dropped[SlotCount][2];
-    pthread_mutex_lock(&engine->lock);
+    beginConfig(engine);
     for (int s = 0; s < SlotCount; s++) {
         Effect *effect = &engine->effects[s];
         dropped[s][0] = effect->state;
@@ -148,10 +176,9 @@ static void dropAll(SGDSPEngine *engine, double rate) {
     }
     engine->rate = rate;
     storeDouble(&engine->rateBits, rate);
-    engine->release = (float)exp(-1000 / (engine->releaseMS * rate));
-    engine->gain = engine->gainTarget;
-    engine->limiter = 1;
-    pthread_mutex_unlock(&engine->lock);
+    engine->configuredOutput.release = (float)exp(-1000 / (engine->releaseMS * rate));
+    engine->resetOutput = true;
+    endConfig(engine);
     for (int s = 0; s < SlotCount; s++) {
         for (int i = 0; i < 2; i++) {
             if (dropped[s][i]) kKinds[s].free(dropped[s][i]);
@@ -180,14 +207,14 @@ void SGDSPEngineReset(SGDSPEngine *engine) {
 
 void SGDSPEngineCollect(SGDSPEngine *engine) {
     void *done[SlotCount] = {0};
-    pthread_mutex_lock(&engine->lock);
+    beginConfig(engine);
     for (int s = 0; s < SlotCount; s++) {
         Effect *effect = &engine->effects[s];
         if (effect->fade || !effect->leaving) continue;
         done[s] = effect->leaving;
         effect->leaving = NULL;
     }
-    pthread_mutex_unlock(&engine->lock);
+    endConfig(engine);
     for (int s = 0; s < SlotCount; s++) {
         if (done[s]) kKinds[s].free(done[s]);
     }
@@ -218,19 +245,7 @@ static void crossfade(SGDSPEngine *engine, Slot slot, float *left, float *right)
 // The gain, moving to a new one over the block, then a limiter with no lookahead: it clamps a peak the
 // sample it comes, stereo linked, and lets go at the release's pace.
 static void output(SGDSPEngine *engine, float *left, float *right) {
-    float from = engine->gain, to = engine->gainTarget, step = (to - from) / kSGDSPEngineBlock;
-    float threshold = engine->threshold, release = engine->release, limiter = engine->limiter;
-    for (uint32_t i = 0; i < kSGDSPEngineBlock; i++) {
-        float gain = from == to ? to : from + step * (i + 1);
-        float l = left[i] * gain, r = right[i] * gain;
-        float peak = fmaxf(fabsf(l), fabsf(r));
-        float target = peak > threshold ? threshold / peak : 1;
-        limiter = target < limiter ? target : target + (limiter - target) * release;
-        left[i] = l * limiter;
-        right[i] = r * limiter;
-    }
-    engine->gain = to;
-    engine->limiter = limiter;
+    SGOutputProcess(&engine->outputEnvelope, engine->outputSettings, left, right, kSGDSPEngineBlock);
 }
 
 // The block through what is on; answers whether anything touched it.
@@ -243,24 +258,23 @@ static bool process(SGDSPEngine *engine, float *left, float *right) {
         else continue;
         active = true;
     }
-    active = active || engine->gain != 1 || engine->gainTarget != 1 || engine->limiter != 1;
-    if (active) output(engine, left, right);
     return active;
 }
 
-// The gathered block, processed (or as it is, when a setter holds the lock) into the ring. The ring is a
+// The gathered block through admitted effects, then output control, into the ring. The ring is a
 // whole number of blocks and blocks are written whole, so a block never wraps.
-static void runBlock(SGDSPEngine *engine) {
+static void runBlock(SGDSPEngine *engine, bool outputControl) {
     uint64_t at = engine->written & (kRing - 1);
     float *left = engine->ringLeft + at, *right = engine->ringRight + at;
     memcpy(left, engine->blockLeft, sizeof engine->blockLeft);
     memcpy(right, engine->blockRight, sizeof engine->blockRight);
-    if (pthread_mutex_trylock(&engine->lock) != 0) {
+    if (!SGRenderGateEnter(&engine->effectsGate)) {
         atomic_fetch_add_explicit(&engine->dry, 1, memory_order_relaxed);
     } else {
         uint64_t start = mach_absolute_time();
+        adoptOutput(engine);
         bool active = process(engine, left, right);
-        pthread_mutex_unlock(&engine->lock);
+        SGRenderGateLeave(&engine->effectsGate);
         uint64_t nanos = (uint64_t)((mach_absolute_time() - start) * sg_nanosPerTick);
         double average = loadDouble(&engine->averageBits);
         storeDouble(&engine->averageBits, average ? average + (nanos - average) * 0.05 : nanos);
@@ -276,10 +290,13 @@ static void runBlock(SGDSPEngine *engine) {
             atomic_fetch_add_explicit(&engine->faults, 1, memory_order_relaxed);
         }
     }
+    // Output control never passes dry, even when an effect configuration is busy
+    // or every optional effect is off.
+    if (outputControl) output(engine, left, right);
     engine->written += kSGDSPEngineBlock;
 }
 
-void SGDSPEngineProcess(SGDSPEngine *engine, float *left, float *right, uint32_t frames) {
+static void processFrames(SGDSPEngine *engine, float *left, float *right, uint32_t frames, bool outputControl) {
     if (atomic_exchange_explicit(&engine->restart, false, memory_order_acquire)) startOver(engine);
     uint32_t in = 0, out = 0;
     while (in < frames) {
@@ -290,7 +307,7 @@ void SGDSPEngineProcess(SGDSPEngine *engine, float *left, float *right, uint32_t
         engine->fill += take;
         in += take;
         if (engine->fill == kSGDSPEngineBlock) {
-            runBlock(engine);
+            runBlock(engine, outputControl);
             engine->fill = 0;
         }
         // As many frames out as came in: the ring is always a block ahead, so it has them, and the frames
@@ -309,6 +326,14 @@ void SGDSPEngineProcess(SGDSPEngine *engine, float *left, float *right, uint32_t
 
 void SGDSPEngineRestart(SGDSPEngine *engine) {
     atomic_store_explicit(&engine->restart, true, memory_order_release);
+}
+
+void SGDSPEngineProcess(SGDSPEngine *engine, float *left, float *right, uint32_t frames) {
+    processFrames(engine, left, right, frames, true);
+}
+
+void SGDSPEngineProcessEffects(SGDSPEngine *engine, float *left, float *right, uint32_t frames) {
+    processFrames(engine, left, right, frames, false);
 }
 
 SGDSPEngineStats SGDSPEngineReadStats(SGDSPEngine *engine, bool takePeak) {
@@ -332,7 +357,7 @@ SGDSPEngineStats SGDSPEngineReadStats(SGDSPEngine *engine, bool takePeak) {
 static void install(SGDSPEngine *engine, Slot slot, void *state) {
     Effect *effect = &engine->effects[slot];
     void *dropped;
-    pthread_mutex_lock(&engine->lock);
+    beginConfig(engine);
     if (effect->fade) {
         dropped = effect->state;
     } else {
@@ -341,30 +366,30 @@ static void install(SGDSPEngine *engine, Slot slot, void *state) {
     }
     effect->state = state;
     effect->fade = effect->leaving || state;
-    pthread_mutex_unlock(&engine->lock);
+    endConfig(engine);
     if (dropped) kKinds[slot].free(dropped);
     SGDSPEngineCollect(engine);
 }
 
 // The running state, under the lock, for a setter to change in place; NULL (and the lock released) when off.
 static void *running(SGDSPEngine *engine, Slot slot) {
-    pthread_mutex_lock(&engine->lock);
+    beginConfig(engine);
     void *state = engine->effects[slot].state;
-    if (!state) pthread_mutex_unlock(&engine->lock);
+    if (!state) endConfig(engine);
     return state;
 }
 
 static void done(SGDSPEngine *engine) {
-    pthread_mutex_unlock(&engine->lock);
+    endConfig(engine);
 }
 
 void SGDSPEngineSetOutput(SGDSPEngine *engine, double postGainDB, double limiterThresholdDB, double limiterReleaseMS) {
+    beginConfig(engine);
     engine->releaseMS = fmax(limiterReleaseMS, 0.1);
-    pthread_mutex_lock(&engine->lock);
-    engine->gainTarget = (float)pow(10, postGainDB / 20);
-    engine->threshold = (float)pow(10, fmin(limiterThresholdDB, 0) / 20);
-    engine->release = (float)exp(-1000 / (engine->releaseMS * engine->rate));
-    pthread_mutex_unlock(&engine->lock);
+    engine->configuredOutput.gain = (float)pow(10, postGainDB / 20);
+    engine->configuredOutput.threshold = (float)pow(10, fmin(limiterThresholdDB, 0) / 20);
+    engine->configuredOutput.release = (float)exp(-1000 / (engine->releaseMS * engine->rate));
+    endConfig(engine);
 }
 
 void SGDSPEngineSetCompander(SGDSPEngine *engine, bool on, double timeConstant, const double frequencies[7], const double gains[7]) {

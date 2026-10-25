@@ -150,8 +150,6 @@ NSString *SGDSPImportFile(SGDSPFileKind kind, NSURL *url, NSError **error) {
         return nil;
     }
     SGLog(@"dsp: %@ added to the %@ library (%lu bytes)", name, libraryName(kind), (unsigned long)data.length);
-    // A file replaced while an effect uses it is read again.
-    if ([SGDSPString(fileKey(kind)) isEqualToString:name]) SGDSPApply(SGDSPEffectOf(fileKey(kind)));
     return name;
 }
 

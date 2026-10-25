@@ -144,7 +144,7 @@ static void processBuffer(SGDSPEngine *engine, AudioUnitRenderActionFlags *flags
             memset(left, 0, frames * sizeof(float));
             memset(right, 0, frames * sizeof(float));
         }
-        SGDSPEngineProcess(engine, left, right, frames);
+        SGDSPEngineProcessEffects(engine, left, right, frames);
         loud = !silent || anySound(left, frames) || anySound(right, frames);
     } else {
         for (UInt32 done = 0; done < frames;) {
@@ -156,7 +156,7 @@ static void processBuffer(SGDSPEngine *engine, AudioUnitRenderActionFlags *flags
                 sg_left[i] = silent ? 0 : readSample(first, at, bytes, isFloat, fraction);
                 sg_right[i] = silent ? 0 : readSample(second, at + secondOffset, bytes, isFloat, fraction);
             }
-            SGDSPEngineProcess(engine, sg_left, sg_right, count);
+            SGDSPEngineProcessEffects(engine, sg_left, sg_right, count);
             loud = loud || !silent || anySound(sg_left, count) || anySound(sg_right, count);
             void *firstOut = data->mBuffers[0].mData, *secondOut = split && channels > 1 ? data->mBuffers[1].mData : firstOut;
             for (UInt32 i = 0; i < count; i++) {
@@ -205,19 +205,19 @@ static void readOut(SGAudioOutputReader reader, AudioUnitRenderActionFlags flags
     }
 }
 
-// `refCon` is the unit; only the music's output is processed and read.
-static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const AudioTimeStamp *timestamp, UInt32 bus,
-                         UInt32 frames, AudioBufferList *data) {
-    if (!(*flags & kAudioUnitRenderAction_PostRender) || bus != 0 || !data || !data->mNumberBuffers || !frames) return noErr;
-    if (refCon != SGPlayerMusicOutput()) return noErr;
+// Shared/Player admits these callbacks, with its always-run per-output control
+// between the effects and the reader. Refusal bypasses effects, never attenuation.
+static void renderEffects(AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data) {
     if (atomic_load_explicit(&sg_running, memory_order_acquire)) {
         SGDSPEngine *engine = atomic_load_explicit(&sg_engine, memory_order_acquire);
         // A new rate is being set up on the queue: until then the sound passes as it is.
         if (engine && SGDSPEngineSampleRate(engine) == loadDouble(&sg_rateBits)) processBuffer(engine, flags, frames, data);
     }
+}
+
+static void readOutput(AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data) {
     SGAudioOutputReader reader = atomic_load_explicit(&sg_reader, memory_order_acquire);
     if (reader) readOut(reader, *flags, frames, data);
-    return noErr;
 }
 
 #pragma mark - Spotify's audio thread
@@ -276,14 +276,11 @@ static BOOL readFormat(AudioUnit unit) {
 // The music's output started, changed or changed format (Shared/Player): its format read, the notify on it.
 static void listenTo(AudioUnit unit) {
     if (!unit) return;
-    AudioUnitRemoveRenderNotify(unit, rendered, unit);
     if (!readFormat(unit)) return;
     // The sound held from before the output stopped, or from another output, would play first; the stream
     // starts over instead.
     SGDSPEngine *engine = atomic_load(&sg_engine);
     if (engine) SGDSPEngineRestart(engine);
-    OSStatus status = AudioUnitAddRenderNotify(unit, rendered, unit);
-    if (status != noErr) SGLog(@"dsp: the render notify could not be added (%d)", (int)status);
 }
 
 #pragma mark - errors
@@ -356,7 +353,7 @@ static NSData *textFile(NSString *path) {
 
 static void applyOutput(SGDSPEngine *engine) {
     double gain = SGDSPNumber(SGKeyDSPPostGain), threshold = SGDSPNumber(SGKeyDSPLimiterThreshold), release = SGDSPNumber(SGKeyDSPLimiterRelease);
-    SGDSPEngineSetOutput(engine, gain, threshold, release);
+    SGPlayerSetOutputControl(SGDSPSwitch(SGKeyDSP), gain, threshold, release);
     // Set again on every start of Spotify's output; logged when it changed.
     static NSString *logged;
     NSString *text = [NSString stringWithFormat:@"dsp: output gain %+.1f dB, limiter at %.1f dB releasing in %.1f ms", gain, threshold, release];
@@ -505,6 +502,7 @@ static void setTending(BOOL on) {
 // it was, and the notify let in or kept out. Answers whether every effect was set.
 static BOOL applyMaster(void) {
     if (!SGDSPSwitch(SGKeyDSP)) {
+        SGPlayerSetOutputControl(NO, 0, 0, 100);
         setTending(NO);
         if (atomic_exchange(&sg_running, false)) SGLog(@"dsp: off, Spotify's sound passes as it is");
         return NO;
@@ -614,6 +612,7 @@ static void followRoute(void) {
 }
 
 %ctor {
+    SGPlayerSetOutputProcessing(renderEffects, readOutput);
     // Posted on the audio session's thread: handed to main without waiting, so it cannot deadlock against main.
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionRouteChangeNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {

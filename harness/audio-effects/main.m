@@ -2,7 +2,7 @@
 // song decoded with ExtAudioFile, and test signals, go through the engine in slices of the sizes iOS hands its
 // output unit (1024, 4096, 470 and 471 in turn, 512, and a mix down to single frames). Each check prints a line.
 //
-// - bypass: every effect off, the output is the input one block later, sample for sample, at any level;
+// - bypass: every effect off, input below the limiter ceiling is exact one block later;
 // - output gain, and the limiter's ceiling with the gain far over it;
 // - the equalizer's bands at their gains, measured with a stepped sine sweep; bass boost, lifting quiet lows
 //   and holding back loud ones;
@@ -301,14 +301,14 @@ static void checkBypass(Audio song) {
     for (int pattern = 0; pattern < kPatternCount; pattern++) {
         SGDSPEngine *engine = SGDSPEngineCreate(kRate);
         allOff(engine);
-        // Hotter than full scale too: float output from Spotify is not clipped.
+        // Optional effects are bypassed; output control's limiter remains active.
         Audio hot = copyAudio(song);
-        scaleAudio(hot, 1.5f);
+        scaleAudio(hot, 0.5f);
         Audio output = copyAudio(hot);
         run(engine, output, pattern);
         float largest;
         size_t differ = delayedDifferences(hot, output, &largest);
-        CHECK(differ == 0, "slices of %-8s at +3.5 dBFS: %zu of %zu samples differ from the input 1024 frames earlier", kPatternNames[pattern], differ,
+        CHECK(differ == 0, "slices of %-8s below the ceiling: %zu of %zu samples differ from the input 1024 frames earlier", kPatternNames[pattern], differ,
               output.frames * 2);
         freeAudio(output);
         freeAudio(hot);
@@ -326,6 +326,7 @@ static void checkBypass(Audio song) {
     allOff(engine);
     Audio quiet = copyAudio(song);
     quiet.frames = (size_t)kRate * 4;
+    scaleAudio(quiet, 0.5f);
     Audio out = copyAudio(quiet);
     run(engine, out, kPatternMixed);
     size_t exact = 0;
@@ -342,6 +343,7 @@ static void checkRestart(Audio song) {
     allOff(engine);
     Audio quiet = copyAudio(song);
     quiet.frames = (size_t)kRate * 4;
+    scaleAudio(quiet, 0.5f);
     Audio first = copyAudio(quiet);
     run(engine, first, kPatternOdd);
     SGDSPEngineRestart(engine);

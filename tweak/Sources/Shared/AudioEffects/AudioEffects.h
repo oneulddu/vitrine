@@ -120,8 +120,8 @@ typedef NS_ENUM(NSInteger, SGDSPFileKind) {
 NSString *SGDSPLibraryDirectory(SGDSPFileKind kind);
 NSArray<NSString *> *SGDSPLibraryFiles(SGDSPFileKind kind);   // names, sorted
 NSArray<NSString *> *SGDSPFileExtensions(SGDSPFileKind kind); // lowercase, without the dot
-// Copies a picked file into the library, replacing one of the same name; answers its name, nil and an
-// error when it is not a file of that kind.
+// Worker thread only: copies a picked file, replacing one of the same name.
+// Returns its name or nil and an error; the caller selects/applies it on main.
 NSString *SGDSPImportFile(SGDSPFileKind kind, NSURL *url, NSError **error);
 BOOL SGDSPDeleteFile(SGDSPFileKind kind, NSString *name);
 

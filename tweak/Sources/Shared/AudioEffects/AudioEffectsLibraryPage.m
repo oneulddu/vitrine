@@ -9,6 +9,8 @@
 #import "AudioEffectsPresets.h"
 
 static NSString *const kAutoEqURL = @"https://github.com/jaakkopasanen/AutoEq";
+// Main-thread requests, shared across page instances for the same library.
+static NSUInteger sg_libraryRequest[SGDSPFileLiveprog + 1];
 
 static NSString *fileKeyOf(SGDSPFileKind kind) {
     if (kind == SGDSPFileImpulseResponse) return SGKeyDSPConvolverFile;
@@ -150,6 +152,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
 - (instancetype)initWithKind:(SGDSPFileKind)kind {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
     _kind = kind;
+    ++sg_libraryRequest[kind];
     self.errorKey = switchKeyOf(kind);
     self.title = kind == SGDSPFileImpulseResponse ? SGL(@"settings.audioeffects.library.impulseresponses.title", @"Impulse responses") : kind == SGDSPFileDDC ? SGL(@"settings.audioeffects.library.ddcfiles.title", @"DDC files") : SGL(@"settings.audioeffects.library.scripts.title", @"Scripts");
     return self;
@@ -217,6 +220,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
         return;
     }
     if (path.section != 1 || !_files.count) return;
+    ++sg_libraryRequest[_kind];
     SGDSPSetString(fileKeyOf(_kind), _files[(NSUInteger)path.row]);
     [table reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
 }
@@ -235,6 +239,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
 
 // The chosen file going leaves the effect with none, rather than naming a file that is not there.
 - (void)deleteFile:(NSString *)name at:(NSIndexPath *)path {
+    ++sg_libraryRequest[_kind];
     if (!SGDSPDeleteFile(_kind, name)) {
         showAlert(self, SGL(@"settings.audioeffects.library.deleteerror.title", @"Could not delete the file"), nil);
         return;
@@ -248,6 +253,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
 // .eel, .vdc and .irs are nobody's registered types, so the picker offers any file and the name is
 // checked after.
 - (void)pickFile {
+    ++sg_libraryRequest[_kind];
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES];
     picker.delegate = self;
     [self presentViewController:picker animated:YES completion:nil];
@@ -260,15 +266,37 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
         showAlert(self, SGL(@"settings.audioeffects.library.invalidfile.title", @"Not a file this effect takes"), [NSString stringWithFormat:SGL(@"settings.audioeffects.library.invalidfile.message", @"Pick a %@ file."), extensionList(_kind)]);
         return;
     }
-    NSError *error = nil;
-    NSString *name = SGDSPImportFile(_kind, url, &error);
-    if (!name) {
-        showAlert(self, SGL(@"settings.audioeffects.library.importerror.title", @"Could not import the file"), error.localizedDescription);
-        return;
-    }
-    SGDSPSetString(fileKeyOf(_kind), name);
-    _files = SGDSPLibraryFiles(_kind);
-    [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationFade];
+    static dispatch_queue_t imports;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ imports = dispatch_queue_create("spotifyglass.dsp.import", DISPATCH_QUEUE_SERIAL); });
+    SGDSPFileKind kind = _kind;
+    NSUInteger request = ++sg_libraryRequest[kind];
+    NSString *selection = SGDSPString(fileKeyOf(kind));
+    dispatch_async(imports, ^{
+        NSError *error = nil;
+        NSString *name = SGDSPImportFile(kind, url, &error);
+        NSArray<NSString *> *files = name ? SGDSPLibraryFiles(kind) : nil;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL current = request == sg_libraryRequest[kind]
+                && [selection isEqualToString:SGDSPString(fileKeyOf(kind))];
+            if (!name) {
+                if (current) showAlert(self, SGL(@"settings.audioeffects.library.importerror.title", @"Could not import the file"), error.localizedDescription);
+                return;
+            }
+            // A stale request may not choose a file, but replacing the current
+            // file still invalidates the engine's loaded contents.
+            if (current || [name isEqualToString:SGDSPString(fileKeyOf(kind))])
+                SGDSPSetString(fileKeyOf(kind), name);
+            self->_files = files;
+            [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationFade];
+        });
+    });
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    if (self.isMovingFromParentViewController || self.isBeingDismissed || self.navigationController.isBeingDismissed)
+        ++sg_libraryRequest[_kind];
 }
 
 @end
