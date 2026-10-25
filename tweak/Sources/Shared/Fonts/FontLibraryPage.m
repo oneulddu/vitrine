@@ -191,6 +191,7 @@ static void choose(SGLibraryFont *font) {
 }
 
 - (void)download:(SGLibraryFont *)font {
+    NSArray *selection = SGFontSelectionSnapshot();
     __weak SGFontLibraryList *page = self;
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, [NSString stringWithFormat:SGL(@"settings.font.library.a11y.downloading", @"Downloading %@"), font.name]);
     SGFontLibraryDownload(font.identifier, ^(NSString *error) {
@@ -200,14 +201,15 @@ static void choose(SGLibraryFont *font) {
             return;
         }
         if (error) return;   // stopped
-        // The pick is meant to be seen: it becomes the app's font, as an imported one does.
+        // Keep the download available even if a newer choice or pending restart prevents selection.
         if (!SGFontLibraryRegister(font.identifier)) {
             [strong tell:SGL(@"settings.font.library.failed.alert.title", @"Font not downloaded") message:SGL(@"settings.font.library.error.unreadable", @"iOS could not read the downloaded font.")];
             return;
         }
-        choose(font);
+        BOOL select = SGFontSelectionUnchanged(selection);
+        if (select) choose(font);
         [strong.tableView reloadData];
-        [strong offerRestart:font];
+        if (select) [strong offerRestart:font];
     });
 }
 

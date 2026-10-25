@@ -4,6 +4,8 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Shared/Fonts/Fonts.h"
+#import "Shared/Fonts/FontLibrary.h"
+#import "font-library-source.h"
 #import "../harness-fail.h"
 
 static NSURL *fixture;
@@ -15,6 +17,38 @@ typedef NS_ENUM(NSUInteger, FontCheck) {
 };
 static FontCheck scenario;
 static UITableViewController *page;
+
+static void checkLibraryDownloads(void) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    for (NSUInteger check = 0; check < 3; check++) {
+        SGHarnessHoldFontDownloads(@[@"nanummyeongjo", @"lato"]);
+        SGSetInt(SGKeyAppFont, check == 1 ? SGAppFontLibrary : SGAppFontSpotify);
+        [store setObject:@"lato" forKey:SGKeyAppFontLibrary];
+        UITableViewController *library = (UITableViewController *)SGFontLibraryPage();
+        // The catalog's first two Korean rows: download A (Nanum Gothic), B is already installed.
+        [library tableView:library.tableView didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:0]];
+        HARNESS_CHECK([SGFontLibraryDownloading() isEqual:@"nanumgothic"]);
+        if (check == 0) {
+            UITableViewController *fonts = [NSClassFromString(@"SGFontPage") new];
+            [fonts tableView:fonts.tableView didSelectRowAtIndexPath:
+                [NSIndexPath indexPathForRow:SGAppFontSystem inSection:0]];
+            library = nil; // Completion must not overwrite the choice even after leaving the page.
+        } else if (check == 1) {
+            [library tableView:library.tableView didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:0]];
+        }
+        SGHarnessFinishFontDownload();
+        HARNESS_CHECK(SGFontLibraryInstalled(@"nanumgothic"));
+        HARNESS_CHECK([SGFontLibraryRegister(@"nanumgothic") isEqual:@"Chalkduster"]);
+        if (check == 0) HARNESS_CHECK(SGAppFontChosen() == SGAppFontSystem);
+        else {
+            HARNESS_CHECK(SGAppFontChosen() == SGAppFontLibrary);
+            HARNESS_CHECK([[store stringForKey:SGKeyAppFontLibrary]
+                isEqual:check == 1 ? @"nanummyeongjo" : @"nanumgothic"]);
+        }
+    }
+    SGHarnessHoldFontDownloads(nil);
+    NSLog(@"[harness] PASS library selection: pending A preserves San Francisco/B; unchanged selects A; A remains available");
+}
 
 static void runImport(void) {
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
@@ -70,6 +104,7 @@ static void runImport(void) {
 }
 
 void SGCheckFontSelection(void) {
+    checkLibraryDownloads();
     CTFontRef font = CTFontCreateWithName(CFSTR("Chalkduster"), 14, NULL);
     NSString *family = CFBridgingRelease(CTFontCopyFamilyName(font));
     fixture = CFBridgingRelease(CTFontCopyAttribute(font, kCTFontURLAttribute));

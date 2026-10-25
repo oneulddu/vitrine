@@ -100,17 +100,9 @@ static void tell(NSString *title, NSString *message, BOOL restart) {
 
 // The files are checked and copied aside before the ones in use are touched, so files Core Text will not read,
 // of more than one family, or that fail to copy change nothing.
-static NSArray *fontSelection(void) {
-    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
-    // NSNull preserves absent preferences, distinct from explicit values including the default zero.
-    return @[[store objectForKey:SGKeyAppFont] ?: NSNull.null,
-             [store objectForKey:SGKeyAppFontFamily] ?: NSNull.null,
-             [store objectForKey:SGKeyAppFontLibrary] ?: NSNull.null];
-}
-
 static BOOL sg_importing;
 static void import(NSArray<NSURL *> *picked, dispatch_block_t done) {
-    NSArray *selection = fontSelection();
+    NSArray *selection = SGFontSelectionSnapshot();
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     NSMutableArray<NSURL *> *scoped = [NSMutableArray array];
     NSMutableArray<NSString *> *families = [NSMutableArray array];
@@ -150,7 +142,7 @@ static void import(NSArray<NSURL *> *picked, dispatch_block_t done) {
         // Keep the imported family available even during a pending restart, but never change its
         // selection: a reset/restore may have left the same (including unset) preference values.
         if (SGRegisterCustomFont()) {
-            if (!SGRestartPending() && [selection isEqual:fontSelection()]) {
+            if (SGFontSelectionUnchanged(selection)) {
                 SGSetInt(SGKeyAppFont, SGAppFontCustom);
                 tell(SGL(@"settings.font.imported.alert.title", @"Font imported"), [NSString stringWithFormat:SGL(@"settings.font.imported.alert.message", @"%@ becomes the app's font when Spotify starts again."), family], YES);
             }

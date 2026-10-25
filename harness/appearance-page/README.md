@@ -32,6 +32,10 @@ choice or unchanged absent preference must select Custom. Failures log and exit 
 It also switches Avenir Next → Georgia through the actual More fonts row, changes a library identifier
 without changing its enum, and requests a real restart while an unset-start import is pending.
 Registration still completes during the restart delay, but auto-selection must not undo the reset.
+The same run exercises the real free-font page with an offline download/installation double:
+Nanum Gothic finishing must preserve a later San Francisco or already-installed Nanum Myeongjo choice,
+remain available, and become selected when the choice was untouched. The real service remains in
+use for interactive runs; this check does not download or validate library font bytes.
 `OUT` may select an isolated build directory.
 
     OUT=/absolute/unique/output ./build.sh

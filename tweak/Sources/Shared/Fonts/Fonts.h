@@ -27,6 +27,10 @@ typedef NS_ENUM(NSInteger, SGAppFont) {
 SGAppFont SGAppFontChosen(void);
 NSArray<NSString *> *SGAppFontNames(void);   // the five built in, by SGAppFont
 NSArray<NSString *> *SGAppFontFamilies(void);   // More fonts: the families this iPhone has of a fixed few
+// Main-thread async font choices: raw enum/family/library values, including absence. Completion may
+// auto-select only if this snapshot is unchanged and no process restart has been requested.
+NSArray *SGFontSelectionSnapshot(void);
+BOOL SGFontSelectionUnchanged(NSArray *snapshot);
 // Registers the imported files with Core Text for this process and answers the family name, or nil when no
 // file is left or Core Text will not take them.
 NSString *SGRegisterCustomFont(void);

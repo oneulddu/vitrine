@@ -16,7 +16,7 @@ NSInteger SGRAccentRGB(void) { NSInteger rgb = valid(SGInt(SGRKeyAccent, SGRDefa
 
 SGAppFont SGAppFontChosen(void) {
     NSInteger font = SGInt(SGKeyAppFont, SGAppFontSpotify);
-    return font >= SGAppFontSpotify && font <= SGAppFontFamily ? font : SGAppFontSpotify;
+    return font >= SGAppFontSpotify && font <= SGAppFontLibrary ? font : SGAppFontSpotify;
 }
 
 NSArray<NSString *> *SGAppFontNames(void) {
