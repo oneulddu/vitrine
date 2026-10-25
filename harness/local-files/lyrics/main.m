@@ -8,6 +8,8 @@
 #import "Shared/LocalFiles/LocalLyrics.h"
 #import "Native/LocalFiles/LocalLyrics.h"
 #import "Shared/Player/PlayerState.h"
+#import "../../harness-fail.h"
+#include <stdatomic.h>
 
 #pragma mark - the player, standing in
 
@@ -76,6 +78,61 @@ static NSArray<UILabel *> *labelsIn(UIView *view) {
     return found;
 }
 
+static BOOL sg_race;
+static atomic_uint sg_aRequests;
+static dispatch_semaphore_t sg_releaseFirstA;
+static __weak UIViewController *sg_racePage;
+
+static void playRaceTrack(NSString *name) {
+    SGFakeTrack *track = [SGFakeTrack new];
+    track.URI = [@"spotify:local:Harness:Race:" stringByAppendingString:name];
+    track.trackTitle = name;
+    track.artistName = @"Harness";
+    sg_state.track = track;
+}
+
+static SGLyricsResult *raceLyrics(NSString *text) {
+    SGKaraokeWord *word = [SGKaraokeWord new];
+    word.text = text;
+    SGKaraokeLine *line = [SGKaraokeLine new];
+    line.words = @[word];
+    line.timing = SGKaraokeTimingNone;
+    SGLyricsResult *result = [SGLyricsResult new];
+    result.karaokeLines = @[line];
+    return result;
+}
+
+// The first A lookup is held until the second A is displayed. Spotify's state and the viewer's real
+// quarter-second clock drive A -> B -> A; no private viewer method or state is changed by the test.
+SGLyricsResult *SGHarnessImportedLRCFor(NSString *uri, NSString *title, NSString *artist) {
+    if (!sg_race) return SGImportedLRCFor(uri, title, artist);
+    if ([title isEqual:@"B"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ playRaceTrack(@"A"); });
+        return raceLyrics(@"Track B");
+    }
+    unsigned request = atomic_fetch_add(&sg_aRequests, 1);
+    if (request == 0) {
+        dispatch_async(dispatch_get_main_queue(), ^{ playRaceTrack(@"B"); });
+        HARNESS_CHECK(dispatch_semaphore_wait(sg_releaseFirstA, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            after(0.5, ^{
+                NSArray *texts = [labelsIn(sg_racePage.view) valueForKey:@"text"];
+                HARNESS_CHECK([texts isEqual:@[@"Current A"]]);
+                say(@"PASS A -> B -> A keeps only the current lyrics batch");
+                exit(0);
+            });
+        });
+        return raceLyrics(@"Stale A");
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+        after(0.5, ^{
+            HARNESS_CHECK([[labelsIn(sg_racePage.view) valueForKey:@"text"] isEqual:@[@"Current A"]]);
+            dispatch_semaphore_signal(sg_releaseFirstA);
+        });
+    });
+    return raceLyrics(@"Current A");
+}
+
 @interface SGHarnessDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
@@ -111,6 +168,18 @@ static NSArray<UILabel *> *labelsIn(UIView *view) {
     [self.window makeKeyAndVisible];
 
     NSString *mode = NSProcessInfo.processInfo.arguments.count > 1 ? NSProcessInfo.processInfo.arguments[1] : @"page";
+    if ([mode isEqualToString:@"race"]) {
+        sg_race = YES;
+        sg_releaseFirstA = dispatch_semaphore_create(0);
+        playRaceTrack(@"A");
+        after(1, ^{
+            UIViewController *page = SGLocalLyricsPage();
+            sg_racePage = page;
+            [player presentViewController:page animated:NO completion:nil];
+        });
+        after(7, ^{ HARNESS_FAIL(@"lyrics race check did not finish"); });
+        return YES;
+    }
     if ([mode isEqualToString:@"settings"]) {
         after(1, ^{
             UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:SGImportedLRCPage()];

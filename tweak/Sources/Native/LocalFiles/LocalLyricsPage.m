@@ -27,6 +27,7 @@ static const CGFloat kCurrentScale = 1.06, kOtherAlpha = 0.5;
     NSArray<UILabel *> *_labels;
     BOOL _timed;
     NSInteger _current;
+    NSUInteger _loadGeneration;
 }
 
 static char kCloseGlassKey;
@@ -141,12 +142,18 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, CGFloat size, 
 
 #pragma mark - the lines
 
-- (void)load:(SPTPlayerState *)state uri:(NSString *)uri {
-    _uri = uri;
+- (void)clearLines {
     _lines = nil;
     _current = -1;
+    _timed = NO;
     for (UIView *line in _stack.arrangedSubviews) [line removeFromSuperview];
     _labels = @[];
+}
+
+- (void)load:(SPTPlayerState *)state uri:(NSString *)uri {
+    NSUInteger generation = ++_loadGeneration;
+    _uri = uri;
+    [self clearLines];
     NSString *title = state.track.trackTitle, *artist = state.track.artistName;
     _title.text = title;
     _artist.text = artist;
@@ -156,15 +163,17 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, CGFloat size, 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         SGLyricsResult *lyrics = SGImportedLRCFor(uri, title, artist);
         dispatch_async(dispatch_get_main_queue(), ^{
-            if ([uri isEqualToString:self->_uri]) [self show:lyrics];
+            if (generation == self->_loadGeneration) [self show:lyrics];
         });
     });
 }
 
 - (void)show:(SGLyricsResult *)lyrics {
+    [self clearLines];
     _lines = lyrics.karaokeLines;
     _timed = SGKaraokeLinesTiming(_lines) != SGKaraokeTimingNone;
     if (!_lines.count) {
+        _status.hidden = NO;
         _status.text = SGImportedLRCLinkedTo(_uri) ? @"This LRC file has no lines to show." : @"No imported lyrics for this track.";
         return;
     }

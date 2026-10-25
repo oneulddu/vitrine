@@ -8,16 +8,16 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$(cd "$HERE/../../../tweak/Sources" && pwd)
-OUT="$HERE/../build/lyrics"   # harness/*/build/ is ignored
+OUT=${OUT:-"$HERE/../build/lyrics"}   # harness/*/build/ is ignored
 rm -rf "$OUT/LocalLyricsHarness.app"; mkdir -p "$OUT/LocalLyricsHarness.app" "$OUT/shots"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O0 -Wall -Werror -Wno-deprecated-declarations \
     -I"$SRC" -isysroot "$SDK" \
-    "$HERE/main.m" "$HERE/../../scene.m" "$SRC/Native/LocalFiles/LocalLyricsPage.m" \
+    "$HERE/main.m" "$HERE/../../scene.m" "$HERE/viewer.m" \
     "$SRC/Shared/LocalFiles/LocalLyricsPage.m" "$SRC/Shared/LocalFiles/LocalLyrics.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
     "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
     "$SRC/Settings/SGPage.m" "$SRC/Settings/SGPageStyle.m" "$SRC/Core/SGGlass.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGLocalize.m" "$SRC/Core/SGPrefs.m" "$SRC/Core/SGViewTree.m" "$SRC/Core/SGUIMode.m" \
-    -framework UIKit -framework QuartzCore -framework CoreGraphics -framework UniformTypeIdentifiers -framework Foundation \
+    -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -framework Foundation \
     -o "$OUT/LocalLyricsHarness.app/LocalLyricsHarness"
 cat > "$OUT/LocalLyricsHarness.app/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
