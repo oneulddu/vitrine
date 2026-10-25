@@ -8,8 +8,8 @@
 #import "Headers/SPTPlayer.h"
 #import "AIServicesInternal.h"
 
-// The default, gemini-flash-latest, follows each Flash release; Google gives two weeks' notice of a breaking change.
-static NSString *const kModel = @"gemini-flash-latest";
+// Pin the default; a saved model remains the user's choice.
+static NSString *const kModel = @"gemini-3.8-flash";
 static NSString *const kService = @"Vitrine.Gemini", *const kAccount = @"api-key";
 
 NSString *SGGeminiModel(void) {
@@ -24,6 +24,19 @@ static NSURL *geminiEndpoint(void) {
         @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"];
     NSString *model = [SGGeminiModel() stringByAddingPercentEncodingWithAllowedCharacters:unreserved];
     return model ? [NSURL URLWithString:[NSString stringWithFormat:@"https://generativelanguage.googleapis.com/v1beta/models/%@:generateContent", model]] : nil;
+}
+
+static const NSInteger kDefaultAITimeout = 120;
+
+static NSTimeInterval aiTimeout(void) {
+    NSInteger seconds = [NSUserDefaults.standardUserDefaults integerForKey:SGKeyAITimeout];
+    return seconds > 0 ? seconds : kDefaultAITimeout;
+}
+
+static NSString *geminiThinkingLevel(void) {
+    // Only the menu's levels: a stored "minimal" from an early build of this row would make 3.8 Flash answer 400 every ask.
+    NSString *level = [NSUserDefaults.standardUserDefaults stringForKey:SGKeyAIThinking];
+    return [@[@"medium", @"high"] containsObject:level] ? level : @"low";
 }
 
 #pragma mark - the key
@@ -106,7 +119,9 @@ NSArray<NSString *> *SGGeminiReplyIn(id root, NSInteger status, NSError *error, 
     id failed = [reply[@"error"] isKindOfClass:NSDictionary.class] ? reply[@"error"][@"message"] : nil;
     NSString *googleSays = [failed isKindOfClass:NSString.class] ? failed : nil;
     if (error) {
-        *problem = SGL(@"settings.translation.error.unreachable", @"Gemini could not be reached.");
+        *problem = error.code == NSURLErrorTimedOut
+            ? SGL(@"settings.translation.error.timeout", @"Gemini timed out. Try a longer timeout in Gemini settings.")
+            : SGL(@"settings.translation.error.unreachable", @"Gemini could not be reached.");
     } else if (status == 401 || status == 403 || (status == 400 && [googleSays localizedCaseInsensitiveContainsString:@"API key"])) {
         *problem = SGL(@"settings.translation.error.keyinvalid", @"Gemini turned the key down. Check it on the Lyrics page.");
     } else if (status == 400) {
@@ -192,7 +207,7 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
         return;
     }
     if (!sg_done) sg_done = [NSMutableDictionary dictionary];
-    NSString *memo = [NSString stringWithFormat:@"%@|%@|%ld", trackID, languageTag, (long)format];
+    NSString *memo = [NSString stringWithFormat:@"%@|%@|%ld|%@", trackID, languageTag, (long)format, geminiThinkingLevel()];
     NSArray<NSString *> *texts = SGLyricsAITexts(lines);
     NSString *prompt = texts ? SGLyricsTranslationPromptForFormat(texts, languageTag, format) : nil;
     if (!prompt) { done(nil, SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.")); return; }
@@ -210,7 +225,7 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
                                  @"HARM_CATEGORY_SEXUALLY_EXPLICIT", @"HARM_CATEGORY_DANGEROUS_CONTENT"]) {
         [safety addObject:@{@"category": category, @"threshold": @"BLOCK_NONE"}];
     }
-    NSMutableDictionary *config = [@{@"thinkingConfig": @{@"thinkingLevel": @"low"}} mutableCopy];
+    NSMutableDictionary *config = [@{@"thinkingConfig": @{@"thinkingLevel": geminiThinkingLevel()}} mutableCopy];
     if (format == SGLyricsReplyJSON) {
         config[@"responseMimeType"] = @"application/json";
         config[@"responseSchema"] = @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}};
@@ -223,7 +238,7 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
     };
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:geminiEndpoint()];
     request.HTTPMethod = @"POST";
-    request.timeoutInterval = 60;
+    request.timeoutInterval = aiTimeout();
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
     request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
@@ -344,7 +359,7 @@ NSURLRequest *SGGeminiAIRequestWithFormat(NSString *system, NSString *prompt, SG
     }
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:geminiEndpoint()];
     request.HTTPMethod = @"POST";
-    request.timeoutInterval = 60;
+    request.timeoutInterval = aiTimeout();
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
     request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
@@ -354,4 +369,28 @@ NSURLRequest *SGGeminiAIRequestWithFormat(NSString *system, NSString *prompt, SG
             ? @{@"responseMimeType": @"application/json", @"responseSchema": @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}}} : @{}
     } options:0 error:nil];
     return request;
+}
+
+NSArray<SGModRow *> *SGGeminiTuningRows(void) {
+    // Low first: 3.8 Flash refuses minimal.
+    NSArray<NSString *> *levels = @[@"low", @"medium", @"high"];
+    NSArray<NSString *> *thinkingLevels = @[SGL(@"settings.translation.thinking.low", @"Low"), SGL(@"settings.translation.thinking.medium", @"Medium"), SGL(@"settings.translation.thinking.high", @"High")];
+    SGModRow *thinking = SGMenuRow(SGL(@"settings.translation.thinking.title", @"Thinking"), thinkingLevels, ^NSString *{
+        return thinkingLevels[[levels indexOfObject:geminiThinkingLevel()]];
+    }, ^(NSInteger index) {
+        if (index == 0) [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyAIThinking];
+        else [NSUserDefaults.standardUserDefaults setObject:levels[index] forKey:SGKeyAIThinking];
+        SGLyricsTranslationServiceSettingsChanged();
+    });
+    NSArray<NSNumber *> *timeoutSeconds = @[@30, @60, @90, @(kDefaultAITimeout), @180, @240, @300];
+    NSMutableArray<NSString *> *timeouts = [NSMutableArray array];
+    for (NSNumber *seconds in timeoutSeconds) [timeouts addObject:[NSString stringWithFormat:SGL(@"settings.translation.timeout.seconds", @"%ld s"), seconds.longValue]];
+    SGModRow *timeout = SGMenuRow(SGL(@"settings.translation.timeout.title", @"Timeout"), timeouts, ^NSString *{
+        return [NSString stringWithFormat:SGL(@"settings.translation.timeout.seconds", @"%ld s"), (long)aiTimeout()];
+    }, ^(NSInteger index) {
+        NSInteger seconds = timeoutSeconds[index].integerValue;
+        if (seconds == kDefaultAITimeout) [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyAITimeout];
+        else [NSUserDefaults.standardUserDefaults setInteger:seconds forKey:SGKeyAITimeout];
+    });
+    return @[thinking, timeout];
 }

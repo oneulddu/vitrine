@@ -1021,6 +1021,13 @@
 "settings.lyrics.furigana.title" = "후리가나";
 "settings.lyrics.hide_controls.subtitle" = "마지막 터치 후 몇 초가 지나면 가사가 플레이어 전체를 채웁니다";
 "settings.lyrics.hide_controls.title" = "컨트롤 숨기기";
+"settings.translation.thinking.low" = "낮음";
+"settings.translation.thinking.medium" = "중간";
+"settings.translation.thinking.high" = "높음";
+"settings.translation.thinking.title" = "사고 수준";
+"settings.translation.timeout.title" = "응답 대기 시간";
+"settings.translation.timeout.seconds" = "%ld초";
+"settings.translation.error.timeout" = "Gemini 응답 대기 시간이 초과되었습니다. Gemini 설정에서 대기 시간을 늘려 보세요.";
 "settings.lyrics.hide_controls.room" = "마지막 터치 후 몇 초가 지나면 가사 표시 영역이 넓어집니다";
 "settings.lyrics.hide_controls.all" = "모두 숨기기";
 "settings.lyrics.hide_controls.keep_title" = "제목 유지";

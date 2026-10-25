@@ -28,6 +28,10 @@ void SGGeminiForgetKey(void);
 void SGClaudeForgetKey(void);
 void SGOpenAIForgetKeys(void);
 void SGDeepLForgetKey(void);
+// Gemini-only tuning; the fork keeps each provider's transport and settings.
+#define SGKeyAIThinking @"spotifyglass.lyrics.gemini.thinking"
+#define SGKeyAITimeout @"spotifyglass.lyrics.ai.timeout"
+NSArray<SGModRow *> *SGGeminiTuningRows(void);
 
 // One translation per line, in order, or nil and a message to show. New remote AI lyric requests use
 // immutable indexed rows; a malformed answer is rejected in full. Saved translations are unchanged.

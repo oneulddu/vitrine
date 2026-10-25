@@ -261,7 +261,7 @@ static UIViewController *servicePage(SGLyricsAI service) {
     NSArray<SGModSection *> *sections = nil;
     switch (service) {
         case SGLyricsAIGemini:
-            sections = @[SGNotedSection(nil, @[SGGeminiKeyRow(), modelRow(service)],
+            sections = @[SGNotedSection(nil, [@[SGGeminiKeyRow(), modelRow(service)] arrayByAddingObjectsFromArray:SGGeminiTuningRows()],
                 SGL(@"settings.translation.ai.gemini.footer", @"Translations, pronunciations and notes send the song's lyrics to Google, on your own key from Google AI Studio. The key stays on this iPhone."))];
             break;
         case SGLyricsAIClaude:

@@ -281,7 +281,10 @@ Shared:
                   100.64.0.0/10 HTTP exception required by newer ATS policies; scripts/merge-overlay.py
                   preserves Spotify's other transport policies rather than enabling arbitrary HTTP.
                   Model-list network failures distinguish ATS refusal, DNS, refused connections, timeout
-                  and disconnection without exposing credentials. Gemini's model (SGKeyLyricsGeminiModel) defaults to gemini-flash-latest. AIServices.m
+                  and disconnection without exposing credentials. Gemini's model (SGKeyLyricsGeminiModel) defaults to gemini-3.8-flash.
+                  Its own settings page adds Thinking (Low, Medium, High; default Low) and Timeout (30–300 s;
+                  default 120). These tune Gemini without replacing the fork's separate AI providers, and thinking
+                  participates in Gemini's per-launch translation cache identity. AIServices.m
                   asks Gemini, Claude or that service for two other jobs, on the user's own key: how each line sounds,
                   in the translation language's letters, Latin letters or IPA (SGKeyLyricsPronunciationNotation), and a
                   one-sentence cultural note for the few lines a listener would miss (SGKeyLyricsCulturalNotes, off);

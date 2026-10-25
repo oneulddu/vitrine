@@ -976,6 +976,13 @@
 "settings.lyrics.furigana.title" = "Furigana";
 "settings.lyrics.hide_controls.subtitle" = "A few seconds after the last touch, the lyrics take the whole player";
 "settings.lyrics.hide_controls.title" = "Hide the controls";
+"settings.translation.thinking.low" = "Low";
+"settings.translation.thinking.medium" = "Medium";
+"settings.translation.thinking.high" = "High";
+"settings.translation.thinking.title" = "Thinking";
+"settings.translation.timeout.title" = "Timeout";
+"settings.translation.timeout.seconds" = "%ld s";
+"settings.translation.error.timeout" = "Gemini timed out. Try a longer timeout in Gemini settings.";
 "settings.lyrics.hide_controls.room" = "A few seconds after the last touch, the lyrics take the room";
 "settings.lyrics.hide_controls.all" = "Everything";
 "settings.lyrics.hide_controls.keep_title" = "Keep the title";
