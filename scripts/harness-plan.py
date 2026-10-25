@@ -44,7 +44,7 @@ HARNESSES = [
     {"name": "Connection test settings", "dir": "connection-test-settings",
      "run": "sh harness/connection-test-settings/check.sh"},
     {"name": "Driver auth and redaction", "dir": "driver",
-     "run": "sh harness/driver/auth-check.sh && python3 harness/driver/phone-check.py"},
+     "run": "sh harness/driver/auth-check.sh && sh harness/driver/command-check.sh && python3 harness/driver/phone-check.py"},
     {"name": "Fluid clips", "dir": "fluid-clip",
      "run": "sh harness/fluid-clip/build.sh && harness/fluid-clip/build/fluid-clip"},
     {"name": "Haptic track", "dir": "haptics",

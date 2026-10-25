@@ -22,6 +22,7 @@
 #if SG_DRIVER
 #import "Core/SGCore.h"
 #import "Diagnostics.h"
+#import "SGDriverCommand.h"
 #import "Headers/SPTPlayer.h"
 #import <dlfcn.h>
 #import <mach/mach_time.h>
@@ -953,10 +954,6 @@ static NSDictionary<NSString *, SGCommand> *commands(void) {
     return all;
 }
 
-static NSSet<NSString *> *readOnly(void) {
-    return [NSSet setWithArray:@[@"find", @"state", @"screenshot", @"log", @"wait", @"pip.frame"]];
-}
-
 BOOL SGDriverHandles(NSString *command) {
     return commands()[command] != nil;
 }
@@ -979,7 +976,7 @@ static void stayAwake(void) {
 NSData *SGDriverRun(NSString *command, NSDictionary<NSString *, NSString *> *params) {
     stayAwake();
     NSMutableDictionary *answer = [NSMutableDictionary dictionaryWithObject:command forKey:@"cmd"];
-    if (![readOnly() containsObject:command]) sg_actionSeq = SGLogLastSeq();
+    if (!SGDriverCommandIsReadOnly(command, params)) sg_actionSeq = SGLogLastSeq();
     @try {
         [answer addEntriesFromDictionary:commands()[command](params) ?: @{}];
         answer[@"ok"] = @YES;

@@ -53,6 +53,7 @@ their check executable in the workflow.
 | `clean-links/build.sh` | Pure URL-cleaning assertions. |
 | `connection-test-settings/check.sh` | Catalyst lifecycle assertions with a fake backend. |
 | `driver/auth-check.sh` | Foundation driver-token rotation, header and diagnostic-redaction checks; runs with `driver/phone-check.py`. |
+| `driver/command-check.sh` | Driver command classification and log-cursor sequence with the real log buffer. |
 | `fluid-clip/build.sh` | Generated cover/video, decoded-frame and loop assertions. |
 | `haptics/build.sh` | `build/track`: synthetic ISRC/protobuf/catalog assertions. |
 | `head-gestures/build.sh` | Synthetic motion traces with expected gestures. |
@@ -81,7 +82,7 @@ their check executable in the workflow.
 
 ## Excluded scripts
 
-This inventory covers all 73 shell scripts, including the 31 included above.
+This inventory covers all 74 shell scripts, including the 32 included above.
 Simulator checks are excluded even when they assert; visual-only simulator
 scenarios are not promoted to CI by merely compiling them.
 
