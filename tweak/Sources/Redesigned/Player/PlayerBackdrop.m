@@ -157,6 +157,7 @@ static UIImage *storedPhoto(void) {
 }
 
 - (void)setLyrics:(BOOL)lyrics animated:(BOOL)animated {
+    if (lyrics == _lyrics) return;
     _lyrics = lyrics;
     BOOL blurred = lyrics && _photo.image;
     [CATransaction begin];
