@@ -60,6 +60,7 @@ static const NSTimeInterval kRest = 4;
 static char kOverlayKey, kPlateKey, kTitleKey, kStackKey;
 static BOOL sg_open;
 static BOOL sg_moving;                      // the transition is in flight, so no layout pass may re-place it
+static NSUInteger sg_openGeneration;        // only the latest accepted transition may settle
 static __weak UIView *sg_host;              // SPTNowPlayingView
 static __weak UIViewController *sg_info, *sg_duration, *sg_floating, *sg_header;
 static __weak UIView *sg_titleElement;      // the arranged element view holding the title and the artist
@@ -720,6 +721,7 @@ static void setOpen(BOOL open, BOOL animated) {
         SGLog(@"redesign player: no artwork read yet, the lyrics stay down");
         return;
     }
+    NSUInteger generation = ++sg_openGeneration;
     if (!open) setAlone(NO, NO);
     sg_open = open;
     SGRPlayerLyricsChanged();
@@ -766,6 +768,7 @@ static void setOpen(BOOL open, BOOL animated) {
         overlay.stage.transform = open ? CGAffineTransformIdentity : entering;
     };
     void (^settled)(BOOL) = ^(BOOL finished) {
+        if (generation != sg_openGeneration) return;
         sg_moving = NO;
         if (sg_open) return;   // opened again while it was going away
         SGRPlayerCoverList().alpha = 1;

@@ -18,6 +18,7 @@
 // is id=...-internal (:227). The sticky header has a play button of its own (:492), which a search
 // inside the unit's view never reaches.
 #import <UIKit/UIGestureRecognizerSubclass.h>
+#import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRPress.h"
@@ -251,7 +252,13 @@ void SGRPlayerPlayGlyphIn(UIView *host) {
 @interface SGRPlayerControlsWatcher : NSObject <SGPlayerStateObserver>
 @end
 
+static void updateSeek(SPTPlayerState *state);
+
 @implementation SGRPlayerControlsWatcher
+
+- (void)playerStateDidReport:(SPTPlayerState *)state {
+    updateSeek(state);
+}
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     // The first state can land after the controls laid out, which left the disc for want of one.
@@ -308,6 +315,35 @@ static char kSliderKey, kSeekTapKey, kTakeTimeKey, kRemainingTimeKey;
 static __weak UISlider *sg_seekSlider;
 static NSInteger sg_seekTarget;
 static CFTimeInterval sg_seekHeldUntil;
+static CFAbsoluteTime sg_seekBeganAt;
+static NSString *sg_seekTrack;
+static BOOL sg_sendingSeekEvents;
+// Commands can arrive off main; only their generation crosses threads. The slider and hold stay on main.
+static atomic_uint_fast64_t sg_seekGeneration;
+
+static void cancelSeek(void) {
+    atomic_fetch_add(&sg_seekGeneration, 1);
+    sg_seekHeldUntil = 0;
+    sg_seekSlider = nil;
+    sg_seekTrack = nil;
+}
+
+// An arrival is remembered by canceling the check, not judged again against a target playback has passed.
+// Every report is watched, even when Spotify does not ask the slider whether it is tracking.
+static void updateSeek(SPTPlayerState *state) {
+    if (!sg_seekHeldUntil) return;
+    if (![sg_seekTrack isEqualToString:SGURIString(state.track.URI)]) {
+        cancelSeek();
+        return;
+    }
+    // A queued report keeps its anchor even if main resumes after playback has passed the target.
+    // Reject reports from before this tap. Sing's positionAsOfTimestamp hook already applies the same
+    // lead correction karaoke uses; subtracting it again here would count it twice.
+    NSDate *timestamp = state.timestamp;
+    if (!timestamp || timestamp.timeIntervalSinceReferenceDate < sg_seekBeganAt) return;
+    NSInteger at = (NSInteger)(state.positionAsOfTimestamp * 1000);
+    if (at >= 0 && labs(at - sg_seekTarget) < kSeekNear) cancelSeek();
+}
 
 static CGFloat thumbCentre(UISlider *slider, float value) {
     CGRect bounds = slider.bounds;
@@ -340,10 +376,9 @@ BOOL SGRSeekTapLands(UIView *unit, UISlider *slider, CGPoint point) {
 
 static BOOL seekHeld(void) {
     if (!sg_seekHeldUntil) return NO;
-    NSInteger at = SGKaraokePositionMs();
-    if (CACurrentMediaTime() < sg_seekHeldUntil && (at < 0 || labs(at - sg_seekTarget) >= kSeekNear)) return YES;
-    sg_seekHeldUntil = 0;
-    return NO;
+    updateSeek(SGPlayerState());
+    if (sg_seekHeldUntil && CACurrentMediaTime() >= sg_seekHeldUntil) cancelSeek();
+    return sg_seekHeldUntil != 0;
 }
 
 // Whether Spotify listens to the slider's control events, which is how a played drag reaches it.
@@ -358,6 +393,7 @@ static BOOL listensToSlider(UISlider *slider) {
 static void seekTo(UISlider *slider, CGFloat share) {
     SPTPlayerState *state = SGPlayerState();
     if (!state || state.duration <= 0 || isnan(share)) return;
+    cancelSeek();
     NSInteger ms = (NSInteger)(share * state.duration * 1000);
     SGPlayFeedback(SGFeedbackSkip);
     BOOL played = listensToSlider(slider);
@@ -370,18 +406,44 @@ static void seekTo(UISlider *slider, CGFloat share) {
     [slider setValue:slider.minimumValue + share * (slider.maximumValue - slider.minimumValue) animated:NO];
     sg_seekSlider = slider;
     sg_seekTarget = ms;
+    NSString *track = [SGURIString(state.track.URI) copy];
+    sg_seekTrack = track;
     sg_seekHeldUntil = CACurrentMediaTime() + kSeekHold;
+    sg_seekBeganAt = CFAbsoluteTimeGetCurrent();
+    uint64_t generation = atomic_load(&sg_seekGeneration);
+    sg_sendingSeekEvents = YES;
     [slider sendActionsForControlEvents:UIControlEventTouchDown];
     [slider sendActionsForControlEvents:UIControlEventValueChanged];
     [slider sendActionsForControlEvents:UIControlEventTouchUpInside];
+    sg_sendingSeekEvents = NO;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kSeekCheck * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (generation != atomic_load(&sg_seekGeneration)) return;
+        updateSeek(SGPlayerState());
+        if (generation != atomic_load(&sg_seekGeneration) || ![track isEqualToString:SGURIString(SGPlayerState().track.URI)]) return;
         NSInteger at = SGKaraokePositionMs();
-        if (sg_seekTarget != ms || at < 0 || labs(at - ms) < kSeekNear) return;
+        if (at < 0) return;
         SGLog(@"redesign player: the played drag did not seek (at %ld ms, not %ld), seeking directly", (long)at, (long)ms);
-        sg_seekHeldUntil = 0;
+        cancelSeek();
         SGKaraokeSeek(ms);
     });
 }
+
+// All of Spotify's shorter seek selectors forward here (Shared/Sing/Sing.x). A later seek elsewhere
+// supersedes this check. The command sent by our own control events still waits for arrival; dispatch
+// alone is not an acknowledgment. The hold also waits, so the thumb cannot jump to its old position.
+%hook SPTEsperantoPlayer
+- (id)seekTo:(double)position relative:(long long)relative options:(id)options creatorTimestampPositionMs:(double)creator {
+    if (!NSThread.isMainThread || !sg_sendingSeekEvents) {
+        uint64_t generation = atomic_fetch_add(&sg_seekGeneration, 1) + 1;
+        void (^releaseHold)(void) = ^{
+            if (generation == atomic_load(&sg_seekGeneration)) cancelSeek();
+        };
+        if (NSThread.isMainThread) releaseHold();
+        else dispatch_async(dispatch_get_main_queue(), releaseHold);
+    }
+    return %orig;
+}
+%end
 
 // A recognizer of its own rather than a tap: UIKit lets a slider keep a single tap from a tap recognizer
 // over it, and the band reaches past the slider.
@@ -532,6 +594,7 @@ static void keepScrubLook(UIView *host) {
 
 // PlayerScroll.x and Shared/Haptics/ControlHaptics.x hook the same tracking; all call through.
 - (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    cancelSeek();
     BOOL tracking = %orig;
     if (tracking) scrubLook((UISlider *)self, YES);
     return tracking;
