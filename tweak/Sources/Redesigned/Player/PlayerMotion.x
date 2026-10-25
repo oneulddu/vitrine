@@ -69,6 +69,14 @@ static const NSTimeInterval kHandOver = 0.4;
 static const CGFloat kDimLeast = 0.10, kDimMost = 0.80, kDimLyrics = 0.15;
 // The frames measured for the dim besides the poster, in seconds into the clip (one past its end is skipped).
 static const double kMeasuredAt[] = {1, 2};
+// Behind the lyrics the clip itself is blurred, a plain Gaussian blur with no material's gray tint over it
+// (issue #101), so it keeps its colors as the Fluid field does; the dim keeps the text's contrast.
+static NSString *const kLyricsBlurPath = @"filters.gaussianBlur.inputRadius";
+static const CGFloat kLyricsBlurRadius = 30;
+
+@interface CAFilter : NSObject
++ (instancetype)filterWithType:(NSString *)type;
+@end
 
 CGFloat SGRPlayerClipDim(CGFloat luminance, BOOL contrast, BOOL lyrics) {
     // White is 1, so (1 + 0.05) / (L + 0.05) >= ratio puts the clip's luminance at `most` or under.
@@ -164,7 +172,8 @@ static UIColor *footColor(CGImageRef poster) {
     CALayer *_dim;   // black over the clip and its foot, as dark as the clip is bright
     NSMutableData *_luminances;   // of the frames measured so far
     BOOL _lyricsUp;
-    UIVisualEffectView *_seamBlur, *_lyricsBlur;
+    NSUInteger _blurTurn;   // counts the lyrics' turns, so a fade cut short leaves the filter to the turn after it
+    UIVisualEffectView *_seamBlur;
     CGFloat _aspect;
     BOOL _timing;   // the give-up's count is running
 }
@@ -210,9 +219,6 @@ static UIBlurEffect *blurEffect(void) {
     [mask.layer addSublayer:_seamMask];
     _seamBlur.maskView = mask;
     [self addSubview:_seamBlur];
-    _lyricsBlur = [[UIVisualEffectView alloc] initWithEffect:nil];
-    _lyricsBlur.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-    [self addSubview:_lyricsBlur];
 
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     for (NSNotificationName name in @[UIApplicationDidBecomeActiveNotification, UIApplicationWillResignActiveNotification,
@@ -220,6 +226,7 @@ static UIBlurEffect *blurEffect(void) {
         [center addObserver:self selector:@selector(updateMotionSoon) name:name object:nil];
     }
     [center addObserver:self selector:@selector(updateDim) name:UIAccessibilityDarkerSystemColorsStatusDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(updateDim) name:UIAccessibilityReduceTransparencyStatusDidChangeNotification object:nil];
     SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; }, ^(id owner) { [owner updateMotion]; });
     SGAddPlayerStateObserver(self);
     return self;
@@ -259,7 +266,6 @@ static UIBlurEffect *blurEffect(void) {
     _picture.frame = bounds;
     _seamBlur.frame = bounds;
     _seamBlur.maskView.frame = bounds;
-    _lyricsBlur.frame = bounds;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _still.frame = CGRectMake(0, 0, width, height);
@@ -322,7 +328,9 @@ static UIBlurEffect *blurEffect(void) {
 }
 
 - (void)updateDim {
-    CGFloat dim = SGRPlayerClipDim(brightEnd(_luminances), UIAccessibilityDarkerSystemColorsEnabled(), _lyricsUp);
+    // Reduce Transparency puts the lyrics on black, as the material it replaced went opaque there.
+    CGFloat dim = _lyricsUp && SGRReduceTransparency() ? 1
+        : SGRPlayerClipDim(brightEnd(_luminances), UIAccessibilityDarkerSystemColorsEnabled(), _lyricsUp);
     _dim.opacity = (float)dim;
 }
 
@@ -343,26 +351,61 @@ static UIBlurEffect *blurEffect(void) {
     }
 }
 
-// The clip and both blurs fade out; `done` runs once they have.
+// The clip and the seam's blur fade out; `done` runs once they have.
 - (void)disappear:(void (^)(void))done {
     SGRAnimate(SGRMotionFade, ^{
         self->_picture.alpha = 0;
         self->_seamBlur.effect = nil;
-        self->_lyricsBlur.effect = nil;
     }, ^(BOOL finished) { done(); });
 }
 
-// The lyrics' blur, and their share of the dim, which a layer's own animation carries over the same fade.
+// The lyrics' blur, and their share of the dim, which a layer's own animation carries over the same fade. The
+// filter is on the clip only while the lyrics are up, so a closed lyrics page costs no blur pass a frame.
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated {
+    // Asked again on every footer layout pass: the same state again would restart the fade.
+    if (blurred == _lyricsUp) return;
     _lyricsUp = blurred;
-    void (^apply)(void) = ^{ self->_lyricsBlur.effect = blurred ? blurEffect() : nil; };
+    NSUInteger turn = ++_blurTurn;
+    CALayer *layer = _picture.layer;
+    if (blurred && !layer.filters && !SGRReduceTransparency()) {
+        CAFilter *blur = [NSClassFromString(@"CAFilter") filterWithType:@"gaussianBlur"];
+        [blur setValue:@0 forKey:@"inputRadius"];
+        // The clip's edges blur against themselves, not against the clear around it.
+        [blur setValue:@YES forKey:@"inputNormalizeEdges"];
+        if (blur) {
+            layer.filters = @[blur];
+            // The clip changes every video frame, so the blur runs every frame either way: rendered at one pixel a
+            // point it blurs a ninth of a 3x screen's pixels, as cheap as the material's quarter-scale backdrop
+            // was. Nothing sharp is left to lose.
+            layer.rasterizationScale = 1;
+            layer.shouldRasterize = YES;
+        }
+    }
+    id shown = [layer.presentationLayer valueForKeyPath:kLyricsBlurPath];
+    CGFloat from = [shown isKindOfClass:NSNumber.class] ? [shown doubleValue] : 0, to = blurred ? kLyricsBlurRadius : 0;
     [CATransaction begin];
     [CATransaction setDisableActions:!animated];
     [CATransaction setAnimationDuration:SGRCrossfade];
     [self updateDim];
+    if (layer.filters) {
+        __weak SGRPlayerMotionView *weakSelf = self;
+        [CATransaction setCompletionBlock:^{
+            SGRPlayerMotionView *view = weakSelf;
+            if (!view || view->_blurTurn != turn || view->_lyricsUp) return;
+            view->_picture.layer.filters = nil;
+            view->_picture.layer.shouldRasterize = NO;
+        }];
+        [layer setValue:@(to) forKeyPath:kLyricsBlurPath];
+        if (animated) {
+            CABasicAnimation *ease = [CABasicAnimation animationWithKeyPath:kLyricsBlurPath];
+            ease.fromValue = @(from);
+            ease.toValue = @(to);
+            ease.duration = SGRCrossfade;
+            ease.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+            [layer addAnimation:ease forKey:@"lyricsBlur"];
+        }
+    }
     [CATransaction commit];
-    if (animated) SGRAnimate(SGRMotionFade, apply, nil);
-    else apply();
 }
 
 // The power state is reported off the main thread.
