@@ -1125,13 +1125,25 @@ static void checkSpatial(void) {
     Source source = {tone, 0};
     atomic_store(&sg_renderAllocations, 0);
     malloc_logger = countAllocation;
+    __block unsigned levelChecks = 0, badLevels = 0;
     Audio out = play(engine, tone, &source, 1024, 14, ^(double played) {
         if (played >= 5 && played < 8) SGSingEngineSetVoiceAngle(engine, (float)M_PI_2);
         if (played >= 8 && played < 11) SGSingEngineSetVoiceAngle(engine, -(float)M_PI_2);
         if (played >= 11) SGSingEngineSetVoiceAngle(engine, 0);
+        // Read throughout the run, not just at its end: an unaligned window hop must not leave a
+        // permanent hole in the levels, even when the worker is well ahead of playback.
+        if (played >= 4 && SGSingEngineReadStats(engine).ready >= 0.5) {
+            float vocals[5], rest[5];
+            SGSingEngineReadLevels(engine, vocals, rest, 5);
+            for (int i = 0; i < 5; i++) {
+                levelChecks++;
+                if (!(fabsf(vocals[i] - 0.3536f) < 0.01f && rest[i] < 0.001f)) badLevels++;
+            }
+        }
     });
     malloc_logger = NULL;
     CHECK(atomic_load(&sg_renderAllocations) == 0, "spatial voice: no allocation on the render thread (%u)", atomic_load(&sg_renderAllocations));
+    CHECK(levelChecks > 0 && badLevels == 0, "loudness across window hops: %u wrong or missing of %u levels", badLevels, levelChecks);
     // The loudness the Sing page draws: all of the tone is vocals here, a sine of 0.5 at an RMS of 0.354.
     float vocalsLevel[5], restLevel[5];
     SGSingEngineReadLevels(engine, vocalsLevel, restLevel, 5);

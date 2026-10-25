@@ -422,7 +422,9 @@ static void updateTarget(SGSingEngine *engine, double modelSeconds) {
 // render may have pulled new sound over the rings there while the model ran.
 static void measureLevels(SGSingEngine *engine, uint64_t start, uint64_t ready) {
     engine->nextLevel = MAX(engine->nextLevel, (start + kLevelBlock - 1) / kLevelBlock);
-    for (; (engine->nextLevel + 1) * kLevelBlock <= ready; engine->nextLevel++) {
+    // Finish the block crossing `ready` too: the window's half-second overlap holds its remaining samples.
+    // Otherwise an unaligned hop leaves that block unfinished here and skips it at the next window's start.
+    for (; engine->nextLevel * kLevelBlock < ready; engine->nextLevel++) {
         double vocals = 0, rest = 0;
         for (uint64_t p = engine->nextLevel * kLevelBlock; p < (engine->nextLevel + 1) * kLevelBlock; p++) {
             uint64_t i = p - start;
