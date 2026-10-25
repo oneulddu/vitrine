@@ -73,6 +73,8 @@ HARNESSES = [
      "run": "sh harness/lyrics-sources/state-build.sh"},
     {"name": "Lyrics translation and AI", "dir": "lyrics-translation",
      "run": "sh harness/lyrics-translation/build.sh && harness/lyrics-translation/build/check --auto-retry-only"},
+    {"name": "On-device kept translation", "dir": "lyrics-translation",
+     "run": "bash harness/lyrics-translation/ondevice-kept-check.sh"},
     {"name": "Moving artwork", "dir": "motion",
      "run": "sh harness/motion/build.sh && harness/motion/build/motion"},
     {"name": "Now playing", "dir": "now-playing", "theos": True,
@@ -91,6 +93,8 @@ HARNESSES = [
      "run": "sh harness/sleep-timer/build.sh && harness/sleep-timer/build/sleep-timer"},
     {"name": "Spicy lyrics", "dir": "spicy-lyrics",
      "run": "sh harness/spicy-lyrics/build.sh"},
+    {"name": "Update offline", "dir": "update",
+     "run": "sh harness/update/offline-check.sh"},
     {"name": "Visualizer", "dir": "visualiser",
      "run": "sh harness/visualiser/build.sh && harness/visualiser/build/spectrum"},
 ]

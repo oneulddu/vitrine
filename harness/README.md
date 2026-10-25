@@ -64,6 +64,7 @@ their check executable in the workflow.
 | `lyrics-sources/state-build.sh` | Real keeper and concurrent source walk with fake replies. |
 | `lyrics-store/build.sh` | Foundation codec, isolated disk reads/writes/deletion, and oldest-first count/byte pruning; run `lyrics-store/build/lyrics-store` after building. |
 | `lyrics-translation/build.sh` | Default checks include `check-ai.m`; also `--auto-retry-only`. |
+| `lyrics-translation/ondevice-kept-check.sh` | Catalyst Swift check: on-device translation keeps target-language lines as completed results. |
 | `motion/build.sh` | Generated Canvas cuts and synthetic protobuf replies. |
 | `now-playing/build.sh` | Logos setter hooks with system setter replaced, lyrics off/on. |
 | `palette/build.sh` | Generated image with asserted edge/main colors. |
@@ -73,11 +74,12 @@ their check executable in the workflow.
 | `sing/build.sh` | `spatial`: model-free lead, spatial and decoder assertions. |
 | `sleep-timer/build.sh` | Fake player and timer/fade assertions. |
 | `spicy-lyrics/build.sh` | Offline parser, cache and retry fixtures. |
+| `update/offline-check.sh` | Catalyst cached-release selection, no network. |
 | `visualiser/build.sh` | Synthetic spectrum and PCM waveform assertions. |
 
 ## Excluded scripts
 
-This inventory covers all 66 shell scripts, including the 27 included above.
+This inventory covers all 70 shell scripts, including the 29 included above.
 Simulator checks are excluded even when they assert; visual-only simulator
 scenarios are not promoted to CI by merely compiling them.
 
@@ -88,6 +90,8 @@ scenarios are not promoted to CI by merely compiling them.
 | `appearance-page/build.sh` | iOS simulator UI. |
 | `artist/build.sh` | iOS simulator UI. |
 | `audio-effects-page/build.sh` | iOS simulator UI. |
+| `audio-effects/build-import.sh` | iOS simulator import page. |
+| `audio-effects/build-output.sh` | iOS simulator output control and render gate. |
 | `audio-effects/build-sim.sh` | iOS simulator audio chain. |
 | `clean-links/build-sim.sh` | iOS simulator share/pasteboard hooks. |
 | `connect/build.sh` | Opens loopback sockets; excluded by the no-network requirement. |
