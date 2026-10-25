@@ -1019,6 +1019,12 @@
 "settings.lyrics.furigana.title" = "후리가나";
 "settings.lyrics.hide_controls.subtitle" = "마지막 터치 후 몇 초가 지나면 가사가 플레이어 전체를 채웁니다";
 "settings.lyrics.hide_controls.title" = "컨트롤 숨기기";
+"settings.lyrics.hide_controls.room" = "마지막 터치 후 몇 초가 지나면 가사 표시 영역이 넓어집니다";
+"settings.lyrics.hide_controls.all" = "모두 숨기기";
+"settings.lyrics.hide_controls.keep_title" = "제목 유지";
+"settings.lyrics.hide_controls.off_note" = "컨트롤을 계속 표시합니다";
+"settings.lyrics.hide_controls.all_note" = "가사가 플레이어 전체를 채웁니다";
+"settings.lyrics.hide_controls.title_note" = "커버, 제목, 상단 줄을 유지합니다. 가로 모드에서는 제목을 유지합니다";
 "settings.lyrics.imported_lrc.title" = "가져온 LRC 파일";
 "settings.lyrics.imported_lrc.value.none" = "없음";
 "settings.lyrics.offline.title" = "오프라인 감상을 위해 가사 저장";

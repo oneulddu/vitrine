@@ -974,6 +974,12 @@
 "settings.lyrics.furigana.title" = "Furigana";
 "settings.lyrics.hide_controls.subtitle" = "A few seconds after the last touch, the lyrics take the whole player";
 "settings.lyrics.hide_controls.title" = "Hide the controls";
+"settings.lyrics.hide_controls.room" = "A few seconds after the last touch, the lyrics take the room";
+"settings.lyrics.hide_controls.all" = "Everything";
+"settings.lyrics.hide_controls.keep_title" = "Keep the title";
+"settings.lyrics.hide_controls.off_note" = "The controls stay";
+"settings.lyrics.hide_controls.all_note" = "The lyrics take the whole player";
+"settings.lyrics.hide_controls.title_note" = "The cover, the title and the top row stay; in landscape, the title";
 "settings.lyrics.imported_lrc.title" = "Imported LRC files";
 "settings.lyrics.imported_lrc.value.none" = "None";
 "settings.lyrics.intro" = "The look, romanization, furigana, estimated word timing, delay and automatic translation apply without restarting. Other changes may need a Spotify restart.";

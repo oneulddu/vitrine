@@ -181,7 +181,7 @@ static UIViewController *lyricsPage(void) {
                 SGLyricsJapaneseReadingRow(), SGLyricsFuriganaRow(), SGRLyricsKeepAwakeRow(),
                 SGOptionRow(SGL(@"settings.lyrics.break_labels.title", @"Name the breaks"), SGL(@"settings.lyrics.break_labels.subtitle", @"Intro, Interlude or Outro beside the dots"), SGRKeyLyricsBreakLabels),
                 SGSimplifyTitlesRow(),
-                SGSwitchRow(SGL(@"settings.lyrics.hide_controls.title", @"Hide the controls"), SGL(@"settings.lyrics.hide_controls.subtitle", @"A few seconds after the last touch, the lyrics take the whole player"), SGRKeyLyricsAutoHide),
+                SGRLyricsHideRow(),
                 SGSwitchRow(SGL(@"settings.lyrics.landscape.title", @"Landscape lyrics"), SGL(@"settings.lyrics.landscape.subtitle", @"Turn the phone with the lyrics open"), SGRKeyLyricsLandscape)]),
             timing,
             SGSection(nil, @[translation]),

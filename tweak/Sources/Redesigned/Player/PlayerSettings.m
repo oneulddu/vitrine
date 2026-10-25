@@ -386,6 +386,13 @@ UIViewController *SGRVisualiserSettingsPage(void) {
                 @"and stops in the background, during player transitions, in Low Power Mode or when the device is hot.")];
 }
 
+SGModRow *SGRLyricsHideRow(void) {
+    SGModRow *row = SGChoiceRow(SGL(@"settings.lyrics.hide_controls.title", @"Hide the controls"), SGL(@"settings.lyrics.hide_controls.room", @"A few seconds after the last touch, the lyrics take the room"),
+                                SGRKeyLyricsAutoHide, @[SGL(@"common.off", @"Off"), SGL(@"settings.lyrics.hide_controls.all", @"Everything"), SGL(@"settings.lyrics.hide_controls.keep_title", @"Keep the title")], SGRLyricsHideMode());
+    row.choiceNotes = @[SGL(@"settings.lyrics.hide_controls.off_note", @"The controls stay"), SGL(@"settings.lyrics.hide_controls.all_note", @"The lyrics take the whole player"), SGL(@"settings.lyrics.hide_controls.title_note", @"The cover, the title and the top row stay; in landscape, the title")];
+    return row;
+}
+
 UIViewController *SGRPlayerSettingsPage(NSArray *more) {
     SGRPlayerShowcase *showcase = [[SGRPlayerShowcase alloc] initWithFrame:CGRectMake(0, 0, 320, kCardMinHeight)];
     UISegmentedControl *backgrounds = [[UISegmentedControl alloc] initWithItems:SGRPlayerBackgroundNames()];
