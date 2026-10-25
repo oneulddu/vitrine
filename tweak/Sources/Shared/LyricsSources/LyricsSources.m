@@ -81,7 +81,7 @@ static void sendForReply(NSURLRequest *request, void (^done)(NSData *body, NSHTT
     [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSHTTPURLResponse *reply = [response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)response : nil;
         SGLyricsNoteReply(response, error);
-        if (error || reply.statusCode >= 400) SGLog(@"lyrics: %@ answered %ld, error %@", url.host, (long)reply.statusCode, error);
+        if (error || reply.statusCode >= 400) SGLog(@"lyrics: %@ answered %ld, error %@ (%ld)", url.host, (long)reply.statusCode, error.domain, (long)error.code);
         dispatch_async(dispatch_get_main_queue(), ^{ done(data, reply); });
     }] resume];
 }
@@ -149,7 +149,7 @@ void SGLyricsPostJSON(NSURL *url, NSDictionary<NSString *, NSString *> *headers,
  completionHandler:(void (^)(NSURLRequest *))completion { completion(nil); }
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
     if (error) SGLyricsNoteReply(nil, error);
-    if (error || self.status >= 400) SGLog(@"lyrics: source request ended with HTTP %ld, error %ld", (long)self.status, (long)error.code);
+    if (error || self.status >= 400) SGLog(@"lyrics: source request ended with HTTP %ld, error %@ (%ld)", (long)self.status, error.domain, (long)error.code);
     NSData *data = error ? nil : [self.data copy];
     void (^done)(NSData *, NSInteger) = self.done;
     self.done = nil;

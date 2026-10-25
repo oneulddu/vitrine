@@ -90,7 +90,7 @@ static void call(NSString *method, NSDictionary<NSString *, NSString *> *query, 
     [[NSURLSession.sharedSession dataTaskWithRequest:requestFor(method, query) completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         SGLyricsNoteReply(response, error);
         id message = dig(jsonOf(data), @"message");
-        if (error || !message) SGLog(@"musixmatch: %@ failed: status %ld, error %@", method, (long)[(NSHTTPURLResponse *)response statusCode], error);
+        if (error || !message) SGLog(@"musixmatch: %@ failed: status %ld, error %@ (%ld)", method, (long)[(NSHTTPURLResponse *)response statusCode], error.domain, (long)error.code);
         dispatch_async(dispatch_get_main_queue(), ^{ done([message isKindOfClass:NSDictionary.class] ? message : nil); });
     }] resume];
 }
