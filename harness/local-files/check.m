@@ -5,14 +5,131 @@
 #import <UIKit/UIKit.h>
 #import <ImageIO/ImageIO.h>
 #import "Shared/LocalFiles/LocalFiles.h"
+#import "load.h"
+#include <dlfcn.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#import <objc/runtime.h>
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
+
+NSData *UIImageJPEGRepresentation(UIImage *image, CGFloat quality) {
+    CHECK(NSThread.isMainThread);
+    CHECK(CGImageGetWidth(image.CGImage) <= 1200 && CGImageGetHeight(image.CGImage) <= 1200);
+    static NSData *(*encode)(UIImage *, CGFloat);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ encode = dlsym(RTLD_NEXT, "UIImageJPEGRepresentation"); CHECK(encode); });
+    return encode(image, quality);
+}
 
 static UIImage *square(void) {
     return [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(4, 4)] imageWithActions:^(UIGraphicsImageRendererContext *context) {
         [UIColor.redColor setFill];
         UIRectFill(CGRectMake(0, 0, 4, 4));
     }];
+}
+
+static NSString *const recoveryURI = @"spotify:local:Fixture:Album:Recovery:60";
+static NSString *const legacyCoverName = @"11111111-1111-4111-8111-111111111111.jpg";
+
+// Headless Catalyst fixtures supply the application's protected-data boundary. No UI is presented.
+@interface CoverProtection : NSObject
+@property(atomic, getter=isProtectedDataAvailable) BOOL protectedDataAvailable;
+@end
+@implementation CoverProtection @end
+static CoverProtection *protection;
+static IMP originalApplication;
+static void installProtectionFixture(void) {
+    protection = [CoverProtection new];
+    protection.protectedDataAvailable = YES;
+    Method method = class_getClassMethod(UIApplication.class, @selector(sharedApplication));
+    originalApplication = method_setImplementation(method, imp_implementationWithBlock(^id(id cls) { return protection; }));
+}
+static void removeProtectionFixture(void) {
+    Method method = class_getClassMethod(UIApplication.class, @selector(sharedApplication));
+    IMP replacement = method_setImplementation(method, originalApplication);
+    imp_removeBlock(replacement);
+    protection = nil;
+}
+static BOOL (*removeItem)(id, SEL, NSString *, NSError **);
+static NSString *observedLegacy;
+static BOOL publishedBeforeRemoval;
+static BOOL observeRemoval(id manager, SEL selector, NSString *path, NSError **error) {
+    if ([path isEqual:observedLegacy]) {
+        CHECK(NSThread.isMainThread);
+        NSString *current = SGLocalFileCoverPath(SGLocalFileEditFor(recoveryURI));
+        CHECK(current && ![current isEqual:path] && [NSFileManager.defaultManager fileExistsAtPath:current]);
+        publishedBeforeRemoval = YES;
+    }
+    return removeItem(manager, selector, path, error);
+}
+
+static void legacyCoverChecks(void) {
+    // Seed the old on-disk format; no migration or rewrite is needed to load this UUID reference.
+    NSString *directory = SGLocalFileCoversDirectory();
+    CHECK([NSFileManager.defaultManager createDirectoryAtPath:directory withIntermediateDirectories:YES attributes:nil error:nil]);
+    CHECK([UIImagePNGRepresentation(square()) writeToFile:[directory stringByAppendingPathComponent:legacyCoverName] atomically:YES]);
+    [NSUserDefaults.standardUserDefaults setObject:@{recoveryURI: @{@"title": @"Baseline", @"cover": legacyCoverName}}
+                                           forKey:SGKeyLocalFileEdits];
+    installProtectionFixture();
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    NSString *legacy = [directory stringByAppendingPathComponent:legacyCoverName];
+    CHECK([SGLocalFileEditFor(recoveryURI)[@"cover"] isEqual:legacyCoverName]);
+    removeProtectionFixture();
+    CHECK(loadCoverAndWait(recoveryURI).CGImage);
+    CHECK([NSFileManager.defaultManager fileExistsAtPath:legacy]);
+    Method method = class_getInstanceMethod(NSFileManager.class, @selector(removeItemAtPath:error:));
+    observedLegacy = legacy;
+    removeItem = (void *)method_setImplementation(method, (IMP)observeRemoval);
+    SGLocalFileSaveEdit(recoveryURI, @{@"title": @"Resaved"}, square(), YES);
+    method_setImplementation(method, (IMP)removeItem);
+    CHECK(publishedBeforeRemoval && ![NSFileManager.defaultManager fileExistsAtPath:legacy]);
+    NSString *first = SGLocalFileCoverPath(SGLocalFileEditFor(recoveryURI));
+    CHECK([[NSUUID alloc] initWithUUIDString:first.lastPathComponent.stringByDeletingPathExtension]);
+    CHECK(![SGLocalFileCoverURL(first) isEqual:SGLocalFileCoverURL(legacy)]);
+    UIImage *blue = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(4, 4)]
+        imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            [UIColor.blueColor setFill]; UIRectFill(CGRectMake(0, 0, 4, 4));
+        }];
+    SGLocalFileSaveEdit(recoveryURI, @{@"title": @"Resaved again"}, blue, YES);
+    NSString *second = SGLocalFileCoverPath(SGLocalFileEditFor(recoveryURI));
+    CHECK(![SGLocalFileCoverURL(first) isEqual:SGLocalFileCoverURL(second)]);
+    CHECK(![NSFileManager.defaultManager fileExistsAtPath:first] && [NSFileManager.defaultManager fileExistsAtPath:second]);
+    CHECK([store synchronize]);
+    puts("covers: legacy UUID loads; main-thread save publishes before removal and produces a fresh URL on every change");
+}
+
+static void unavailableCache(NSString *mode) {
+    installProtectionFixture();
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    NSDictionary *stored = [store dictionaryForKey:SGKeyLocalFileEdits];
+    CHECK(stored[recoveryURI][@"cover"]);
+    id invalid = [mode isEqual:@"--invalid-root"] ? (id)@[] :
+                 [mode isEqual:@"--invalid-row"] ? (id)@{recoveryURI: @42} : nil;
+    BOOL locked = [mode isEqual:@"--protected"];
+    if (locked) protection.protectedDataAvailable = NO;
+    else if (invalid) [store setObject:invalid forKey:SGKeyLocalFileEdits];
+    else [store removeObjectForKey:SGKeyLocalFileEdits];
+    CHECK(!SGLocalFileEditFor(recoveryURI));
+    protection.protectedDataAvailable = YES;
+    [store setObject:stored forKey:SGKeyLocalFileEdits];
+    CHECK([SGLocalFileEditFor(recoveryURI)[@"cover"] isEqual:stored[recoveryURI][@"cover"]]);
+    CHECK([store synchronize]);
+    removeProtectionFixture();
+    puts("edits cache: unavailable/invalid/protected initial reads recover on a later read");
+}
+
+static void recoveryChecks(void) {
+    extern char **environ;
+    for (NSString *mode in @[@"--legacy", @"--unavailable", @"--invalid-root",
+                            @"--invalid-row", @"--protected"]) {
+        const char *executable = NSProcessInfo.processInfo.arguments.firstObject.fileSystemRepresentation;
+        char *args[] = {(char *)executable, (char *)mode.UTF8String, NULL};
+        pid_t child;
+        CHECK(posix_spawn(&child, executable, NULL, NULL, args, environ) == 0);
+        int status;
+        CHECK(waitpid(child, &status, 0) == child && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    }
 }
 
 static void coverImportChecks(void) {
@@ -65,8 +182,11 @@ static void coverImportChecks(void) {
     CHECK([NSFileManager.defaultManager removeItemAtURL:url error:nil]);
 }
 
-int main(void) {
+int main(int argc, const char **argv) {
     @autoreleasepool {
+        if (argc == 2 && !strcmp(argv[1], "--legacy")) { legacyCoverChecks(); return 0; }
+        if (argc == 2) { unavailableCache(@(argv[1])); return 0; }
+        recoveryChecks();
         coverImportChecks();
         [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLocalFileEdits];
         NSString *uri = @"spotify:local:Daft+Punk:Discovery:One+More+Time%3A+Remix:320";
@@ -103,7 +223,8 @@ int main(void) {
         CHECK([SGLocalFileLyricsKey(uri) isEqualToString:renamed]);
         SGLocalFileSaveEdit(uri, @{@"title": @"One More Time"}, square(), YES);
         CHECK([SGLocalFileLyricsKey(uri) isEqualToString:renamed]);
-        CHECK(![NSFileManager.defaultManager fileExistsAtPath:cover]);   // the replaced cover is gone
+        CHECK(![NSFileManager.defaultManager fileExistsAtPath:cover]);
+        CHECK(![SGLocalFileCoverPath(SGLocalFileEditFor(uri)) isEqual:cover]);
         cover = SGLocalFileCoverPath(SGLocalFileEditFor(uri));
 
         // Another rename, another key.

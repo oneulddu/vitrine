@@ -5,7 +5,7 @@ read back into its names (form decoded, a `%3A` in a title too), an edit laid ov
 key each edit gives. A rename gets a new key (`<uri>#<number>`), the same names saved again or a new
 cover with them keep it, a cover alone on an unedited file leaves the bare URI, and names back to the
 file's own go back to it. It also checks a stored cover's `spotify:localfileimage:` address and its way
-back, that no other path comes back through it, and that a replaced or dropped cover's file is removed.
+back, that no other path comes back through it, and that a dropped or replaced legacy cover is removed.
 
 It runs on the Mac as a Mac Catalyst binary with `CFFIXED_USER_HOME` set to `build/home`, so its
 defaults and its covers never reach the Mac's own.
@@ -16,8 +16,17 @@ over 1 MB and tagless files refused, UTF-16 kept as UTF-8, a taken name numbered
 a rename's key and gone with a delete, and the match by title and artist, folded, with an
 "Artist - Title" name's sides worked out from the track.
 
-It does not cover the hooks in `LocalFileInfo.x`, the lyrics engine asking for the new key
+It does not cover Spotify's image-loader hook or metadata consumers, the lyrics engine asking for the new key
 (`Shared/Lyrics/KaraokeSource.x`) or the Imported LRC files page.
+
+Cover Save writes a fresh UUID JPEG synchronously on main, publishes its reference, then removes the
+previous file in the same turn. Picker work already limits the image to 1200 pixels off main.
+The check verifies bounded main-thread encoding, legacy UUID loading, reference-before-removal,
+and a changed cover URL on every replacement. There is no sweep or deterministic naming.
+Unavailable/invalid/protected initial cache reads still recover later.
+Cover loading remains asynchronous. `now-playing.m` runs the real Logos observer with a
+fake player/extras sink: it blocks a worker read across a track change, rejects the stale result, then
+verifies edited/original-title artwork and the synchronous memory-only system artwork callback.
 
 Imports now read at most 1 MB + 1 on a worker queue and complete on main. The LRC check includes an
 8 GiB sparse input rejected without loading it, and a blocked old read across delete/reimport to prove

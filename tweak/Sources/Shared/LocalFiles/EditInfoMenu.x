@@ -75,8 +75,7 @@ static NSString *trimmed(NSString *text) {
     _tags = SGLocalFileTags(uri) ?: @{};
     _shown = SGLocalFileInfo(uri) ?: @{};
     NSString *path = SGLocalFileCoverPath(SGLocalFileEditFor(uri));
-    _cover = path ? [UIImage imageWithContentsOfFile:path] : nil;
-    _hasStoredCover = _cover != nil;
+    _hasStoredCover = path != nil;
 
     NSMutableArray *fields = [NSMutableArray array], *labels = [NSMutableArray array], *stacks = [NSMutableArray array], *widths = [NSMutableArray array];
     for (NSUInteger i = 0; i < fieldKeys().count; i++) {
@@ -132,6 +131,20 @@ static NSString *trimmed(NSString *text) {
     [self showCover];
     [self changed];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(fitLabels) name:UIContentSizeCategoryDidChangeNotification object:nil];
+    if (_hasStoredCover) {
+        NSUInteger request = ++_coverRequest;
+        _coverLoading = YES;
+        [self changed];
+        __weak SGLocalFileEditor *weakSelf = self;
+        SGLocalFileLoadCover(_uri, ^(UIImage *image) {
+            SGLocalFileEditor *editor = weakSelf;
+            if (!editor || request != editor->_coverRequest) return;
+            editor->_coverLoading = NO;
+            editor->_cover = image;
+            [editor showCover];
+            [editor changed];
+        });
+    }
 }
 
 - (void)dealloc {

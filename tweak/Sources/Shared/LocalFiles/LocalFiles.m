@@ -20,16 +20,31 @@ BOOL SGLocalFileIs(NSString *uri) {
     return [uri isKindOfClass:NSString.class] && [uri hasPrefix:kLocalPrefix];
 }
 
+// nil means unknown/unavailable, not an authoritative empty collection. In particular a locked
+// launch must not permanently cache an empty table.
+static NSDictionary *readStoredEdits(void) {
+    if (!UIApplication.sharedApplication.isProtectedDataAvailable) return nil;
+    id stored = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLocalFileEdits];
+    if (![stored isKindOfClass:NSDictionary.class]) return nil;
+    for (id edit in [stored allValues]) {
+        if (![edit isKindOfClass:NSDictionary.class]) return nil;
+        id cover = edit[@"cover"];
+        if (cover && (![cover isKindOfClass:NSString.class] || ![cover length] ||
+                      ![cover isEqual:[cover lastPathComponent]])) return nil;
+    }
+    return UIApplication.sharedApplication.isProtectedDataAvailable ? stored : nil;
+}
+
 static NSDictionary<NSString *, NSDictionary *> *allEdits(void) {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        id stored = [NSUserDefaults.standardUserDefaults dictionaryForKey:SGKeyLocalFileEdits];
-        os_unfair_lock_lock(&sg_lock);
-        sg_edits = [stored isKindOfClass:NSDictionary.class] ? stored : @{};
-        os_unfair_lock_unlock(&sg_lock);
-    });
     os_unfair_lock_lock(&sg_lock);
     NSDictionary *edits = sg_edits;
+    os_unfair_lock_unlock(&sg_lock);
+    if (edits) return edits;
+    NSDictionary *stored = readStoredEdits();
+    if (!stored) return @{}; // a temporary read result only; retry after data becomes available
+    os_unfair_lock_lock(&sg_lock);
+    if (!sg_edits) sg_edits = stored; // do not overwrite a concurrent publication
+    edits = sg_edits;
     os_unfair_lock_unlock(&sg_lock);
     return edits;
 }
@@ -166,6 +181,26 @@ UIImage *SGLocalFileThumbnail(UIImage *image) {
     }];
 }
 
+static dispatch_queue_t coverQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("spotifyglass.localFiles.covers", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+void SGLocalFileLoadCover(NSString *uri, void (^completion)(UIImage *)) {
+    NSString *path = SGLocalFileCoverPath(SGLocalFileEditFor(uri));
+    dispatch_async(coverQueue(), ^{
+        UIImage *image = path ? SGLocalFileReadCover([NSURL fileURLWithPath:path]) : nil;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSString *current = SGLocalFileCoverPath(SGLocalFileEditFor(uri));
+            completion([path isEqualToString:current] ? image : nil);
+        });
+    });
+}
+
 static NSString *writeCover(UIImage *image) {
     NSData *data = UIImageJPEGRepresentation(SGLocalFileThumbnail(image), 0.9);
     NSString *name = [NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"jpg"];
@@ -194,7 +229,6 @@ void SGLocalFileSaveEdit(NSString *uri, NSDictionary<NSString *, NSString *> *na
     NSString *newCover = cover ? writeCover(cover) : nil;
     if (newCover) edit[@"cover"] = newCover;
     else if (keepCover && oldCover) edit[@"cover"] = old[@"cover"];
-    if (oldCover && ![edit[@"cover"] isEqual:old[@"cover"]]) [NSFileManager.defaultManager removeItemAtPath:oldCover error:nil];
 
     // The lyrics key changes with the names only: a cover alone leaves the lyrics where they are, and the
     // file's own names go back to the bare URI, whose lyrics may still be kept.
@@ -213,6 +247,7 @@ void SGLocalFileSaveEdit(NSString *uri, NSDictionary<NSString *, NSString *> *na
         [edits removeObjectForKey:uri];
     }
     storeEdits(edits);
+    if (oldCover && ![edit[@"cover"] isEqual:old[@"cover"]]) [NSFileManager.defaultManager removeItemAtPath:oldCover error:nil];
     SGLog(@"local files: %@ %@", uri, edit.count ? [NSString stringWithFormat:@"edited: %@", edit] : @"back to its own tags");
     changed(uri);
 }

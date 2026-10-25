@@ -44,29 +44,31 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
 
 @implementation SGLocalFileNowPlaying {
     NSString *_track;
+    NSUInteger _request;
 }
 
 // Spotify's info is matched by its title, which is the edited one when Spotify built it from the
 // player's track and the file's own when it did not, so the artwork rides on either.
 - (void)show:(SPTPlayerState *)state {
     NSString *uri = SGURIString(state.track.URI);
-    NSString *path = SGLocalFileCoverPath(SGLocalFileEditFor(uri));
-    UIImage *cover = path ? [UIImage imageWithContentsOfFile:path] : nil;
-    if (!cover) {
-        SGNowPlayingSetExtras(@"localFiles", nil, nil);
-        SGNowPlayingSetExtras(@"localFiles.tags", nil, nil);
-        return;
-    }
-    MPMediaItemArtwork *artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:cover.size requestHandler:^UIImage *(CGSize size) {
-        return cover;
-    }];
-    SGNowPlayingSetExtras(@"localFiles", @{MPMediaItemPropertyArtwork: artwork}, SGLocalFileInfo(uri)[@"title"]);
-    SGNowPlayingSetExtras(@"localFiles.tags", @{MPMediaItemPropertyArtwork: artwork}, SGLocalFileTags(uri)[@"title"]);
+    NSUInteger request = ++_request;
+    SGNowPlayingSetExtras(@"localFiles", nil, nil);
+    SGNowPlayingSetExtras(@"localFiles.tags", nil, nil);
+    if (!SGLocalFileCoverPath(SGLocalFileEditFor(uri))) return;
+    SGLocalFileLoadCover(uri, ^(UIImage *cover) {
+        if (!cover || request != self->_request || ![uri isEqualToString:self->_track]) return;
+        // This synchronous system callback only returns the already-decoded image; it does no IO.
+        MPMediaItemArtwork *artwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:cover.size requestHandler:^UIImage *(CGSize size) {
+            return cover;
+        }];
+        SGNowPlayingSetExtras(@"localFiles", @{MPMediaItemPropertyArtwork: artwork}, SGLocalFileInfo(uri)[@"title"]);
+        SGNowPlayingSetExtras(@"localFiles.tags", @{MPMediaItemPropertyArtwork: artwork}, SGLocalFileTags(uri)[@"title"]);
+    });
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     NSString *track = SGURIString(state.track.URI);
-    if (!track || [track isEqualToString:_track]) return;
+    if (track == _track || [track isEqualToString:_track]) return;
     _track = track;
     [self show:state];
 }
@@ -94,13 +96,16 @@ static NSDictionary *withEdit(NSDictionary *metadata, NSString *uri) {
         %orig;
         return;
     }
-    NSData *data = [NSData dataWithContentsOfFile:path];
-    if (!data) {
-        SGLog(@"local files: the cover %@ is gone, the track shows none", path.lastPathComponent);
-        %orig;
-        return;
-    }
-    [self dispatchSuccess:data];
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSData *data = [NSData dataWithContentsOfFile:path];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (data) [self dispatchSuccess:data];
+            else {
+                SGLog(@"local files: the cover %@ is gone, the track shows none", path.lastPathComponent);
+                %orig;
+            }
+        });
+    });
 }
 %end
 

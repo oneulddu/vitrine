@@ -22,3 +22,10 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -ifr
     -fobjc-arc -g -Wall -Werror -I"$SRC" "$HERE/cover.m" "$SRC/Shared/LocalFiles/LocalCover.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
     -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Foundation -framework ImageIO -o "$OUT/cover"
 CFFIXED_USER_HOME="$OUT/home" "$OUT/cover"
+# The actual Logos observer over a fake player and now-playing extras sink.
+"${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "$SRC/Shared/LocalFiles/LocalFileInfo.x" > "$OUT/LocalFileInfo.m"
+xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
+    -fobjc-arc -g -Wall -Werror -I"$SRC" -I"$SRC/Shared/LocalFiles" \
+    "$HERE/now-playing.m" "$OUT/LocalFileInfo.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
+    -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Foundation -framework ImageIO -o "$OUT/now-playing"
+CFFIXED_USER_HOME="$OUT/home" "$OUT/now-playing"
