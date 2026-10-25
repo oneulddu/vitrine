@@ -1,13 +1,14 @@
 // The plays Listening stats counts, kept on the phone: recorded as they happen, merged in from Spotify's own
-// data export, and added up into tops, chart bars and streaks for a calendar period. Foundation only, so the Mac harness
-// (harness/listening-stats) builds it as the tweak does.
+// data export, and added up into tops, chart bars and streaks for a calendar period. The Mac harness
+// (harness/listening-stats) builds the same persistence code; iOS also holds a background-task assertion.
 //
 // The log is a text file of one play per line, appended to as plays end, so recording costs one write:
 //     end <tab> ms <tab> uri <tab> title <tab> artist <tab> album
 // `end` is when the play stopped, in Unix seconds, which is what both of Spotify's export shapes record.
 //
-// Threading: an SGPlayLog is used from one thread (the main one in the tweak). The parsers are pure and
-// run on any.
+// Entry points and snapshots belong to main. Loading/imports run on a serial IO queue.
+// Recorder writes append and sync in order on a separate queue, never waiting for imports or blocking main.
+// The parsers are pure and run on any thread. One live writer owns a given path.
 #import <Foundation/Foundation.h>
 
 @interface SGPlay : NSObject
@@ -15,7 +16,7 @@
 @property (nonatomic) int64_t ms;    // how long it was listened to
 @property (nonatomic, copy) NSString *uri, *title, *artist, *album;   // uri and album may be empty, never nil
 // Parser-only provenance. Vitrine backups retain distinct nearby plays and deduplicate exact rows;
-// Spotify exports use the tolerant title/artist/time match described on -merge:.
+// Spotify exports use the tolerant title/artist/time match described on -merge:completion:.
 @property (nonatomic) BOOL exactImport;
 @end
 
@@ -24,6 +25,12 @@ FOUNDATION_EXPORT NSNotificationName const SGPlayLogDidChangeNotification;
 // A play counts once it has run 30 s, or half of a track shorter than a minute.
 enum { SGPlayMinimumMs = 30000 };
 BOOL SGPlayCounts(double listenedSeconds, double durationSeconds);
+
+// One play's wall-clock listening intervals. A pause preserves the last listened instant.
+@interface SGPlayClock : NSObject
+@property (nonatomic, readonly) NSTimeInterval listenedSeconds, endedAt;
+- (void)setPlaying:(BOOL)playing at:(NSTimeInterval)unixSeconds;
+@end
 
 // Vitrine's versioned history object, or either Spotify shape: StreamingHistory_music_*.json (endTime,
 // artistName, trackName, msPlayed) or the extended Streaming_History_Audio_*.json (ts, ms_played,
@@ -47,17 +54,23 @@ SGHistoryImport *SGReadHistoryURLs(NSArray<NSURL *> *urls);
 
 @interface SGPlayLog : NSObject
 - (instancetype)initWithPath:(NSString *)path;
-// Every play, read from the file the first time it is asked for.
+// Last published immutable snapshot/error; neither getter performs IO or waits for the IO queue.
+// Before initial loading completes the snapshot contains only newly recorded plays.
 @property (nonatomic, readonly) NSArray<SGPlay *> *plays;
 @property (nonatomic, readonly) NSError *loadError;
-// Main-thread entry/completion; initial TSV parsing happens off main. Records arriving meanwhile
-// remain in the append-only log and in the completed snapshot. A page should wait before reading plays.
+// Startup recovers the recorder journal and removes abandoned staging files off main.
 - (void)loadWithCompletion:(void (^)(void))completion;
 - (void)record:(SGPlay *)play;
+// Main-queue acknowledgement of all earlier recorder writes/erases, independent of imports.
+// Snapshots publish only durable plays. Loading/folding also wait off main for earlier writes.
+- (void)finishPendingWritesWithCompletion:(void (^)(NSError *error))completion;
+// UIApplicationWillTerminate only: waits at most one second for the recorder, never bulk work/main callbacks.
+- (BOOL)drainForTermination;
 // Adds the plays the log does not have yet, and answers how many that was. Spotify rows match the same
 // track and artist within 90 s, covering basic-export minute precision and clock drift. Vitrine rows
 // match all six persisted fields exactly, so a backup restores legitimate nearby repeats losslessly.
-- (NSUInteger)merge:(NSArray<SGPlay *> *)plays;
+- (void)merge:(NSArray<SGPlay *> *)plays completion:(void (^)(NSUInteger added, NSError *error))completion;
+// Clears the snapshot immediately; disk deletion follows earlier recorder writes on their queue.
 - (void)erase;
 @end
 

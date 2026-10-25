@@ -5,19 +5,20 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$(cd "$HERE/../../tweak/Sources" && pwd)
 SDK=$(xcrun --sdk macosx --show-sdk-path)
-mkdir -p "$HERE/build/home"
+OUT=${BUILD_DIR:-"$HERE/build"}
+mkdir -p "$OUT/home"
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
     -fobjc-arc -g -Wall -Werror -I"$SRC" "$HERE/check.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
-    -framework UIKit -framework CoreGraphics -framework Foundation -o "$HERE/build/check"
-CFFIXED_USER_HOME="$HERE/build/home" "$HERE/build/check"
+    -framework UIKit -framework CoreGraphics -framework Foundation -o "$OUT/check"
+CFFIXED_USER_HOME="$OUT/home" "$OUT/check"
 # The imported LRC files, with the lyrics engine's line timing as the tweak has it.
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
     -fobjc-arc -g -Wall -Werror -I"$SRC" "$HERE/lrc.m" "$SRC/Shared/LocalFiles/LocalLyrics.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
     "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
-    -framework UIKit -framework CoreGraphics -framework Foundation -o "$HERE/build/lrc"
-CFFIXED_USER_HOME="$HERE/build/home" "$HERE/build/lrc"
+    -framework UIKit -framework CoreGraphics -framework Foundation -o "$OUT/lrc"
+CFFIXED_USER_HOME="$OUT/home" "$OUT/lrc"
 # Cover fallback, including the malformed image URI that crashed Spotify 9.1.90.
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
     -fobjc-arc -g -Wall -Werror -I"$SRC" "$HERE/cover.m" "$SRC/Shared/LocalFiles/LocalCover.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
-    -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Foundation -o "$HERE/build/cover"
-CFFIXED_USER_HOME="$HERE/build/home" "$HERE/build/cover"
+    -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Foundation -o "$OUT/cover"
+CFFIXED_USER_HOME="$OUT/home" "$OUT/cover"

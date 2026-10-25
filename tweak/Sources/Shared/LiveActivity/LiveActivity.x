@@ -200,7 +200,7 @@ static NSString *lyricsLine(NSString *trackID, NSString **next, NSString **trans
     SGKaraokeLine *current = lines[index];
     BOOL nextFarOff = index + 1 == (NSInteger)lines.count || lines[index + 1].start - position > kBreakMs;
     if (position > current.end + kBreakMs && nextFarOff) return @"♪";
-    *translation = current.translation;
+    *translation = SGLyricsShownTranslation(current);
     return SGKaraokeLineText(current);
 }
 
@@ -327,16 +327,19 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     NSDate *trackStart = nil, *trackEnd = nil;
     NSNumber *pausedAt = nil;
     static NSDate *sentStart;
-    if (duration > 0 && position >= 0) {
+    double rate = state.playbackSpeed;
+    if (duration > 0 && position >= 0 && (paused || (isfinite(rate) && rate > 0))) {
         double played = position / 1000.0;
-        trackStart = [NSDate dateWithTimeIntervalSinceNow:-played];
+        // A paused bar uses its fraction, not dates; no rate is needed while stopped.
+        double timelineRate = paused ? 1 : rate;
+        trackStart = [NSDate dateWithTimeIntervalSinceNow:-played / timelineRate];
         trackStart = [NSDate dateWithTimeIntervalSince1970:round(trackStart.timeIntervalSince1970)];
         // Playing, the start only moves on a seek or a new track; paused, it creeps on with the clock and
         // the bar is drawn from pausedAt, so it is left out of what tells a new state.
         if (paused) pausedAt = @(MIN(1, played / duration));
         else if (sentStart && fabs([trackStart timeIntervalSinceDate:sentStart]) < kStartSlack) trackStart = sentStart;
         else sentStart = trackStart;
-        trackEnd = [trackStart dateByAddingTimeInterval:duration];
+        trackEnd = [trackStart dateByAddingTimeInterval:duration / timelineRate];
     }
 
     NSMutableArray<NSString *> *titles = [NSMutableArray array], *artists = [NSMutableArray array], *uris = [NSMutableArray array];
@@ -363,6 +366,7 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
         @(tab).stringValue, title, artist, shuffle ? @"1" : @"0", @(repeatMode).stringValue,
         @((long long)sleepEnd.timeIntervalSince1970).stringValue, @(sleepMode).stringValue, tint ?: @"", translation ?: @"",
         paused ? @"" : @((long long)trackStart.timeIntervalSince1970).stringValue, paused ? @(round(pausedAt.doubleValue * 100)).stringValue : @"",
+        paused ? @"" : @((long long)trackEnd.timeIntervalSince1970).stringValue,
         cover ? sg_artTrack : @"", @(textSize).stringValue, @(alignment).stringValue, noLyrics ? @"1" : @"0",
         @(withoutLyrics).stringValue, @(colors).stringValue, accent ?: @"", progressBar ? @"1" : @"0", nil];
     for (NSUInteger i = 0; i < titles.count; i++) [parts addObject:[NSString stringWithFormat:@"%@\t%@\t%@", titles[i], artists[i], uris[i]]];

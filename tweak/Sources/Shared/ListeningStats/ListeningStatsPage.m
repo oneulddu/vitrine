@@ -762,15 +762,22 @@ static UIButton *stepButton(NSString *symbol) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         SGHistoryImport *result = SGReadHistoryURLs(urls);
         dispatch_async(dispatch_get_main_queue(), ^{
-            sg_importing = NO;
             if (!result.files) {
+                sg_importing = NO;
                 [page.tableView reloadData];
                 showAlert(SGL(@"settings.stats.alert.no_history_found.title", @"No listening history found"), SGL(@"settings.stats.alert.no_history_found.message", @"Choose a Vitrine history export, Spotify StreamingHistory_music or Streaming_History_Audio JSON files, their ZIP, or a folder containing JSON files. Unreadable, unsupported or oversized files are skipped."));
                 return;
             }
-            NSUInteger added = [SGListeningLog() merge:result.plays];
-            showAlert(SGL(@"settings.stats.alert.imported.title", @"Imported"), [NSString stringWithFormat:SGL(@"settings.stats.alert.imported.message", @"%@ added from %lu files. %lu duplicate plays and %lu unreadable, unsupported or over-limit items skipped."),
-                playsText(added), (unsigned long)result.files, (unsigned long)(result.plays.count - added), (unsigned long)result.skipped]);
+            [SGListeningLog() merge:result.plays completion:^(NSUInteger added, NSError *error) {
+                sg_importing = NO;
+                [page.tableView reloadData];
+                if (error) {
+                    showAlert(SGL(@"settings.stats.error.load", @"Could not load history"), error.localizedDescription);
+                    return;
+                }
+                showAlert(SGL(@"settings.stats.alert.imported.title", @"Imported"), [NSString stringWithFormat:SGL(@"settings.stats.alert.imported.message", @"%@ added from %lu files. %lu duplicate plays and %lu unreadable, unsupported or over-limit items skipped."),
+                    playsText(added), (unsigned long)result.files, (unsigned long)(result.plays.count - added), (unsigned long)result.skipped]);
+            }];
         });
     });
 }
@@ -781,7 +788,7 @@ static SGHistoryPicker *historyPicker(void) {
     return delegate;
 }
 static BOOL busy(SGListeningPage *page) {
-    return !page || page.loading || SGListeningLog().loadError || sg_importing || sg_exporting || sg_picking;
+    return !page || sg_importing || sg_exporting || sg_picking || page.loading || SGListeningLog().loadError;
 }
 static void pickExport(SGListeningPage *page, BOOL folder) {
     if (busy(page)) return;

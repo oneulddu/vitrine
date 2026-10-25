@@ -171,24 +171,31 @@ static SGLRCSheet *sheetFrom(NSString *lrc) {
 
 // Read once each; an import or a delete starts over.
 static NSMutableDictionary<NSString *, SGLRCSheet *> *sg_sheets;
+static NSUInteger sg_sheetGeneration;
 
 static SGLRCSheet *sheetNamed(NSString *name) {
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ sg_sheets = [NSMutableDictionary dictionary]; });
-    @synchronized (sg_sheets) {
+    NSUInteger generation;
+    @synchronized (SGLRCSheet.class) {
+        if (!sg_sheets) sg_sheets = [NSMutableDictionary dictionary];
         SGLRCSheet *kept = sg_sheets[name];
         if (kept) return kept;
+        generation = sg_sheetGeneration;
     }
     NSString *text = [NSString stringWithContentsOfFile:[directory() stringByAppendingPathComponent:name] encoding:NSUTF8StringEncoding error:nil];
     SGLRCSheet *sheet = text ? sheetFrom(text) : nil;
     if (!sheet) return nil;
-    @synchronized (sg_sheets) { sg_sheets[name] = sheet; }
+    @synchronized (SGLRCSheet.class) {
+        if (generation != sg_sheetGeneration) return nil;
+        sg_sheets[name] = sheet;
+    }
     return sheet;
 }
 
 static void forgetSheets(void) {
-    if (!sg_sheets) return;
-    @synchronized (sg_sheets) { [sg_sheets removeAllObjects]; }
+    @synchronized (SGLRCSheet.class) {
+        sg_sheetGeneration++;
+        [sg_sheets removeAllObjects];
+    }
 }
 
 #pragma mark - matching
@@ -323,25 +330,7 @@ static NSString *freeName(NSString *given) {
     return name;
 }
 
-NSString *SGImportLRC(NSURL *url, NSString *uri, NSError **error) {
-    BOOL scoped = [url startAccessingSecurityScopedResource];
-    NSError *readError = nil;
-    NSData *data = [NSData dataWithContentsOfURL:url options:0 error:&readError];
-    if (scoped) [url stopAccessingSecurityScopedResource];
-    NSString *reason = nil, *text = nil;
-    if (!data) reason = readError.localizedDescription ?: @"The file could not be read.";
-    else if (!data.length) reason = @"The file is empty.";
-    else if (data.length > kMostBytes) reason = @"The file is over 1 MB, too large for lyrics.";
-    else {
-        text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
-            ?: [[NSString alloc] initWithData:data encoding:NSUTF16StringEncoding];
-        if (!text) reason = @"The file is not UTF-8 or UTF-16 text.";
-        else if (![text containsString:@"]"]) reason = @"The file has no LRC tags or timestamps.";
-    }
-    if (reason) {
-        if (error) *error = refusal(reason);
-        return nil;
-    }
+static NSString *storeImportedText(NSString *text, NSURL *url, NSString *uri, NSError **error) {
     BOOL first = SGImportedLRCFiles().count == 0;
     NSString *name = freeName(url.lastPathComponent);
     NSError *writeError = nil;
@@ -361,6 +350,33 @@ NSString *SGImportLRC(NSURL *url, NSString *uri, NSError **error) {
     SGLog(@"lrc: imported %@%@", name, bare ? [@" for " stringByAppendingString:bare] : @"");
     changed();
     return name;
+}
+
+void SGImportLRC(NSURL *url, NSString *uri, void (^completion)(NSString *, NSError *)) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        BOOL scoped = [url startAccessingSecurityScopedResource];
+        NSError *error;
+        NSFileHandle *handle = [NSFileHandle fileHandleForReadingFromURL:url error:&error];
+        NSData *data = [handle readDataUpToLength:kMostBytes + 1 error:&error];
+        NSError *closeError;
+        if (handle && ![handle closeAndReturnError:&closeError]) error = error ?: closeError;
+        if (scoped) [url stopAccessingSecurityScopedResource];
+        NSString *reason = nil, *text = nil;
+        if (error || !data) reason = error.localizedDescription ?: @"The file could not be read.";
+        else if (!data.length) reason = @"The file is empty.";
+        else if (data.length > kMostBytes) reason = @"The file is over 1 MB, too large for lyrics.";
+        else {
+            text = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
+                ?: [[NSString alloc] initWithData:data encoding:NSUTF16StringEncoding];
+            if (!text) reason = @"The file is not UTF-8 or UTF-16 text.";
+            else if (![text containsString:@"]"]) reason = @"The file has no LRC tags or timestamps.";
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            NSError *failure = reason ? refusal(reason) : nil;
+            NSString *name = failure ? nil : storeImportedText(text, url, uri, &failure);
+            completion(name, failure);
+        });
+    });
 }
 
 BOOL SGDeleteImportedLRC(NSString *name) {

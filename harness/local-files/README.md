@@ -19,6 +19,11 @@ a rename's key and gone with a delete, and the match by title and artist, folded
 It does not cover the hooks in `LocalFileInfo.x`, the lyrics engine asking for the new key
 (`Shared/Lyrics/KaraokeSource.x`) or the Imported LRC files page.
 
+Imports now read at most 1 MB + 1 on a worker queue and complete on main. The LRC check includes an
+8 GiB sparse input rejected without loading it, and a blocked old read across delete/reimport to prove
+that an invalidated cache cannot be repopulated with old lyrics. `BUILD_DIR` selects an isolated output/home
+directory for a run without touching existing harness artifacts.
+
 `cover.m` also exercises the real fallback-cover resolver against a stand-in for Spotify 9.1.90's
 unchecked `spt_localFileImagePath`. Before the fix, a one-part metadata URL reproduces the recorded
 `NSRangeException` (index 2 in an array of one). It checks malformed and unrelated URLs, valid absolute

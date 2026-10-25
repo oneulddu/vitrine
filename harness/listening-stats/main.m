@@ -4,9 +4,130 @@
 //     ./build.sh && build/listening-stats
 #import <Foundation/Foundation.h>
 #import "Shared/ListeningStats/SGPlayLog.h"
+#include <sys/resource.h>
+#include <signal.h>
+#include <unistd.h>
+#include <dlfcn.h>
+#include <stdatomic.h>
+#include <errno.h>
+#import <objc/runtime.h>
+
+// Link-time interposition of the production POSIX boundary, not a product-only test hook.
+// Hold one real fsync until the caller explicitly releases it; a broken synchronous implementation
+// times out with an ordinary write error instead of hanging or crashing the harness.
+static atomic_bool stallNextSync, stalledSyncTimedOut, failNextSync;
+static dispatch_semaphore_t syncEntered, releaseSync;
+int fsync(int fd) {
+    static int (*realSync)(int);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        realSync = dlsym(RTLD_NEXT, "fsync");
+        if (!realSync) { fprintf(stderr, "cannot resolve system fsync\n"); exit(1); }
+    });
+    if (atomic_exchange(&failNextSync, false)) { errno = ENOSPC; return -1; }
+    if (atomic_exchange(&stallNextSync, false)) {
+        dispatch_semaphore_signal(syncEntered);
+        if (dispatch_semaphore_wait(releaseSync, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) {
+            atomic_store(&stalledSyncTimedOut, true);
+            errno = ETIMEDOUT;
+            return -1;
+        }
+    }
+    return realSync(fd);
+}
+
+// Pause one scheduler barrier before its block runs. The storage probes below let a load read
+// pre-erase bytes while deletion is queued behind that barrier, then allow deletion to complete.
+// This exercises public persistence operations without inspecting the log's queues or ivars.
+static atomic_bool pauseNextBarrier;
+static dispatch_semaphore_t barrierEntered, releaseBarrier, canonicalRead;
+void dispatch_sync(dispatch_queue_t queue, dispatch_block_t block) {
+    static void (*realSync)(dispatch_queue_t, dispatch_block_t);
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        realSync = dlsym(RTLD_NEXT, "dispatch_sync");
+        if (!realSync) { fprintf(stderr, "cannot resolve system dispatch_sync\n"); exit(1); }
+    });
+    if (atomic_exchange(&pauseNextBarrier, false)) {
+        realSync(queue, ^{
+            dispatch_semaphore_signal(barrierEntered);
+            if (dispatch_semaphore_wait(releaseBarrier, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) {
+                fprintf(stderr, "scheduler barrier probe timed out\n"); exit(1);
+            }
+            block();
+        });
+    } else realSync(queue, block);
+}
+
+static NSString *eraseRacePath;
+static NSString *(*originalReadText)(id, SEL, NSString *, NSStringEncoding, NSError **);
+static BOOL (*originalRemoveItem)(id, SEL, NSString *, NSError **);
+static NSString *readRaceText(id object, SEL selector, NSString *path, NSStringEncoding encoding, NSError **error) {
+    NSString *text = originalReadText(object, selector, path, encoding, error);
+    if ([path isEqual:eraseRacePath]) dispatch_semaphore_signal(canonicalRead);
+    return text;
+}
+static BOOL removeRaceItem(id object, SEL selector, NSString *path, NSError **error) {
+    if ([path isEqual:eraseRacePath] &&
+        dispatch_semaphore_wait(canonicalRead, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC))) {
+        fprintf(stderr, "canonical-read probe timed out\n"); exit(1);
+    }
+    return originalRemoveItem(object, selector, path, error);
+}
 
 static int failures = 0;
 #define CHECK(cond, ...) do { if (cond) printf("ok    "); else { printf("FAIL  "); failures++; } printf(__VA_ARGS__); printf("\n"); } while (0)
+
+// The production API is asynchronous; test sequences wait while allowing its main completion to run.
+static NSUInteger mergeAndWait(SGPlayLog *log, NSArray *plays, NSError **error) {
+    __block BOOL done = NO;
+    __block NSUInteger count = 0;
+    __block NSError *failure;
+    [log merge:plays completion:^(NSUInteger added, NSError *reason) {
+        count = added; failure = reason; done = YES;
+    }];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:30];
+    while (!done && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    if (!done) { fprintf(stderr, "history merge timed out\n"); exit(1); }
+    if (error) *error = failure;
+    return count;
+}
+@interface SGPlayLog (Harness)
+- (NSUInteger)merge:(NSArray *)plays;
+@end
+@implementation SGPlayLog (Harness)
+- (NSUInteger)merge:(NSArray *)plays {
+    NSError *error;
+    NSUInteger added = mergeAndWait(self, plays, &error);
+    CHECK(!error, "merge completes without a persistence error");
+    return added;
+}
+@end
+
+static void loadAndWait(SGPlayLog *log) {
+    __block BOOL done = NO;
+    [log loadWithCompletion:^{ done = YES; }];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:30];
+    while (!done && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    if (!done) { fprintf(stderr, "history load timed out\n"); exit(1); }
+}
+static NSError *writesAndWait(SGPlayLog *log) {
+    __block BOOL done = NO;
+    __block NSError *failure;
+    [log finishPendingWritesWithCompletion:^(NSError *error) { failure = error; done = YES; }];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:10];
+    while (!done && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    if (!done) { fprintf(stderr, "recorder acknowledgement timed out\n"); exit(1); }
+    return failure;
+}
+static SGPlayLog *openLog(NSString *path) {
+    SGPlayLog *log = [[SGPlayLog alloc] initWithPath:path];
+    loadAndWait(log);
+    return log;
+}
 
 static NSData *json(id object) {
     return [NSJSONSerialization dataWithJSONObject:object options:0 error:nil];
@@ -249,7 +370,7 @@ static void localHistoryChecks(NSString *dir, NSArray<SGPlay *> *existing) {
     [log merge:@[play(1900000000, 40000, @"Another", @"Artist", @"Album")]];
     NSData *after = [NSData dataWithContentsOfFile:path];
     CHECK(after.length > before.length && [[after subdataWithRange:NSMakeRange(0, before.length)] isEqual:before], "TSV: importing appends without rewriting any existing byte");
-    SGPlayLog *reopened = [[SGPlayLog alloc] initWithPath:path];
+    SGPlayLog *reopened = openLog(path);
     CHECK(reopened.plays.count == records.count + 1 && reopened.plays[records.count - 1].ms == 12500, "TSV: imported local short play persists after reload");
     NSMutableDictionary *root = [[NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:nil] mutableCopy];
     root[@"version"] = @2;
@@ -305,9 +426,10 @@ static void localHistoryChecks(NSString *dir, NSArray<SGPlay *> *existing) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
     while (completions < 2 && deadline.timeIntervalSinceNow > 0)
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    CHECK(!writesAndWait(asyncLog), "recording during initial load is acknowledged independently");
     CHECK(completions == 2 && asyncLog.plays.count == records.count + 2 && [asyncLog.plays.lastObject.title isEqual:@"During load"],
           "async TSV load: both callbacks complete, concurrent recording included exactly once");
-    CHECK([[SGPlayLog alloc] initWithPath:path].plays.count == asyncLog.plays.count, "async TSV load: memory and append-only file agree");
+    CHECK(openLog(path).plays.count == asyncLog.plays.count, "async TSV load: memory and append-only file agree");
     SGPlayLog *erasedDuringLoad = [[SGPlayLog alloc] initWithPath:path];
     __block BOOL done = NO;
     [erasedDuringLoad loadWithCompletion:^{ done = YES; }];
@@ -316,6 +438,7 @@ static void localHistoryChecks(NSString *dir, NSArray<SGPlay *> *existing) {
     deadline = [NSDate dateWithTimeIntervalSinceNow:5];
     while (!done && deadline.timeIntervalSinceNow > 0)
         [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    CHECK(!writesAndWait(erasedDuringLoad), "erase and subsequent recording finish in order");
     CHECK(done && erasedDuringLoad.plays.count == 1 && [erasedDuringLoad.plays.firstObject.title isEqual:@"After erase"],
           "async TSV load: erase during loading cannot resurrect old records");
     NSString *corruptPath = [dir stringByAppendingPathComponent:@"corrupt.tsv"];
@@ -330,12 +453,295 @@ static void localHistoryChecks(NSString *dir, NSArray<SGPlay *> *existing) {
     CHECK(done && corrupt.loadError != nil, "async TSV load: corrupt encoding is an explicit error, not empty history");
 }
 
-int main(void) {
+static void persistenceChecks(NSString *dir) {
+    NSString *path = [dir stringByAppendingPathComponent:@"transaction.tsv"];
+    SGPlayLog *log = [[SGPlayLog alloc] initWithPath:path];
+    [log record:play(1000, 35000, @"Original", @"Artist", @"")];
+    [log merge:@[]]; // fold the committed journal before checking the canonical TSV bytes
+    NSData *before = [NSData dataWithContentsOfFile:path];
+    CHECK(log.plays.count == 1, "record is committed before becoming visible");
+
+    struct rlimit saved;
+    CHECK(getrlimit(RLIMIT_FSIZE, &saved) == 0, "read file-size limit for failed-write fixture");
+    struct rlimit limited = saved;
+    limited.rlim_cur = before.length + 12;
+    void (*handler)(int) = signal(SIGXFSZ, SIG_IGN);
+    CHECK(setrlimit(RLIMIT_FSIZE, &limited) == 0, "limit staged writes to provoke a real short write");
+    SGPlay *incoming = play(2000, 45000, @"This record cannot fit inside the file limit", @"Artist", @"");
+    NSError *error;
+    NSUInteger added = mergeAndWait(log, @[incoming], &error);
+    [log record:incoming];
+    CHECK(writesAndWait(log) != nil, "failed recorder write is reported through its acknowledgement");
+    CHECK(added == 0 && error && log.plays.count == 1 &&
+          [[NSData dataWithContentsOfFile:path] isEqual:before],
+          "failed import and recorder writes publish nothing and leave no truncated record");
+    CHECK(setrlimit(RLIMIT_FSIZE, &saved) == 0, "restore file-size limit");
+    signal(SIGXFSZ, handler);
+    CHECK([log merge:@[incoming]] == 1, "a failed addition remains eligible for a later successful import");
+
+    SGPlayLog *indexed = [[SGPlayLog alloc] initWithPath:[dir stringByAppendingPathComponent:@"indexed.tsv"]];
+    NSMutableArray *repeats = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 10000; i++)
+        [repeats addObject:play(1000000 + i * 300, 180000, @"Repeat", @"Artist", @"")];
+    __block BOOL done = NO;
+    [indexed merge:repeats completion:^(NSUInteger count, NSError *failure) {
+        CHECK(count == 10000 && !failure, "indexed import retains ten thousand distinct repeated-track plays");
+        done = YES;
+    }];
+    [indexed record:play(5000000, 30000, @"Concurrent", @"Recorder", @"")];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:30];
+    while (!done && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    CHECK(!writesAndWait(indexed), "concurrent recorder write finishes without waiting for import completion");
+    CHECK(done && indexed.plays.count == 10001 &&
+          openLog([dir stringByAppendingPathComponent:@"indexed.tsv"]).plays.count == 10001,
+          "recording during bulk import survives exactly once in memory and on disk");
+    CHECK(([indexed merge:@[play(1000090, 30000, @"Repeat", @"Artist", @""),
+                            play(1000091, 30000, @"Repeat", @"Artist", @""),
+                            play(999910, 30000, @"Repeat", @"Artist", @""),
+                            play(999909, 30000, @"Repeat", @"Artist", @"")]] == 2),
+          "indexed matching keeps the inclusive 90-second boundary on either side");
+}
+
+static void recorderClockChecks(void) {
+    SGPlayClock *clock = [SGPlayClock new];
+    [clock setPlaying:YES at:1000];
+    [clock setPlaying:NO at:1035];
+    [clock setPlaying:NO at:86400];
+    CHECK(clock.listenedSeconds == 35 && clock.endedAt == 1035,
+          "a paused play ends at its last listened instant, not the next day's track switch");
+    [clock setPlaying:YES at:86400];
+    [clock setPlaying:NO at:86410];
+    [clock setPlaying:NO at:90000];
+    CHECK(clock.listenedSeconds == 45 && clock.endedAt == 86410,
+          "resuming adds only the new playing interval and preserves its end through termination");
+}
+
+// An import blocked while serializing its staged row. Neither the main-thread recorder nor
+// snapshot getters may depend on this worker returning. Each probe runs in a separate process.
+static dispatch_semaphore_t importEntered;
+@interface SGBlockedImportPlay : SGPlay
+@end
+@implementation SGBlockedImportPlay
+- (NSString *)uri {
+    dispatch_semaphore_signal(importEntered);
+    dispatch_semaphore_t never = dispatch_semaphore_create(0);
+    dispatch_semaphore_wait(never, dispatch_time(DISPATCH_TIME_NOW, 60 * NSEC_PER_SEC));
+    fprintf(stderr, "blocked import probe exceeded its lifetime\n");
+    _exit(91);
+}
+@end
+
+static void interruptedImport(NSString *path, NSString *mode) {
+    BOOL erase = [mode isEqual:@"erase"];
+    SGPlayLog *log = openLog(path);
+    importEntered = dispatch_semaphore_create(0);
+    SGPlay *blocked = [SGBlockedImportPlay new];
+    blocked.end = 2000; blocked.ms = 30000;
+    blocked.title = @"Uncommitted import"; blocked.artist = @"Artist"; blocked.album = @"";
+    [log merge:@[blocked] completion:^(NSUInteger added, NSError *error) { _exit(92); }];
+    if (dispatch_semaphore_wait(importEntered, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC))) _exit(93);
+    if ([mode isEqual:@"terminate"]) {
+        syncEntered = dispatch_semaphore_create(0);
+        releaseSync = dispatch_semaphore_create(0);
+        atomic_store(&stallNextSync, true);
+        [log record:play(3000, 30000, @"Queued first", @"Artist", @"")];
+        if (dispatch_semaphore_wait(syncEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC))) _exit(99);
+        [log record:play(4000, 30000, @"Final at termination", @"Artist", @"")];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 10), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            dispatch_semaphore_signal(releaseSync);
+        });
+        if (![log drainForTermination]) _exit(100);
+        _exit(0); // no main-loop callback can acknowledge or finish the final record for us
+    }
+    [log record:play(3000, 30000, @"Recorded one", @"Artist", @"")];
+    [log record:play(4000, 30000, @"Recorded two", @"Artist", @"")];
+    if (writesAndWait(log)) _exit(97);
+    // These getters previously waited on the blocked queue. The parent enforces a bounded lifetime.
+    if (log.loadError || log.plays.count != 3) _exit(94);
+    if (erase) {
+        [log erase];
+        if (log.loadError || log.plays.count) _exit(95);
+        [log record:play(5000, 30000, @"After erase", @"Artist", @"")];
+        if (writesAndWait(log)) _exit(98);
+        if (log.loadError || log.plays.count != 1) _exit(96);
+    }
+    // No termination callback, bulk queue drain, or deallocation: acknowledged recorder writes survive.
+    _exit(0);
+}
+
+static void slowRecorderChecks(NSString *dir) {
+    for (NSNumber *erasing in @[@NO, @YES]) {
+        NSString *path = [dir stringByAppendingPathComponent:erasing.boolValue ? @"slow-erase.tsv" : @"rapid.tsv"];
+        SGPlayLog *log = openLog(path);
+        syncEntered = dispatch_semaphore_create(0);
+        releaseSync = dispatch_semaphore_create(0);
+        atomic_store(&stalledSyncTimedOut, false);
+        atomic_store(&stallNextSync, true);
+        [log record:play(100, 30000, @"First", @"Artist", @"")];
+        CHECK(!atomic_load(&stalledSyncTimedOut), "record returns while its fsync is still blocked");
+        CHECK(!dispatch_semaphore_wait(syncEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)),
+              "slow-write probe reached the real persistence boundary");
+        [log record:play(200, 30000, @"Second", @"Artist", @"")];
+        [log record:play(300, 30000, @"Third", @"Artist", @"")];
+        CHECK(log.plays.count == 0 && !log.loadError, "snapshot/error readers stay responsive and do not publish uncommitted plays");
+        if (!erasing.boolValue)
+            CHECK(![log drainForTermination] && !atomic_load(&stalledSyncTimedOut),
+                  "termination drain times out without waiting indefinitely on a stalled recorder");
+        if (erasing.boolValue) {
+            [log erase];
+            CHECK(!atomic_load(&stalledSyncTimedOut), "erase returns without waiting for a pending fsync");
+            [log record:play(400, 30000, @"Survivor", @"Artist", @"")];
+        }
+        dispatch_semaphore_signal(releaseSync);
+        CHECK(!writesAndWait(log), "pending-write completion acknowledges durable writes and erase in order");
+        SGPlayLog *recovered = openLog(path);
+        NSArray *expected = erasing.boolValue ? @[@"Survivor"] : @[@"First", @"Second", @"Third"];
+        CHECK(!recovered.loadError && [[recovered.plays valueForKey:@"title"] isEqual:expected],
+              "rapid records recover in order; erase during a pending write cannot resurrect older plays");
+    }
+}
+
+static void eraseGenerationChecks(NSString *dir) {
+    Method readMethod = class_getClassMethod(NSString.class, @selector(stringWithContentsOfFile:encoding:error:));
+    Method removeMethod = class_getInstanceMethod(NSFileManager.class, @selector(removeItemAtPath:error:));
+    originalReadText = (void *)method_setImplementation(readMethod, (IMP)readRaceText);
+    originalRemoveItem = (void *)method_setImplementation(removeMethod, (IMP)removeRaceItem);
+    NSString *path = [dir stringByAppendingPathComponent:@"erase-generation.tsv"];
+    [@"10\t30000\t\tErased\tArtist\t\n" writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    eraseRacePath = path;
+    barrierEntered = dispatch_semaphore_create(0);
+    releaseBarrier = dispatch_semaphore_create(0);
+    canonicalRead = dispatch_semaphore_create(0);
+    atomic_store(&pauseNextBarrier, true);
+    SGPlayLog *log = [[SGPlayLog alloc] initWithPath:path];
+    CHECK(!dispatch_semaphore_wait(barrierEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)),
+          "initial load is concurrent with a queued erase");
+    [log erase];
+    dispatch_semaphore_signal(releaseBarrier);
+    CHECK(!writesAndWait(log), "concurrent erase is acknowledged");
+    [log merge:@[]]; // complete outstanding bulk reads without adding any new history
+    CHECK(!log.loadError && log.plays.count == 0,
+          "a load of pre-erase bytes cannot restore history after an acknowledged erase");
+    eraseRacePath = nil;
+    method_setImplementation(readMethod, (IMP)originalReadText);
+    method_setImplementation(removeMethod, (IMP)originalRemoveItem);
+}
+
+static void recorderRecoveryChecks(NSString *dir) {
+    NSString *path = [dir stringByAppendingPathComponent:@"transient-write.tsv"];
+    SGPlayLog *log = openLog(path);
+    atomic_store(&failNextSync, true);
+    [log record:play(100, 30000, @"Failed", @"Artist", @"")];
+    CHECK(writesAndWait(log) != nil && !log.loadError,
+          "recorder failure is acknowledged separately from the readable history's load status");
+    [log record:play(200, 30000, @"Recovered", @"Artist", @"")];
+    CHECK(!writesAndWait(log) && !log.loadError,
+          "a later successful record clears transient writer failure without erase or restart");
+    loadAndWait(log);
+    CHECK(!log.loadError && ([[openLog(path).plays valueForKey:@"title"] isEqual:@[@"Recovered"]]),
+          "non-destructive recovery persists only the successful record");
+}
+
+static void reviewPersistenceChecks(NSString *dir) {
+    slowRecorderChecks(dir);
+    eraseGenerationChecks(dir);
+    recorderRecoveryChecks(dir);
+    NSString *legacy = @"500\t30000\t\tLegacy\tArtist\t\n";
+    for (NSString *mode in @[@"keep", @"erase", @"terminate"]) {
+        BOOL erase = [mode isEqual:@"erase"];
+        NSString *path = [dir stringByAppendingPathComponent:[mode stringByAppendingString:@".tsv"]];
+        CHECK([legacy writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil], "prepare unchanged six-column legacy history");
+        NSString *abandoned = [path stringByAppendingString:@".11111111-1111-4111-8111-111111111111"];
+        [legacy writeToFile:abandoned atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSString *unrelated = [path stringByAppendingString:@".notes"];
+        [@"not owned by the writer" writeToFile:unrelated atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSTask *child = [NSTask new];
+        child.executableURL = [NSURL fileURLWithPath:NSProcessInfo.processInfo.arguments[0]];
+        child.arguments = @[@"--interrupted-import", path, mode];
+        NSError *error;
+        BOOL launched = [child launchAndReturnError:&error];
+        CHECK(launched, "launch interrupted-import probe");
+        if (!launched) continue;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            if (child.running) [child terminate];
+        });
+        [child waitUntilExit];
+        CHECK(child.terminationStatus == 0, "record and snapshot/error reads complete while the import disk queue is blocked");
+        if (child.terminationStatus != 0) continue;
+        if (!erase) {
+            NSFileHandle *tail = [NSFileHandle fileHandleForWritingAtPath:[path stringByAppendingString:@".journal"]];
+            [tail seekToEndOfFile];
+            [tail writeData:[@"incomplete final row" dataUsingEncoding:NSUTF8StringEncoding]];
+            [tail closeFile];
+        }
+        SGPlayLog *recovered = openLog(path);
+        NSArray *expected = erase ? @[@"After erase"] : [mode isEqual:@"terminate"] ?
+            @[@"Legacy", @"Queued first", @"Final at termination"] : @[@"Legacy", @"Recorded one", @"Recorded two"];
+        CHECK(!recovered.loadError && [[recovered.plays valueForKey:@"title"] isEqual:expected],
+              "process restart preserves committed recorder order, drops partial imports/tails, and respects erase");
+        NSArray *names = [NSFileManager.defaultManager contentsOfDirectoryAtPath:dir error:nil];
+        NSPredicate *owned = [NSPredicate predicateWithBlock:^BOOL(NSString *name, NSDictionary *bindings) {
+            return [name hasPrefix:[path.lastPathComponent stringByAppendingString:@"."]] && ![name hasSuffix:@".notes"];
+        }];
+        CHECK([names filteredArrayUsingPredicate:owned].count == 0 &&
+              [NSFileManager.defaultManager fileExistsAtPath:unrelated],
+              "startup reclaims writer stages/journals, preserving unrelated sibling files");
+        [recovered record:play(6000, 30000, @"Erase this journal", @"Artist", @"")];
+        [legacy writeToFile:abandoned atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [recovered erase];
+        CHECK(!writesAndWait(recovered), "erase acknowledges removal of writer-owned files");
+        CHECK(!recovered.loadError && openLog(path).plays.count == 0 &&
+              ![NSFileManager.defaultManager fileExistsAtPath:abandoned] &&
+              ![NSFileManager.defaultManager fileExistsAtPath:[path stringByAppendingString:@".journal"]],
+              "erase removes canonical history, unmerged records and abandoned clones");
+    }
+    // A crash after commit but before segment deletion must not duplicate a journal row.
+    NSString *path = [dir stringByAppendingPathComponent:@"committed.tsv"];
+    NSString *row = @"10\t30000\t\tOnce\tArtist\t\t22222222-2222-4222-8222-222222222222\n";
+    [row writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    [row writeToFile:[path stringByAppendingString:@".journal.00000000000000000001"] atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    SGPlayLog *once = openLog(path);
+    CHECK(!once.loadError && once.plays.count == 1 && [once.plays.firstObject.title isEqual:@"Once"],
+          "journal recovery is exactly-once across canonical commit and segment cleanup");
+    for (NSNumber *incomplete in @[@NO, @YES]) {
+        NSString *brokenPath = [dir stringByAppendingPathComponent:incomplete.boolValue ? @"broken-tail.tsv" : @"no-newline.tsv"];
+        NSString *canonical = incomplete.boolValue ? [legacy stringByAppendingString:@"123\tunfinished"]
+                                                   : [legacy substringToIndex:legacy.length - 1];
+        [canonical writeToFile:brokenPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        NSString *journal = [brokenPath stringByAppendingString:@".journal"];
+        [row writeToFile:journal atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        SGPlayLog *folded = openLog(brokenPath);
+        SGPlayLog *reopened = openLog(brokenPath);
+        NSArray *expected = @[@"Legacy", @"Once"];
+        CHECK(!folded.loadError && !reopened.loadError &&
+              [[folded.plays valueForKey:@"title"] isEqual:expected] &&
+              [[reopened.plays valueForKey:@"title"] isEqual:expected],
+              "unterminated legacy tail cannot absorb a journal play during a durable fold");
+    }
+    NSString *tailPath = [dir stringByAppendingPathComponent:@"startup-tail.tsv"];
+    [[row stringByAppendingString:@"unfinished"] writeToFile:[tailPath stringByAppendingString:@".journal"]
+                                                atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    SGPlayLog *early = [[SGPlayLog alloc] initWithPath:tailPath];
+    [early record:play(20, 30000, @"Before initial load", @"Artist", @"")];
+    loadAndWait(early);
+    CHECK(!early.loadError && ([[early.plays valueForKey:@"title"] isEqual:@[@"Once", @"Before initial load"]]) &&
+          openLog(tailPath).plays.count == 2,
+          "recording before startup finishes cannot append into a previous process's partial row");
+}
+
+int main(int argc, const char **argv) {
     @autoreleasepool {
-        NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"listening-stats-harness"];
+        if (argc == 4 && !strcmp(argv[1], "--interrupted-import"))
+            interruptedImport(@(argv[2]), @(argv[3]));
+        NSString *dir = [NSTemporaryDirectory() stringByAppendingPathComponent:NSUUID.UUID.UUIDString];
         NSString *exportDir = [dir stringByAppendingPathComponent:@"export"];
-        [NSFileManager.defaultManager removeItemAtPath:dir error:nil];
         [NSFileManager.defaultManager createDirectoryAtPath:[exportDir stringByAppendingPathComponent:@"__MACOSX"] withIntermediateDirectories:YES attributes:nil error:nil];
+        if (argc == 2 && !strcmp(argv[1], "--persistence-review")) {
+            reviewPersistenceChecks(dir);
+            [NSFileManager.defaultManager removeItemAtPath:dir error:nil];
+            return failures ? 1 : 0;
+        }
 
         // A fixed "now" on a whole minute, so the basic export's minute stamps land exactly.
         int64_t now = 1790000000 - 1790000000 % 60, day = 86400;
@@ -418,7 +824,7 @@ int main(void) {
         CHECK(added == 0, "importing the same files again adds nothing: %lu", (unsigned long)added);
         CHECK([log merge:@[play(now, 40000, @"Tab\there", @"New\nline", @"")]] == 1, "a title with a tab and an artist with a newline merge");
 
-        SGPlayLog *reread = [[SGPlayLog alloc] initWithPath:logPath];
+        SGPlayLog *reread = openLog(logPath);
         CHECK(reread.plays.count == 8, "the log reads back 8 plays: %lu", (unsigned long)reread.plays.count);
         SGPlay *last = reread.plays.lastObject;
         CHECK([last.title isEqualToString:@"Tab here"] && [last.artist isEqualToString:@"New line"], "tab and newline become spaces");
@@ -446,6 +852,9 @@ int main(void) {
         calendarChecks();
         periodChecks();
         localHistoryChecks(dir, reread.plays);
+        persistenceChecks(dir);
+        recorderClockChecks();
+        reviewPersistenceChecks(dir);
 
         // An export's size: 100k extended rows.
         NSMutableArray *big = [NSMutableArray arrayWithCapacity:100000];
@@ -466,7 +875,7 @@ int main(void) {
         NSUInteger again = [bigLog merge:bigPlays];
         double remerge = since(start);
         start = [NSDate date];
-        SGPlayLog *bigReread = [[SGPlayLog alloc] initWithPath:bigPath];
+        SGPlayLog *bigReread = openLog(bigPath);
         NSUInteger readBack = bigReread.plays.count;
         double load = since(start);
         start = [NSDate date];
@@ -485,6 +894,7 @@ int main(void) {
         printf("      100k rows: streaks + hourly buckets %.0f ms\n", calendar);
 
         printf(failures ? "\n%d FAILED\n" : "\nall passed\n", failures);
+        [NSFileManager.defaultManager removeItemAtPath:dir error:nil];
         return failures ? 1 : 0;
     }
 }

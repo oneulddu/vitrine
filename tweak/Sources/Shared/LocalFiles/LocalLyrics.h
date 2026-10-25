@@ -24,8 +24,8 @@ extern SGLyricsAsk SGImportedLRCAsk;
 NSArray<NSString *> *SGImportedLRCFiles(void);
 // Copies an .lrc file in (empty, over 1 MB, not UTF-8 or UTF-16, or with no "]" is refused, with an
 // error to show), linked to `uri` when that is a local file's. The name it is kept under, nil on a refusal.
-// Main thread.
-NSString *SGImportLRC(NSURL *url, NSString *uri, NSError **error);
+// Reads at most 1 MB + 1 off main. Entry and completion on main; completion gives the name or error.
+void SGImportLRC(NSURL *url, NSString *uri, void (^completion)(NSString *name, NSError *error));
 // Removes the file and any link to it. Main thread.
 BOOL SGDeleteImportedLRC(NSString *name);
 // The file linked to a local file, by its URI or its lyrics key; nil for none. Safe from any thread.

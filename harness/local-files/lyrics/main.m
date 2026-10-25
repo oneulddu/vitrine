@@ -100,7 +100,9 @@ static NSArray<UILabel *> *labelsIn(UIView *view) {
     }
     NSURL *file = [[NSURL fileURLWithPath:NSTemporaryDirectory()] URLByAppendingPathComponent:@"Vitrine - A Song of Our Own.lrc"];
     [sheet writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    check(SGImportLRC(file, uri, nil) != nil, @"imported and linked");
+    SGImportLRC(file, uri, ^(NSString *name, NSError *error) {
+        check(name != nil, @"imported and linked");
+    });
 
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     UIViewController *player = [UIViewController new];

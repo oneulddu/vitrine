@@ -4,6 +4,14 @@
 #include <errno.h>
 #include <compression.h>
 #include <dlfcn.h>
+#include <copyfile.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdatomic.h>
+#include <TargetConditionals.h>
+#if TARGET_OS_IOS
+#import <UIKit/UIKit.h>
+#endif
 #import "Core/SGLocalize.h"
 #import "SGPlayLog.h"
 
@@ -81,6 +89,20 @@ NSData *SGHistoryJSON(NSArray<SGPlay *> *plays, NSError **error) {
 BOOL SGPlayCounts(double listened, double duration) {
     return listened * 1000 >= SGPlayMinimumMs || (duration > 0 && listened >= duration / 2);
 }
+
+@implementation SGPlayClock {
+    BOOL _playing;
+    NSTimeInterval _since;
+}
+- (void)setPlaying:(BOOL)playing at:(NSTimeInterval)unixSeconds {
+    if (_playing) {
+        _listenedSeconds += unixSeconds - _since;
+        _endedAt = unixSeconds;
+    }
+    _playing = playing;
+    _since = unixSeconds;
+}
+@end
 
 static NSString *stringIn(id value) {
     return [value isKindOfClass:NSString.class] && [value length] ? value : nil;
@@ -347,92 +369,385 @@ static NSMutableArray<SGPlay *> *playsFromTSV(NSString *text) {
 
 @implementation SGPlayLog {
     NSString *_path;
+    dispatch_queue_t _io, _writer;
+    NSObject *_journalLock; // only journal append/rotation, erase, and the atomic commit; never bulk work
+    BOOL _journalPrepared;
+    _Atomic(NSUInteger) _generation;
+    NSUInteger _workerGeneration;
+    NSUInteger _appliedGeneration; // recorder queue: advances only after erase has run
+    NSError *_writerError; // recorder queue only
+    // IO queue only.
     NSMutableArray<SGPlay *> *_plays;
-    NSMutableArray<SGPlay *> *_duringLoad;
-    NSMutableArray<void (^)(void)> *_loadCompletions;
+    NSMutableSet<NSString *> *_recordIDs;
+    BOOL _ready;
     NSError *_loadError;
+    // Main only. Records not yet included in an IO snapshot are overlaid when it is published.
+    NSMutableArray<SGPlay *> *_visible;
+    NSMutableArray<NSDictionary *> *_pending;
+    NSError *_publishedError;
 }
 
 - (instancetype)initWithPath:(NSString *)path {
-    if ((self = [super init])) _path = [path copy];
+    if ((self = [super init])) {
+        _path = [path copy];
+        _io = dispatch_queue_create("spotifyglass.history.io", DISPATCH_QUEUE_SERIAL);
+        _writer = dispatch_queue_create("spotifyglass.history.recorder", DISPATCH_QUEUE_SERIAL);
+        _journalLock = [NSObject new];
+        _workerGeneration = NSUIntegerMax;
+        _visible = [NSMutableArray array];
+        _pending = [NSMutableArray array];
+        dispatch_async(_io, ^{
+            [self load];
+            [self publishWithCompletion:nil announce:NO];
+        });
+    }
     return self;
 }
 
-- (NSArray<SGPlay *> *)plays {
-    if (_plays) return _plays;
-    NSString *text = [NSString stringWithContentsOfFile:_path encoding:NSUTF8StringEncoding error:nil];
-    _plays = playsFromTSV(text);
-    return _plays;
+static NSError *historyPOSIXError(int code, NSString *path) {
+    return [NSError errorWithDomain:NSPOSIXErrorDomain code:code userInfo:@{NSFilePathErrorKey: path}];
 }
 
-- (NSError *)loadError { return _loadError; }
+// Acquired on main before enqueueing, released on main after acknowledgement or expiration.
+// UIKit gives in-flight journal writes time to finish when Spotify enters the background.
+static dispatch_block_t beginHistoryWriteTask(void) {
+#if TARGET_OS_IOS
+    UIApplication *app = UIApplication.sharedApplication;
+    __block UIBackgroundTaskIdentifier task = UIBackgroundTaskInvalid;
+    dispatch_block_t finish = ^{
+        if (task != UIBackgroundTaskInvalid) {
+            [app endBackgroundTask:task];
+            task = UIBackgroundTaskInvalid;
+        }
+    };
+    task = [app beginBackgroundTaskWithExpirationHandler:finish];
+    return finish;
+#else
+    return ^{};
+#endif
+}
+
+// Restrict cleanup to this writer's exact names, including its former bare-UUID staging names.
+// Segment ordinals preserve record order across repeated interruptions, independent of wall-clock changes.
+typedef NS_ENUM(NSUInteger, SGHistoryFileKind) { SGHistoryOther, SGHistoryStage, SGHistorySegment, SGHistoryActive };
+static SGHistoryFileKind historyFileKind(NSString *suffix) {
+    if ([suffix isEqual:@"journal"]) return SGHistoryActive;
+    NSString *uuid = [suffix hasPrefix:@"stage."] ? [suffix substringFromIndex:6] : suffix;
+    if ([[NSUUID alloc] initWithUUIDString:uuid]) return SGHistoryStage;
+    if (![suffix hasPrefix:@"journal."]) return SGHistoryOther;
+    NSString *ordinal = [suffix substringFromIndex:8];
+    if (ordinal.length != 20) return SGHistoryOther;
+    for (NSUInteger i = 0; i < ordinal.length; i++) {
+        unichar c = [ordinal characterAtIndex:i];
+        if (c < '0' || c > '9') return SGHistoryOther;
+    }
+    return SGHistorySegment;
+}
+
+- (NSArray<NSString *> *)ownedFilesOfKind:(SGHistoryFileKind)kind {
+    NSString *prefix = [_path.lastPathComponent stringByAppendingString:@"."];
+    NSMutableArray *found = [NSMutableArray array];
+    for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:_path.stringByDeletingLastPathComponent error:nil]) {
+        if (![name hasPrefix:prefix]) continue;
+        SGHistoryFileKind actual = historyFileKind([name substringFromIndex:prefix.length]);
+        if (actual != SGHistoryOther && (!kind || kind == actual))
+            [found addObject:[_path.stringByDeletingLastPathComponent stringByAppendingPathComponent:name]];
+    }
+    return [found sortedArrayUsingSelector:@selector(compare:)];
+}
+
+- (NSArray<SGPlay *> *)plays { return [_visible copy]; }
+- (NSError *)loadError { return _publishedError; }
+
+- (BOOL)drainForTermination {
+    dispatch_semaphore_t drained = dispatch_semaphore_create(0);
+    __block BOOL saved = NO;
+    dispatch_async(_writer, ^{
+        saved = self->_writerError == nil;
+        dispatch_semaphore_signal(drained);
+    });
+    // Termination cannot wait for main-queue acknowledgements or a bulk import.
+    const int64_t terminationBudgetNanoseconds = NSEC_PER_SEC;
+    return dispatch_semaphore_wait(drained, dispatch_time(DISPATCH_TIME_NOW, terminationBudgetNanoseconds)) == 0 && saved;
+}
+
+- (void)finishPendingWritesWithCompletion:(void (^)(NSError *))completion {
+    dispatch_async(_writer, ^{
+        NSError *error = self->_writerError;
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(error); });
+    });
+}
+
+- (void)publishWithCompletion:(dispatch_block_t)completion announce:(BOOL)announce {
+    NSArray *snapshot = [_plays copy] ?: @[];
+    NSSet *included = [_recordIDs copy] ?: [NSSet set];
+    NSError *error = _loadError;
+    NSUInteger generation = _workerGeneration;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (generation == self->_generation) {
+            self->_publishedError = error;
+            self->_visible = [snapshot mutableCopy];
+            NSMutableArray *pending = [NSMutableArray array];
+            for (NSDictionary *row in self->_pending) {
+                if ([included containsObject:row[@"id"]]) continue;
+                [pending addObject:row];
+                [self->_visible addObject:row[@"play"]];
+            }
+            self->_pending = pending;
+            if (announce) [self changed];
+        }
+        if (completion) completion();
+    });
+}
 
 - (void)loadWithCompletion:(void (^)(void))completion {
-    NSAssert(NSThread.isMainThread, @"SGPlayLog belongs to main");
-    if (_plays) { completion(); return; }
-    if (_loadCompletions) { [_loadCompletions addObject:[completion copy]]; return; }
-    _loadCompletions = [NSMutableArray arrayWithObject:[completion copy]];
-    _duringLoad = [NSMutableArray array];
-    // Capture the boundary before a recorder can append. Only the file handle crosses threads.
-    NSError *openError;
-    NSFileHandle *handle = [NSFileHandle fileHandleForReadingFromURL:[NSURL fileURLWithPath:_path] error:&openError];
-    if ([openError.domain isEqual:NSCocoaErrorDomain] && openError.code == NSFileReadNoSuchFileError) openError = nil;
-    unsigned long long length = 0;
-    [handle seekToEndReturningOffset:&length error:&openError];
-    [handle seekToOffset:0 error:&openError];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSError *readError = openError;
-        NSData *data = [handle readDataUpToLength:(NSUInteger)length error:&readError];
-        [handle closeAndReturnError:nil];
-        NSString *text = [[NSString alloc] initWithData:data ?: [NSData data] encoding:NSUTF8StringEncoding];
-        if (!readError && (!text || data.length < length)) readError = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError userInfo:nil];
-        NSMutableArray *loaded = playsFromTSV(text);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            // A synchronous reader, merge or erase meanwhile is authoritative.
-            if (!self->_plays) {
-                self->_loadError = readError;
-                if (!readError) {
-                    [loaded addObjectsFromArray:self->_duringLoad];
-                    self->_plays = loaded;
-                }
+    dispatch_async(_io, ^{
+        [self load];
+        [self publishWithCompletion:completion announce:NO];
+    });
+}
+
+// Bulk imports and startup journal folding only. A per-play record never clones the history.
+- (BOOL)append:(NSArray<SGPlay *> *)plays journalRows:(NSString *)rows error:(NSError **)error {
+    if (!plays.count && !rows.length) return YES;
+    NSFileManager *files = NSFileManager.defaultManager;
+    if (![files createDirectoryAtPath:_path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:error]) return NO;
+    NSString *temporary = [_path stringByAppendingFormat:@".stage.%@", NSUUID.UUID.UUIDString];
+    int failure = 0, source = -1, destination = -1;
+    @synchronized (_journalLock) {
+        if (_generation != _workerGeneration) failure = ECANCELED;
+        else {
+            source = open(_path.fileSystemRepresentation, O_RDONLY);
+            if (source < 0 && errno != ENOENT) failure = errno;
+            if (!failure) {
+                destination = open(temporary.fileSystemRepresentation, O_CREAT | O_EXCL | O_RDWR, 0600);
+                if (destination < 0) failure = errno;
             }
-            NSArray *callbacks = self->_loadCompletions;
-            self->_loadCompletions = nil;
-            self->_duringLoad = nil;
-            for (void (^callback)(void) in callbacks) callback();
+        }
+    }
+    // Use open descriptors so erase can unlink a writer's stage even while it is copying.
+    // The writer cannot recreate the old pathname after that privacy boundary.
+    if (!failure && source >= 0 && fcopyfile(source, destination, NULL, COPYFILE_ALL) != 0) failure = errno;
+    if (source >= 0 && close(source) != 0 && !failure) failure = errno;
+    NSError *writeError;
+    NSFileHandle *handle = destination < 0 ? nil : [[NSFileHandle alloc] initWithFileDescriptor:destination closeOnDealloc:YES];
+    unsigned long long end = 0;
+    BOOL written = !failure && handle && [handle seekToEndReturningOffset:&end error:&writeError];
+    // Old versions appended directly and could leave an unterminated canonical row. Preserve
+    // the old loader's interpretation of that row, but never join the first new row to it.
+    if (written && end) {
+        uint8_t last;
+        ssize_t read = pread(destination, &last, 1, (off_t)end - 1);
+        if (read != 1) { written = NO; writeError = historyPOSIXError(read < 0 ? errno : EIO, temporary); }
+        else if (last != '\n') written = [handle writeData:[NSData dataWithBytes:"\n" length:1] error:&writeError];
+    }
+    if (written && rows.length) written = [handle writeData:[rows dataUsingEncoding:NSUTF8StringEncoding] error:&writeError];
+    for (SGPlay *play in plays) {
+        if (!written) break;
+        @autoreleasepool {
+            written = [handle writeData:[lineOf(play) dataUsingEncoding:NSUTF8StringEncoding] error:&writeError];
+        }
+    }
+    if (written) written = [handle synchronizeAndReturnError:&writeError];
+    NSError *closeError;
+    if (handle && ![handle closeAndReturnError:&closeError]) { written = NO; writeError = writeError ?: closeError; }
+    if (written) {
+        @synchronized (_journalLock) {
+            if (_generation != _workerGeneration) failure = ECANCELED;
+            else if (rename(temporary.fileSystemRepresentation, _path.fileSystemRepresentation) == 0) return YES;
+            else failure = errno;
+        }
+    }
+    [files removeItemAtPath:temporary error:nil];
+    if (error) *error = writeError ?: historyPOSIXError(failure, _path);
+    return NO;
+}
+
+// Caller holds the journal lock. Before the first append, isolate any interrupted final row
+// from the previous process so it cannot absorb a newly completed play.
+- (NSArray<NSString *> *)rotateJournal:(NSError **)error {
+    NSArray *segments = [self ownedFilesOfKind:SGHistorySegment];
+    unsigned long long next = segments.count ? strtoull([segments.lastObject pathExtension].UTF8String, NULL, 10) + 1 : 1;
+    NSString *active = [_path stringByAppendingString:@".journal"];
+    NSString *rotated = [_path stringByAppendingFormat:@".journal.%020llu", next];
+    if (rename(active.fileSystemRepresentation, rotated.fileSystemRepresentation) == 0) segments = [segments arrayByAddingObject:rotated];
+    else if (errno != ENOENT) { *error = historyPOSIXError(errno, active); return nil; }
+    _journalPrepared = YES;
+    return segments;
+}
+
+// A complete journal row carries a recovery identity in column seven. The six-column legacy
+// TSV still parses unchanged. Identity, not title/time matching, makes folding exactly-once
+// even if a process dies after the canonical rename but before deleting the consumed segment.
+- (BOOL)foldJournal:(NSError **)error {
+    __block NSArray *segments;
+    __block NSError *rotationError;
+    // Only the bulk worker waits. Rotation is ordered after all previously enqueued appends
+    // and their fsyncs; the recorder never waits for a bulk import.
+    dispatch_sync(_writer, ^{
+        @synchronized (self->_journalLock) {
+            if (self->_generation != self->_workerGeneration) rotationError = historyPOSIXError(ECANCELED, self->_path);
+            else segments = [self rotateJournal:&rotationError];
+        }
+    });
+    if (rotationError) *error = rotationError;
+    if (!segments) return NO;
+    NSMutableString *rows = [NSMutableString string];
+    NSMutableSet *ids = [_recordIDs mutableCopy];
+    for (NSString *segment in segments) {
+        NSData *data = [NSData dataWithContentsOfFile:segment options:0 error:error];
+        if (!data) return NO;
+        // A process killed inside write() can leave only the final row incomplete.
+        const uint8_t *bytes = data.bytes;
+        NSUInteger end = data.length;
+        while (end && bytes[end - 1] != '\n') end--;
+        NSString *text = [[NSString alloc] initWithBytes:bytes length:end encoding:NSUTF8StringEncoding];
+        if (!text) { *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError userInfo:nil]; return NO; }
+        for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+            if (!line.length) continue;
+            NSArray *fields = [line componentsSeparatedByString:@"\t"];
+            if (fields.count != 7 || ![[NSUUID alloc] initWithUUIDString:fields[6]]) {
+                *error = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileReadCorruptFileError userInfo:nil]; return NO;
+            }
+            if ([ids containsObject:fields[6]]) continue;
+            [ids addObject:fields[6]];
+            [rows appendFormat:@"%@\n", line];
+        }
+    }
+    if (![self append:@[] journalRows:rows error:error]) return NO;
+    [_plays addObjectsFromArray:playsFromTSV(rows)];
+    _recordIDs = ids;
+    for (NSString *segment in segments) {
+        if (![NSFileManager.defaultManager removeItemAtPath:segment error:error]) return NO;
+    }
+    return YES;
+}
+
+// IO queue only. Initial recovery consumes journals once; ordinary snapshot requests do not
+// fold on every song. Later imports fold records completed before their journal rotation.
+- (BOOL)load {
+    __block NSUInteger generation;
+    // Readers include completed recorder writes and cannot race an earlier queued erase.
+    dispatch_sync(_writer, ^{ generation = self->_appliedGeneration; });
+    if (generation != _workerGeneration) {
+        _workerGeneration = generation;
+        _ready = NO;
+        _plays = nil;
+        _recordIDs = nil;
+        _loadError = nil;
+    }
+    if (_ready) return YES;
+    NSError *error;
+    for (NSString *stage in [self ownedFilesOfKind:SGHistoryStage]) {
+        if (![NSFileManager.defaultManager removeItemAtPath:stage error:&error] && error.code != NSFileNoSuchFileError) {
+            _loadError = error; return NO;
+        }
+    }
+    NSString *text = [NSString stringWithContentsOfFile:_path encoding:NSUTF8StringEncoding error:&error];
+    if ([error.domain isEqual:NSCocoaErrorDomain] && error.code == NSFileReadNoSuchFileError) error = nil;
+    _loadError = error;
+    if (error) return NO;
+    _plays = playsFromTSV(text);
+    _recordIDs = [NSMutableSet set];
+    for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+        NSArray *fields = [line componentsSeparatedByString:@"\t"];
+        if (fields.count == 7 && [[NSUUID alloc] initWithUUIDString:fields[6]]) [_recordIDs addObject:fields[6]];
+    }
+    if (![self foldJournal:&error]) { _loadError = error; return NO; }
+    _ready = YES;
+    return YES;
+}
+
+- (void)changed {
+    [NSNotificationCenter.defaultCenter postNotificationName:SGPlayLogDidChangeNotification object:self];
+}
+
+// Recorder queue only. Neither the caller nor the UI waits for a write or fsync.
+- (BOOL)writeRecordRow:(NSData *)row generation:(NSUInteger)generation error:(NSError **)error {
+    NSString *journal = [_path stringByAppendingString:@".journal"];
+    @synchronized (_journalLock) {
+        if (generation != _generation) { *error = historyPOSIXError(ECANCELED, journal); return NO; }
+        if (!_journalPrepared && ![self rotateJournal:error]) return NO;
+        if (![NSFileManager.defaultManager createDirectoryAtPath:_path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:error]) return NO;
+        int fd = open(journal.fileSystemRepresentation, O_CREAT | O_RDWR | O_APPEND, 0600);
+        int failure = fd < 0 ? errno : 0;
+        off_t start = fd < 0 ? -1 : lseek(fd, 0, SEEK_END);
+        if (fd >= 0 && start < 0) failure = errno;
+        NSUInteger written = 0;
+        while (!failure && written < row.length) {
+            ssize_t n = write(fd, (const uint8_t *)row.bytes + written, row.length - written);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) failure = n < 0 ? errno : EIO;
+            else written += (NSUInteger)n;
+        }
+        if (!failure && fsync(fd) != 0) failure = errno;
+        if (failure && start >= 0) {
+            if (ftruncate(fd, start) != 0 || fsync(fd) != 0)
+                NSLog(@"[spotifyglass] history: journal rollback failed: %s", strerror(errno));
+        }
+        if (fd >= 0 && close(fd) != 0 && !failure) failure = errno;
+        if (failure) { *error = historyPOSIXError(failure, journal); return NO; }
+    }
+    return YES;
+}
+
+- (void)record:(SGPlay *)play {
+    NSString *identifier = NSUUID.UUID.UUIDString;
+    NSString *line = lineOf(play);
+    NSData *row = [[[line substringToIndex:line.length - 1] stringByAppendingFormat:@"\t%@\n", identifier] dataUsingEncoding:NSUTF8StringEncoding];
+    NSUInteger generation = _generation;
+    dispatch_block_t finishTask = beginHistoryWriteTask();
+    dispatch_async(_writer, ^{
+        NSError *error;
+        [self writeRecordRow:row generation:generation error:&error];
+        if (generation == self->_generation) self->_writerError = error;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation == self->_generation) {
+                if (error) {
+                    NSLog(@"[spotifyglass] history: record not saved: %@", error);
+                } else {
+                    [self->_pending addObject:@{@"id":identifier, @"play":play}];
+                    [self->_visible addObject:play];
+                }
+                [self changed];
+            }
+            finishTask();
         });
     });
 }
 
-- (void)append:(NSArray<SGPlay *> *)plays {
-    if (!plays.count) return;
-    [NSFileManager.defaultManager createDirectoryAtPath:_path.stringByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
-    NSMutableString *text = [NSMutableString string];
-    for (SGPlay *play in plays) [text appendString:lineOf(play)];
-    FILE *file = fopen(_path.fileSystemRepresentation, "a");
-    if (!file) return;
-    fputs(text.UTF8String, file);
-    fclose(file);
+// A bucket spans the inclusive tolerance plus one second. Same-bucket timestamps always match;
+// only the closest timestamp in either adjacent bucket can match across its boundary.
+enum { SGHistoryMatchSeconds = 90, SGHistoryBucketSeconds = SGHistoryMatchSeconds + 1 };
+static int64_t timeBucket(int64_t end) {
+    int64_t bucket = end / SGHistoryBucketSeconds;
+    return end < 0 && end % SGHistoryBucketSeconds ? bucket - 1 : bucket;
+}
+static void indexEnd(NSMutableDictionary *ends, NSString *key, int64_t end) {
+    NSMutableDictionary *buckets = ends[key];
+    if (!buckets) ends[key] = buckets = [NSMutableDictionary dictionary];
+    NSNumber *bucket = @(timeBucket(end));
+    NSArray *bounds = buckets[bucket];
+    buckets[bucket] = bounds ? @[@(MIN(end, [bounds[0] longLongValue])), @(MAX(end, [bounds[1] longLongValue]))] : @[@(end), @(end)];
+}
+static BOOL hasNearbyEnd(NSDictionary *buckets, int64_t end) {
+    int64_t bucket = timeBucket(end);
+    if (buckets[@(bucket)]) return YES;
+    NSArray *before = buckets[@(bucket - 1)], *after = buckets[@(bucket + 1)];
+    return (before && end - [before[1] longLongValue] <= SGHistoryMatchSeconds) ||
+           (after && [after[0] longLongValue] - end <= SGHistoryMatchSeconds);
 }
 
-// Not loaded for it: a play ending should not read the whole log on the main thread.
-- (void)record:(SGPlay *)play {
-    [_plays addObject:play];
-    if (!_plays) [_duringLoad addObject:play];
-    [self append:@[play]];
-    [NSNotificationCenter.defaultCenter postNotificationName:SGPlayLogDidChangeNotification object:self];
-}
-
-- (NSUInteger)merge:(NSArray<SGPlay *> *)incoming {
+- (NSUInteger)mergeOnQueue:(NSArray<SGPlay *> *)incoming error:(NSError **)error {
+    if (![self load]) { *error = _loadError; return 0; }
+    if (![self foldJournal:error]) return 0;
     BOOL needsExact = [incoming indexOfObjectPassingTest:^BOOL(SGPlay *play, NSUInteger index, BOOL *stop) {
         return play.exactImport;
     }] != NSNotFound;
-    NSMutableDictionary<NSString *, NSMutableArray<NSNumber *> *> *ends = [NSMutableDictionary dictionary];
+    NSMutableDictionary *ends = [NSMutableDictionary dictionary];
     NSMutableSet<NSString *> *exact = needsExact ? [NSMutableSet set] : nil;
-    for (SGPlay *play in self.plays) {
-        NSString *key = keyOf(play);
-        if (!ends[key]) ends[key] = [NSMutableArray array];
-        [ends[key] addObject:@(play.end)];
+    for (SGPlay *play in _plays) {
+        indexEnd(ends, keyOf(play), play.end);
         if (needsExact) [exact addObject:exactKeyOf(play)];
     }
     NSMutableArray<SGPlay *> *added = [NSMutableArray array];
@@ -440,28 +755,54 @@ static NSMutableArray<SGPlay *> *playsFromTSV(NSString *text) {
         NSString *key = keyOf(play);
         NSString *exactKey = needsExact ? exactKeyOf(play) : nil;
         BOOL have = play.exactImport && [exact containsObject:exactKey];
-        if (!play.exactImport) {
-            for (NSNumber *end in ends[key]) {
-                if (llabs(end.longLongValue - play.end) <= 90) { have = YES; break; }
-            }
-        }
+        if (!play.exactImport) have = hasNearbyEnd(ends[key], play.end);
         if (have) continue;
-        if (!ends[key]) ends[key] = [NSMutableArray array];
-        [ends[key] addObject:@(play.end)];
+        indexEnd(ends, key, play.end);
         if (needsExact) [exact addObject:exactKey];
         [added addObject:play];
     }
+    if (![self append:added journalRows:nil error:error]) return 0;
     [_plays addObjectsFromArray:added];
-    [self append:added];
-    if (added.count) [NSNotificationCenter.defaultCenter postNotificationName:SGPlayLogDidChangeNotification object:self];
     return added.count;
 }
 
+- (void)merge:(NSArray<SGPlay *> *)incoming completion:(void (^)(NSUInteger, NSError *))completion {
+    NSArray *snapshot = [incoming copy];
+    dispatch_async(_io, ^{
+        NSError *error;
+        NSUInteger added = [self mergeOnQueue:snapshot error:&error];
+        [self publishWithCompletion:^{ completion(added, error); } announce:added > 0];
+    });
+}
+
 - (void)erase {
-    [NSFileManager.defaultManager removeItemAtPath:_path error:nil];
-    _plays = [NSMutableArray array];
-    _loadError = nil;
-    [NSNotificationCenter.defaultCenter postNotificationName:SGPlayLogDidChangeNotification object:self];
+    NSUInteger generation = ++_generation;
+    _publishedError = nil;
+    [_visible removeAllObjects];
+    [_pending removeAllObjects];
+    dispatch_block_t finishTask = beginHistoryWriteTask();
+    dispatch_async(_writer, ^{
+        NSError *failure;
+        @synchronized (self->_journalLock) {
+            for (NSString *file in [[self ownedFilesOfKind:SGHistoryOther] arrayByAddingObject:self->_path]) {
+                NSError *error;
+                if (![NSFileManager.defaultManager removeItemAtPath:file error:&error] && error.code != NSFileNoSuchFileError)
+                    failure = failure ?: error;
+            }
+            self->_journalPrepared = NO;
+        }
+        self->_writerError = failure;
+        self->_appliedGeneration = generation;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation == self->_generation) {
+                self->_publishedError = failure;
+                if (failure) NSLog(@"[spotifyglass] history: erase failed: %@", failure);
+                [self changed];
+            }
+            finishTask();
+        });
+    });
+    [self changed];
 }
 
 @end

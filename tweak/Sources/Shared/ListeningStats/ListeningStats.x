@@ -27,8 +27,8 @@ static NSString *stringIn(id value) {
 
 @implementation SGPlayRecorder {
     SGPlay *_play;
-    double _duration, _listened;
-    CFAbsoluteTime _since;   // when it started playing, 0 while it is not
+    double _duration;
+    SGPlayClock *_clock;
 }
 
 // Songs and local files; not ads, episodes or the silence between.
@@ -47,37 +47,38 @@ static BOOL isMusic(NSString *uri) {
 }
 
 - (void)finish {
-    if (_play && _play.title.length && _play.artist.length && SGPlayCounts(_listened, _duration) && SGEnabled(SGKeyListeningStats)) {
-        _play.end = (int64_t)time(NULL);
-        _play.ms = (int64_t)(_listened * 1000);
+    if (_play && _play.title.length && _play.artist.length && SGPlayCounts(_clock.listenedSeconds, _duration) && SGEnabled(SGKeyListeningStats)) {
+        _play.end = (int64_t)_clock.endedAt;
+        _play.ms = (int64_t)(_clock.listenedSeconds * 1000);
         [SGListeningLog() record:_play];
     }
     _play = nil;
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
-    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-    if (_since) _listened += now - _since;
-    _since = 0;
+    NSTimeInterval now = NSDate.date.timeIntervalSince1970;
+    [_clock setPlaying:NO at:now];
     NSString *uri = SGURIString(state.track.URI);
     if (![uri isEqualToString:_play.uri]) {
         [self finish];
         if (isMusic(uri)) {
             _play = [SGPlay new];
             _play.uri = uri;
-            _duration = _listened = 0;
+            _duration = 0;
+            _clock = [SGPlayClock new];
         }
     }
     if (!_play) return;
     [self fill:state];
     BOOL loading = [state respondsToSelector:@selector(isLoading)] && state.isLoading;
-    if (state.isPlaying && !state.isPaused && !loading) _since = now;
+    [_clock setPlaying:state.isPlaying && !state.isPaused && !loading at:now];
 }
 
 - (void)terminate {
-    if (_since) _listened += CFAbsoluteTimeGetCurrent() - _since;
-    _since = 0;
+    [_clock setPlaying:NO at:NSDate.date.timeIntervalSince1970];
     [self finish];
+    if (![SGListeningLog() drainForTermination])
+        NSLog(@"[spotifyglass] history: final recorder write not confirmed before termination");
 }
 
 @end

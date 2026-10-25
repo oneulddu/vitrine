@@ -187,7 +187,10 @@ static UIDocumentPickerViewController *SGHarnessPicker;
         for (int i = 0; i < 9; i++) [plays addObject:play(now - 20 * day - i * 400, 240000, @"Angel", @"Massive Attack", @"Mezzanine")];
         for (int i = 0; i < 30; i++) [plays addObject:play(now - 200 * day - i * 400, 200000, @"Xtal", @"Aphex Twin", @"Selected Ambient Works 85-92")];
         [plays addObject:play(now - 500 * day, 3600000, @"A Very Long Title That Will Not Fit On One Line Of The Row", @"Someone With A Long Name", @"")];
-        NSLog(@"[harness] seeded %lu", (unsigned long)[SGListeningLog() merge:plays]);
+        [SGListeningLog() merge:plays completion:^(NSUInteger added, NSError *error) {
+            if (error) { NSLog(@"[harness] seed failed: %@", error); exit(1); }
+            NSLog(@"[harness] seeded %lu", (unsigned long)added);
+        }];
     } else if ([verb isEqualToString:@"record"]) {
         [self record];
     } else if ([verb isEqualToString:@"pick"]) {

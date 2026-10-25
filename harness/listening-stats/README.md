@@ -41,10 +41,34 @@ unsupported items are skipped and reported. ZIP64 remains unsupported. Export re
 JSON rather than creating a backup the importer cannot read; the source history stays untouched.
 
 Initial TSV loading, JSON parsing, folder walking, aggregation and export serialization run off main.
-`SGPlayLog` remains main-owned, including merge and append. Async initial loading snapshots a file boundary
-and retains records that arrive during loading; an intervening erase or synchronous load wins. Load errors
+`SGPlayLog` serializes loading and indexed imports on its IO queue, with main-queue completions and
+independently published snapshots/errors. A separate recorder queue appends and syncs each small
+journal row in order, without blocking main, queuing behind imports, or rewriting history.
+`finishPendingWritesWithCompletion:` acknowledges earlier writes/erases on main, independently of
+bulk work; readers and folding wait off main. iOS holds a background-task assertion from enqueue
+through acknowledgement (or expiration). Startup and imports
+use the generation whose erase has actually completed on the recorder queue, never a merely
+requested generation. Only application termination waits synchronously for the recorder, bounded
+to one second and independent of bulk imports/main callbacks. Recorder errors are acknowledged
+separately from load status and a later successful write clears the failure. Startup and imports
+rotate/fold journal segments into atomic bulk commits. A seventh-column record ID makes recovery
+exactly-once after a commit interrupted before cleanup; legacy six-column TSVs load unchanged.
+Bulk appends first terminate an unterminated canonical tail inside the staged copy, preserving the
+legacy loader's interpretation while keeping new rows intact before journals are consumed.
+Startup reclaims abandoned staging files, and erase invalidates in-flight writers and removes all
+writer-owned journals/stages as well as the canonical log. Load errors
 are explicit and retry on reopening the page. Export uses the system document exporter; its temporary file
 is removed after completion or cancellation. No SQLite migration or Account/Plus dependency was added.
+
+The interrupted-import probes run in child processes against the production log. They block a staged
+import, acknowledge two recorder writes, read main-thread snapshots/errors, and exit without termination flushing.
+Recovery checks their ordering, partial-tail rejection, abandoned-file cleanup, and erasure during the
+blocked write. The parent bounds a deadlocked child to ten seconds. Run only these probes with
+`build/listening-stats --persistence-review`.
+
+The same checks inject a blocked system `fsync` to prove record, erase, and snapshot reads do not
+wait on persistence; rapid records retain their order and a pending write cannot survive a later
+erase. Unterminated complete and partial legacy tails are folded and reopened with literal expected plays.
 
 Additional harness cases cover spring/fall DST, a timezone that skips midnight, leap day, year boundaries,
 non-Gregorian calendars, fractional timezones, yesterday/gap/empty/future streaks, hourly cutoffs, all-field

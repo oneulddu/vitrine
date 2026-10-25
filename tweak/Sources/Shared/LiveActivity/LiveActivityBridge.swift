@@ -205,11 +205,37 @@ public final class SGLiveActivityBridge: NSObject {
             translation: translation, cover: cover, textSize: textSize, timerEndOfAlbum: timerEndOfAlbum,
             alignment: alignment, noLyrics: noLyrics, withoutLyrics: withoutLyrics, colors: colors, accent: accent,
             progressBar: progressBar)
-        // ActivityKit drops a state over 4 KB without a word and the card freezes, so with long lines and
-        // a busy cover the cover gives way.
-        if cover != nil, let size = try? JSONEncoder().encode(state).count, size > maxStateBytes {
-            state.cover = nil
-            log.notice("[spotifyglass] live activity: \(size, privacy: .public) bytes, sent without the cover")
+        // Budget the actual encoded state, including UTF-8 and JSON escaping. URIs are identities:
+        // never truncate one into a different action; drop queue entries if text alone is insufficient.
+        do {
+            let encoder = JSONEncoder()
+            if try encoder.encode(state).count > maxStateBytes { state.cover = nil }
+            while try encoder.encode(state).count > maxStateBytes {
+                let texts = [state.line, state.nextLine, state.translation ?? "", state.title, state.artist]
+                    + state.tracks.flatMap { [$0.title, $0.artist] }
+                guard let index = texts.indices.max(by: { texts[$0].utf8.count < texts[$1].utf8.count }),
+                      !texts[index].isEmpty else {
+                    if !state.tracks.isEmpty { state.tracks.removeLast(); continue }
+                    log.error("[spotifyglass] live activity: state exceeds the payload budget without display text")
+                    return
+                }
+                // Character boundaries preserve composed glyphs. Even one enormous grapheme shrinks to empty.
+                let shortened = String(texts[index].prefix(texts[index].count / 2))
+                switch index {
+                case 0: state.line = shortened
+                case 1: state.nextLine = shortened
+                case 2: state.translation = shortened
+                case 3: state.title = shortened
+                case 4: state.artist = shortened
+                default:
+                    let track = (index - 5) / 2
+                    if (index - 5) % 2 == 0 { state.tracks[track].title = shortened }
+                    else { state.tracks[track].artist = shortened }
+                }
+            }
+        } catch {
+            log.error("[spotifyglass] live activity: state cannot be encoded: \(String(describing: error), privacy: .public)")
+            return
         }
         let content = ActivityContent(state: state, staleDate: Date(timeIntervalSinceNow: staleAfter))
         if let id = showing.first {

@@ -61,7 +61,7 @@ int main(void) { @autoreleasepool {
             imageWithActions:^(UIGraphicsImageRendererContext *context) {
                 [UIColor.redColor setFill]; UIRectFill(CGRectMake(0, 0, 4, 4));
             }];
-        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:@"local cover: artwork.png"];
+        NSString *file = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSUUID.UUID.UUIDString stringByAppendingString:@" local cover: artwork.png"]];
         CHECK([UIImagePNGRepresentation(image) writeToFile:file atomically:YES]);
         for (id address in @[file, [NSURL fileURLWithPath:file], SGLocalFileCoverURL(file),
                 [NSURL URLWithString:SGLocalFileCoverURL(file)], image]) {
