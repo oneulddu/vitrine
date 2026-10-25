@@ -134,7 +134,37 @@ static NSString *const labels[] = {
 };
 static NSMutableDictionary<NSString *, NSNumber *> *sg_counts;
 static BOOL sg_unsaved;   // stops or checks counted since the counts were last written
-static CFAbsoluteTime sg_savedAt;
+static BOOL sg_saveScheduled;
+
+// Main queue only. Defaults notifies observers synchronously: never write while holding
+// the counter lock, or on a request thread. Take the snapshot when the write runs, not
+// when it is scheduled, so a pending timer cannot restore counts from before a reset.
+static void saveCountsOnMain(void) {
+    NSDictionary *snapshot;
+    @synchronized (kCounts) {
+        if (!sg_unsaved) return;
+        snapshot = [sg_counts copy];
+        sg_unsaved = NO;
+    }
+    if (snapshot.count) [NSUserDefaults.standardUserDefaults setObject:snapshot forKey:kCounts];
+    else [NSUserDefaults.standardUserDefaults removeObjectForKey:kCounts];
+}
+
+// Called under the lock. One timer covers all counts in the next 30 seconds.
+static void scheduleSaveLocked(void) {
+    sg_unsaved = YES;
+    if (sg_saveScheduled) return;
+    sg_saveScheduled = YES;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+        @synchronized (kCounts) { sg_saveScheduled = NO; }
+        saveCountsOnMain();
+    });
+}
+
+static void flushCounts(void) {
+    if (NSThread.isMainThread) saveCountsOnMain();
+    else dispatch_async(dispatch_get_main_queue(), ^{ saveCountsOnMain(); });
+}
 
 // Made once per label: the hooks count on every request and page component.
 static NSString *checkedKey(NSString *label) {
@@ -163,28 +193,17 @@ static NSMutableDictionary<NSString *, NSNumber *> *countsLocked(void) {
         if (sg_counts.count && !sg_counts[checkedKey(@"Requests")]) {
             [sg_counts removeAllObjects];
             sg_counts[checkedKey(@"Requests")] = @0;
-            [NSUserDefaults.standardUserDefaults setObject:sg_counts forKey:kCounts];
+            scheduleSaveLocked();
         }
     }
     return sg_counts;
-}
-
-// Counted in memory, as a stop can come several times a second, and written when Spotify leaves the screen
-// and at most every 30 s while counting goes on, so a kill in the background (no notification comes) loses
-// half a minute at most. Called under the lock.
-static void saveLocked(BOOL now) {
-    if (!sg_unsaved || (!now && CFAbsoluteTimeGetCurrent() - sg_savedAt < 30)) return;
-    [NSUserDefaults.standardUserDefaults setObject:countsLocked() forKey:kCounts];
-    sg_unsaved = NO;
-    sg_savedAt = CFAbsoluteTimeGetCurrent();
 }
 
 void SGAdBlockCountOne(NSString *label) {
     @synchronized (kCounts) {
         NSMutableDictionary<NSString *, NSNumber *> *counts = countsLocked();
         counts[label] = @(counts[label].unsignedIntegerValue + 1);
-        sg_unsaved = YES;
-        saveLocked(NO);
+        scheduleSaveLocked();
     }
 }
 
@@ -193,8 +212,7 @@ void SGAdBlockSawOne(NSString *label) {
         NSMutableDictionary<NSString *, NSNumber *> *counts = countsLocked();
         NSString *key = checkedKey(label);
         counts[key] = @(counts[key].unsignedIntegerValue + 1);
-        sg_unsaved = YES;
-        saveLocked(NO);
+        scheduleSaveLocked();
     }
 }
 
@@ -208,7 +226,7 @@ NSUInteger SGAdBlockChecked(NSString *label) {
 __attribute__((constructor)) static void saveChecksOnLeaving(void) {
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {
-        @synchronized (kCounts) { saveLocked(YES); }
+        flushCounts();
     }];
 }
 
@@ -229,7 +247,9 @@ NSUInteger SGAdBlockCount(NSString *label) {
 void SGResetAdBlock(void) {
     @synchronized (kCounts) {
         sg_counts = [NSMutableDictionary dictionary];
-        sg_unsaved = NO;
-        [NSUserDefaults.standardUserDefaults removeObjectForKey:kCounts];
+        sg_unsaved = YES;
     }
+    // Keep any timer: it will see only current memory. An off-main reset queues its
+    // flush behind any in-flight main-queue write, so that write cannot win the race.
+    flushCounts();
 }
