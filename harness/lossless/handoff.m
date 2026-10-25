@@ -5,6 +5,7 @@
 
 // SpeedPitch.x reads the player for its clock away from 1x; the harness has no player.
 void *SGPlayerState(void) { return NULL; }
+void SGAddPlayerStateObserver(id observer) {}
 
 static int failures;
 static SGPreparedPCM *asset;

@@ -201,7 +201,7 @@ static void checkModelLists(void) {
     NSMutableDictionary *keptOpenAIKeys = openAIKeys;
     id keptBase = [defaults objectForKey:SGKeyLyricsOpenAIBaseURL];
     [defaults removeObjectForKey:SGKeyLyricsGeminiModel];
-    CHECK([SGLyricsAIModel(SGLyricsAIGemini) isEqual:@"gemini-flash-latest"]);
+    CHECK([SGLyricsAIModel(SGLyricsAIGemini) isEqual:@"gemini-3.8-flash"]);
     CHECK(SGLyricsAISetModel(SGLyricsAIGemini, @" models/gemini-2.5-pro \n") && [[defaults stringForKey:SGKeyLyricsGeminiModel] isEqual:@"gemini-2.5-pro"]);
     CHECK(!SGLyricsAISetModel(SGLyricsAIClaude, @"  ") && !SGLyricsAISetModel(SGLyricsAIOpenAI, @"a\tb"));
     testKeys = [NSSet setWithArray:@[@"Vitrine.Gemini", @"Vitrine.Claude"]];
@@ -824,7 +824,7 @@ static void checkAIJobs(void) {
     aiReplies = [NSMutableArray arrayWithObject:@{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": @"[\"A reference.\",\"\",\"\"]"}]}, @"finishReason": @"STOP"}]}];
     CHECK(askAI(SGLyricsAIGemini, @"gemini-job", texts, YES, &problem) && !problem);
     NSDictionary *body = [NSJSONSerialization JSONObjectWithData:lastAIRequest.HTTPBody options:0 error:nil];
-    CHECK([lastAIRequest.URL.absoluteString containsString:@"gemini-flash-latest:generateContent"]);
+    CHECK([lastAIRequest.URL.absoluteString containsString:@"gemini-3.8-flash:generateContent"]);
     CHECK([[lastAIRequest valueForHTTPHeaderField:@"x-goog-api-key"] isEqual:@"offline-test-key"]);
     CHECK([body[@"generationConfig"][@"responseSchema"][@"items"][@"type"] isEqual:@"STRING"]);
     CHECK([body[@"safetySettings"] count] == 4);

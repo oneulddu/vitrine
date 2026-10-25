@@ -1019,7 +1019,6 @@
 "settings.lyrics.display.header" = "표시";
 "settings.lyrics.furigana.subtitle" = "일본어 노래의 한자 위에 읽는 법 표시";
 "settings.lyrics.furigana.title" = "후리가나";
-"settings.lyrics.hide_controls.subtitle" = "마지막 터치 후 몇 초가 지나면 가사가 플레이어 전체를 채웁니다";
 "settings.lyrics.hide_controls.title" = "컨트롤 숨기기";
 "settings.translation.thinking.low" = "낮음";
 "settings.translation.thinking.medium" = "중간";

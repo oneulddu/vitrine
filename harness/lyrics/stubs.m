@@ -79,6 +79,10 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 + (void)translate:(NSArray<NSString *> *)lines to:(NSString *)languageTag done:(void (^)(NSArray<NSString *> *, NSString *))done {
     [self answer:lines as:@"iPhone: " done:done];
 }
++ (void)translate:(NSArray<NSString *> *)lines to:(NSString *)languageTag from:(UIView *)view done:(void (^)(NSArray<NSString *> *, NSString *))done {
+    [self translate:lines to:languageTag done:done];
+}
++ (void)openTranslateSettings {}
 // A batch at a time, as the model works: the first half shows a second before the rest.
 + (void)translateWithAppleIntelligence:(NSArray<NSString *> *)lines to:(NSString *)languageTag song:(NSString *)song progress:(void (^)(NSArray<NSString *> *))progress
                                   done:(void (^)(NSArray<NSString *> *, NSString *))done {

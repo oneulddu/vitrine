@@ -308,7 +308,7 @@ static UIBlurEffect *blurEffect(void) {
     if (_inCover) {
         // The cover's own picture: nothing over it to keep readable, and nothing under it to fade into.
         _still.mask = nil;
-        _foot.hidden = _dim.hidden = _seamBlur.hidden = _lyricsBlur.hidden = YES;
+        _foot.hidden = _dim.hidden = _seamBlur.hidden = YES;
         return;
     }
     [self measure:file poster:poster];

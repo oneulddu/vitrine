@@ -974,7 +974,6 @@
 "settings.lyrics.display.header" = "Display";
 "settings.lyrics.furigana.subtitle" = "Readings over the kanji of Japanese songs";
 "settings.lyrics.furigana.title" = "Furigana";
-"settings.lyrics.hide_controls.subtitle" = "A few seconds after the last touch, the lyrics take the whole player";
 "settings.lyrics.hide_controls.title" = "Hide the controls";
 "settings.translation.thinking.low" = "Low";
 "settings.translation.thinking.medium" = "Medium";
