@@ -16,5 +16,5 @@ compile -DSG_LYRICS_TEST_STORE \
     "$SRC/Redesigned/Lyrics/AutoTranslation.m" "$SRC/Shared/LyricsTranslation/ConnectionTest.m" "$SRC/Shared/LyricsTranslation/ClaudeTranslate.m" "$SRC/Shared/LyricsTranslation/AIServices.m" \
     "$SRC/Shared/LyricsTranslation/SavedTranslations.m" "$SRC/Shared/LyricsTranslation/TranslatedTitles.m" \
     "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Core/SGLocalize.m" "$SRC/Shared/AdBlock/Protobuf.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
-    -framework NaturalLanguage -framework UIKit -framework CoreGraphics -framework Security -framework Foundation -o "$HERE/build/check"
+    -framework NaturalLanguage -framework UIKit -framework CoreGraphics -framework ImageIO -framework Security -framework Foundation -o "$HERE/build/check"
 "$HERE/build/check" "$@"

@@ -25,6 +25,7 @@ SGLyricsResult *SGLrcLibRecordResult(NSDictionary *record) { return nil; }
 BOOL SGLocalFileIs(NSString *uri) { return NO; }
 NSDictionary<NSString *, id> *SGLocalFileInfo(NSString *uri) { return @{@"title": @"a", @"artist": @"b", @"seconds": @200}; }
 SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) { return nil; }
+NSString *SGKaraokePlayingTrack(void) { return nil; }
 BOOL SGLyricsStandAsideForEevee(void) { return NO; }
 void SGRegisterFlagForcer(BOOL beatsOverride, SGFlagForcer atLaunch, SGFlagForcer locked) {}
 UIViewController *SGTopController(void) { return nil; }
