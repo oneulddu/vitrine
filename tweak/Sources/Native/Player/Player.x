@@ -75,9 +75,9 @@ static UIImage *sg_coverSmall;
 static __weak UIImageView *sg_coverView;
 
 static void showCover(UIImage *cover) {
-    if (!cover || cover == sg_cover) return;
+    if (cover == sg_cover) return;
     sg_cover = cover;
-    sg_coverSmall = SGBackdropSample(cover);
+    sg_coverSmall = cover ? SGBackdropSample(cover) : nil;
     UIImageView *view = sg_coverView;
     if (!view) return;
     [UIView transitionWithView:view duration:0.3 options:UIViewAnimationOptionTransitionCrossDissolve animations:^{
@@ -86,21 +86,35 @@ static void showCover(UIImage *cover) {
 }
 
 // The covers are the cells of a list scrolled sideways, one per track in the queue; the cell under
-// the middle of the list is the one playing.
-static UIImage *coverInFront(UIScrollView *list) {
+// the middle of the list is the one playing. An empty image view is still loading; only the visible
+// 64pt placeholder, with no cover alongside it, says that the front cell has no artwork.
+static const CGFloat kPlaceholderSide = 64;
+
+static UIImage *coverInFront(UIScrollView *list, BOOL *missing) {
     CGFloat middle = list.contentOffset.x + list.bounds.size.width / 2;
     __block UIImage *cover = nil;
+    __block BOOL placeholder = NO;
     // The cover is 354pt across, the glyph standing in for a missing one 64pt.
     __block CGFloat widest = 200;
     for (UIView *cell in list.subviews) {
         if (middle < CGRectGetMinX(cell.frame) || middle > CGRectGetMaxX(cell.frame)) continue;
         SGForEachView(cell, ^(UIView *view) {
             UIImageView *image = (UIImageView *)view;
-            if (![view isKindOfClass:UIImageView.class] || !image.image || image.bounds.size.width <= widest) return;
+            if (![view isKindOfClass:UIImageView.class] || !image.image) return;
+            if (CGSizeEqualToSize(image.bounds.size, CGSizeMake(kPlaceholderSide, kPlaceholderSide))) {
+                BOOL visible = YES;
+                for (UIView *v = image; v; v = v.superview) {
+                    if (v.hidden || v.alpha == 0) { visible = NO; break; }
+                    if (v == cell) break;
+                }
+                if (visible) placeholder = YES;
+            }
+            if (image.bounds.size.width <= widest) return;
             widest = image.bounds.size.width;
             cover = image.image;
         });
     }
+    *missing = placeholder && !cover;
     return cover;
 }
 
@@ -136,7 +150,10 @@ static UIView *backdropIn(UIView *plane) {
 %hook _TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView
 - (void)layoutSubviews {
     %orig;
-    if (backdropOn()) showCover(coverInFront((UIScrollView *)self));
+    if (!backdropOn()) return;
+    BOOL missing = NO;
+    UIImage *cover = coverInFront((UIScrollView *)self, &missing);
+    if (cover || missing) showCover(cover);
 }
 %end
 

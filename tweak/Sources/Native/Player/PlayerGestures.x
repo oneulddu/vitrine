@@ -130,7 +130,7 @@ static void watchHold(UIView *tilt) {
 // gesture; the tap goes back to Spotify with the switch.
 %hook _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView
 - (void)handleTap {
-    if (SGFlag(SGKeyGestures, NO)) return;
+    if (SGFlag(SGKeyGestures, NO) && SGInPlayerCover((UIView *)self)) return;
     %orig;
 }
 - (void)layoutSubviews {

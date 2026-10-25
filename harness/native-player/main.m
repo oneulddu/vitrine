@@ -10,6 +10,9 @@
 //             and a small cover and a tilt view outside the cover cell untouched
 #import <UIKit/UIKit.h>
 #import "Native/Player/NowPlaying.h"
+#import "Core/SGBackdrop.h"
+#import "Shared/Gestures/Gestures.h"
+#import "../harness-fail.h"
 
 #pragma mark - Spotify's classes, mocked
 
@@ -25,8 +28,21 @@
 
 @interface _TtC28NowPlaying_ContentLayersImpl16CoverArtCellImpl : UIView @end
 @implementation _TtC28NowPlaying_ContentLayersImpl16CoverArtCellImpl @end
-@interface _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView : UIView @end
-@implementation _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView @end
+@interface _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView : UIView
+@property (nonatomic) BOOL inspected;
+- (void)handleTap;
+@end
+@implementation _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView
+- (void)handleTap { self.inspected = YES; }
+@end
+@interface _TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView : UIScrollView @end
+@implementation _TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView @end
+@interface _TtC21NowPlaying_ScrollImpl27NPVBackgroundViewController : UIViewController @end
+@implementation _TtC21NowPlaying_ScrollImpl27NPVBackgroundViewController @end
+@interface _TtC20NowPlaying_ModesImpl18HeaderElementsUnit : UIViewController @end
+@implementation _TtC20NowPlaying_ModesImpl18HeaderElementsUnit @end
+@interface _TtC20NowPlaying_ModesImpl19DurationElementUnit : UIViewController @end
+@implementation _TtC20NowPlaying_ModesImpl19DurationElementUnit @end
 @interface _TtC22Lyrics_NPVContainerKit19LyricsContainerView : UIView @end
 @implementation _TtC22Lyrics_NPVContainerKit19LyricsContainerView
 - (CGSize)intrinsicContentSize { return CGSizeMake(UIViewNoIntrinsicMetric, 64); }
@@ -162,6 +178,74 @@ static void runCoverChecks(UIWindow *window) {
 
 #pragma mark - app
 
+static UIImageView *backgroundImage(UIViewController *controller, UIWindow *window) {
+    controller.view.frame = window.bounds;
+    [window addSubview:controller.view];
+    [controller viewDidLayoutSubviews];
+    return SGBackdropImageView(controller.view.subviews.firstObject);
+}
+
+static void runArtworkChecks(UIWindow *window) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    [store setBool:YES forKey:SGKeyGestures];
+    UIView *cell = [_TtC28NowPlaying_ContentLayersImpl16CoverArtCellImpl new];
+    _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView *player = [_TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView new];
+    _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView *album = [_TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView new];
+    [cell addSubview:player];
+    [player handleTap];
+    [album handleTap];
+    HARNESS_CHECK(!player.inspected);
+    HARNESS_CHECK(album.inspected);
+    [store setBool:NO forKey:SGKeyGestures];
+    [player handleTap];
+    HARNESS_CHECK(player.inspected);
+
+    [store setBool:YES forKey:SGKeyPlayerBackdrop];
+    [UIView setAnimationsEnabled:NO];
+    UIViewController *plane = [_TtC21NowPlaying_ScrollImpl27NPVBackgroundViewController new];
+    UIImageView *backdrop = backgroundImage(plane, window);
+    HARNESS_CHECK(backdrop != nil);
+    UIScrollView *list = [[_TtC35NowPlaying_ContentLayerPlatformImpl24AccessibleCollectionView alloc] initWithFrame:CGRectMake(0, 0, 354, 354)];
+    [window addSubview:list];
+    cell.frame = list.bounds;
+    [list addSubview:cell];
+    UIImageView *cover = [[UIImageView alloc] initWithFrame:cell.bounds];
+    cover.image = [UIImage systemImageNamed:@"star.fill"];
+    [cell addSubview:cover];
+    UIView *placeholder = [[UIView alloc] initWithFrame:cell.bounds];
+    UIImageView *glyph = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"music.note"]];
+    glyph.frame = CGRectMake(145, 145, 64, 64);
+    [placeholder addSubview:glyph];
+    [cell addSubview:placeholder];
+    placeholder.hidden = YES;
+    [list layoutSubviews];
+    UIImage *before = backdrop.image;
+    HARNESS_CHECK(before != nil);
+
+    cover.image = nil;
+    [list layoutSubviews];
+    HARNESS_CHECK(backdrop.image == before); // Unsized/loading artwork is not an explicit no-cover state.
+    placeholder.hidden = NO;
+    glyph.hidden = YES;
+    [list layoutSubviews];
+    HARNESS_CHECK(backdrop.image == before);
+    glyph.hidden = NO;
+    [list layoutSubviews];
+    HARNESS_CHECK(backdrop.image == nil);
+    UIViewController *reopened = [_TtC21NowPlaying_ScrollImpl27NPVBackgroundViewController new];
+    UIImageView *reopenedBackdrop = backgroundImage(reopened, window);
+    HARNESS_CHECK(reopenedBackdrop.image == nil); // The cached sample must be cleared too.
+
+    cover.image = [UIImage systemImageNamed:@"heart.fill"];
+    [list layoutSubviews];
+    HARNESS_CHECK(reopenedBackdrop.image != nil); // Real artwork wins even if the glyph still exists.
+    [list removeFromSuperview];
+    [plane.view removeFromSuperview];
+    [reopened.view removeFromSuperview];
+    [UIView setAnimationsEnabled:YES];
+    NSLog(@"[harness] PASS native cover tap routing, loading preservation and explicit missing artwork");
+}
+
 @interface Delegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @end
@@ -173,6 +257,10 @@ static void runCoverChecks(UIWindow *window) {
     self.window.backgroundColor = UIColor.blackColor;
     [self.window makeKeyAndVisible];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if ([NSProcessInfo.processInfo.arguments containsObject:@"audit"]) {
+            runArtworkChecks(self.window);
+            exit(0);
+        }
         runScrubChecks(self.window);
         runCoverChecks(self.window);
         NSLog(@"[harness] native player checks: %lu of %lu right -- %@", (unsigned long)sg_right, (unsigned long)sg_checks,

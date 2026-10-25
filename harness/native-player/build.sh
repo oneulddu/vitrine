@@ -5,7 +5,7 @@ SRC=${SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
 OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/NativePlayerHarness.app"
 
-for f in Native/Player/PlayerScrub.x Native/Player/PlayerDeclutter.x; do
+for f in Native/Player/PlayerScrub.x Native/Player/PlayerDeclutter.x Native/Player/Player.x Native/Player/PlayerGestures.x; do
     [ -f "$SRC/$f" ] || continue
     name=$(basename "$f" .x)
     "$THEOS/bin/logos.pl" -c generator=internal "$SRC/$f" > "$OUT/gen/$name.m"
@@ -14,7 +14,7 @@ done
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O0 \
     -I"$SRC" -I"$SRC/Native/Player" -isysroot "$SDK" -Wno-deprecated-declarations \
-    "$(dirname "$0")/main.m" "$(dirname "$0")/../scene.m" "$OUT"/gen/*.m \
+    "$(dirname "$0")/main.m" "$(dirname "$0")/player-stubs.m" "$(dirname "$0")/../scene.m" "$OUT"/gen/*.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m \
     "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreImage -framework Foundation \

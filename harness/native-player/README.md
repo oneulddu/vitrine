@@ -26,3 +26,10 @@ reads 7 of 11.
 
 What it does not cover: Spotify's real Auto Layout in the cover cell, its open and close transition, and
 a real touch on the slider.
+
+The `audit` launch argument runs the real `Player.x` and `PlayerGestures.x` hooks for the artwork regressions:
+album-cover taps still inspect their artwork with player gestures enabled, player-cover taps are suppressed
+only with that switch on, and an explicitly visible 64pt missing-artwork glyph clears both the displayed
+backdrop and the cached sample. An empty/loading image or a hidden placeholder preserves the previous
+backdrop; actual cover art takes precedence over a placeholder. It logs PASS and exits, or logs a failed
+check and exits nonzero without crashing. Gesture attachment and audio/haptic services are stubbed.
