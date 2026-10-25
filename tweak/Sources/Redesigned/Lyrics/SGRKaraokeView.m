@@ -2407,7 +2407,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         if (onDevice) {
             offer(@"Translate on iPhone", @"translate", @"Apple's Translate, on this iPhone",
                   ^(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *to, SGRTranslated progress, SGRTranslated done) {
-                [SGOnDeviceTranslation translate:textsOf(lines) to:to done:done];
+                [SGOnDeviceTranslation translate:textsOf(lines) to:to from:weakSelf done:done];
             });
         }
         if (intelligence) {
@@ -2665,12 +2665,24 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         if (!automaticRevision && !SGFlag(SGRKeyLyricsTranslation, NO)) SGRSetLyricsTextShown(SGRLyricsTextTranslation, YES);
     }, ^(NSArray<NSString *> *translations, NSString *error) {
         if (error && !automaticRevision) {
-            NSString *message = had ? [NSString stringWithFormat:@"%@\n\n%@", error, SGL(@"settings.lyricstools.translation.kept", @"Lines that could not be translated keep their previous translation.")] : error;
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:translations ? @"Partly translated" : @"No translation"
+            BOOL needsDownload = [error isEqualToString:@"vitrine.translation.languagesMissing"];
+            NSString *detail = needsDownload ? SGL(@"settings.translation.download.message", @"Download the song's language and your translation language in Settings > Apps > Translate > Languages, then try again.") : error;
+            NSString *message = had ? [NSString stringWithFormat:@"%@\n\n%@", detail, SGL(@"settings.lyricstools.translation.kept", @"Lines that could not be translated keep their previous translation.")] : detail;
+            NSString *title = needsDownload ? SGL(@"settings.translation.download.title", @"Language not downloaded") : (translations ? SGL(@"settings.translation.partial.title", @"Partly translated") : SGL(@"settings.translation.none.title", @"No translation"));
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
                                                                            message:message preferredStyle:UIAlertControllerStyleAlert];
             // Over the player, which is dark whatever the system's appearance.
             alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
-            [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
+            if (needsDownload) {
+                [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+                UIAlertAction *open = [UIAlertAction actionWithTitle:SGL(@"settings.translation.download.open", @"Open Settings") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                    [SGOnDeviceTranslation openTranslateSettings];
+                }];
+                [alert addAction:open];
+                alert.preferredAction = open;
+            } else {
+                [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
+            }
             [SGTopController() presentViewController:alert animated:YES completion:nil];
         }
     });

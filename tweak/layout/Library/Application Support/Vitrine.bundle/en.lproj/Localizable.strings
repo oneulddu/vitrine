@@ -981,6 +981,11 @@
 "settings.translation.thinking.high" = "High";
 "settings.translation.thinking.title" = "Thinking";
 "settings.translation.timeout.title" = "Timeout";
+"settings.translation.download.title" = "Language not downloaded";
+"settings.translation.download.message" = "Download the song's language and your translation language in Settings > Apps > Translate > Languages, then try again.";
+"settings.translation.download.open" = "Open Settings";
+"settings.translation.partial.title" = "Partly translated";
+"settings.translation.none.title" = "No translation";
 "settings.translation.timeout.seconds" = "%ld s";
 "settings.translation.error.timeout" = "Gemini timed out. Try a longer timeout in Gemini settings.";
 "settings.lyrics.hide_controls.room" = "A few seconds after the last touch, the lyrics take the room";

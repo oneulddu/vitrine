@@ -1026,6 +1026,11 @@
 "settings.translation.thinking.high" = "높음";
 "settings.translation.thinking.title" = "사고 수준";
 "settings.translation.timeout.title" = "응답 대기 시간";
+"settings.translation.download.title" = "언어가 다운로드되지 않음";
+"settings.translation.download.message" = "설정 > 앱 > 번역 > 언어에서 노래의 언어와 번역할 언어를 다운로드한 뒤 다시 시도하세요.";
+"settings.translation.download.open" = "설정 열기";
+"settings.translation.partial.title" = "일부만 번역됨";
+"settings.translation.none.title" = "번역 없음";
 "settings.translation.timeout.seconds" = "%ld초";
 "settings.translation.error.timeout" = "Gemini 응답 대기 시간이 초과되었습니다. Gemini 설정에서 대기 시간을 늘려 보세요.";
 "settings.lyrics.hide_controls.room" = "마지막 터치 후 몇 초가 지나면 가사 표시 영역이 넓어집니다";

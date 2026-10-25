@@ -255,7 +255,8 @@ Shared:
                   shown at once and kept in memory until Spotify quits, and Automatic putting back what the order chose
     LyricsTranslation/ a song's lines translated from the lyrics' corner menu, for the lines no source translated, three
                   ways, each its own item: on the iPhone by Apple's Translate (iOS 26, the song's language told by
-                  NaturalLanguage, both languages downloaded in the Translate app or the item says where to) and by Apple
+                  NaturalLanguage, both languages downloaded: a missing pair brings up Apple's download sheet, and if they are
+                  still missing the alert offers Open Settings) and by Apple
                   Intelligence's model (iOS 26 where it is on and speaks the language; permissive guardrails for changing
                   the user's own text, 12 lines a session, greedy and capped at 60 tokens a line, exactly one string a line by a generation schema; Translate retried once, as its first ask can fail while it loads), both in
                   OnDeviceTranslation.swift, the frameworks weak linked; and by Gemini on the user's own key (Keychain),
