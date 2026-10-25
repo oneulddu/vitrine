@@ -27,6 +27,7 @@ static NSString *sg_shownLine;
 static _Thread_local BOOL sg_resending;
 static dispatch_source_t sg_timer;
 static CFAbsoluteTime sg_due;
+static void tick(BOOL force);
 
 static NSString *textOf(NSArray<SGKaraokeWord *> *words) {
     SGKaraokeLine *line = [SGKaraokeLine new];
@@ -144,7 +145,11 @@ static NSString *lineFor(NSDictionary *info, double elapsed, NSTimeInterval *wai
             translatedLines = lines;
             SGRAutoTranslateWithoutView(trackID, lines, ^BOOL {
                 return [trackID isEqualToString:SGKaraokePlayingTrack()]
+                    && lines == SGKaraokeLinesForTrack(trackID) && [language isEqual:SGLyricsGeminiLanguage()]
                     && SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) == SGLockScreenLyricsLineTranslation;
+            }, ^{
+                sg_shownLine = nil;
+                tick(NO);
             });
         }
     } else {
@@ -189,7 +194,6 @@ static double rateOf(NSDictionary *info) {
     return rate.doubleValue > 0 ? rate.doubleValue : 1;
 }
 
-static void tick(BOOL force);
 static BOOL playingBy(NSDictionary *info);
 
 // Main thread, as everything the timer touches is. Stops the timer, or arms it to look again `wait`
@@ -316,9 +320,16 @@ static void lookNow(void) {
             if (![track isEqualToString:SGKaraokePlayingTrack()]
                 || ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()]
                 || SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) != SGLockScreenLyricsLineTranslation) return;
-            SGLyricsSyncSavedTranslation(track, note.userInfo[@"language"], SGKaraokeLinesForTrack(track));
-            sg_shownLine = nil;
-            tick(NO);
+            NSString *language = note.userInfo[@"language"];
+            NSArray *lines = SGKaraokeLinesForTrack(track);
+            SGLyricsLoadTranslation(track, language, lines, ^BOOL {
+                return [track isEqual:SGKaraokePlayingTrack()] && [language isEqual:SGLyricsGeminiLanguage()]
+                    && lines == SGKaraokeLinesForTrack(track)
+                    && SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) == SGLockScreenLyricsLineTranslation;
+            }, ^{
+                sg_shownLine = nil;
+                tick(NO);
+            });
         });
     }];
     // Lines kept for a track, or replaced by better timed ones, can change the line at once.

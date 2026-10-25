@@ -154,10 +154,13 @@ void SGRTranslateLyrics(NSArray<SGKaraokeLine *> *lines, NSString *track, NSStri
     });
 }
 
-void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void)) {
+void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void), void (^loaded)(void)) {
     NSString *language = SGLyricsGeminiLanguage();
     if (!track.length || !lines.count || !language.length) return;
-    SGLyricsSyncSavedTranslation(track, language, lines);
+    SGLyricsLoadTranslation(track, language, lines, ^BOOL {
+        return mayContinue() && [language isEqual:SGLyricsGeminiLanguage()];
+    }, ^{
+    loaded();
     if (!SGRAutoTranslationEnabled() || !SGRLyricsShouldTranslate(SGRLyricsInAnotherLanguage(lines, language)) ||
         !SGRLyricsTranslationAllowed(track, lines)) return;
     BOOL untranslated = NO;
@@ -174,6 +177,7 @@ void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *line
         ^(NSArray *sent, NSString *song, NSString *to, SGRAutoTranslated progress, SGRAutoTranslated done) {
             SGRAutoTranslateInOrder(sent, song, to, revision, mayContinue, progress, done);
         }, nil, nil);
+    });
 }
 
 NSNotificationName const SGRAutoTranslationDidChangeNotification = @"spotifyglass.redesign.autoTranslationDidChange";

@@ -9,7 +9,17 @@
 #import "Settings/SGModPage.h"
 #import "Redesigned/Lyrics/AutoTranslation.h"
 
+static dispatch_semaphore_t storeEntered, storeRelease;
+static BOOL holdStore;
 NSURL *SGLyricsTestCacheRoot(void) {
+    if (!NSThread.isMainThread && holdStore) {
+        holdStore = NO;
+        dispatch_semaphore_signal(storeEntered);
+        if (dispatch_semaphore_wait(storeRelease, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC))) {
+            fprintf(stderr, "FAIL: main blocked behind the translation store queue\n");
+            exit(1);
+        }
+    }
     static NSURL *root;
     if (!root) root = [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES] URLByAppendingPathComponent:[@"vitrine-lyrics-check-" stringByAppendingString:NSUUID.UUID.UUIDString] isDirectory:YES];
     return root;

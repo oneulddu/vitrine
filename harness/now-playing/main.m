@@ -95,7 +95,13 @@ NSInteger SGInt(NSString *key, NSInteger fallback) {
 }
 NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
-void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void)) {}
+void SGLyricsLoadTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines,
+                             BOOL (^current)(void), void (^done)(void)) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if (current()) done(); });
+}
+void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void), void (^loaded)(void)) {
+    dispatch_async(dispatch_get_main_queue(), ^{ if (mayContinue()) loaded(); });
+}
 NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
 
 SGKaraokeLine *lineOf(NSString *text, NSInteger start, NSInteger end) {

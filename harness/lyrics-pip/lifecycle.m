@@ -7,6 +7,7 @@ static BOOL paused = YES, loading;
 static NSInteger requestedSeek;
 static NSArray<SGKaraokeLine *> *testLines;
 static NSUInteger translationReads, pronunciationReads;
+static NSMutableArray<void (^)(void)> *heldTranslationLoads;
 static BOOL rulePresent, ruleTranslation, rulePronunciation;
 @implementation SPTPlayerTrack
 - (id)URI { return SGTestTrackURI(); }
@@ -46,6 +47,16 @@ NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
     translationReads++;
     for (SGKaraokeLine *line in lines) if (!line.translation.length) line.translation = @"Saved translation";
+}
+void SGLyricsLoadTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines,
+                             BOOL (^current)(void), void (^done)(void)) {
+    void (^load)(void) = ^{
+        if (!current()) return;
+        SGLyricsSyncSavedTranslation(track, language, lines);
+        done();
+    };
+    if (heldTranslationLoads) [heldTranslationLoads addObject:[load copy]];
+    else dispatch_async(dispatch_get_main_queue(), load);
 }
 NSDictionary *SGLyricsAIValues(NSString *kind, NSString *track, NSString *notation) {
     pronunciationReads++;
@@ -233,11 +244,24 @@ void SGTestLifecycle(void) {
     SGTestSetting(@"spotifyglass.redesign.lyricsTranslation", @YES);
     SGTestSetting(@"spotifyglass.redesign.lyricsPronunciation", @YES);
     [engine refresh];
-    SGTestAssert([engine.shown[3] isEqual:@"Saved pronunciation"] && [engine.shown[4] isEqual:@"Saved translation"] &&
+    SGTestAssert(SGTestPump(^BOOL { return [engine.shown[4] isEqual:@"Saved translation"]; }) &&
+        [engine.shown[3] isEqual:@"Saved pronunciation"] &&
         !line.translation && !line.pronunciation, @"saved supplements appear without modifying shared source lines");
     NSUInteger reads = translationReads + pronunciationReads;
     for (NSUInteger i = 0; i < 10; i++) [engine refresh];
     SGTestAssert(translationReads + pronunciationReads == reads, @"saved supplements are not reread from storage on each tick");
+    heldTranslationLoads = [NSMutableArray array];
+    frames = engine.testLayer.frames;
+    NSData *translatedPixels = engine.testLayer.pixels;
+    [engine backgroundChanged:[NSNotification notificationWithName:NSUserDefaultsDidChangeNotification object:nil]];
+    SGTestAssert(SGTestPump(^BOOL { return heldTranslationLoads.count == 1; }), @"defaults refresh reaches the held saved-translation read");
+    SGTestAssert([engine.shown[4] isEqual:@"Saved translation"] && [engine.testLayer.pixels isEqual:translatedPixels]
+        && engine.testLayer.frames == frames, @"a pending defaults read never removes the translated presentation");
+    void (^releaseTranslation)(void) = heldTranslationLoads.firstObject;
+    heldTranslationLoads = nil;
+    if (releaseTranslation) releaseTranslation();
+    SGTestAssert(engine.testLayer.frames == frames && [engine.shown[4] isEqual:@"Saved translation"],
+        @"an unchanged prepared result does not publish a duplicate frame");
     rulePresent = YES; ruleTranslation = NO; rulePronunciation = YES;
     // followLanguageRule in the lyrics view owns applying defaults to the effective switches.
     SGTestSetting(@"spotifyglass.redesign.lyricsTranslation", @NO);

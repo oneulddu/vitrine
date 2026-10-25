@@ -47,7 +47,8 @@ static void *kPossibleContext = &kPossibleContext;
 @property (nonatomic, strong) SGLyricsPiPStyle *style;
 @property (nonatomic, copy) NSArray *shownStyle;
 @property (nonatomic) CGSize raster;
-@property (nonatomic, strong) NSArray<SGKaraokeLine *> *sourceLines, *preparedLines;
+@property (nonatomic, strong) NSArray<SGKaraokeLine *> *sourceLines, *preparedLines, *pendingLines;
+@property (nonatomic) BOOL linesDirty;
 @property (nonatomic, copy) void (^seekCompletion)(void);
 @property (nonatomic, copy) NSString *seekTrack;
 @property (nonatomic) NSInteger seekTarget;
@@ -163,6 +164,7 @@ void SGLyricsPiPToggle(UIView *from) {
     _shownStyle = nil;
     _sourceLines = nil;
     _preparedLines = nil;
+    _pendingLines = nil;
     _track = nil;
     _artworkTrack = nil;
     [_background invalidate];
@@ -279,8 +281,8 @@ void SGLyricsPiPToggle(UIView *from) {
 - (void)lyricsChanged:(NSNotification *)note {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (!note.object || [note.object isEqual:self.track]) {
-            self.sourceLines = nil;
-            self.preparedLines = nil;
+            self.linesDirty = YES;
+            self.pendingLines = nil;
             [self refresh];
         }
     });
@@ -298,8 +300,8 @@ void SGLyricsPiPToggle(UIView *from) {
     // Settings and late artwork must update a paused frame without a polling render timer.
     dispatch_async(dispatch_get_main_queue(), ^{
         if ([note.name isEqual:NSUserDefaultsDidChangeNotification]) {
-            self.sourceLines = nil;
-            self.preparedLines = nil;
+            self.linesDirty = YES;
+            self.pendingLines = nil;
         }
         [self refresh];
     });
@@ -378,11 +380,28 @@ void SGLyricsPiPToggle(UIView *from) {
     }
     if (track.length && !SGKaraokeLinesForTrack(track)) SGKaraokeRequestLyrics(track);
     NSArray<SGKaraokeLine *> *lines = track.length ? SGKaraokeLinesForTrack(track) : nil;
-    if (changedTrack || _sourceLines != lines) {
+    if (changedTrack || _linesDirty || _sourceLines != lines) {
+        _linesDirty = NO;
         _sourceLines = lines;
+        if (changedTrack) _preparedLines = nil;
         NSMutableArray *copies = [NSMutableArray arrayWithCapacity:lines.count];
         for (SGKaraokeLine *line in lines) [copies addObject:[line copy]];
-        if (track.length && copies.count) SGLyricsSyncSavedTranslation(track, SGLyricsGeminiLanguage(), copies);
+        _pendingLines = copies;
+        if (track.length && copies.count) {
+            NSString *language = SGLyricsGeminiLanguage();
+            __weak SGLyricsPiPEngine *weakSelf = self;
+            SGLyricsLoadTranslation(track, language, copies, ^BOOL {
+                SGLyricsPiPEngine *engine = weakSelf;
+                return engine && (engine.active || engine.starting) && [engine.track isEqual:track]
+                    && engine.sourceLines == lines && engine.pendingLines == copies
+                    && [language isEqual:SGLyricsGeminiLanguage()];
+            }, ^{
+                SGLyricsPiPEngine *engine = weakSelf;
+                engine.preparedLines = copies;
+                engine.pendingLines = nil;
+                [engine refresh];
+            });
+        }
         NSString *notation = [NSString stringWithFormat:@"%ld", (long)[NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsPronunciationNotation]];
         NSDictionary *saved = track.length && copies.count ? SGLyricsAIValues(@"pronunciation", track, notation) : nil;
         for (SGKaraokeLine *line in copies) {
@@ -395,8 +414,14 @@ void SGLyricsPiPToggle(UIView *from) {
             }
             line.pronunciation = spoken;
         }
-        _preparedLines = lines ? copies : nil;
+        if (!track.length || !copies.count) {
+            _preparedLines = lines ? copies : nil;
+            _pendingLines = nil;
+        }
     }
+    // A refresh never exposes the unfinished copies. Same-track frames keep their
+    // prepared supplements; a new track waits for its first ordered store read.
+    if (_pendingLines && !_preparedLines) return;
     // The lyrics views apply language defaults once per song to these shared switches.
     // They are also the current manual choice: reapplying a rule here on open/reopen would
     // undo that choice. Read the effective switches, including a queued next-song update,

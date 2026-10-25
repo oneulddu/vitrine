@@ -21,7 +21,7 @@ typedef NS_ENUM(NSInteger, SGLockScreenLyricsLine) {
 // `lines`, are saved and are posted to the lyrics views as theirs are. No view or foreground is required.
 // `mayContinue` is asked before each service is started, NO to stop (an answer already on its way is still saved).
 @class SGKaraokeLine;
-void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void));
+void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void), void (^loaded)(void));
 // Moving artwork with lyrics: the moving artwork clip found for the track `uri`, a local file, which
 // LyricsArtwork.x draws the lines over while that track plays. Main queue.
 void SGLyricsArtworkSetMotion(NSString *uri, NSURL *file);

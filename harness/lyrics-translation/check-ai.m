@@ -893,7 +893,90 @@ static void checkAIJobs(void) {
     CHECK(SGLyricsAIAvailable().count == 0);
     puts("AI jobs: prompt JSON, notation, note limits, all three requests, thinking level, timeout, strict replies, main completion, coalescing and memo passed");
 }
+static void checkAsyncTranslationMutation(void) {
+    for (NSString *action in @[@"other-track", @"other-language", @"notes", @"pronunciation"]) {
+        NSArray *written = aiLines(@[@"isolated line"]), *shared = aiLines(@[@"isolated line"]);
+        SGKaraokeLine *source = written[0], *live = shared[0];
+        source.translation = @"kept translation";
+        source.translationMade = YES;
+        SGLyricsSaveTranslation(@"isolated-read", @"ko", written);
+        void (^unrelatedSave)(void) = ^{
+            if ([action isEqual:@"other-track"]) SGLyricsSaveTranslation(@"other-song", @"ko", written);
+            else if ([action isEqual:@"other-language"]) SGLyricsSaveTranslation(@"isolated-read", @"ja", written);
+            else SGLyricsSaveAI(action, @"isolated-read", [action isEqual:@"notes"] ? @"ko" : @"1",
+                                @{@"isolated line": @"unrelated AI value"});
+        };
+        __block NSUInteger completions = 0;
+        __block BOOL secondSaved = NO;
+        SGLyricsLoadTranslation(@"isolated-read", @"ko", shared, ^BOOL { return YES; }, ^{
+            CHECK(NSThread.isMainThread && ++completions == 1);
+            CHECK([live.translation isEqual:@"kept translation"] && live.translationMade);
+        });
+        unrelatedSave();
+        // Ensure the first read's main callback is queued. A second unrelated save is
+        // then queued behind it, so even an unnecessary retry is overtaken again.
+        SGLyricsSavedAI(@"notes", @"unrelated-barrier", @"ko");
+        dispatch_async(dispatch_get_main_queue(), ^{ unrelatedSave(); secondSaved = YES; });
+        waitFor(^BOOL { return completions == 1 && secondSaved; });
+    }
+    for (NSString *action in @[@"delete", @"replace", @"delete-all"]) {
+        NSArray *written = aiLines(@[@"mutation line"]), *shared = aiLines(@[@"mutation line"]);
+        SGKaraokeLine *source = written[0], *live = shared[0];
+        source.translation = @"translation A";
+        source.translationMade = YES;
+        SGLyricsSaveTranslation(@"async-mutation", @"ko", written);
+        SGLyricsSyncSavedTranslation(@"async-mutation", @"ko", shared);
+        __block NSUInteger completions = 0;
+        SGLyricsLoadTranslation(@"async-mutation", @"ko", shared, ^BOOL { return YES; }, ^{
+            CHECK(NSThread.isMainThread && ++completions == 1);
+            if ([action isEqual:@"replace"]) CHECK([live.translation isEqual:@"translation B"] && live.translationMade);
+            else CHECK(!live.translation && !live.translationMade);
+        });
+        // Main does not drain while these ordered synchronous operations wait for the
+        // store: the old read has captured A, but its main application is still pending.
+        if ([action isEqual:@"replace"]) {
+            source.translation = @"translation B";
+            SGLyricsSaveTranslation(@"async-mutation", @"ko", written);
+        } else if ([action isEqual:@"delete"]) {
+            SGLyricsDeleteTranslation(@"async-mutation", @"ko");
+        } else {
+            SGLyricsDeleteSavedTranslations();
+        }
+        if ([action isEqual:@"replace"]) SGLyricsSavedAI(@"notes", @"mutation-barrier", @"ko");
+        else SGLyricsSyncSavedTranslation(@"async-mutation", @"ko", shared);
+        waitFor(^BOOL { return completions == 1; });
+    }
+    puts("Async translation reads: unrelated track/language/AI saves preserve results; same-key changes and delete-all retire stale applications");
+}
+
 static void checkAIStore(void) {
+    checkAsyncTranslationMutation();
+    SGLyricsDeleteSavedTranslations();
+    NSArray *written = aiLines(@[@"async line"]), *loaded = aiLines(@[@"async line"]);
+    ((SGKaraokeLine *)written[0]).translation = @"ordered translation";
+    ((SGKaraokeLine *)written[0]).translationMade = YES;
+    storeEntered = dispatch_semaphore_create(0);
+    storeRelease = dispatch_semaphore_create(0);
+    holdStore = YES;
+    SGLyricsSaveTranslation(@"async-store", @"ko", written);
+    CHECK(dispatch_semaphore_wait(storeEntered, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC)) == 0);
+    SGLyricsSaveAI(@"notes", @"async-store", @"ko", @{@"async line": @"ordered note"});
+    __block BOOL heartbeat = NO, translated = NO, noted = NO, rejected = NO;
+    SGLyricsLoadTranslation(@"async-store", @"ko", loaded, ^BOOL { return YES; }, ^{
+        CHECK(NSThread.isMainThread && heartbeat);
+        CHECK([((SGKaraokeLine *)loaded[0]).translation isEqual:@"ordered translation"]);
+        translated = YES;
+    });
+    NSArray *retired = aiLines(@[@"async line"]);
+    SGLyricsLoadTranslation(@"async-store", @"ko", retired, ^BOOL { rejected = YES; return NO; },
+        ^{ CHECK(NO); });
+    SGLyricsLoadSavedAI(@"notes", @"async-store", @"ko", ^(NSDictionary *saved) {
+        CHECK(NSThread.isMainThread && heartbeat && [saved[@"async line"] isEqual:@"ordered note"]);
+        noted = YES;
+    });
+    dispatch_async(dispatch_get_main_queue(), ^{ heartbeat = YES; dispatch_semaphore_signal(storeRelease); });
+    waitFor(^BOOL { return translated && noted && rejected; });
+    CHECK(!((SGKaraokeLine *)retired[0]).translation);
     SGLyricsDeleteSavedTranslations();
     NSDictionary *values = @{@"original": @"value", @"": @"", @"한글 😀": @"기록"};
     SGLyricsSaveAI(@"notes", @"../unsafe/track", @"ko-KR", values);

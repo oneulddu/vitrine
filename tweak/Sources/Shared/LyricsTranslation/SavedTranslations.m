@@ -11,6 +11,24 @@
 #import <CommonCrypto/CommonDigest.h>
 
 static const NSUInteger kKept = 200;
+// Store-queue ordering stops at delivery to main. A mutation requested meanwhile
+// also retires read results waiting to be applied to the live lyric objects.
+@interface SGTranslationReadVersion : NSObject
+@property (nonatomic) NSUInteger mutation, readers;
+@end
+@implementation SGTranslationReadVersion
+@end
+// Guarded by the class lock. Keep versions only while reads are outstanding, not
+// for every song visited this launch. Delete-all also invalidates reads of absent files.
+static NSMutableDictionary<NSURL *, SGTranslationReadVersion *> *sg_readVersions;
+static NSUInteger sg_deleteEpoch;
+
+static void translationMutated(NSURL *file) {
+    @synchronized (SGTranslationReadVersion.class) {
+        SGTranslationReadVersion *version = sg_readVersions[file];
+        version.mutation++;
+    }
+}
 
 NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
 
@@ -108,6 +126,7 @@ void SGLyricsEndTranslation(NSString *track, NSString *language, NSUInteger toke
 void SGLyricsDeleteTranslation(NSString *track, NSString *language) {
     NSURL *file = fileFor(track, language);
     if (!file) return;
+    translationMutated(file);
     [sg_translationJobs removeObjectForKey:@[track, language]];
     dispatch_sync(writes(), ^{
         BOOL removed = [NSFileManager.defaultManager removeItemAtURL:file error:nil];
@@ -115,18 +134,15 @@ void SGLyricsDeleteTranslation(NSString *track, NSString *language) {
     });
 }
 
-void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
-    NSURL *file = fileFor(track, language);
-    if (!file || !lines.count) return;
-    __block NSDictionary *saved = nil;
-    // A view notified just after a batch must read that batch, not the preceding async write.
-    dispatch_sync(writes(), ^{
-        saved = sg_unsavedTranslations[file];
-        if (saved) return;
-        NSData *data = [NSData dataWithContentsOfURL:file];
-        id value = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-        if ([value isKindOfClass:NSDictionary.class]) saved = value;
-    });
+static NSDictionary *readTranslation(NSURL *file) {
+    if (!file) return nil;
+    NSDictionary *saved = sg_unsavedTranslations[file];
+    if (saved) return saved;
+    NSData *data = [NSData dataWithContentsOfURL:file];
+    id value = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    return [value isKindOfClass:NSDictionary.class] ? value : nil;
+}
+static void applyTranslation(NSDictionary *saved, NSArray<SGKaraokeLine *> *lines) {
     for (SGKaraokeLine *line in lines) {
         id translation = saved[SGKaraokeLineText(line) ?: @""];
         BOOL has = [translation isKindOfClass:NSString.class] && [translation length];
@@ -140,6 +156,55 @@ void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<S
     }
 }
 
+void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
+    NSURL *file = fileFor(track, language);
+    if (!file || !lines.count) return;
+    __block NSDictionary *saved;
+    dispatch_sync(writes(), ^{ saved = readTranslation(file); });
+    applyTranslation(saved, lines);
+}
+
+static void loadTranslation(NSURL *file, NSArray<SGKaraokeLine *> *lines,
+                            BOOL (^current)(void), void (^done)(void), BOOL mayReload) {
+    SGTranslationReadVersion *version = nil;
+    NSUInteger mutation, epoch;
+    @synchronized (SGTranslationReadVersion.class) {
+        if (file) {
+            if (!sg_readVersions) sg_readVersions = [NSMutableDictionary dictionary];
+            version = sg_readVersions[file];
+            if (!version) sg_readVersions[file] = version = [SGTranslationReadVersion new];
+            version.readers++;
+        }
+        mutation = version.mutation;
+        epoch = sg_deleteEpoch;
+    }
+    dispatch_async(writes(), ^{
+        NSDictionary *saved = readTranslation(file);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            BOOL changed;
+            @synchronized (SGTranslationReadVersion.class) {
+                changed = file && (mutation != version.mutation || epoch != sg_deleteEpoch);
+                if (version && --version.readers == 0) [sg_readVersions removeObjectForKey:file];
+            }
+            if (!current()) return;
+            if (changed) {
+                if (mayReload) loadTranslation(file, lines, current, done, NO);
+                // A second intervening mutation retires this attempt too; finish without
+                // overwriting live lines. Its newer save/delete owns the current state.
+                else done();
+                return;
+            }
+            if (file) applyTranslation(saved, lines);
+            done();
+        });
+    });
+}
+
+void SGLyricsLoadTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines,
+                             BOOL (^current)(void), void (^done)(void)) {
+    loadTranslation(fileFor(track, language), lines, current, done, YES);
+}
+
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
     NSURL *file = fileFor(track, language);
     if (!file) return;
@@ -150,6 +215,7 @@ void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKara
     }
     if (!saved.count) return;
     NSData *data = [NSJSONSerialization dataWithJSONObject:saved options:0 error:nil];
+    translationMutated(file);
     // One at a time, in the order asked: a song is saved after every batch, and an older write must not land last.
     dispatch_async(writes(), ^{
         [NSFileManager.defaultManager createDirectoryAtURL:folder() withIntermediateDirectories:YES attributes:nil error:nil];
@@ -157,7 +223,7 @@ void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKara
         rememberUnsaved(file, written ? nil : saved);
         if (written) trim(folder());
     });
-    // After the write is queued, so a reader's SGLyricsSyncSavedTranslation (on main, which drains the queue) sees it.
+    // Readers enqueue after this write, preserving read-after-write order without blocking main.
     [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationSavedNotification object:track
                                                       userInfo:@{@"language": language}];
 }
@@ -218,18 +284,26 @@ static BOOL validAI(id values) {
     }
     return YES;
 }
+static NSDictionary *readAI(NSURL *file) {
+    if (!file) return nil;
+    NSNumber *size = nil;
+    if (![file getResourceValue:&size forKey:NSURLFileSizeKey error:nil] || size.unsignedLongLongValue > 1024 * 1024) return nil;
+    NSData *data = [NSData dataWithContentsOfURL:file];
+    id saved = data && data.length <= 1024 * 1024 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    return validAI(saved) ? saved : nil;
+}
 NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant) {
     NSURL *file = aiFile(kind, track, variant);
-    if (!file) return nil;
     __block NSDictionary *answer = nil;
-    dispatch_sync(writes(), ^{
-        NSNumber *size = nil;
-        if (![file getResourceValue:&size forKey:NSURLFileSizeKey error:nil] || size.unsignedLongLongValue > 1024 * 1024) return;
-        NSData *data = [NSData dataWithContentsOfURL:file];
-        id saved = data && data.length <= 1024 * 1024 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-        if (validAI(saved)) answer = saved;
-    });
+    dispatch_sync(writes(), ^{ answer = readAI(file); });
     return answer;
+}
+void SGLyricsLoadSavedAI(NSString *kind, NSString *track, NSString *variant, void (^done)(NSDictionary *)) {
+    NSURL *file = aiFile(kind, track, variant);
+    dispatch_async(writes(), ^{
+        NSDictionary *answer = readAI(file);
+        dispatch_async(dispatch_get_main_queue(), ^{ done(answer); });
+    });
 }
 void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine) {
     NSURL *file = aiFile(kind, track, variant);
@@ -244,6 +318,7 @@ void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictio
 }
 
 void SGLyricsDeleteSavedTranslations(void) {
+    @synchronized (SGTranslationReadVersion.class) { sg_deleteEpoch++; }
     [sg_translationJobs removeAllObjects];
     SGLyricsAIForgotten();
     dispatch_sync(writes(), ^{

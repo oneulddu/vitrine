@@ -1,7 +1,7 @@
 #import "tests.h"
 #import <objc/message.h>
 // Logos transforms the real production hooks, including their existing player-sheet gate.
-#import "build/SpeedPitchMenu.m"
+#import "SpeedPitchMenu.m"
 
 void SGRequireClasses(NSArray *classes) {}
 void SGForEachView(UIView *view, void (^block)(UIView *)) {

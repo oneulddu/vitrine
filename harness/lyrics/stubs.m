@@ -115,6 +115,14 @@ void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<S
         }
     }
 }
+void SGLyricsLoadTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines,
+                             BOOL (^current)(void), void (^done)(void)) {
+    // This menu fixture has an in-memory store. Queue ordering and stale async reads are
+    // exercised against SavedTranslations.m in lyrics-translation, not this boundary double.
+    if (!current()) return;
+    SGLyricsSyncSavedTranslation(track, language, lines);
+    done();
+}
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {
     NSMutableDictionary<NSString *, NSString *> *saved = [NSMutableDictionary dictionary];
     for (SGKaraokeLine *line in lines) {

@@ -4,12 +4,13 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$(cd "$HERE/../../tweak/Sources" && pwd)
-mkdir -p "$HERE/build"
-"${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "$SRC/Shared/Player/SpeedPitchMenu.x" > "$HERE/build/SpeedPitchMenu.m"
+OUT=${OUT:-$HERE/build}
+mkdir -p "$OUT"
+"${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "$SRC/Shared/Player/SpeedPitchMenu.x" > "$OUT/SpeedPitchMenu.m"
 SDK=$(xcrun --sdk macosx --show-sdk-path)
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" -fobjc-arc -g -Wall \
-    -I"$SRC" -I"$SRC/Shared/Player" \
+    -I"$SRC" -I"$SRC/Shared/Player" -I"$OUT" \
     "$HERE/main.m" "$SRC/Shared/LyricsPiP/LyricsPiPText.m" "$SRC/Shared/LyricsPiP/LyricsPiPFrame.m" \
     "$SRC/Shared/LyricsPiP/LyricsPiPStyle.m" "$HERE/typography.m" \
     "$SRC/Shared/LyricsPiP/LyricsPiPBackground.m" "$HERE/background.m" \
@@ -20,4 +21,4 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \
     "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
     -framework UIKit -framework Foundation -framework CoreText -framework ImageIO -framework CoreGraphics -framework Accelerate \
     -framework AVKit -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework QuartzCore \
-    -o "$HERE/build/lyrics-pip"
+    -o "$OUT/lyrics-pip"

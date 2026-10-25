@@ -69,8 +69,16 @@ SGModRow *SGGeminiKeyRow(void);
 
 // SavedTranslations.m: a song's translations kept on disk by track and language, matched to lines by their text.
 // The saved ones are the truth for translations made here: syncing replaces made translations, fills empty
-// lines, and takes a made translation off a line with nothing saved. Source translations stay. Main thread.
+// lines, and takes a made translation off a line with nothing saved. Source translations stay.
+// Synchronous compatibility entrypoint; UI callers use the ordered asynchronous load below.
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
+// Reads on the store queue, then tests current, applies to lines and calls done on main.
+// A retired track/language/source returns NO from current; neither mutation nor done then runs.
+// A save/delete of this translation file, or delete-all, overtaking delivery triggers
+// one fresh read. Unrelated translations and AI saves do not invalidate it. If overtaken again, done
+// still runs without applying the stale result; newer live state is never overwritten.
+void SGLyricsLoadTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines,
+                             BOOL (^current)(void), void (^done)(void));
 void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines);
 // Main-thread job tokens shared by all views: a newer job or deletion invalidates earlier callbacks.
 NSUInteger SGLyricsBeginTranslation(NSString *track, NSString *language);
@@ -170,7 +178,10 @@ SGModRow *SGLyricsCulturalNotesRow(void);
 // AI answers are kept by their original line text. Pronunciation uses the notation number as its variant;
 // notes use the language tag. Reads and writes are ordered, so an immediate read sees the last save.
 NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant);
-// Main-thread shared result, including an answer that could not be written to disk. Notation 0 follows language.
+// Ordered disk load with main-queue completion. Callers validate their request identity before use.
+void SGLyricsLoadSavedAI(NSString *kind, NSString *track, NSString *variant, void (^done)(NSDictionary *values));
+// Main-thread memory result, including an answer that could not be written to disk. A miss loads
+// asynchronously and announces available disk results. Notation 0 follows language.
 NSDictionary<NSString *, NSString *> *SGLyricsAIValues(NSString *kind, NSString *track, NSString *variant);
 extern NSNotificationName const SGLyricsAIResultDidChangeNotification; // track ID, or nil after deleting all
 

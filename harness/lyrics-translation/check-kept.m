@@ -38,7 +38,9 @@ static void checkKeptTranslation(void) {
     // Clear the session ledger: persistence, not the "already attempted" guard, must prevent a new request.
     SGRAutoTranslationSettingsChanged();
     NSUInteger before = deviceCalls;
-    SGRAutoTranslateWithoutView(track, restored, ^BOOL { return YES; });
+    __block BOOL loaded = NO;
+    SGRAutoTranslateWithoutView(track, restored, ^BOOL { return YES; }, ^{ loaded = YES; });
+    waitFor(^BOOL { return loaded; });
     CHECK(deviceCalls == before && !SGRTranslationJobRunning(track, @"en"));
     SGLyricsDeleteTranslation(track, @"en");
     SGLyricsSyncSavedTranslation(track, @"en", restored);
