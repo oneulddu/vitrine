@@ -3094,6 +3094,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
 }
 
 - (void)syncSiblings {
+    if (_sample) return;
     for (UIView *sibling in self.superview.subviews) {
         if (sibling != self && _showing) sibling.alpha = 0;
     }
@@ -3106,7 +3107,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     if (showing) [self queueAutomaticTranslation];
     if (showing && !_browsing) _scroll.contentOffset = CGPointZero;
     _credit.hidden = !showing || !_credit.text.length;
-    for (UIView *sibling in self.superview.subviews) {
+    if (!_sample) for (UIView *sibling in self.superview.subviews) {
         if (sibling != self) sibling.alpha = showing ? 0 : 1;
     }
 }
@@ -3152,6 +3153,8 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     if (!(track == _track || [track isEqualToString:_track])) {
         SGLog(@"karaoke: page shows track %@, lyrics %@", track, [self linesFor:track] ? @"captured" : @"not captured yet");
         _track = track;
+        _seekAt = 0;
+        _seekTo = 0;
         _stillSince = 0;   // the last song's pause says nothing of this one's
         [self stir];   // a new song is drawn at full rate, paused or not
         [self dropLines];

@@ -45,6 +45,12 @@ The build is build.sh's with three changes: the target is `arm64-apple-ios17.0-m
 with `-iframework $SDK/System/iOSSupport/System/Library/Frameworks`, and the binary goes into
 `Check.app/Contents/MacOS/` in a new `mktemp -d` folder under /tmp, which it then launches with `-translationCheck 1`.
 
+`SG_LYRICS_REVIEW_ONLY=1 bash harness/lyrics/translation-check.sh` runs the focused regressions:
+background layout snapshots, style changes during first measurement, stale AI actions, preview siblings,
+track changes during a seek hold, and cancellation during the download glyph's ring-closing delay.
+The glyph is production code; the clock, providers and Spotify view-tree reader are test doubles.
+Artwork association in `SGRBridges.x` still needs a Spotify/device check.
+
 A real file goes in with `-file /path/song.ttml`: the simulator reads the Mac's paths.
 
 `-perf LABEL` logs the view's per frame cost (its display link's `tick`) every 240 frames; run with

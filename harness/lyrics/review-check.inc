@@ -21,6 +21,8 @@ static BOOL reviewShowsText(UIView *view, NSString *text) {
     return NO;
 }
 
+#include "round-two-check.inc"
+
 static void reviewChecks(UIWindow *window) {
     NSUserDefaults *args = NSUserDefaults.standardUserDefaults;
     [args setBool:NO forKey:SGRKeyLyricsAutoTranslation];
@@ -84,4 +86,5 @@ static void reviewChecks(UIWindow *window) {
     [view removeFromSuperview];
     [args setBool:NO forKey:@"ai"];
     [args removeObjectForKey:@"translateTo"];
+    roundTwoChecks(window);
 }

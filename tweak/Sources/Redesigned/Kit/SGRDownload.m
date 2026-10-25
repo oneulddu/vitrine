@@ -284,36 +284,30 @@ static UIColor *tintFor(SGRDownloadState state) {
     _state = state;
     _showsState = YES;
     NSUInteger generation = ++_generation;
+    [_arc removeAnimationForKey:@"sgr.close"];
 
-    if (!animated) {
+    // A same-kind state can supersede a ring/symbol swap that has not finished (or even started).
+    // Its logical predecessor does not tell us which shape is visible yet.
+    if (!animated || ring == wasRing) {
+        [_ring.layer removeAllAnimations];
+        [_symbol.layer removeAllAnimations];
         _ring.hidden = !ring;
         _symbol.hidden = ring;
         _ring.alpha = _symbol.alpha = 1;
         _ring.transform = _symbol.transform = CGAffineTransformIdentity;
-        if (ring) [self sgr_setProgress:state == SGRDownloadDownloading ? progress : -1 animated:NO];
+        if (ring) [self sgr_setProgress:state == SGRDownloadDownloading ? progress : -1 animated:animated];
         else {
-            _symbol.image = symbolFor(state);
-            _symbol.tintColor = tintFor(state);
+            [_arc removeAllAnimations];
+            UIImage *image = symbolFor(state);
+            if (@available(iOS 17.0, *)) {
+                if (animated && !SGRReduceMotion()) [_symbol setSymbolImage:image withContentTransition:[NSSymbolReplaceContentTransition replaceDownUpTransition]];
+                else _symbol.image = image;
+            } else {
+                _symbol.image = image;
+            }
+            if (animated) SGRAnimate(SGRMotionFade, ^{ self->_symbol.tintColor = tintFor(state); }, nil);
+            else _symbol.tintColor = tintFor(state);
         }
-        return;
-    }
-
-    // One symbol for another (not downloaded to downloaded, say, when it happened while the page was away):
-    // the symbol replaces itself in place.
-    if (!ring && !wasRing) {
-        UIImage *image = symbolFor(state);
-        if (@available(iOS 17.0, *)) {
-            if (!SGRReduceMotion()) [_symbol setSymbolImage:image withContentTransition:[NSSymbolReplaceContentTransition replaceDownUpTransition]];
-            else _symbol.image = image;
-        } else {
-            _symbol.image = image;
-        }
-        SGRAnimate(SGRMotionFade, ^{ self->_symbol.tintColor = tintFor(state); }, nil);
-        return;
-    }
-    // Waiting to downloading and back: the ring stays, only what it shows changes.
-    if (ring && wasRing) {
-        [self sgr_setProgress:state == SGRDownloadDownloading ? progress : -1 animated:YES];
         return;
     }
 

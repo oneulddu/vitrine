@@ -170,8 +170,13 @@ static void followPlayer(void) {
     NSURL *url = nil;
     // A track whose metadata names no picture is its own key: only the screens can show it then.
     NSString *key = pictureOf(track, &url) ?: [@"track:" stringByAppendingString:uri];
-    if ([key isEqualToString:sg_wantedKey]) return;
+    BOOL samePicture = [key isEqualToString:sg_wantedKey];
     sg_wantedKey = key;
+    // Two tracks may name the same cover. Keep its pixels and quality, but publish who it now belongs
+    // to before either reuse path returns, including a return to an exact cover still on screen.
+    if (sg_artwork && [key isEqualToString:sg_artworkKey] && ![uri isEqualToString:sg_artworkURI])
+        publish(sg_artwork, key, sg_artworkQuality);
+    if (samePicture) return;
     [sg_fetch cancel];
     sg_fetch = nil;
     if ([key isEqualToString:sg_artworkKey] && sg_artworkQuality == SGRArtworkQualityExact) return;

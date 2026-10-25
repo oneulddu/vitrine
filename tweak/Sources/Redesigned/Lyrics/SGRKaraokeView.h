@@ -3,8 +3,9 @@
 // without synced lyrics keeps Spotify's own lines, where there are any next to it. The lines and the
 // clock are Shared/Lyrics/Lyrics.h's.
 //
-// It takes the whole of whatever it is put in and dims every other view in there while it has lines
-// to show, so a host it shares with anything else needs a view of its own for it.
+// A player view takes the whole of whatever it is put in and dims every other view in there while it
+// has lines to show, so a host it shares with anything else needs a view of its own for it. Sample
+// previews leave their siblings alone.
 #import <UIKit/UIKit.h>
 #import "Shared/Lyrics/Lyrics.h"
 
