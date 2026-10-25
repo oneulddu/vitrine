@@ -174,6 +174,7 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
     _black.hidden = flows;
     if (flows) _backdrop.hidden = YES;
     else _flow.hidden = YES;
+    [self readPaletteAnimated:NO];
     [self watch];
     [self updateMotion];
     [self setNeedsLayout];
@@ -264,11 +265,16 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
     _image = image;
     _identity = [identity copy];
     if (_fluid) [_fluidLayer setArtwork:image animated:animated && self.window != nil];
+    [self readPaletteAnimated:animated];
+}
+
+- (void)readPaletteAnimated:(BOOL)animated {
     NSUInteger generation = ++_generation;
+    if (!_image) return;
     SGRPaletteRequest request = {CGSizeZero, NO, YES, _flows, _mainColor};
     if (_showsBackdrop && !_flows && !_fluid) request.backdropSize = CGSizeMake(self.bounds.size.width > 0 ? self.bounds.size.width : 402, [self backdropHeightNow]);
     __weak SGRArtworkField *weakSelf = self;
-    [SGRPalette paletteForImage:image request:request completion:^(SGRPalette *palette) {
+    [SGRPalette paletteForImage:_image request:request completion:^(SGRPalette *palette) {
         SGRArtworkField *field = weakSelf;
         if (!field || !palette || generation != field->_generation) return;
         [field applyPalette:palette animated:animated && field.window != nil];

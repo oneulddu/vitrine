@@ -24,7 +24,8 @@ extern NSNotificationName const SGRFieldColorDidChangeNotification;
 // The player's moving field instead of the still backdrop (SGRFlow.h): the artwork's colors drifting
 // over the whole of the bounds, with no fade to black. It moves only while the field is in a window,
 // the app is in front, the player is not opening or closing, Reduce Motion and Low Power Mode are off
-// and nothing holds it (motionHeld); otherwise it stays still where it was.
+// and nothing holds it (motionHeld); otherwise it stays still where it was. Changing this mode rereads
+// the retained artwork for the new palette and discards pending results from the previous mode.
 @property (nonatomic) BOOL flows;
 // Fluid artwork instead (SGRFluid.h): the cover itself blurred and slowly turning over the whole of the
 // bounds, under the same conditions for moving as `flows`. Setting one turns the other off.
