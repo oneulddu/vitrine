@@ -336,6 +336,7 @@ static void topFromFeed(UICollectionView *list) {
     NSString *from = SGRHomeTopPicksFrom();
     if (sg_topIndex != NSIntegerMax || !from || SGRHomeShelfHidden(from)) return;
     NSArray *identities = feed(list);
+    if (!identities) return;
     NSUInteger section = [identities indexOfObject:from];
     if (section == NSNotFound || ([identities isEqualToArray:sg_overruled] && [from isEqualToString:sg_overruledFrom])) return;
     sg_topIndex = (NSInteger)section * 10000;

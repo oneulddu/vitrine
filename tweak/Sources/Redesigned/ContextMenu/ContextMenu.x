@@ -46,7 +46,7 @@ static NSString *const kMoreMenu = @"com.vitrine.systemmenu.more";
 // The last complete set of Spotify's rows for each kind of sheet, for More to show before the live ones come.
 static NSString *const kStoredRowsKey = @"spotifyglass.redesign.player.menuRows";
 
-static char kAnchorKey, kFrontKey, kPlacedKey, kSessionKey;
+static char kAnchorKey, kFrontKey, kSessionKey;
 
 @class SGRMenuSession;
 // The session whose pick is being fired on its hidden sheet, for a page the row pushes inside the sheet.
@@ -354,11 +354,19 @@ static UIMenu *inlineGroup(NSArray<UIMenuElement *> *children) {
     return [super contextMenuInteraction:interaction configurationForMenuAtLocation:location];
 }
 
-// One line per touch down, so the phone log says the finger reached the mod's button and what it held then.
+// Touch-down diagnostics show the button's state and placement without doing a window hit test on every layout.
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     [super touchesBegan:touches withEvent:event];
     SGLog(@"system menu: touch down on the mod's ⋯ at %@ in the window (menu %@, %@)", NSStringFromCGRect([self convertRect:self.bounds toView:nil]),
           self.menu ? @"held" : @"none", self.enabled && self.userInteractionEnabled ? @"taking touches" : @"not taking touches");
+    UIControl *button = self.spotify;
+    if (!button.window || button.bounds.size.width <= 0) return;
+    CGRect over = [self convertRect:self.bounds toView:nil], under = [button convertRect:button.bounds toView:nil];
+    CGPoint middle = CGPointMake(CGRectGetMidX(under), CGRectGetMidY(under));
+    UIView *hit = [button.window hitTest:middle withEvent:nil];
+    NSString *reaches = hit == self ? @"it" : NSStringFromClass(hit.class);
+    SGLog(@"system menu: the mod's ⋯ at %@ over Spotify's at %@ in the window; a touch at the ⋯'s middle reaches %@",
+          NSStringFromCGRect(over), NSStringFromCGRect(under), reaches);
 }
 
 // UIKit cancels the touch as the menu comes up, and the press holds until the menu ends (willEndForConfiguration:).
@@ -1152,22 +1160,6 @@ void SGRSystemMenuWatch(UIView *button, SGRMenuItems items, SGRMenuKind kind) {
     if (front.superview != button) [button addSubview:front];
     else if (button.subviews.lastObject != front) [button bringSubviewToFront:front];
     if (!CGRectEqualToRect(front.frame, button.bounds)) front.frame = button.bounds;
-    // Where the mod's button sits in the window next to the ⋯, and what a touch at the ⋯'s middle would reach,
-    // so the phone log shows the placement: once per change of the one over the other, of the ⋯'s size or of
-    // what the touch reaches, not of where the header is (the player's open and close move it every frame).
-    if (!button.window || button.bounds.size.width <= 0) return;
-    CGRect over = [front convertRect:front.bounds toView:nil], under = [button convertRect:button.bounds toView:nil];
-    CGPoint middle = CGPointMake(CGRectGetMidX(under), CGRectGetMidY(under));
-    UIView *hit = [button.window hitTest:middle withEvent:nil];
-    NSString *reaches = hit == front ? @"it" : NSStringFromClass(hit.class);
-    NSString *key = [NSString stringWithFormat:@"%@ %@ %@", NSStringFromCGPoint(CGPointMake(over.origin.x - under.origin.x, over.origin.y - under.origin.y)),
-                     NSStringFromCGSize(over.size), NSStringFromCGSize(under.size)];
-    key = [key stringByAppendingFormat:@" %@", reaches];
-    if (![key isEqualToString:objc_getAssociatedObject(front, &kPlacedKey)]) {
-        objc_setAssociatedObject(front, &kPlacedKey, key, OBJC_ASSOCIATION_COPY_NONATOMIC);
-        SGLog(@"system menu: the mod's ⋯ at %@ over Spotify's at %@ in the window; a touch at the ⋯'s middle reaches %@",
-              NSStringFromCGRect(over), NSStringFromCGRect(under), reaches);
-    }
 }
 
 UIControl *SGRSystemMenuFront(UIView *button) {
