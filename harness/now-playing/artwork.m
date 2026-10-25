@@ -633,7 +633,9 @@ void artworkChecks(void) {
     id transientFallback = artwork();
     check(sameImage(preview(transientFallback), safe), @"the paused line keeps the solid fallback during the retry");
     finishCover(@"source-transient", red);
-    check(![name(artwork()) isEqual:name(transientFallback)] && sameImage(preview(artwork()), red),
+    // The recovered cover is decoded and republished off the main queue; a slow runner can take past
+    // finishCover's short settle, so wait for the new artwork rather than a fixed delay.
+    check(await(^BOOL { return ![name(artwork()) isEqual:name(transientFallback)]; }) && sameImage(preview(artwork()), red),
           @"a paused line recovers its cover when the retry succeeds");
     check(sameImage([UIImage imageWithContentsOfFile:video(artwork()).path], red),
           @"the recovered retry cover reaches the paused disk clip");
