@@ -164,6 +164,7 @@ static NSDictionary *keyQuery(void) {
     return @{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
              (__bridge id)kSecAttrService: kService, (__bridge id)kSecAttrAccount: kAccount};
 }
+static NSNumber *sg_keyAvailable;
 static NSString *storedKey(void) {
     NSMutableDictionary *query = [keyQuery() mutableCopy];
     query[(__bridge id)kSecReturnData] = @YES;
@@ -171,11 +172,15 @@ static NSString *storedKey(void) {
     CFTypeRef data = NULL;
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &data);
     id value = CFBridgingRelease(data);
+    sg_keyAvailable = (status == errSecSuccess || status == errSecItemNotFound) ? @NO : nil;
     if (status != errSecSuccess || ![value isKindOfClass:NSData.class] || [value length] > 1024) return nil;
     NSString *key = [[NSString alloc] initWithData:value encoding:NSUTF8StringEncoding];
-    return key.length && [key rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound ? key : nil;
+    BOOL valid = key.length && [key rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound;
+    sg_keyAvailable = @(valid);
+    return valid ? key : nil;
 }
 static void storeKey(NSString *key) {
+    sg_keyAvailable = nil;
     SecItemDelete((__bridge CFDictionaryRef)keyQuery());
     [sg_done removeAllObjects];
     if (!key.length) return;
@@ -185,9 +190,10 @@ static void storeKey(NSString *key) {
     OSStatus status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
     if (status != errSecSuccess) SGLog(@"deepl: the key could not be kept (%d)", (int)status);
 }
-BOOL SGDeepLKeySet(void) { return storedKey() != nil; }
+BOOL SGDeepLKeySet(void) { return sg_keyAvailable ? sg_keyAvailable.boolValue : storedKey() != nil; }
 // Clear Keychain: the service's own items go, every account in it; answers kept for the launch go too.
 void SGDeepLForgetKey(void) {
+    sg_keyAvailable = nil;
     SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
                                               (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];

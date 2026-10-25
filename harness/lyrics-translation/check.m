@@ -50,45 +50,78 @@ NSTimeInterval SGLyricsTitleTestTime(void) { return titleTestClock; }
 static NSSet *testKeys;
 static NSMutableDictionary<NSString *, NSData *> *openAIKeys;
 static OSStatus keyReadFailure, keyWriteFailure, keyDeleteFailure;
+static NSUInteger keyReads;
+static BOOL preserveTestKeys;
+static void resetCredentialCaches(void) {
+    preserveTestKeys = YES;
+    SGGeminiForgetKey(); SGClaudeForgetKey(); SGDeepLForgetKey(); SGOpenAIForgetKeys();
+    preserveTestKeys = NO;
+}
+// Replacing the fake Keychain represents a new fixture, not an external mutation
+// that the running app is expected to detect. Retire its availability caches too.
+@interface SGCredentialFixture : NSObject
+@property (nonatomic, copy) NSSet *services;
+@property (nonatomic, strong) NSMutableDictionary *hosts;
+@end
+@implementation SGCredentialFixture
+- (NSSet *)services { return testKeys; }
+- (void)setServices:(NSSet *)value { testKeys = value; resetCredentialCaches(); }
+- (NSMutableDictionary *)hosts { return openAIKeys; }
+- (void)setHosts:(NSMutableDictionary *)value { openAIKeys = value; resetCredentialCaches(); }
+@end
+static SGCredentialFixture *credentialFixture(void) {
+    static SGCredentialFixture *fixture;
+    if (!fixture) fixture = [SGCredentialFixture new];
+    return fixture;
+}
 OSStatus SGLyricsTestKey(CFDictionaryRef query, CFTypeRef *result) {
+    keyReads++;
     NSDictionary *item = (__bridge NSDictionary *)query;
     NSString *service = item[(__bridge id)kSecAttrService];
+    if (keyReadFailure) return keyReadFailure;
     if (![testKeys containsObject:service]) return errSecItemNotFound;
     NSData *data = [@"offline-test-key" dataUsingEncoding:NSUTF8StringEncoding];
     if ([service isEqual:@"Vitrine.OpenAI"]) {
-        if (keyReadFailure) return keyReadFailure;
         data = openAIKeys[item[(__bridge id)kSecAttrAccount]];
         if (!data) return errSecItemNotFound;
     }
     if (result) *result = CFBridgingRetain(data);
     return errSecSuccess;
 }
-static NSString *testKeyAccount(CFDictionaryRef query) {
-    NSDictionary *item = (__bridge NSDictionary *)query;
-    NSCAssert([item[(__bridge id)kSecAttrService] isEqual:@"Vitrine.OpenAI"], @"Unexpected Keychain write");
-    return item[(__bridge id)kSecAttrAccount];
-}
 OSStatus SGLyricsTestKeyAdd(CFDictionaryRef query, CFTypeRef *result) {
-    NSString *account = testKeyAccount(query);
+    NSDictionary *item = (__bridge NSDictionary *)query;
+    NSString *service = item[(__bridge id)kSecAttrService], *account = item[(__bridge id)kSecAttrAccount];
     if (keyWriteFailure) return keyWriteFailure;
+    testKeys = [testKeys ?: [NSSet set] setByAddingObject:service];
+    if (![service isEqual:@"Vitrine.OpenAI"]) return errSecSuccess;
     if (openAIKeys[account]) return errSecDuplicateItem;
     openAIKeys[account] = ((__bridge NSDictionary *)query)[(__bridge id)kSecValueData];
     return errSecSuccess;
 }
 OSStatus SGLyricsTestKeyUpdate(CFDictionaryRef query, CFDictionaryRef attributes) {
-    NSString *account = testKeyAccount(query);
+    NSString *account = ((__bridge NSDictionary *)query)[(__bridge id)kSecAttrAccount];
     if (keyWriteFailure) return keyWriteFailure;
     if (!openAIKeys[account]) return errSecItemNotFound;
     openAIKeys[account] = ((__bridge NSDictionary *)attributes)[(__bridge id)kSecValueData];
     return errSecSuccess;
 }
 OSStatus SGLyricsTestKeyDelete(CFDictionaryRef query) {
-    NSString *account = testKeyAccount(query);
+    if (preserveTestKeys) return errSecSuccess;
+    NSDictionary *item = (__bridge NSDictionary *)query;
+    NSString *service = item[(__bridge id)kSecAttrService], *account = item[(__bridge id)kSecAttrAccount];
     if (keyDeleteFailure) return keyDeleteFailure;
+    if (![service isEqual:@"Vitrine.OpenAI"]) {
+        NSMutableSet *kept = [testKeys mutableCopy];
+        [kept removeObject:service]; testKeys = kept;
+        return errSecSuccess;
+    }
+    if (!account) { [openAIKeys removeAllObjects]; return errSecSuccess; }
     if (!openAIKeys[account]) return errSecItemNotFound;
     [openAIKeys removeObjectForKey:account];
     return errSecSuccess;
 }
+#define testKeys credentialFixture().services
+#define openAIKeys credentialFixture().hosts
 SGModRow *SGMenuRow(NSString *t, NSArray *c, NSString *(^v)(void), void (^chosen)(NSInteger)) { SGModRow *r = [SGModRow new]; r.title = t; r.menu = c; r.value = v; r.chosen = chosen; return r; }
 SGModRow *SGChoiceRow(NSString *t, NSString *s, NSString *k, NSArray *c, NSInteger f) { return nil; }
 // What the files reach outside what is checked here; none of it is called.
@@ -109,7 +142,17 @@ BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGRKeyLyricsAuto
 BOOL SGHidden(NSString *key) { return SGFlag(key, NO); }
 NSString *SGLyricsSongLanguage(NSString *track, NSArray<SGKaraokeLine *> *lines) { return nil; }
 BOOL SGLyricsLanguageRule(NSString *language, BOOL *translation, BOOL *pronunciation) { return NO; }
-UIViewController *SGTopController(void) { return nil; }
+static UIAlertController *keyPrompt;
+@interface SGKeyPresenter : UIViewController
+@end
+@implementation SGKeyPresenter
+- (void)presentViewController:(UIViewController *)controller animated:(BOOL)animated completion:(void (^)(void))done {
+    keyPrompt = (UIAlertController *)controller;
+    if (done) done();
+}
+@end
+static UIViewController *testPresenter;
+UIViewController *SGTopController(void) { return testPresenter; }
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
 

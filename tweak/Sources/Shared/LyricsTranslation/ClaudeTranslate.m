@@ -19,6 +19,7 @@ static NSString *cleanKey(NSString *text) {
     NSString *key = [text stringByTrimmingCharactersInSet:around];
     return key.length <= 4096 && [key rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound ? key : nil;
 }
+static NSNumber *sg_keyAvailable;
 static NSString *storedKey(void) {
     NSMutableDictionary *query = [keyQuery() mutableCopy];
     query[(__bridge id)kSecReturnData] = @YES;
@@ -26,11 +27,14 @@ static NSString *storedKey(void) {
     CFTypeRef data = NULL;
     OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &data);
     id value = CFBridgingRelease(data);
+    sg_keyAvailable = (status == errSecSuccess || status == errSecItemNotFound) ? @NO : nil;
     if (status != errSecSuccess || ![value isKindOfClass:NSData.class] || [value length] > 4096) return nil;
     NSString *key = cleanKey([[NSString alloc] initWithData:value encoding:NSUTF8StringEncoding]);
+    sg_keyAvailable = @(key.length > 0);
     return key.length ? key : nil;
 }
 static BOOL storeKey(NSString *key) {
+    sg_keyAvailable = nil;
     SecItemDelete((__bridge CFDictionaryRef)keyQuery());
     [sg_done removeAllObjects];
     if (!key.length) return YES;
@@ -41,9 +45,10 @@ static BOOL storeKey(NSString *key) {
     if (status != errSecSuccess) SGLog(@"claude: the key could not be kept (%d)", (int)status);
     return status == errSecSuccess;
 }
-BOOL SGClaudeKeySet(void) { return storedKey() != nil; }
+BOOL SGClaudeKeySet(void) { return sg_keyAvailable ? sg_keyAvailable.boolValue : storedKey() != nil; }
 // Clear Keychain: the service's own items go, every account in it; answers kept for the launch go too.
 void SGClaudeForgetKey(void) {
+    sg_keyAvailable = nil;
     SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
                                               (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];

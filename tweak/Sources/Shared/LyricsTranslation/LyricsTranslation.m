@@ -55,17 +55,22 @@ static NSDictionary *keyQuery(void) {
              (__bridge id)kSecAttrService: kService, (__bridge id)kSecAttrAccount: kAccount};
 }
 
+static NSNumber *sg_keyAvailable;
 static NSString *storedKey(void) {
     NSMutableDictionary *query = [keyQuery() mutableCopy];
     query[(__bridge id)kSecReturnData] = @YES;
     query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
     CFTypeRef data = NULL;
-    if (SecItemCopyMatching((__bridge CFDictionaryRef)query, &data) != errSecSuccess || !data) return nil;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &data);
+    sg_keyAvailable = status == errSecItemNotFound ? @NO : nil;
+    if (status != errSecSuccess || !data) return nil;
     NSString *key = [[NSString alloc] initWithData:(__bridge_transfer NSData *)data encoding:NSUTF8StringEncoding];
+    sg_keyAvailable = @(key.length > 0);
     return key.length ? key : nil;
 }
 
 static void storeKey(NSString *key) {
+    sg_keyAvailable = nil;
     SecItemDelete((__bridge CFDictionaryRef)keyQuery());
     if (!key.length) return;
     NSMutableDictionary *item = [keyQuery() mutableCopy];
@@ -76,7 +81,7 @@ static void storeKey(NSString *key) {
 }
 
 BOOL SGGeminiKeySet(void) {
-    return storedKey() != nil;
+    return sg_keyAvailable ? sg_keyAvailable.boolValue : storedKey() != nil;
 }
 
 #pragma mark - asking
@@ -199,6 +204,7 @@ static NSMutableDictionary<NSString *, NSDictionary *> *sg_done;   // per launch
 // Clear Keychain: the service's own items go, the account left out so every one in it does, and with them
 // the answers kept for the launch, which were made with that key.
 void SGGeminiForgetKey(void) {
+    sg_keyAvailable = nil;
     SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
                                               (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];

@@ -85,10 +85,12 @@ static void checkOpenAIHostKeys(void) {
     titlesEnabled = NO; testLanguage = nil;
 
     openAIKeys[@"api.groq.com"] = [@"groq-key" dataUsingEncoding:NSUTF8StringEncoding];
+    resetCredentialCaches();
     row.chosen(2);
     request = SGOpenAIRequest(@"system", @"prompt", &problem);
     CHECK([request.URL.host isEqual:@"api.groq.com"] && [[request valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer groq-key"]);
     openAIKeys[@"api-key"] = legacy;
+    resetCredentialCaches();
     CHECK(SGOpenAIKeySet() && !openAIKeys[@"api-key"] && [[SGOpenAIRequest(@"system", @"prompt", &problem) valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer groq-key"]);
 
     [defaults setObject:@"https://openrouter.ai/api/v1" forKey:SGKeyLyricsOpenAIBaseURL];
@@ -1301,10 +1303,76 @@ static void checkGeminiMemoBound(void) {
     puts("Gemini memo: evicted song refreshes; recent song remains reusable");
 }
 
+static void keyPromptAction(SGModRow *row, NSString *title, NSString *text) {
+    row.action();
+    CHECK(keyPrompt);
+    if (text) keyPrompt.textFields.firstObject.text = text;
+    UIAlertAction *selected = nil;
+    for (UIAlertAction *action in keyPrompt.actions) if ([action.title isEqual:title]) selected = action;
+    CHECK(selected);
+    void (^handler)(UIAlertAction *) = [selected valueForKey:@"handler"];
+    CHECK(handler);
+    handler(selected);
+    keyPrompt = nil;
+}
+
+static void checkCredentialAvailability(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    testPresenter = [SGKeyPresenter new];
+    NSArray *providers = @[@"Vitrine.Gemini", @"Vitrine.Claude", @"Vitrine.DeepL", @"Vitrine.OpenAI"];
+    NSArray *reads = @[[^BOOL { return SGGeminiKeySet(); } copy], [^BOOL { return SGClaudeKeySet(); } copy],
+                       [^BOOL { return SGDeepLKeySet(); } copy], [^BOOL { return SGOpenAIKeySet(); } copy]];
+    NSArray *rows = @[SGGeminiKeyRow(), SGClaudeKeyRow(), SGDeepLKeyRow(), SGOpenAIKeyRow()];
+    for (NSUInteger i = 0; i < providers.count; i++) {
+        testKeys = [NSSet set];
+        openAIKeys = [NSMutableDictionary dictionary];
+        BOOL (^available)(void) = reads[i];
+        NSUInteger before = keyReads;
+        for (NSUInteger n = 0; n < 10; n++) CHECK(!available());
+        // OpenAI checks the legacy account once and the current host once.
+        CHECK(keyReads - before == (i == 3 ? 2 : 1));
+        keyPromptAction(rows[i], @"Save", @"new-fixture-key");
+        CHECK(available());
+        before = keyReads;
+        for (NSUInteger n = 0; n < 10; n++) CHECK(available());
+        CHECK(keyReads == before);
+        keyPromptAction(rows[i], @"Remove", nil);
+        CHECK(!available());
+
+        testKeys = [NSSet setWithObject:providers[i]];
+        openAIKeys = [@{@"api.openai.com": [@"unlock-fixture-key" dataUsingEncoding:NSUTF8StringEncoding]} mutableCopy];
+        keyReadFailure = errSecInteractionNotAllowed;
+        CHECK(!available());
+        keyReadFailure = 0;
+        CHECK(available());
+        before = keyReads;
+        for (NSUInteger n = 0; n < 10; n++) CHECK(available());
+        CHECK(keyReads == before);
+    }
+    [defaults setObject:@"https://openrouter.ai/api/v1" forKey:SGKeyLyricsOpenAIBaseURL];
+    CHECK(!SGOpenAIKeySet());
+    keyPromptAction(SGOpenAIKeyRow(), @"Save", @"router-fixture-key");
+    CHECK(SGOpenAIKeySet());
+    [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    CHECK(SGOpenAIKeySet());
+    keyPromptAction(SGOpenAIKeyRow(), @"Remove", nil);
+    CHECK(!SGOpenAIKeySet());
+    [defaults setObject:@"https://openrouter.ai/api/v1" forKey:SGKeyLyricsOpenAIBaseURL];
+    CHECK(SGOpenAIKeySet());
+    SGOpenAIForgetKeys();
+    CHECK(!SGOpenAIKeySet());
+    testPresenter = nil;
+    testKeys = [NSSet set]; openAIKeys = nil;
+    [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    puts("Credential availability: one lookup per provider/host, Save/Remove/reset, host isolation and locked-Keychain recovery");
+}
+
 static void checkNewAI(void) {
     NSArray *keys = @[SGKeyLyricsOpenAIBaseURL, SGKeyLyricsOpenAIModel, SGKeyLyricsClaudeModel, SGKeyLyricsGeminiModel, SGKeyLyricsPronunciationNotation];
     NSMutableDictionary *before = [NSMutableDictionary dictionary];
     for (NSString *key in keys) before[key] = [NSUserDefaults.standardUserDefaults objectForKey:key] ?: NSNull.null;
+    checkCredentialAvailability();
     checkOpenAIHostKeys();
     checkClaudeAndPresets();
     checkModelLists();

@@ -126,8 +126,12 @@ static NSString *readKey(NSString *account, OSStatus *status) {
     if (!key.length) { *status = errSecDecode; return nil; }
     return key;
 }
+// Availability only; requests still obtain the secret from Keychain. Host is the
+// credential's account, so a preset or imported base URL cannot reuse another key.
+static NSMutableDictionary<NSString *, NSNumber *> *sg_keyAvailable;
 static BOOL storeKey(NSString *key, NSString *host) {
     if (!host.length) return NO;
+    [sg_keyAvailable removeObjectForKey:host];
     NSDictionary *query = keyQuery(host);
     OSStatus status;
     if (!key.length) {
@@ -167,15 +171,28 @@ static BOOL migrateKey(NSString *base) {
     return status == errSecSuccess || status == errSecItemNotFound;
 }
 static NSString *storedKey(NSString *base) {
-    if (!migrateKey(base)) return nil;
     NSString *host = SGOpenAIKeyHost(base);
+    if (!host) return nil;
+    [sg_keyAvailable removeObjectForKey:host];
+    if (!migrateKey(base)) return nil;
     OSStatus status;
-    return host ? readKey(host, &status) : nil;
+    NSString *key = readKey(host, &status);
+    if (status == errSecSuccess || status == errSecItemNotFound) {
+        if (!sg_keyAvailable) sg_keyAvailable = [NSMutableDictionary dictionary];
+        sg_keyAvailable[host] = @(key != nil);
+    }
+    return key;
 }
-BOOL SGOpenAIKeySet(void) { return storedKey(setting(SGKeyLyricsOpenAIBaseURL, kBase)) != nil; }
+BOOL SGOpenAIKeySet(void) {
+    NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase), *host = SGOpenAIKeyHost(base);
+    if (!host) return NO;
+    NSNumber *available = sg_keyAvailable[host];
+    return available ? available.boolValue : storedKey(base) != nil;
+}
 // Clear Keychain: every account under the service goes (the legacy key and each host-bound one), so no
 // server's key outlives it; answers kept for the launch go too.
 void SGOpenAIForgetKeys(void) {
+    [sg_keyAvailable removeAllObjects];
     SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
                                               (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];
