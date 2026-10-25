@@ -31,7 +31,7 @@
 // Over the album's own line, and between it and the copyright: the spacers they sat between are gone.
 static const CGFloat kLead = 16;
 
-static char kSettledKey;
+static char kSettledKey; // the cell's settled height, its lead, and the width and text size it was measured at
 
 static BOOL isFooterContent(UIView *content) {
     static NSMutableDictionary<id, NSNumber *> *answers;
@@ -62,11 +62,18 @@ static BOOL isKept(UIView *content) {
     return YES;
 }
 
+// The height a settled cell answers at: what it measured plus the gap over it, or nothing at all when dropped.
+static CGFloat settledHeight(CGFloat natural, CGFloat lead) {
+    return lead > 0 ? natural + lead : 0;
+}
+
 // The content laid at `lead` down the cell, at the height it measured at, and the cell sized for both.
-// Kept on the cell so its own passes, which size the content to the cell again, do not undo it.
-static void settle(UICollectionViewCell *cell, CGFloat natural, CGFloat lead) {
+// Kept on the cell with the width and the text size it was measured at, so its own passes, which size the
+// content to the cell again, do not undo it, and a second ask at that width answers without measuring it.
+static void settle(UICollectionViewCell *cell, CGFloat natural, CGFloat lead, CGFloat width, NSString *textSize) {
     UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kSettledKey, @[@(natural), @(lead)], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(cell, &kSettledKey, @[@(natural), @(lead), @(width), textSize ?: @""],
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     if (content.autoresizingMask & UIViewAutoresizingFlexibleHeight) content.autoresizingMask &= ~UIViewAutoresizingFlexibleHeight;
     CGRect frame = CGRectMake(0, lead, cell.bounds.size.width, natural);
     if (!CGRectEqualToRect(content.frame, frame)) content.frame = frame;
@@ -76,6 +83,7 @@ static void settle(UICollectionViewCell *cell, CGFloat natural, CGFloat lead) {
     cell.accessibilityElementsHidden = dropped;
 }
 
+// Clears the settled height, its lead and the width and text size they were measured at, together.
 static void unsettle(UICollectionViewCell *cell) {
     UIView *content = cell.contentView;
     objc_setAssociatedObject(cell, &kSettledKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -195,18 +203,36 @@ static void logOnce(NSString *what) {
         if (objc_getAssociatedObject(cell, &kSettledKey)) unsettle(cell);
         return %orig;
     }
+    // Asked again at the width and text size it was settled at: the content is pinned, so measuring it again
+    // answers another height every pass and the list never settles. Answer what was settled instead, unless
+    // what the cell is has changed since -- a switch turned back on, or the content swapped under it.
+    NSArray *settled = objc_getAssociatedObject(cell, &kSettledKey);
+    NSString *textSize = cell.traitCollection.preferredContentSizeCategory ?: @"";
+    if (settled && ABS(attributes.size.width - [settled[2] doubleValue]) <= 0.5 && [(NSString *)settled[3] isEqual:textSize]) {
+        BOOL kept = [settled[1] doubleValue] > 0;
+        // shown() records what the cell is for its section and reads what the switches say, as its own %orig
+        // path does on every pass, so re-asking it here costs no more than the measure the cache replaces.
+        BOOL holds = kept ? isKept(content) : (!isKept(content) && !shown(cell, content, attributes.indexPath, NO));
+        if (holds) {
+            UICollectionViewLayoutAttributes *again = [attributes copy];
+            again.size = CGSizeMake(attributes.size.width, settledHeight([settled[0] doubleValue], [settled[1] doubleValue]));
+            return again;
+        }
+        unsettle(cell);
+    }
     UICollectionViewLayoutAttributes *result = %orig;
     CGFloat natural = MAX(1, result.size.height);
+    CGFloat width = attributes.size.width;
     if (isKept(content)) {
         shown(cell, content, attributes.indexPath, YES);
-        settle(cell, natural, kLead);
+        settle(cell, natural, kLead, width, textSize);
         result.size = CGSizeMake(result.size.width, natural + kLead);
         logOnce(@"the album's own line and its copyright kept under the tracks");
     } else if (shown(cell, content, attributes.indexPath, NO)) {
         if (objc_getAssociatedObject(cell, &kSettledKey)) unsettle(cell);
         logOnce(@"a section under the tracks shown, its switch off");
     } else {
-        settle(cell, natural, 0);
+        settle(cell, natural, 0, width, textSize);
         result.size = CGSizeMake(result.size.width, 0);
         logOnce(@"the sections under the tracks dropped");
     }
@@ -216,8 +242,9 @@ static void logOnce(NSString *what) {
 // The cell's own passes size the content to the cell again.
 - (void)layoutSubviews {
     %orig;
-    NSArray<NSNumber *> *settled = objc_getAssociatedObject(self, &kSettledKey);
-    if (settled) settle((UICollectionViewCell *)self, settled[0].doubleValue, settled[1].doubleValue);
+    NSArray *settled = objc_getAssociatedObject(self, &kSettledKey);
+    if (settled) settle((UICollectionViewCell *)self, [settled[0] doubleValue], [settled[1] doubleValue],
+                        [settled[2] doubleValue], (NSString *)settled[3]);
 }
 
 - (void)prepareForReuse {

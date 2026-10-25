@@ -210,8 +210,20 @@ static void verifyAlbumActions(UIView *root) {
 @interface _TtC28EncoreConsumerMobile_BaseKit14PlayButtonView : UIView @end
 @implementation _TtC28EncoreConsumerMobile_BaseKit14PlayButtonView @end
 
-@interface _TtC12Element_List18CollectionViewCell : UICollectionViewCell @end
-@implementation _TtC12Element_List18CollectionViewCell @end
+@interface _TtC12Element_List18CollectionViewCell : UICollectionViewCell
+// The text size the cell reports, so a check can change it under a settled cell the way Settings does.
+- (void)sg_setTextSize:(NSString *)category;
+@end
+@implementation _TtC12Element_List18CollectionViewCell {
+    UITraitCollection *_sgTextSize;
+}
+- (UITraitCollection *)traitCollection {
+    return _sgTextSize ?: [super traitCollection];
+}
+- (void)sg_setTextSize:(NSString *)category {
+    _sgTextSize = category ? [UITraitCollection traitCollectionWithPreferredContentSizeCategory:category] : nil;
+}
+@end
 
 // The element the cell's content is, which is the only thing that says what a cell holds.
 @interface MockRetrievalListStructuredDataView : UIView @end
@@ -851,21 +863,92 @@ static NSString *trailingLabel(UIView *root) {
 // tracks with whatever each answered.
 - (void)measureFooter:(CGFloat)width {
     CGFloat y = _tracksBottom;
+    NSUInteger steady = 0;
     for (_TtC12Element_List18CollectionViewCell *cell in _footerCells) {
         CGFloat natural = cell.bounds.size.height;
         NSIndexPath *path = [NSIndexPath indexPathForItem:[_footerCells indexOfObject:cell] inSection:0];
         UICollectionViewLayoutAttributes *attributes = [UICollectionViewLayoutAttributes layoutAttributesForCellWithIndexPath:path];
         attributes.frame = CGRectMake(0, y, width, natural);
         UICollectionViewLayoutAttributes *answer = [cell preferredLayoutAttributesFittingAttributes:attributes];
+        // The list asks again once the cell is laid out at that height -- and once settled the content it holds
+        // no longer measures itself, so every later answer has to be the first one or the list never stops asking.
         cell.frame = CGRectMake(0, y, width, answer.size.height);
         [cell layoutIfNeeded];
+        CGSize again = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
+        CGSize onceMore = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
+        assert(fabs(again.height - answer.size.height) < 0.5 && fabs(onceMore.height - answer.size.height) < 0.5);
+        if (answer.size.height > 0) steady++;
         y += answer.size.height;
     }
     _listView.frame = CGRectMake(0, 486.67, width, y + 24);
     _listView.subviews.firstObject.frame = _listView.bounds;
     UIScrollView *scroll = (UIScrollView *)_listView.superview.superview;
     if ([scroll isKindOfClass:UIScrollView.class]) scroll.contentSize = CGSizeMake(width, CGRectGetMaxY(_listView.frame));
+    NSLog(@"[harness] PASS footer settled: %lu cells answered the same height when asked again and again, %lu of them kept",
+          (unsigned long)_footerCells.count, (unsigned long)steady);
     NSLog(@"[harness] the footer measured %.0fpt under the tracks", y - _tracksBottom);
+    [self flipDroppedFooterCell:width];
+}
+
+// What a cell is can change while it keeps its width: a section dropped and then kept, say. The settled answer
+// must not outlive that -- the ask has to measure again instead of answering its cached 0, and once it does,
+// the new answer is the one it keeps answering.
+- (void)flipDroppedFooterCell:(CGFloat)width {
+    // Whichever cell this run drops -- the switches move which ones do.
+    _TtC12Element_List18CollectionViewCell *cell = nil;
+    NSIndexPath *path = nil;
+    for (_TtC12Element_List18CollectionViewCell *c in _footerCells) {
+        NSIndexPath *item = [NSIndexPath indexPathForItem:[_footerCells indexOfObject:c] inSection:0];
+        UICollectionViewLayoutAttributes *ask = [UICollectionViewLayoutAttributes layoutAttributesForCellWithIndexPath:item];
+        ask.frame = c.frame;
+        if ([c preferredLayoutAttributesFittingAttributes:ask].size.height == 0) {
+            cell = c;
+            path = item;
+            break;
+        }
+    }
+    assert(cell && path);
+    UICollectionViewLayoutAttributes *attributes = [UICollectionViewLayoutAttributes layoutAttributesForCellWithIndexPath:path];
+    attributes.frame = cell.frame;
+    CGFloat before = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
+    assert(before == 0);
+
+    // The same cell at the same width, now holding the album's own line: kept, and taller by the lead over it.
+    UIView *content = cell.contentView.subviews.firstObject;
+    UIView *line = box(content, UIView.class, content.bounds, @"Album.ConsumptionExperience");
+    label(line, CGRectMake(16, 0, width - 32, 15.33), @"22 songs • 1hr 24min", 11, UIColor.whiteColor, @"Encore.Label");
+    CGFloat flipped = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
+    CGFloat kept = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
+    assert(flipped > 0 && fabs(kept - flipped) < 0.5);
+
+    // And back: the line gone, the cell dropped again, 0 again, and asked again still 0.
+    [line removeFromSuperview];
+    CGFloat dropped = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
+    CGFloat stillDropped = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
+    assert(dropped == 0 && stillDropped == 0);
+    NSLog(@"[harness] PASS footer refit: a dropped cell answered 0, %.2fpt once it held the album's line, then 0 again, each kept on the asks after it", flipped);
+    [self refitTextSizeOfCell:1 at:width];
+}
+
+// A text-size change keeps the width, so the settled answer has to let go of it: the mask would hide the new
+// height the content measures at, and the list would keep the old one.
+- (void)refitTextSizeOfCell:(NSUInteger)item at:(CGFloat)width {
+    _TtC12Element_List18CollectionViewCell *cell = _footerCells[item];
+    UICollectionViewLayoutAttributes *attributes = [UICollectionViewLayoutAttributes layoutAttributesForCellWithIndexPath:
+                                                    [NSIndexPath indexPathForItem:item inSection:0]];
+    attributes.frame = cell.frame;
+    CGSize same = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
+    assert(fabs(same.height - cell.bounds.size.height) < 0.5);
+
+    [cell sg_setTextSize:UIContentSizeCategoryAccessibilityLarge];
+    CGSize big = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
+    CGSize kept = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
+    // The mock's content measures by its own bounds, so the bigger text size alone has to move the answer.
+    assert(big.height > same.height + 0.5);
+    assert(fabs(kept.height - big.height) < 0.5);
+    NSLog(@"[harness] PASS footer text size: settled at %.2fpt, %.2fpt once the text size changed at the same width, and kept on the asks after it",
+          same.height, big.height);
+    [cell sg_setTextSize:nil];
 }
 
 @end
