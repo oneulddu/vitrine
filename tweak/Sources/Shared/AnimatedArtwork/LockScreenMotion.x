@@ -32,6 +32,10 @@ static NSString *sg_title;
 static NSString *sg_trackURI;
 static NSArray *sg_coverSource;
 static NSUInteger sg_coverRequest;
+static MPMediaItemArtwork *sg_nativeArtwork;
+static BOOL sg_authoritativeCover;
+static NSUInteger sg_coverRevision;
+static NSString *sg_coverPublishedID;
 static NSString *sg_picture;   // the picture the track names, for the cover's clip
 static NSUInteger sg_walk;   // presentation generation: track, choice and plain/lyrics ownership
 static SGLockArtwork sg_choice;
@@ -44,7 +48,7 @@ static UIImage *sg_poster;
 static BOOL sg_loadingPoster;
 static NSString *sg_fallbackPicture;
 static UIImage *sg_fallbackCover;
-static BOOL sg_loadingCover, sg_emptyOffered, sg_settingsPending;
+static BOOL sg_loadingCover, sg_settingsPending;
 static NSProgress *sg_presentation;
 static SGLyricsBackgroundStyle sg_background;
 
@@ -57,7 +61,7 @@ static void cancelPresentation(void) {
     sg_poster = nil;
     sg_loadingPoster = NO;
     sg_loadingCover = NO;
-    sg_emptyOffered = NO;
+    sg_coverPublishedID = nil;
 }
 
 API_AVAILABLE(ios(26.0))
@@ -198,8 +202,28 @@ static BOOL currentCoverRequest(NSUInteger request, SGShownTrack *track) {
         && [now.artworkURL isEqual:track.artworkURL];
 }
 
-// The system dictionary can still contain a same-title predecessor or a placeholder.
-// Only the current player's metadata identifies the cover; source changes retire pending renders.
+static void setFallbackCover(UIImage *cover) {
+    sg_fallbackCover = cover;
+    sg_coverRevision++;
+    sg_pendingPicture = sg_fallbackPicture;
+}
+
+// Native pixels are provisional, not proof of ownership. Keep observing new objects until
+// the URI loader succeeds, including when a paused fallback has already been published.
+static void refreshNativeCover(void) {
+    if (sg_authoritativeCover || ![SGURIString(SGPlayerState().track.URI) isEqual:sg_trackURI]) return;
+    NSDictionary *info = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
+    MPMediaItemArtwork *native = info[MPMediaItemPropertyArtwork];
+    if (![info[MPMediaItemPropertyTitle] isEqual:sg_title] || ![native isKindOfClass:MPMediaItemArtwork.class]
+        || native == sg_nativeArtwork) return;
+    sg_nativeArtwork = native;
+    CGSize size = SGLyricsClipSize(UIScreen.mainScreen.nativeBounds.size.width);
+    UIImage *cover = [native imageWithSize:CGSizeMake(size.height, size.height)];
+    if (cover.CGImage) setFallbackCover(cover);
+}
+
+// Loading is independent of native rendering. Neither missing metadata nor a failure
+// removes available pixels. Install source state before the possibly synchronous cache hit.
 API_AVAILABLE(ios(26.0))
 static void refreshCover(void) {
     SGShownTrack *track = SGShownTrackNow();
@@ -207,18 +231,18 @@ static void refreshCover(void) {
     NSArray *source = @[sg_trackURI ?: @"", url.absoluteString ?: @""];
     if ([sg_coverSource isEqual:source]) return;
     sg_coverSource = source;
-    sg_fallbackCover = nil;
+    sg_authoritativeCover = NO;
+    sg_nativeArtwork = nil;
     NSUInteger request = ++sg_coverRequest;
-    cancelPresentation();
-    sg_pendingPicture = sg_fallbackPicture;
     if (!url) return;
     SGShownTrackArtworkBounded(track, ^BOOL {
         return currentCoverRequest(request, track);
     }, ^(UIImage *cover) {
-        if (!cover || !currentCoverRequest(request, track)) return;
-        sg_fallbackCover = cover;
-        cancelPresentation();
-        sg_pendingPicture = sg_fallbackPicture;
+        if (!currentCoverRequest(request, track)) return;
+        if (cover) {
+            sg_authoritativeCover = YES;
+            setFallbackCover(cover);
+        }
         retryPresentation();
     });
 }
@@ -229,16 +253,11 @@ static void offerCover(void) {
     if (sg_loadingCover) return;
     CGSize size = SGLyricsClipSize(UIScreen.mainScreen.nativeBounds.size.width);
     UIImage *cover = sg_fallbackCover;
-    if (!cover && sg_emptyOffered) return;
-    if (cover && sg_emptyOffered) {
-        NSString *picture = sg_pendingPicture;
-        cancelPresentation();
-        sg_pendingPicture = picture;
-    }
-    sg_fallbackCover = cover;
     sg_loadingCover = YES;
     NSUInteger walk = sg_walk;
+    NSUInteger revision = sg_coverRevision;
     NSProgress *token = sg_presentation;
+    NSString *publishedID = sg_coverPublishedID;
     SGLyricsBackgroundStyle background = sg_background;
     NSString *picture = sg_pendingPicture;
     NSString *title = sg_title;
@@ -247,33 +266,45 @@ static void offerCover(void) {
         NSString *source = cover ? [UIImagePNGRepresentation(cover) base64EncodedStringWithOptions:0] : @"no-cover";
         NSURL *file = SGMotionMadeFile([NSString stringWithFormat:@"background\n%@\n%@\n%gx%g\n%@",
                                       picture, SGLyricsBackgroundIdentity(background), size.width, size.height, source]);
-        CGImageRef rendered = SGLyricsBackgroundCreate(cover.CGImage, size, background);
+        BOOL unchanged = [file.lastPathComponent isEqual:publishedID];
+        CGImageRef rendered = unchanged ? nil : SGLyricsBackgroundCreate(cover.CGImage, size, background);
         UIImage *backdrop = rendered ? [UIImage imageWithCGImage:rendered] : nil;
         CGImageRelease(rendered);
         dispatch_async(dispatch_get_main_queue(), ^{
             if (token.cancelled || walk != sg_walk || SGLockScreenArtwork() != sg_choice) return;
             sg_loadingCover = NO;
+            if (revision != sg_coverRevision) {
+                retryPresentation();
+                return;
+            }
+            if (![MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys containsObject:MPNowPlayingInfoProperty3x4AnimatedArtwork]) return;
+            if (unchanged) {
+                sg_pendingPicture = nil;
+                return;
+            }
             if (!backdrop) return;
+            // Retire lazy work only for a different content identity, not for another
+            // native wrapper of the same pixels. One worker coalesces intervening changes.
+            [sg_presentation cancel];
+            NSProgress *offered = [NSProgress progressWithTotalUnitCount:1];
+            sg_presentation = offered;
+            sg_coverPublishedID = file.lastPathComponent;
+            sg_pendingPicture = nil;
             MPMediaItemAnimatedArtwork *artwork = [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:file.lastPathComponent
                 previewImageRequestHandler:^(CGSize wanted, void (^completion)(UIImage *)) {
                     dispatch_async(sg_queue, ^{
-                        UIImage *preview = token.cancelled ? nil : filled(backdrop, wanted);
-                        completion(token.cancelled ? nil : preview);
+                        UIImage *preview = offered.cancelled ? nil : filled(backdrop, wanted);
+                        completion(offered.cancelled ? nil : preview);
                     });
                 }
                 videoAssetFileURLRequestHandler:^(CGSize wanted, void (^completion)(NSURL *)) {
                     dispatch_async(sg_queue, ^{
-                        BOOL ok = !token.cancelled && ([NSFileManager.defaultManager fileExistsAtPath:file.path]
+                        BOOL ok = !offered.cancelled && ([NSFileManager.defaultManager fileExistsAtPath:file.path]
                                                        || SGFluidClipWrite(file, backdrop.CGImage, size));
-                        completion(ok && !token.cancelled ? file : nil);
+                        completion(ok && !offered.cancelled ? file : nil);
                     });
                 }];
             SGNowPlayingSetExtras(@"motion", @{MPNowPlayingInfoProperty3x4AnimatedArtwork: artwork}, title);
-            sg_emptyOffered = !cover;
-            if (cover) sg_pendingPicture = nil;
-            // Info arriving while this render was loading could not start another offer. Recheck
-            // once now; sg_emptyOffered makes a still-missing cover stop without another render.
-            else retryPresentation();
         });
     });
 }
@@ -283,7 +314,12 @@ static void retryPresentation(void) {
     // No polling and no decoding while unsupported. Repeated native updates only check capability.
     // A queued notification from before a setting change must not revive the old presentation.
     if (sg_settingsPending || SGLockScreenArtwork() != sg_choice) return;
-    if (sg_fallbackPicture) refreshCover();
+    if (sg_fallbackPicture) {
+        if (![SGURIString(SGPlayerState().track.URI) isEqual:sg_trackURI]) return;
+        refreshCover();
+        if ([MPNowPlayingInfoCenter.supportedAnimatedArtworkKeys containsObject:MPNowPlayingInfoProperty3x4AnimatedArtwork])
+            refreshNativeCover();
+    }
     if (sg_pendingPicture) offerCover();
     else if (sg_pendingFile) {
         CGFloat ratio;
@@ -291,11 +327,28 @@ static void retryPresentation(void) {
     }
 }
 
+@interface SGLockMotionPresentation : NSObject <SGPlayerStateObserver>
+@end
+@implementation SGLockMotionPresentation
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    [self playerStateDidReport:state];
+}
+- (void)playerStateDidReport:(SPTPlayerState *)state {
+    if (@available(iOS 26.0, *)) {
+        // Cover metadata can arrive on a paused report without a now-playing setter.
+        if (sg_fallbackPicture) retryPresentation();
+    }
+}
+@end
+
 %ctor {
     if (@available(iOS 26.0, *)) {
         sg_choice = SGLockScreenArtwork();
         sg_background = SGLyricsBackgroundRead(@"spotifyglass.lockscreen.background");
         sg_queue = dispatch_queue_create("spotifyglass.lockscreen.motion", DISPATCH_QUEUE_SERIAL);
+        static SGLockMotionPresentation *presentationObserver;
+        presentationObserver = [SGLockMotionPresentation new];
+        SGAddPlayerStateObserver(presentationObserver);
         // Each walk takes the last one's clip off first, so the lock screen falls back to the still cover.
         sg_follower = [[SGMotionFollower alloc] initWithBegin:^BOOL(NSString *uri, SPTPlayerState *state) {
             cancelPresentation();
@@ -306,6 +359,8 @@ static void retryPresentation(void) {
             sg_fallbackCover = nil;
             sg_coverSource = nil;
             sg_coverRequest++;
+            sg_nativeArtwork = nil;
+            sg_authoritativeCover = NO;
             sg_settingsPending = NO;
             NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
             sg_title = state.track.trackTitle;

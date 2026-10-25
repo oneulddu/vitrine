@@ -19,6 +19,7 @@ static char idKey, previewKey, videoKey;
 static NSArray *supported;
 static NSURL *cacheRoot;
 static CGSize lastCoverRequest;
+static NSUInteger nativeAcquisitions;
 static CGRect screenBounds(id self, SEL cmd) { return CGRectMake(0, 0, 32, 48); }
 
 // Exercise the real metadata -> SGShownTrack -> URL loader -> decode boundary, not an
@@ -208,14 +209,16 @@ static void track(NSString *uri, SGLockArtwork mode, NSURL *file, NSArray *lines
     report();
     choose(mode);
 }
-static void nativeInfo(UIImage *cover) {
+static void nativeArtworkInfo(MPMediaItemArtwork *cover) {
     NSMutableDictionary *info = [@{MPMediaItemPropertyTitle: @"Song", MPMediaItemPropertyArtist: @"Artist",
         MPNowPlayingInfoPropertyElapsedPlaybackTime: @0, MPNowPlayingInfoPropertyPlaybackRate: @0} mutableCopy];
-    // MediaPlayer clamps handler requests to these bounds. Model a real album's full-resolution source;
-    // the tiny solid returned image remains a renderer stand-in.
-    if (cover) info[MPMediaItemPropertyArtwork] = [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(2048, 2048)
-        requestHandler:^UIImage *(CGSize size) { lastCoverRequest = size; return cover; }];
+    if (cover) info[MPMediaItemPropertyArtwork] = cover;
     MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = info;
+}
+static void nativeInfo(UIImage *cover) {
+    // MediaPlayer clamps requests to these bounds; model a full-resolution source.
+    nativeArtworkInfo(cover ? [[MPMediaItemArtwork alloc] initWithBoundsSize:CGSizeMake(2048, 2048)
+        requestHandler:^UIImage *(CGSize size) { nativeAcquisitions++; lastCoverRequest = size; return cover; }] : nil);
 }
 static id artwork(void) { return harnessSystem()[MPNowPlayingInfoProperty3x4AnimatedArtwork]; }
 static NSString *name(id art) { return objc_getAssociatedObject(art, &idKey); }
@@ -425,18 +428,23 @@ void artworkChecks(void) {
     __block BOOL coverInfoDelivered = NO;
     id coverInfoToken = [NSNotificationCenter.defaultCenter addObserverForName:SGNowPlayingInfoDidChangeNotification object:nil queue:nil
         usingBlock:^(NSNotification *note) { coverInfoDelivered = YES; }];
-    nativeInfo(red);
+    // While the authoritative URL is loading, even a new native object is only a fallback.
+    coverMetadata(@"cover-during-render");
+    nativeInfo(blue);
     check(await(^BOOL { return coverInfoDelivered; }), @"late-cover info is delivered while the worker is held");
     [NSNotificationCenter.defaultCenter removeObserver:coverInfoToken];
+    finishCover(@"cover-during-render", red);
     sets = harnessSets();
     dispatch_semaphore_signal(release);
-    // No native update follows release: the coverless completion itself must recover the missed info.
-    check(await(^BOOL { return harnessSets() >= sets + 2; }),
+    // Either cancelling the safe render or publishing it before recovery is valid.
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), red); }),
           @"cover arriving during rendering recovers the paused track without another native event");
     check(sameImage(preview(artwork()), red), @"recovered in-flight cover is the real album image");
+    check(sameImage([UIImage imageWithContentsOfFile:video(artwork()).path], red),
+          @"in-flight correction reaches the lazy video without another event");
     runFor(.1);
-    check(preparations() == prepared + 2 && harnessSets() == sets + 2 && lookups == fetched,
-          @"in-flight recovery makes only two bounded offers and no source re-download");
+    check(preparations() <= prepared + 2 && harnessSets() <= sets + 2 && lookups == fetched,
+          @"in-flight recovery stays bounded with no source re-download");
     @synchronized (cacheRoot) { check(!renderGateTimedOut, @"held render was explicitly released, not timed out"); }
 
     nativeInfo(nil);
@@ -451,6 +459,120 @@ void artworkChecks(void) {
     check(preparations() == prepared + 1 && harnessSets() == sets + 5 && lookups == fetched,
           @"a cover that never arrives stays bounded across completion and later native updates");
 
+    nativeInfo(red);
+    track(@"native-first", SGLockArtworkEverySong, nil, @[]);
+    check(await(^BOOL { return artwork() != nil; }), @"native-first track publishes without another event");
+    check(sameImage(preview(artwork()), red), @"cover installed before the player observer is accepted");
+    state = harnessState(@"player-first-same-title", @"Song");
+    report();
+    check(await(^BOOL { return artwork() != nil; }), @"same-title player-first switch offers provisional pixels");
+    check(sameImage(preview(artwork()), red), @"predecessor pixels may be provisional until a corrective signal");
+    id provisional = artwork();
+    lastCoverRequest = CGSizeZero;
+    nativeInfo(blue);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), blue); }),
+          @"paused same-title track replaces predecessor pixels on a new native object");
+    check(lastCoverRequest.width == 32 && lastCoverRequest.height == 32,
+          @"native fallback requests the full cover raster");
+    check(sameImage([UIImage imageWithContentsOfFile:video(artwork()).path], blue),
+          @"native-only current cover reaches the lazy video");
+    check(preview(provisional) == nil && video(provisional) == nil,
+          @"native replacement retires stale preview and lazy video work");
+
+    MPMediaItemArtwork *sameNative = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo[MPMediaItemPropertyArtwork];
+    id sameOffer = artwork();
+    NSUInteger acquired = nativeAcquisitions, loaded = coverLoads;
+    prepared = preparations(); sets = harnessSets(); fetched = lookups;
+    for (NSUInteger i = 0; i < 5; i++) { nativeArtworkInfo(sameNative); runFor(.01); }
+    check(nativeAcquisitions == acquired && preparations() == prepared && harnessSets() == sets + 5
+          && lookups == fetched && coverLoads == loaded,
+          @"same-object elapsed updates do not reacquire, render, publish or download");
+    for (NSUInteger i = 0; i < 5; i++) nativeInfo(blue);
+    runFor(.1);
+    check(artwork() == sameOffer && sameImage(preview(sameOffer), blue) && preparations() <= prepared + 2
+          && lookups == fetched && coverLoads == loaded,
+          @"identical-pixel wrappers coalesce without republishing or retiring lazy work");
+
+    supported = @[];
+    nativeInfo(red);
+    runFor(.03);
+    prepared = preparations(); acquired = nativeAcquisitions;
+    for (NSUInteger i = 0; i < 5; i++) { reportOnly(); runFor(.01); }
+    check(preparations() == prepared && nativeAcquisitions == acquired,
+          @"lost cover capability does not acquire or prepare repeatedly");
+    supported = @[MPNowPlayingInfoProperty3x4AnimatedArtwork];
+    reportOnly();
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), red); }),
+          @"restored cover capability consumes the latest native object");
+
+    track(@"spotify:local:Artist:Album:Native-only:123", SGLockArtworkEverySong, nil, @[]);
+    harnessMetadata(@{@"image_url": @"spotify:localfileimage:%2Fvar%2Fmobile%2FMedia%2Foriginal-album.jpg"});
+    reportOnly();
+    nativeInfo(blue);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), blue); }),
+          @"original local asset URI metadata keeps the native cover");
+
+    nativeInfo(red);
+    track(@"offline-native-cover", SGLockArtworkEverySong, nil, @[]);
+    coverMetadata(@"offline-unavailable");
+    nativeInfo(blue);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), blue); }),
+          @"native cover publishes while the URL request is deliberately unresolved");
+    finishCover(@"offline-unavailable", nil);
+    finishCover(@"offline-unavailable", nil);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), blue); }),
+          @"exhausted offline URL load preserves the available native cover");
+    nativeInfo(red);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), red); }),
+          @"new native artwork still replaces the cover after URL failure");
+    choose(SGLockArtworkOff);
+    choose(SGLockArtworkEverySong);
+    finishCover(@"offline-unavailable", nil);
+    finishCover(@"offline-unavailable", nil);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), red); }),
+          @"same-track restart reacquires available native cover");
+
+    coverMetadata(@"stale-native-track");
+    check(await(^BOOL { return coverRequests[coverURL(@"stale-native-track")] != nil; }),
+          @"prior-track URL request is held");
+    track(@"current-native-track", SGLockArtworkEverySong, nil, @[]);
+    nativeInfo(blue);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), blue); }),
+          @"new track publishes native pixels without waiting for the prior request");
+    finishCover(@"stale-native-track", red);
+    check(sameImage(preview(artwork()), blue), @"stale prior-track URL completion cannot replace current native pixels");
+    coverMetadata(@"disabled-native-track");
+    check(await(^BOOL { return coverRequests[coverURL(@"disabled-native-track")] != nil; }),
+          @"current URL request starts before disabling");
+    choose(SGLockArtworkOff);
+    prepared = preparations(); loaded = coverLoads;
+    finishCover(@"disabled-native-track", red);
+    for (NSUInteger i = 0; i < 5; i++) nativeArtworkInfo(sameNative);
+    runFor(.03);
+    check(!artwork() && preparations() == prepared && coverLoads == loaded,
+          @"disabled fallback cannot acquire, prepare or revive from late native or URL events");
+
+    nativeInfo(blue);
+    track(@"revised-url-native-fallback", SGLockArtworkEverySong, nil, @[]);
+    check(await(^BOOL { return artwork() != nil; }), @"native B publishes before URL A completes");
+    id nativeB = artwork();
+    check(sameImage(preview(nativeB), blue), @"the provisional native B cover has blue pixels");
+    coverMetadata(@"revised-url-A");
+    finishCover(@"revised-url-A", red);
+    check(await(^BOOL { return artwork() && ![name(artwork()) isEqual:name(nativeB)]; }),
+          @"URL A replaces provisional native B");
+    check(sameImage(preview(artwork()), red), @"successful URL A supplies red pixels");
+    // No new native object or notification: changing only the URI source must make the
+    // still-available B object eligible again, even after it was superseded by URL A.
+    coverMetadata(@"revised-url-B");
+    finishCover(@"revised-url-B", nil);
+    finishCover(@"revised-url-B", nil);
+    check(await(^BOOL { return [name(artwork()) isEqual:name(nativeB)]; }),
+          @"failed revised URL B restores the unchanged native B object");
+    check(sameImage(preview(artwork()), blue), @"revised-source failure keeps native B in the preview");
+    check(sameImage([UIImage imageWithContentsOfFile:video(artwork()).path], blue),
+          @"revised-source failure keeps native B in the lazy video");
+
     supported = @[];
     nativeInfo(nil);
     track(@"fluid-late", SGLockArtworkEverySong, nil, @[]);
@@ -460,15 +582,23 @@ void artworkChecks(void) {
     runFor(0.03);
     id safeFallback = artwork();
     check(safeFallback != nil, @"Every song offers a safe selected fallback before the cover arrives");
-    nativeInfo(red);
-    runFor(0.03);
+    lastCoverRequest = CGSizeZero;
+    coverMetadata(@"fluid-late");
+    nativeInfo(blue); // the URL load remains primary even when a new native object is available
+    finishCover(@"fluid-late", red);
+    check(await(^BOOL { return artwork() && sameImage(preview(artwork()), red); }),
+          @"paused metadata cover changes Every song's identity without another native event");
     id fluid = artwork();
     check(fluid && lookups == fetched, @"paused late cover recovers Every song without a new lookup");
     check(![name(fluid) isEqual:name(safeFallback)], @"late cover does not reuse the no-cover fallback's disk identity");
-    // The clip-size stand-in above deliberately returns 24x32, independently of the screen.
-    check(lastCoverRequest.width == 32 && lastCoverRequest.height == 32, @"cover acquisition requests the intended full raster");
+    // Native is immediate, but the completed URI result owns the final pixels.
+    UIImage *fluidPreview = preview(fluid);
+    check(CGSizeEqualToSize(lastCoverRequest, CGSizeMake(32, 32))
+          && CGImageGetWidth(fluidPreview.CGImage) == 24 && CGImageGetHeight(fluidPreview.CGImage) == 32,
+          @"native acquisition and authoritative rendering use the intended full raster");
     nativeInfo(blue);
     runFor(0.03);
+    check(artwork() == fluid, @"later native notifications cannot downgrade a successful URI cover");
     check(sameImage(preview(fluid), red), @"lazy fluid preview retains the offered cover");
     NSURL *fluidFile = video(fluid);
     check(sameImage(red, [UIImage imageWithContentsOfFile:fluidFile.path]),
