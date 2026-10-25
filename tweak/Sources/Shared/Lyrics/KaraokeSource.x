@@ -24,6 +24,8 @@ static const NSUInteger kSeenTracks = 200;
 // A track whose request was lost may be asked for again after this long, twice as long after each loss
 // in a row up to the most: soon enough for the song still playing, not so soon that a busy server is pressed.
 static const NSTimeInterval kRetryPause = 10, kRetryPauseMost = 60;
+// Only the failed-source/empty-fallback path gets automatic retries: one pass through the backoff.
+static const NSUInteger kSourceRetries = 4;
 // What spclient needs from a request to answer it as the signed-in app.
 static NSString *const kSpclientHeaders[] = {@"authorization", @"client-token", @"app-platform", @"spotify-app-version", @"user-agent", @"accept-language"};
 
@@ -33,6 +35,8 @@ static NSMutableSet<NSString *> *sg_requested;
 // and leaves them asked for, so no second request runs beside the first.
 static NSMutableSet<NSString *> *sg_asking;
 static NSMutableDictionary<NSString *, NSNumber *> *sg_losses;   // requests lost in a row, by track
+// kSourceRetries + 1 means stopped until activation, replay or an explicit retry. Main queue.
+static NSMutableDictionary<NSString *, NSNumber *> *sg_sourceRetries;
 // A new token on each ask lets a forget retire both its reply and its retry pause. Main queue.
 static NSMutableDictionary<NSString *, NSObject *> *sg_requests;
 // Separate from source requests: a keep or forget retires a disk delivery and
@@ -253,6 +257,7 @@ BOOL SGKaraokeLooking(NSString *trackID) {
 // Main queue only. A full cache is emptied but for the track playing, the one up next and those still
 // being asked for; what goes can be asked for again.
 static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL fromStore) {
+    [sg_sourceRetries removeObjectForKey:track];
     if (sg_storeRequests[track]) {
         [sg_storeRequests removeObjectForKey:track];
         [sg_asking removeObject:track];
@@ -309,6 +314,7 @@ void SGKaraokeForgetLyrics(NSString *trackID) {
     [sg_asking removeObject:trackID];
     [sg_looking removeObject:trackID];
     [sg_losses removeObjectForKey:trackID];
+    [sg_sourceRetries removeObjectForKey:trackID];
     [sg_requests removeObjectForKey:trackID];
 }
 
@@ -343,7 +349,7 @@ NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) {
 
 // Main queue only. The track stays asked for through the pause, so the readers asking on every tick
 // send nothing until it is over.
-static void askAgainLater(NSString *trackID) {
+static void askAgainLater(NSString *trackID, BOOL automatic) {
     NSObject *request = sg_requests[trackID];
     NSUInteger losses = sg_losses[trackID].unsignedIntegerValue;
     sg_losses[trackID] = @(losses + 1);
@@ -354,7 +360,31 @@ static void askAgainLater(NSString *trackID) {
         [sg_asking removeObject:trackID];
         [sg_requested removeObject:trackID];
         [sg_requests removeObjectForKey:trackID];
+        // Returning before the pause ended must not leave the playing track waiting for a reader's tick.
+        if (automatic && UIApplication.sharedApplication.applicationState == UIApplicationStateActive
+            && [trackID isEqualToString:SGKaraokePlayingTrack()]) SGKaraokeRequestLyrics(trackID);
     });
+}
+
+static void retrySourcesLater(NSString *trackID) {
+    if (!sg_sourceRetries) sg_sourceRetries = [NSMutableDictionary dictionary];
+    NSUInteger retries = sg_sourceRetries[trackID].unsignedIntegerValue;
+    sg_sourceRetries[trackID] = @(MIN(retries + 1, kSourceRetries + 1));
+    if (retries >= kSourceRetries) {
+        [sg_asking removeObject:trackID];
+        [sg_requests removeObjectForKey:trackID];
+        return; // Keep the requested mark: display-link readers are not a recovery signal.
+    }
+    askAgainLater(trackID, YES);
+}
+
+// Recovery releases only an exhausted source retry budget, never an ask or a backoff still in flight.
+static BOOL resumeSourceRetries(NSString *trackID) {
+    if (!trackID || sg_sourceRetries[trackID].unsignedIntegerValue <= kSourceRetries) return NO;
+    [sg_sourceRetries removeObjectForKey:trackID];
+    [sg_losses removeObjectForKey:trackID];
+    [sg_requested removeObject:trackID];
+    return YES;
 }
 
 // Whether a loaded image has this file name; EeveeSpotify's Reincarnated fork also loads EeveeSwiftProtobuf.
@@ -442,12 +472,18 @@ static BOOL requestFromSpotify(NSString *trackID) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (sg_requests[trackID] != token) return;
             [sg_looking removeObject:trackID];
+            // The walk deliberately did not keep a failed/unfinished empty answer. Spotify's own
+            // absence must not turn that into a permanent requested mark either.
+            BOOL retrySources = !lines && (sg_ownSources || SGLyricsPinnedID(trackID)) && !SGLyricsKeptAnswer(trackID);
             if (lost) {
-                askAgainLater(trackID);
+                askAgainLater(trackID, NO);
+            } else if (retrySources) {
+                retrySourcesLater(trackID);
             } else {
                 [sg_requests removeObjectForKey:trackID];
                 [sg_asking removeObject:trackID];
                 [sg_losses removeObjectForKey:trackID];
+                [sg_sourceRetries removeObjectForKey:trackID];
                 // Asked after the chain found plain text only: Spotify's replace it only when they are timed,
                 // and never a source picked for the track from the player's ⋯ that answered.
                 NSArray<SGKaraokeLine *> *kept = sg_lyrics[trackID];
@@ -473,6 +509,7 @@ void SGKaraokeAskAgain(NSString *trackID) {
     [sg_requested removeObject:trackID];
     [sg_asking removeObject:trackID];
     [sg_losses removeObjectForKey:trackID];
+    [sg_sourceRetries removeObjectForKey:trackID];
     if ([trackID isEqualToString:SGKaraokePlayingTrack()]) SGKaraokeRequestLyrics(trackID);
     announce(trackID);
 }
@@ -515,7 +552,8 @@ static BOOL askLrcLib(NSString *trackID, void (^done)(SGLyricsResult *lyrics)) {
 
 // Main queue only.
 static void requestLyrics(NSString *trackID, BOOL tryStore) {
-    if (!trackID || sg_lyrics[trackID] || [sg_requested containsObject:trackID]) return;
+    if (!trackID || sg_lyrics[trackID] || [sg_requested containsObject:trackID]
+        || sg_sourceRetries[trackID].unsignedIntegerValue > kSourceRetries) return;
     // spclient has nothing for a local file, which only the sources can name. A file of the user's own,
     // linked to it or matching its names, comes before every source.
     BOOL local = SGLocalFileIs(trackID);
@@ -590,7 +628,7 @@ static void requestLyrics(NSString *trackID, BOOL tryStore) {
             // Asked again after a pause; a miss the sources keep answers at once then. An instrumental, or
             // a file out of tries, is left asked for: the readers ask on every tick, and an edit of its
             // names gives it a new key.
-            if (!lyrics.instrumental && sg_losses[trackID].unsignedIntegerValue < kLocalTries) askAgainLater(trackID);
+            if (!lyrics.instrumental && sg_losses[trackID].unsignedIntegerValue < kLocalTries) askAgainLater(trackID, NO);
             else {
                 [sg_asking removeObject:trackID];
                 [sg_requests removeObjectForKey:trackID];
@@ -602,7 +640,11 @@ static void requestLyrics(NSString *trackID, BOOL tryStore) {
         [sg_requested removeObject:trackID];
         // Spotify is asked next, so the look goes on; with nothing to ask it with, it is over.
         if (!requestFromSpotify(trackID)) {
-            [sg_requests removeObjectForKey:trackID];
+            if (!lyrics && !SGLyricsKeptAnswer(trackID)) {
+                [sg_requested addObject:trackID];
+                [sg_asking addObject:trackID];
+                retrySourcesLater(trackID);
+            } else [sg_requests removeObjectForKey:trackID];
             announce(trackID);
         }
     };
@@ -744,6 +786,10 @@ static void seen(SPTPlayerState *state) {
         sg_lastSeenID = trackID;
     }
     remember(track, trackID);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if ([trackID isEqualToString:SGKaraokePlayingTrack()] && resumeSourceRetries(trackID))
+            SGKaraokeRequestLyrics(trackID);
+    });
     prefetch(track, trackID, state);
 }
 
@@ -754,6 +800,16 @@ static void seen(SPTPlayerState *state) {
 @end
 
 @implementation SGKaraokeTrackWatcher
+- (instancetype)init {
+    if (!(self = [super init])) return nil;
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(becameActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
+    return self;
+}
+- (void)becameActive:(NSNotification *)note {
+    NSString *playing = SGKaraokePlayingTrack();
+    resumeSourceRetries(playing);
+    if (playing && !sg_lyrics[playing] && !SGKaraokeLooking(playing)) SGKaraokeRequestLyrics(playing);
+}
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     seen(state);
 }
@@ -856,11 +912,6 @@ static SGKaraokeTrackWatcher *sg_trackWatcher;
     // moved on to in the background came back to the app with none, and the redesign's lyrics, which
     // ask for nothing themselves, stayed empty. They are asked for here as the app becomes active again,
     // which also follows Control Center, a call or Siri without the background.
-    [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:nil
-                                                usingBlock:^(NSNotification *note) {
-        NSString *playing = SGKaraokePlayingTrack();
-        if (playing && !sg_lyrics[playing] && !SGKaraokeLooking(playing)) SGKaraokeRequestLyrics(playing);
-    }];
     sg_trackWatcher = [SGKaraokeTrackWatcher new];
     SGAddPlayerStateObserver(sg_trackWatcher);
     %init;

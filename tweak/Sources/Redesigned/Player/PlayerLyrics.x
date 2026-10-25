@@ -959,6 +959,7 @@ static void durationUnitLaidOut(UIViewController *unit) {
 @implementation SGRPlayerLyricsWatcher {
     NSString *_track;
     BOOL _graceOver;   // the track playing has had its kLyricsGrace
+    NSUInteger _checkGeneration;
 }
 
 - (instancetype)init {
@@ -966,6 +967,7 @@ static void durationUnitLaidOut(UIViewController *unit) {
     // An edit of a local file's names gives it a new lyrics key, and the sources search again under it.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(editsChanged:) name:SGLocalFileEditsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(linesKept:) name:SGKaraokeLinesKeptNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(becameActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
     return self;
 }
 
@@ -979,6 +981,7 @@ static void durationUnitLaidOut(UIViewController *unit) {
 // Lines kept for the track playing, or the look for them over with none. The glyph is told only when they
 // are here, since SGRPlayerLyricsChanged sets the animated artwork's blur each time.
 - (void)linesKept:(NSNotification *)note {
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
     if (![note.object isEqual:SGKaraokePlayingTrack()]) return;
     if (SGRPlayerLyricsAvailable()) SGRPlayerLyricsChanged();
     else [self closeIfNone];
@@ -986,14 +989,35 @@ static void durationUnitLaidOut(UIViewController *unit) {
 }
 
 - (BOOL)none {
-    return _graceOver && !SGRPlayerLyricsAvailable() && !SGKaraokeLooking(SGKaraokePlayingTrack());
+    return UIApplication.sharedApplication.applicationState == UIApplicationStateActive
+        && _graceOver && !SGRPlayerLyricsAvailable() && !SGKaraokeLooking(SGKaraokePlayingTrack());
 }
 
 // The lines go once the grace is over and nothing is looking for the track's own any more.
 - (void)closeIfNone {
-    if (!_graceOver || !sg_open || SGRPlayerLyricsAvailable() || SGKaraokeLooking(SGKaraokePlayingTrack())) return;
+    if (!sg_open || ![self none]) return;
     SGLog(@"redesign player: no lyrics for the track that came on, the cover is back");
     setOpen(NO, YES);
+}
+
+// A background skip gets a fresh grace on return, not the remainder of an expired background check.
+- (void)restartChecks {
+    _graceOver = NO;
+    NSUInteger generation = ++_checkGeneration;
+    if (UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
+    SGRPlayerLyricsChanged();
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kLyricsGrace * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (self->_checkGeneration != generation || UIApplication.sharedApplication.applicationState != UIApplicationStateActive) return;
+        self->_graceOver = YES;
+        [self closeIfNone];
+        SGRPlayerLandscapeLinesChanged();
+    });
+}
+
+- (void)becameActive:(NSNotification *)note {
+    [self restartChecks];
+    // This preserves an in-flight request and its retry pause; it does not forget good lines.
+    SGKaraokeRequestLyrics(SGKaraokePlayingTrack());
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
@@ -1008,15 +1032,8 @@ static void durationUnitLaidOut(UIViewController *unit) {
     NSString *track = SGURIString(state.track.URI);
     if (!track || [track isEqualToString:_track]) return;
     _track = track;
-    _graceOver = NO;
-    SGRPlayerLyricsChanged();
     // The lines already up wait out a grace for the new track's before they go, a track after it its own.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kLyricsGrace * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (![self->_track isEqualToString:track]) return;
-        self->_graceOver = YES;
-        [self closeIfNone];
-        SGRPlayerLandscapeLinesChanged();
-    });
+    [self restartChecks];
 }
 
 @end
@@ -1050,7 +1067,9 @@ BOOL SGRPlayerLyricsNone(void) {
         // it stayed dimmed after an instrumental heard in the background.
         SGRPlayerLyricsChanged();
         for (NSNumber *wait in @[@1, @3]) {
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ SGRPlayerLyricsChanged(); });
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (UIApplication.sharedApplication.applicationState == UIApplicationStateActive) SGRPlayerLyricsChanged();
+            });
         }
     }];
     // VoiceOver keeps the controls up: turned on, it brings them back.

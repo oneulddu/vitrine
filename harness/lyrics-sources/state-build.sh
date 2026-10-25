@@ -5,6 +5,8 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$(cd "$HERE/../../tweak/Sources" && pwd)
 mkdir -p "$HERE/build"
 sed '/^%hook SPTEsperantoPlayer/,$d' "$SRC/Shared/Lyrics/KaraokeSource.x" > "$HERE/build/karaoke.inc"
+sed -n '/^static const NSTimeInterval kLyricsGrace =/p; /^#pragma mark - the track changing under them/,/^%ctor {/ { /^%ctor {/!p; }' \
+    "$SRC/Redesigned/Player/PlayerLyrics.x" > "$HERE/build/player-lyrics-watcher.inc"
 sed '/^#pragma mark - hooks/,$d' "$SRC/Shared/LyricsSources/LyricsHook.x" > "$HERE/build/lyrics-hook.inc"
 SDK=$(xcrun --sdk macosx --show-sdk-path)
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \

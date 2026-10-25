@@ -14,7 +14,27 @@ void HarnessGetID(NSNumber *identifier, void (^done)(SGLyricsResult *)) { sg_ask
 #import "Shared/LyricsSources/LyricsSources.m"
 #undef kKeptTracks
 #undef SGLrcLibGetID
+// Hold only the keeper/watcher clocks during the background-skip check. Other checks use real time.
+static NSMutableArray<dispatch_block_t> *sg_heldClocks;
+static void holdableAfter(dispatch_time_t when, dispatch_queue_t queue, dispatch_block_t block) {
+    if (sg_heldClocks) [sg_heldClocks addObject:[block copy]];
+    else dispatch_after(when, queue, block);
+}
+#define dispatch_after holdableAfter
 #import "karaoke.inc"
+// The production watcher, with only its drawing/rest effects replaced. The full player simulator
+// harness needs unrelated AI/view services; this check drives the state machine without those.
+static BOOL sg_open, sg_alone;
+static NSTimer *sg_rest;
+static NSUInteger sg_closed;
+static void setOpen(BOOL open, BOOL animated) { sg_open = open; if (!open) sg_closed++; }
+static void setAlone(BOOL alone, BOOL animated) { sg_alone = alone; }
+static void restartRest(void) {}
+BOOL SGRPlayerLyricsAvailable(void) { return SGKaraokeLinesForTrack(SGKaraokePlayingTrack()) != nil; }
+void SGRPlayerLyricsChanged(void) {}
+void SGRPlayerLandscapeLinesChanged(void) {}
+#import "player-lyrics-watcher.inc"
+#undef dispatch_after
 // Exercise the production hook decisions and completion paths, without installing Logos hooks.
 #define timingName hookTimingName
 #define completed hookCompleted
@@ -41,7 +61,13 @@ UIViewController *SGTopController(void) { return nil; }
 UIViewController *SGSourcesPageMake(NSString *title, NSString *note, NSArray *all, NSArray *(^order)(void), void (^setOrder)(NSArray *)) { return nil; }
 void SGRegisterFlagForcer(BOOL beatsOverride, SGFlagForcer launch, SGFlagForcer locked) {}
 BOOL SGRedesignedUI(void) { return NO; }
-BOOL SGLocalFileIs(NSString *track) { return NO; }
+NSString *SGURIString(id uri) {
+    return [uri isKindOfClass:NSURL.class] ? [uri absoluteString] :
+        ([uri isKindOfClass:NSString.class] ? uri : nil);
+}
+NSNotificationName const SGLocalFileEditsDidChangeNotification = @"harness.localFileEdits";
+static BOOL sg_testLocalFile;
+BOOL SGLocalFileIs(NSString *track) { return sg_testLocalFile; }
 NSString *SGLocalFileLyricsKey(NSString *track) { return nil; }
 NSDictionary *SGLocalFileInfo(NSString *track) { return @{@"title": @"Song", @"artist": @"Singer", @"seconds": @200}; }
 SGLyricsResult *SGImportedLRCFor(NSString *track, NSString *title, NSString *artist) { return nil; }
@@ -50,10 +76,50 @@ double SGSingLeadOf(SPTPlayerState *state) { return 0; }
 
 @interface HarnessPlayer : NSObject
 @property (nonatomic) double sought;
+@property (nonatomic, strong) id state;
 @end
 @implementation HarnessPlayer
 - (void)seekTo:(double)seconds { self.sought = seconds; }
 @end
+
+@interface HarnessLyricsTrack : NSObject
+@property (nonatomic, copy) NSString *URI, *trackTitle, *artistName;
+@property (nonatomic, copy) NSDictionary *metadata;
+@end
+@implementation HarnessLyricsTrack
+@end
+@interface HarnessLyricsState : NSObject
+@property (nonatomic, strong) HarnessLyricsTrack *track;
+@property (nonatomic) BOOL isPaused;
+@property (nonatomic, copy) NSArray *future;
+@end
+@implementation HarnessLyricsState
+@end
+@interface HarnessApplication : NSObject
+@property (nonatomic) UIApplicationState applicationState;
+@end
+@implementation HarnessApplication
+@end
+static HarnessApplication *sg_testApplication;
+static id fakeApplication(id self, SEL selector) { return sg_testApplication; }
+
+@interface HarnessLyricsTask : NSObject
+@property (nonatomic, copy) dispatch_block_t reply;
+@end
+@implementation HarnessLyricsTask
+- (void)resume { self.reply(); }
+@end
+static NSUInteger sg_spotifyAsks;
+static NSInteger sg_spotifyStatus = 404;
+static id spotifyMiss(id self, SEL selector, NSURLRequest *request, void (^done)(NSData *, NSURLResponse *, NSError *)) {
+    CHECK([request.URL.host isEqual:@"spclient.wg.spotify.com"]);
+    sg_spotifyAsks++;
+    HarnessLyricsTask *task = [HarnessLyricsTask new];
+    task.reply = ^{
+        done(nil, [[NSHTTPURLResponse alloc] initWithURL:request.URL statusCode:sg_spotifyStatus HTTPVersion:@"HTTP/2" headerFields:nil], nil);
+    };
+    return task;
+}
 
 // AVAudioSession itself stays untouched except for its route getter while the check runs.
 @interface HarnessPort : NSObject
@@ -875,6 +941,215 @@ static void checkPickRaces(NSUInteger only) {
     SGLyricsSetOrder(@[@"musixmatch"]);
 }
 
+static void checkBackgroundSkip(void) {
+    id oldPlayer = sg_player;
+    NSDictionary *oldHeaders = sg_spclientHeaders;
+    Method appMethod = class_getClassMethod(UIApplication.class, @selector(sharedApplication));
+    IMP oldApp = method_setImplementation(appMethod, (IMP)fakeApplication);
+    Method taskMethod = class_getInstanceMethod(NSURLSession.class, @selector(dataTaskWithRequest:completionHandler:));
+    IMP oldTask = method_setImplementation(taskMethod, (IMP)spotifyMiss);
+    sg_testApplication = [HarnessApplication new];
+    sg_testApplication.applicationState = UIApplicationStateBackground;
+    sg_heldClocks = [NSMutableArray array];
+    sg_spclientHeaders = @{};
+    HarnessPlayer *player = [HarnessPlayer new]; sg_player = player;
+    HarnessLyricsState *state = [HarnessLyricsState new]; player.state = state;
+    HarnessLyricsTrack *track = [HarnessLyricsTrack new]; state.track = track;
+    NSString *key = NSUUID.UUID.UUIDString;
+    track.URI = [@"spotify:track:" stringByAppendingString:key];
+    track.trackTitle = @"Song"; track.artistName = @"Singer"; track.metadata = @{};
+    SGKaraokeRememberTrack((id)track, key);
+    SGKaraokeTrackWatcher *sourceWatcher = [SGKaraokeTrackWatcher new];
+    sg_open = YES; sg_closed = 0;
+    sg_watcher = [SGRPlayerLyricsWatcher new];
+    [sg_watcher playerStateDidChange:(id)state];
+    CHECK(!SGRPlayerLyricsNone() && sg_open && !sg_heldClocks.count);
+
+    // The background source walk fails, then Spotify really has no lyrics (404). The walk already
+    // refuses to cache this miss; the keeper must not turn it into a permanent requested mark.
+    sg_providerReply = nil;
+    SGKaraokeRequestLyrics(key);
+    pumpUntil(^BOOL { return sg_providerReply != nil; });
+    SGLyricsNoteReply(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorNetworkConnectionLost userInfo:nil]);
+    sg_providerReply(nil);
+    pumpUntil(^BOOL { return sg_losses[key].unsignedIntegerValue == 1; });
+    CHECK(!SGLyricsKeptAnswer(key) && !SGKaraokeLinesForTrack(key) && !SGKaraokeLooking(key));
+    CHECK(sg_open && !sg_closed && !SGRPlayerLyricsNone() && sg_heldClocks.count == 1);
+    NSObject *request = sg_requests[key];
+    sg_providerReply = nil;
+    for (NSUInteger i = 0; i < 100; i++) SGKaraokeRequestLyrics(key);
+    drainReplies();
+    CHECK(!sg_providerReply && sg_requests[key] == request && sg_spotifyAsks == 1);
+    dispatch_block_t retry = sg_heldClocks.firstObject;
+    [sg_heldClocks removeAllObjects];
+
+    // Foreground before the pause expires: re-asking respects the pause, and the pause itself
+    // starts a fresh walk when it expires, without waiting for a lyric view's display-link tick.
+    sg_testApplication.applicationState = UIApplicationStateActive;
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    CHECK(!SGRPlayerLyricsNone() && sg_heldClocks.count == 1 && sg_requests[key] == request);
+    dispatch_block_t grace = sg_heldClocks.firstObject;
+    [sg_heldClocks removeAllObjects];
+    grace(); // The 3-second grace expires before the existing 10-second retry pause.
+    CHECK(!sg_open && sg_closed == 1 && SGRPlayerLyricsNone() && [sg_asking containsObject:key]);
+    retry();
+    pumpUntil(^BOOL { return sg_providerReply != nil; });
+    CHECK(SGKaraokeLooking(key));
+    sg_providerReply(SGLrcLibRecordResult(@{@"syncedLyrics": @"[00:01]Back in front"}));
+    pumpUntil(^BOOL { return SGKaraokeLinesForTrack(key) != nil; });
+    grace();
+    CHECK(!sg_open && sg_closed == 1 && SGRPlayerLyricsAvailable() && !SGRPlayerLyricsNone());
+    CHECK(!sg_losses[key] && ![sg_asking containsObject:key] && sg_spotifyAsks == 1);
+
+    // A stale same-track timer cannot consume a fresh foreground grace. Inactive is not active,
+    // either; and the unchanged active path still closes after a genuine, fully answered miss.
+    SGKaraokeForgetLyrics(key);
+    sg_open = YES; sg_closed = 0;
+    sg_testApplication.applicationState = UIApplicationStateInactive;
+    [sg_watcher closeIfNone];
+    CHECK(sg_open && !SGRPlayerLyricsNone());
+    sg_testApplication.applicationState = UIApplicationStateActive;
+    [sg_watcher restartChecks];
+    dispatch_block_t stale = sg_heldClocks.lastObject;
+    [sg_watcher restartChecks];
+    dispatch_block_t current = sg_heldClocks.lastObject;
+    stale();
+    CHECK(sg_open && !SGRPlayerLyricsNone());
+    current();
+    CHECK(!sg_open && sg_closed == 1 && SGRPlayerLyricsNone());
+
+    // A fully answered no-lyrics walk remains cached, unlike a failed walk.
+    SGLyricsRestoreKept(key, nil);
+    sg_providerReply = nil;
+    SGKaraokeRequestLyrics(key);
+    pumpUntil(^BOOL { return sg_providerReply != nil; });
+    sg_providerReply(nil);
+    pumpUntil(^BOOL { return !SGKaraokeLooking(key); });
+    CHECK(SGLyricsKeptAnswer(key) == NSNull.null && !sg_losses[key]);
+    CHECK([sg_requested containsObject:key] && ![sg_asking containsObject:key]);
+
+    // No captured Spotify headers yet: the same failed walk waits, rather than being re-walked
+    // every tick. A pause expiring in the background only clears the mark; activation asks again.
+    sg_spclientHeaders = nil; sg_testApplication.applicationState = UIApplicationStateBackground;
+    [sg_heldClocks removeAllObjects];
+    track = [HarnessLyricsTrack new]; state.track = track; key = NSUUID.UUID.UUIDString;
+    track.URI = [@"spotify:track:" stringByAppendingString:key];
+    track.trackTitle = @"Next song"; track.artistName = @"Singer"; track.metadata = @{};
+    SGKaraokeRememberTrack((id)track, key);
+    sg_open = YES;
+    [sg_watcher playerStateDidChange:(id)state];
+    sg_providerReply = nil;
+    SGKaraokeRequestLyrics(key);
+    pumpUntil(^BOOL { return sg_providerReply != nil; });
+    SGLyricsNoteReply(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]);
+    sg_providerReply(nil);
+    pumpUntil(^BOOL { return sg_losses[key].unsignedIntegerValue == 1; });
+    CHECK(sg_heldClocks.count == 1 && [sg_requested containsObject:key] && sg_open);
+    retry = sg_heldClocks.firstObject; [sg_heldClocks removeAllObjects]; sg_providerReply = nil;
+    retry();
+    drainReplies();
+    CHECK(!sg_providerReply && ![sg_requested containsObject:key] && !SGRPlayerLyricsNone());
+    sg_testApplication.applicationState = UIApplicationStateActive;
+    [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+    pumpUntil(^BOOL { return sg_providerReply != nil; });
+    sg_providerReply(SGLrcLibRecordResult(@{@"syncedLyrics": @"[00:01]Next track recovered"}));
+    pumpUntil(^BOOL { return SGKaraokeLinesForTrack(key) != nil; });
+    CHECK(sg_open && !SGRPlayerLyricsNone() && !sg_losses[key]);
+    // Exhaust the new path while playing and paused, with and without Spotify headers.
+    // A same-track state update or a reader's tick is not a recovery signal.
+    for (NSString *signal in @[@"activation", @"replay", @"explicit"]) {
+        [sg_heldClocks removeAllObjects];
+        sg_spclientHeaders = [signal isEqual:@"explicit"] ? nil : @{};
+        state.isPaused = ![signal isEqual:@"activation"];
+        track = [HarnessLyricsTrack new]; state.track = track; key = NSUUID.UUID.UUIDString;
+        track.URI = [@"spotify:track:" stringByAppendingString:key];
+        track.trackTitle = @"Outage"; track.artistName = @"Singer"; track.metadata = @{};
+        SGKaraokeRememberTrack((id)track, key);
+        sg_lastSeen = (id)track; sg_lastSeenID = key;
+        sg_providerReply = nil;
+        SGKaraokeRequestLyrics(key);
+        NSUInteger asks = sg_spotifyAsks;
+        dispatch_block_t lastRetry;
+        // Initial ask plus four automatic retries: 10/20/40/60, then no more.
+        for (NSUInteger attempt = 0; attempt <= 4; attempt++) {
+            pumpUntil(^BOOL { return sg_providerReply != nil; });
+            void (^answer)(SGLyricsResult *) = sg_providerReply; sg_providerReply = nil;
+            SGLyricsNoteReply(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]);
+            answer(nil);
+            pumpUntil(^BOOL { return !SGKaraokeLooking(key); });
+            CHECK(!SGKaraokeLinesForTrack(key) && !SGLyricsKeptAnswer(key));
+            if (attempt < 4) {
+                CHECK(sg_heldClocks.count == 1);
+                lastRetry = sg_heldClocks.firstObject; [sg_heldClocks removeAllObjects];
+                lastRetry();
+            } else {
+                CHECK(!sg_heldClocks.count && ![sg_asking containsObject:key] && !sg_requests[key]);
+                CHECK([sg_requested containsObject:key]);
+            }
+        }
+        CHECK(sg_spotifyAsks == asks + (sg_spclientHeaders ? 5 : 0));
+        asks = sg_spotifyAsks;
+        for (NSUInteger i = 0; i < 100; i++) {
+            SGKaraokeRequestLyrics(key);
+            [sourceWatcher playerStateDidChange:(id)state];
+            lastRetry(); // Even a stale backoff callback cannot restart the exhausted walk.
+        }
+        drainReplies();
+        CHECK(!sg_providerReply && !sg_heldClocks.count && sg_spotifyAsks == asks);
+        if ([signal isEqual:@"activation"]) {
+            sg_testApplication.applicationState = UIApplicationStateBackground;
+            sg_testApplication.applicationState = UIApplicationStateActive;
+            [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+        } else if ([signal isEqual:@"replay"]) {
+            state.track = nil; [sourceWatcher playerStateDidChange:(id)state];
+            state.track = track; [sourceWatcher playerStateDidChange:(id)state];
+        } else SGKaraokeAskAgain(key);
+        pumpUntil(^BOOL { return sg_providerReply != nil && SGKaraokeLooking(key); });
+        CHECK(!sg_sourceRetries[key]);
+        sg_providerReply(SGLrcLibRecordResult(@{@"syncedLyrics": @"[00:01]Recovery signal worked"}));
+        pumpUntil(^BOOL { return SGKaraokeLinesForTrack(key) != nil; });
+        CHECK(!sg_losses[key]);
+    }
+
+    // Existing Spotify network-loss behavior: expiry releases the mark for readers, but does not
+    // automatically ask, and does not consume the new failed-source retry budget.
+    SGKaraokeForgetLyrics(key); SGLyricsRestoreKept(key, nil); [sg_heldClocks removeAllObjects];
+    sg_spclientHeaders = @{}; sg_spotifyStatus = 503; sg_providerReply = nil;
+    SGKaraokeRequestLyrics(key);
+    pumpUntil(^BOOL { return sg_providerReply != nil; });
+    sg_providerReply(nil); sg_providerReply = nil;
+    pumpUntil(^BOOL { return sg_losses[key] != nil; });
+    CHECK(!sg_sourceRetries[key] && sg_heldClocks.count == 1);
+    NSUInteger asks = sg_spotifyAsks;
+    retry = sg_heldClocks.firstObject; [sg_heldClocks removeAllObjects]; retry();
+    drainReplies();
+    CHECK(!sg_providerReply && sg_spotifyAsks == asks && ![sg_requested containsObject:key]);
+    SGKaraokeRequestLyrics(key);
+    pumpUntil(^BOOL { return sg_losses[key].unsignedIntegerValue == 2; });
+    CHECK(!sg_sourceRetries[key]); // The cached genuine source miss still follows the old lost path.
+    sg_spotifyStatus = 404;
+
+    // A local-file foreground miss still returns the cover after grace, not after its retry budget.
+    SGKaraokeForgetLyrics(key); SGLyricsRestoreKept(key, nil); [sg_heldClocks removeAllObjects];
+    sg_testLocalFile = YES; sg_open = YES; sg_providerReply = nil;
+    [sg_watcher restartChecks];
+    grace = sg_heldClocks.firstObject;
+    SGKaraokeRequestLyrics(key);
+    pumpUntil(^BOOL { return sg_providerReply != nil; });
+    sg_providerReply(nil);
+    pumpUntil(^BOOL { return sg_losses[key] != nil; });
+    CHECK(!SGKaraokeLooking(key) && [sg_asking containsObject:key]);
+    grace();
+    CHECK(!sg_open && SGRPlayerLyricsNone() && [sg_asking containsObject:key]);
+    SGKaraokeForgetLyrics(key); sg_testLocalFile = NO;
+    [NSNotificationCenter.defaultCenter removeObserver:sourceWatcher];
+    [NSNotificationCenter.defaultCenter removeObserver:sg_watcher]; sg_watcher = nil;
+    sg_heldClocks = nil; sg_player = oldPlayer; sg_spclientHeaders = oldHeaders;
+    method_setImplementation(appMethod, oldApp);
+    method_setImplementation(taskMethod, oldTask);
+    printf("background skip: inactive guards, foreground grace including local retry pauses, bounded source retries, activation/replay/explicit recovery and unchanged Spotify-loss retries passed\n");
+}
+
 int main(void) {
     @autoreleasepool {
         // A separate suite makes the default writes real without touching the app's or the user's.
@@ -998,6 +1273,7 @@ int main(void) {
         checkConcurrentWalk();
         checkReload();
         checkPickRaces(0);
+        checkBackgroundSkip();
         for (NSUInteger i = 0; i < 501; i++) CHECK(SGLyricsPin([@(i) stringValue], record));
         CHECK([defaults dictionaryForKey:SGKeyLyricsPins].count == 500 && [SGLyricsPinnedID(@"500") isEqual:@123]);
         [NSNotificationCenter.defaultCenter removeObserver:observer];
