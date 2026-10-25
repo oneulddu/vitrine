@@ -32,7 +32,9 @@ static const CGFloat kMargin = 24, kRowTighten = 2;
 static const CGFloat kDimAlpha = 0.3, kFillEdge = 22, kLift = 2.5, kDimScale = 0.97;
 static const CGFloat kAnchor = 0.28;   // where the sung line rests, as a share of the height
 static const CGFloat kEdgeFade = 0.1;  // the lines fade out over this share at the top and bottom
-static const CGFloat kBlurPerLine = 1.4, kMaxBlur = 6;   // Apple Music's, scaled by the Lyrics page's blur
+// Apple Music's, scaled by the Lyrics page's blur. The lines right above and below what is sung stay sharp,
+// only dim; the blur starts from the second line away, kBlurPerLine more each line, up to kMaxBlur.
+static const CGFloat kBlurPerLine = 1.4, kMaxBlur = 6;
 // The (oh, aye) hanging under a line: smaller, a little dimmer, and just clear of it.
 static const CGFloat kBackingScale = 0.62, kBackingAlpha = 0.8, kBackingGap = 4;
 // The translation and the romanized line of a line being sung, brighter than a line waiting but never
@@ -2897,7 +2899,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     CGPoint center = CGPointMake(view.right ? CGRectGetMaxX(frame) : _margin, CGRectGetMidY(frame));
     CGFloat scale = distance == 0 ? 1 : kDimScale;
     CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
-    view.blur = distance == 0 || _browsing ? 0 : MIN(_maxBlur, distance * _blurPerLine);
+    view.blur = _browsing ? 0 : MIN(_maxBlur, MAX(0, distance - 1) * _blurPerLine);
     BOOL near = CGRectIntersectsRect(CGRectInset(self.bounds, 0, -height / 2), frame)
              || CGRectIntersectsRect(CGRectInset(self.bounds, 0, -height / 2), view.frame);
     if (!animated || !near) {
