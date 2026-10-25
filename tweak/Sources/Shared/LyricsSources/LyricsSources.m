@@ -641,12 +641,17 @@ static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyrics
     SGLyricsResult *merged = walk.merged;
     // Even a filtered reply can name the track for a deferred source.
     learnFrom(query, fresh);
-    if (fresh.karaokeLines.count && [provider.key isEqualToString:walk.picked]
-        && [walk.picked isEqualToString:SGLyricsChosenSource(query.trackID)]) {
+    BOOL pick = [provider.key isEqualToString:walk.picked]
+        && [walk.picked isEqualToString:SGLyricsChosenSource(query.trackID)];
+    // Sequential walks prefer words from providers, not over the user's own timed file.
+    // An equally timed source already above the file still wins; All at once keeps its race.
+    BOOL imported = !walk.concurrent && fresh.synced
+        && [provider.key isEqualToString:SGImportedLRCKey] && betterLines(merged, fresh);
+    if (fresh.karaokeLines.count && (pick || imported)) {
         if (!fresh.provider) fresh.provider = provider.name;
         noteCredit(fresh);
         walk.merged = fresh;
-        walk.pickedAnswered = YES;
+        walk.pickedAnswered = pick;
         finish(walk);
         return NO;
     }

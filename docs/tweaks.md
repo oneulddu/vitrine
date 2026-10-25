@@ -245,7 +245,9 @@ Shared:
                   lines (KaraokeSource.x), which the view picks up. The default Word timing first mode asks
                   sequentially for word timing; In order and All at once follow the rules above.
                   Prefer word-by-word timing (off by default) changes In order mode only: it asks on for
-                  word-timed lines, otherwise keeping the finest timing found with ties going to source priority. The redesigned
+                  word-timed lines, otherwise keeping the finest timing found with ties going to source priority.
+                  In either sequential mode, a timed imported LRC above every source as finely timed ends the walk
+                  too (#111); All at once keeps its first-word-timing race. The redesigned
                   player's ⋯ has Lyrics Source (LyricsPick.m): every source asked at once for the song playing, a pick
                   shown at once and kept in memory until Spotify quits, and Automatic putting back what the order chose
     LyricsTranslation/ a song's lines translated from the lyrics' corner menu, for the lines no source translated, three
