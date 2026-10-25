@@ -142,6 +142,23 @@ static UIView *backdropIn(UIView *plane) {
 
 #pragma mark - what the cover behind it changes around the player
 
+BOOL SGInPlayerCover(UIView *view) {
+    static NSArray<Class> *cells;
+    if (!cells) {
+        NSMutableArray<Class> *found = [NSMutableArray array];
+        for (NSString *name in @[@"_TtC28NowPlaying_ContentLayersImpl16CoverArtCellImpl", @"_TtC28NowPlaying_ContentLayersImpl22LegacyCoverArtCellImpl",
+                                 @"_TtC39ListeningParties_NowPlayingViewModeImpl34NowPlayingLiveRoomCoverArtCellImpl"]) {
+            Class cell = NSClassFromString(name);
+            if (cell) [found addObject:cell];
+        }
+        cells = found;
+    }
+    for (UIView *v = view.superview; v; v = v.superview) {
+        for (Class cell in cells) if ([v isKindOfClass:cell]) return YES;
+    }
+    return NO;
+}
+
 %hook _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView
 - (void)layoutSubviews {
     %orig;
@@ -149,7 +166,7 @@ static UIView *backdropIn(UIView *plane) {
     UIView *tilt = (UIView *)self;
     CGSize size = tilt.bounds.size;
     // The player's cover only; the bar downstairs carries a 40pt one of its own.
-    if (size.width < 200) return;
+    if (size.width < 200 || !SGInPlayerCover(tilt)) return;
     SGForEachView(tilt, ^(UIView *view) {
         if (view == tilt || !CGSizeEqualToSize(view.bounds.size, size)) return;
         view.layer.cornerRadius = kArtRadius;

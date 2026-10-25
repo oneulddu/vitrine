@@ -20,7 +20,8 @@
 #import "Shared/Navigation/TabIcons.h"
 #import <objc/message.h>
 
-static char kBarKey, kApartBarKey, kHostKey, kFadeKey;
+static char kBarKey, kApartBarKey, kHostKey, kFadeKey, kItemIconKey;
+static const NSUInteger kMinimumMinimizedTabs = 2;
 static __weak UIView *sg_stockBar;
 static CGFloat sg_room, sg_glassHeight;   // see "room for the glass bar"
 // See "minimized". sg_keepApart holds the second bar on screen while the main one grows back under it.
@@ -469,6 +470,12 @@ static BOOL fillBar(SGRSystemTabBar *bar, NSArray<UIView *> *sources, BOOL hideL
     BOOL missing = NO;
     for (NSUInteger i = 0; i < sources.count; i++) {
         UITabBarItem *item = bar.items[i];
+        UIView *icon = iconIn(sources[i]);
+        if (objc_getAssociatedObject(item, &kItemIconKey) != icon) {
+            item.image = nil;
+            item.selectedImage = nil;
+            objc_setAssociatedObject(item, &kItemIconKey, icon, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
         if (!item.image) item.image = glyphOf(sources[i], NO);
         if (!item.selectedImage || item.selectedImage == item.image) item.selectedImage = glyphOf(sources[i], YES);
         missing |= !item.image || !item.selectedImage;
@@ -525,6 +532,10 @@ static void syncBar(UIView *stockBar) {
     stockBar.superview.layer.backgroundColor = NULL;
 
     NSArray<UIView *> *sources = tabItems(stockBar);
+    if (sg_minimized && sources.count < kMinimumMinimizedTabs) {
+        SGRSetTabBarMinimized(NO, NO);
+        return;
+    }
     if (!sources.count) return;
     // An item with no title is drawn by UIKit as its glyph alone, centered, on a bar of the same height.
     BOOL hideLabels = SGEnabled(SGRKeyNavbarHideLabels);
@@ -543,7 +554,7 @@ static void syncBar(UIView *stockBar) {
     // Minimized, the bar keeps the tab it is on, glyph only, on a circle at the leading end, and the last
     // split tab on one at the trailing end when there are any, the way the Music app keeps Search. Without
     // split tabs the now playing card has the rest of the row.
-    BOOL minimized = sg_minimized && sources.count >= 2;
+    BOOL minimized = sg_minimized;
     if (minimized) {
         UIView *last = apart.lastObject;
         main = [NSMutableArray arrayWithObject:active && active != last ? active : main.firstObject];
@@ -786,6 +797,7 @@ static void moveFrom(UIView *host, SGRBarState before, void (^along)(void), void
 
 static void setMinimized(BOOL minimized, BOOL animated) {
     UIView *stockBar = sg_stockBar;
+    if (minimized && tabItems(stockBar).count < kMinimumMinimizedTabs) minimized = NO;
     if (minimized == sg_minimized) return;
     // Spotify's regular width bar is not the glass one's row of tabs; it stays as it is.
     if (minimized && (!stockBar.window || stockBar.traitCollection.horizontalSizeClass != UIUserInterfaceSizeClassCompact)) return;

@@ -8,6 +8,9 @@
 #define SGKeyPlayerBackdrop @"spotifyglass.playerBackdrop"
 #define SGKeyLyricsCard @"spotifyglass.lyricsCard"
 
+// Whether the view belongs to one of the player's artwork cells, rather than an album header.
+BOOL SGInPlayerCover(UIView *view);
+
 // Parts of the player to hide, one switch each (PlayerDeclutter.x). An unset switch is off.
 #define SGHideShuffle @"spotifyglass.hide.shuffle"
 #define SGHideRepeat @"spotifyglass.hide.repeat"

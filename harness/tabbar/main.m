@@ -383,6 +383,7 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
 extern CGRect SGRNowPlayingCardFrameIn(UIView *host, CGFloat *radius);
 extern void SGRSetTabBarMinimized(BOOL minimized, BOOL animated);
 extern BOOL SGRTabBarMinimized(void);
+extern CGRect SGRTabBarInlineSlot(UIView *host, CGFloat height);
 // touch.m: a finger's touches, through UIKit's own recognizers.
 extern void SGHarnessTap(UIWindow *window, CGPoint point);
 extern void SGHarnessDrag(UIWindow *window, CGPoint from, CGPoint to, NSTimeInterval seconds);
@@ -699,6 +700,55 @@ static void after(double seconds, dispatch_block_t block) {
     // `away` one there from the start sliding away at 1.5 s, `cycle` in at 1.5 s and out at 4.5 s.
     NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
     NSString *mode = args.count > 1 ? args[1] : @"none";
+    if ([mode isEqualToString:@"audit"]) {
+        after(1, ^{
+            UIStackView *row = SGRowIn(chrome.tabs.bar);
+            NSArray<UIView *> *tabs = row.arrangedSubviews;
+            for (NSUInteger i = 1; i < tabs.count; i++) tabs[i].hidden = YES;
+            [chrome.tabs.bar setNeedsLayout];
+            [chrome.view layoutIfNeeded];
+            SGRSetTabBarMinimized(YES, NO);
+            if (SGRTabBarMinimized() || !CGRectIsNull(SGRTabBarInlineSlot(chrome.view, 56))) {
+                NSLog(@"[harness] FAIL one visible tab minimized");
+                exit(1);
+            }
+            for (UIView *tab in tabs) tab.hidden = NO;
+            [chrome.tabs.bar setNeedsLayout];
+            [chrome.view layoutIfNeeded];
+            SGRSetTabBarMinimized(YES, NO);
+            if (!SGRTabBarMinimized()) {
+                NSLog(@"[harness] FAIL multiple tabs did not minimize");
+                exit(1);
+            }
+            for (NSUInteger i = 1; i < tabs.count; i++) tabs[i].hidden = YES;
+            [chrome.tabs.bar setNeedsLayout];
+            [chrome.view layoutIfNeeded];
+            if (SGRTabBarMinimized() || !CGRectIsNull(SGRTabBarInlineSlot(chrome.view, 56))) {
+                NSLog(@"[harness] FAIL removing tabs left an inline slot");
+                exit(1);
+            }
+            UITabBar *bar = systemBarIn(chrome.tabs.bar);
+            NSData *before = UIImagePNGRepresentation(bar.items.firstObject.image);
+            UIView *source = tabs.firstObject;
+            for (UIView *sub in source.subviews) if ([sub isKindOfClass:UIImageView.class]) [sub removeFromSuperview];
+            UIImageView *replacement = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"circle.fill"]];
+            replacement.tintColor = UIColor.whiteColor;
+            replacement.frame = CGRectMake(0, 5.67, 24, 24);
+            [source addSubview:replacement];
+            [chrome.tabs.bar setNeedsLayout];
+            [chrome.view layoutIfNeeded];
+            UITabBarItem *updated = bar.items.firstObject;
+            if (!updated.image || !updated.selectedImage
+                || [before isEqual:UIImagePNGRepresentation(updated.image)]
+                || [before isEqual:UIImagePNGRepresentation(updated.selectedImage)]) {
+                NSLog(@"[harness] FAIL edited glyph stayed unchanged");
+                exit(1);
+            }
+            NSLog(@"[harness] PASS single-tab minimization, composition change and icon replacement");
+            exit(0);
+        });
+        return;
+    }
     // `jam`: in a Jam from the start, and out of it at 3.5 s.
     if ([mode isEqualToString:@"jam"]) {
         after(3.5, ^{

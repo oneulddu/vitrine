@@ -373,13 +373,14 @@ static NSArray<UITabBarItem *> *itemsFor(NSArray<NSDictionary *> *entries, BOOL 
     BOOL custom = SGEnabled(SGRKeyNavbar), names = !SGEnabled(SGRKeyNavbarHideLabels);
     NSMutableArray<NSDictionary *> *shown = [NSMutableArray array];
     if (custom) for (NSDictionary *entry in entries) if (![entry[SGRNavbarHidden] boolValue]) [shown addObject:entry];
-    if (!shown.count) [shown addObjectsFromArray:stockEntries()];
+    if (!custom) [shown addObjectsFromArray:stockEntries()];
     NSSet<NSString *> *splitStock = custom ? splitStockIDs() : nil;
     NSMutableArray<NSDictionary *> *main = [NSMutableArray array], *apart = [NSMutableArray array];
     for (NSDictionary *entry in shown) if (![splitStock containsObject:entry[SGRNavbarID]]) [main addObject:entry];
     if (custom) [apart addObjectsFromArray:SGRNavbarSplit()];
+    if (!main.count && !apart.count) [main addObjectsFromArray:stockEntries()];
     if (!main.count) {
-        main = shown;
+        main = apart;
         apart = [NSMutableArray array];
     }
     [_main setItems:itemsFor(main, names) animated:NO];
@@ -387,7 +388,7 @@ static NSArray<UITabBarItem *> *itemsFor(NSArray<NSDictionary *> *entries, BOOL 
     [_apart setItems:itemsFor(apart, names) animated:NO];
     _apart.selectedItem = nil;
     _apart.hidden = !apart.count;
-    self.accessibilityValue = [[shown valueForKey:SGRNavbarTitle] componentsJoinedByString:@", "];
+    self.accessibilityValue = [[[main arrayByAddingObjectsFromArray:apart] valueForKey:SGRNavbarTitle] componentsJoinedByString:@", "];
     [self setNeedsLayout];
 }
 
@@ -550,6 +551,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 
 // The labels' cell: clear, so it drops the inset-grouped corner mask that clipped the cards' outer corners.
 @interface SGRUnclippedCell : UITableViewCell
+@property (nonatomic, strong) UIStackView *row;
 @end
 
 @implementation SGRUnclippedCell
@@ -692,13 +694,14 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 }
 
 - (UITableViewCell *)labelsCell:(UITableView *)table {
-    UITableViewCell *cell = [table dequeueReusableCellWithIdentifier:@"labels"] ?: [[SGRUnclippedCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"labels"];
+    SGRUnclippedCell *cell = [table dequeueReusableCellWithIdentifier:@"labels"] ?: [[SGRUnclippedCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"labels"];
     cell.contentConfiguration = nil;
     cell.backgroundColor = UIColor.clearColor;
     cell.backgroundConfiguration = [UIBackgroundConfiguration clearConfiguration];
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    if (_withNames.superview != cell.contentView) {
-        UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[_withNames, _iconsOnly]];
+    if (!cell.row) {
+        UIStackView *row = [UIStackView new];
+        cell.row = row;
         row.distribution = UIStackViewDistributionFillEqually;
         row.spacing = 12;
         row.translatesAutoresizingMaskIntoConstraints = NO;
@@ -709,6 +712,9 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
             [row.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor],
             [row.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor],
         ]];
+    }
+    for (SGRLabelCard *card in @[_withNames, _iconsOnly]) {
+        if (card.superview != cell.row) [cell.row addArrangedSubview:card];
     }
     return cell;
 }

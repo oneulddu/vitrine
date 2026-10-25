@@ -93,12 +93,48 @@ static void runNavbar(UIViewController *root, NSString *mode) {
         @{SGRNavbarID: @"Your Library", SGRNavbarTitle: @"Your Library"},
         @{SGRNavbarID: @"Create", SGRNavbarTitle: @"Create", SGRNavbarHidden: @YES},
     ]);
-    SGRSetNavbarSplit(@[@"Search"]);
+    SGRSetNavbarSplit(@[@{SGRNavbarID: @"Search", SGRNavbarTitle: @"Search"}]);
+    if ([mode isEqualToString:@"audit"]) {
+        NSMutableArray *hidden = [NSMutableArray array];
+        for (NSString *name in SGRNavbarStock()) {
+            [hidden addObject:@{SGRNavbarID: name, SGRNavbarTitle: name, SGRNavbarHidden: @YES}];
+        }
+        SGRSetNavbarLayout(hidden);
+        SGRSetNavbarSplit(@[@{SGRNavbarID: @"podcasts", SGRNavbarTitle: @"Podcasts",
+                             SGRNavbarURI: @"spotify:collection:podcasts", SGRNavbarIcon: @"podcasts"}]);
+    }
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:SGRNavbarSettingsPage()];
     nav.modalPresentationStyle = UIModalPresentationFullScreen;
     nav.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     [root presentViewController:nav animated:NO completion:nil];
     UITableViewController *page = (UITableViewController *)nav.topViewController;
+    if ([mode isEqualToString:@"audit"]) {
+        after(1, ^{
+            UIView *preview = page.tableView.tableHeaderView.subviews.firstObject;
+            NSMutableArray *titles = [NSMutableArray array];
+            for (UIView *view in preview.subviews) {
+                if ([view isKindOfClass:UITabBar.class] && !view.hidden) {
+                    [titles addObjectsFromArray:[((UITabBar *)view).items valueForKey:@"title"]];
+                }
+            }
+            if (![titles isEqual:@[@"Podcasts"]]) {
+                NSLog(@"[harness] FAIL split-only preview shows %@", titles);
+                exit(1);
+            }
+            for (NSUInteger i = 0; i < 20; i++) {
+                [page.tableView reloadData];
+                [page.tableView layoutIfNeeded];
+                UITableViewCell *labels = [page.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:1]];
+                if (!labels || labels.contentView.subviews.count != 1) {
+                    NSLog(@"[harness] FAIL labels cell accumulated rows after reload %lu", (unsigned long)i);
+                    exit(1);
+                }
+            }
+            NSLog(@"[harness] PASS split-only preview and repeated labels-cell reuse");
+            exit(0);
+        });
+        return;
+    }
     void (^log)(NSString *) = ^(NSString *step) {
         UIView *preview = page.tableView.tableHeaderView.subviews.firstObject;
         NSMutableArray<NSString *> *rows = [NSMutableArray array];
@@ -166,7 +202,7 @@ static void runNavbar(UIViewController *root, NSString *mode) {
     [self.window makeKeyAndVisible];
     NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
     NSString *mode = args.count > 1 ? args[1] : @"sheet";
-    if ([@[@"navbar", @"icons", @"off", @"hide", @"edit", @"remove", @"links"] containsObject:mode]) {
+    if ([@[@"navbar", @"icons", @"off", @"hide", @"edit", @"remove", @"links", @"audit"] containsObject:mode]) {
         runNavbar(root, mode);
         return;
     }

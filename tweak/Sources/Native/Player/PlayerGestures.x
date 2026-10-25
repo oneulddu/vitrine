@@ -10,6 +10,7 @@
 #import "Shared/Gestures/Gestures.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/Player/SpeedPitch.h"
+#import "NowPlaying.h"
 
 #pragma mark - hold to play faster
 
@@ -111,27 +112,8 @@ static const NSTimeInterval kBadgeEnter = 0.2, kBadgeExit = 0.15;
 
 @end
 
-// The player's cover cells, whichever Spotify builds (the strings are in 9.1.78's binary); a tilt view
-// elsewhere, an album's header, is left alone.
-static BOOL inPlayerCover(UIView *tilt) {
-    static NSArray<Class> *cells;
-    if (!cells) {
-        NSMutableArray<Class> *found = [NSMutableArray array];
-        for (NSString *name in @[@"_TtC28NowPlaying_ContentLayersImpl16CoverArtCellImpl", @"_TtC28NowPlaying_ContentLayersImpl22LegacyCoverArtCellImpl",
-                                 @"_TtC39ListeningParties_NowPlayingViewModeImpl34NowPlayingLiveRoomCoverArtCellImpl"]) {
-            Class cell = NSClassFromString(name);
-            if (cell) [found addObject:cell];
-        }
-        cells = found;
-    }
-    for (UIView *v = tilt.superview; v; v = v.superview) {
-        for (Class cell in cells) if ([v isKindOfClass:cell]) return YES;
-    }
-    return NO;
-}
-
 static void watchHold(UIView *tilt) {
-    if (objc_getAssociatedObject(tilt, &kHoldKey) || tilt.bounds.size.width < kCoverMinWidth || !inPlayerCover(tilt)) return;
+    if (objc_getAssociatedObject(tilt, &kHoldKey) || tilt.bounds.size.width < kCoverMinWidth || !SGInPlayerCover(tilt)) return;
     SGCoverHold *hold = [[SGCoverHold alloc] initWithTarget:nil action:nil];
     [hold addTarget:hold action:@selector(sg_held)];
     hold.minimumPressDuration = 0.35;
