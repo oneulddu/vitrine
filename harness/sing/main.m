@@ -48,6 +48,7 @@
 #import "Shared/Sing/SGSingLoader.h"
 #import "Shared/Sing/SGSingSeparator.h"
 #import "Shared/Sing/SGSingEngine.h"
+#import "Shared/Sing/SGSingCommands.h"
 
 static int sg_failures;
 static NSString *sg_outDir;
@@ -1233,9 +1234,93 @@ static void checkFront(void) {
     CHECK(again == 0, "after a gap in the motion the voice is ahead again (%.3f)", again);
 }
 
+static void checkCommands(void) {
+    SGSingCommandBegin(NULL, @"track:a", 0, 100);
+    SGSingCommand skip = SGSingCommandRead();
+    CHECK(!SGSingCommandLanded(skip, @"track:a", 99, 0), "a pre-skip zero-origin state does not land the skip");
+    CHECK(!SGSingCommandLanded(skip, @"track:b", 99, 0), "an older track state does not land the skip either");
+    CHECK(SGSingCommandLanded(skip, @"track:b", 101, 0), "a fresh next-track state lands the skip");
+    SGSingCommandBegin(NULL, @"track:a", 42, 102);
+    SGSingCommand seek = SGSingCommandRead();
+    CHECK(!SGSingCommandLanded(seek, @"track:a", 101, 42), "an absolute seek needs a post-command state");
+    CHECK(SGSingCommandLanded(seek, @"track:a", 103, 42), "a fresh report at the absolute target lands");
+    CHECK(!SGSingCommandFinish(skip) && SGSingCommandRead().target == 42, "completing an old command preserves the newer seek");
+    CHECK(SGSingCommandFinish(seek) && SGSingCommandRead().at == 0, "completing the current command releases the hold");
+    SGSingCommandBegin(NULL, @"track:a", -1, 104);
+    SGSingCommand relative = SGSingCommandRead();
+    CHECK(!SGSingCommandLanded(relative, @"track:a", NAN, 42), "a missing timestamp cannot land a relative seek");
+    CHECK(SGSingCommandLanded(relative, @"track:a", 105, 43), "a fresh relative-seek report lands");
+    SGSingCommandFinish(relative);
+
+    // Two off-render writers and a reader: each snapshot must belong to one complete publication.
+    dispatch_group_t writers = dispatch_group_create();
+    for (int writer = 0; writer < 2; writer++) {
+        dispatch_group_async(writers, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            for (int i = 1; i <= 10000; i++) {
+                @autoreleasepool {
+                    SGSingCommandBegin(NULL, writer ? @"track:right" : @"track:left", writer ? 20 : 10, writer ? 200 : 100);
+                }
+            }
+        });
+    }
+    BOOL coherent = YES;
+    for (int i = 0; i < 20000; i++) {
+        SGSingCommand command = SGSingCommandRead();
+        if (!command.at) continue;
+        coherent &= ([command.track isEqualToString:@"track:left"] && command.target == 10 && command.at == 100)
+                 || ([command.track isEqualToString:@"track:right"] && command.target == 20 && command.at == 200);
+    }
+    dispatch_group_wait(writers, DISPATCH_TIME_FOREVER);
+    CHECK(coherent, "concurrent command snapshots never mix targets, tracks and timestamps");
+    SGSingCommandFinish(SGSingCommandRead());
+}
+
+static void checkWorkerWake(void) {
+    Audio input = makeAudio(24 * kSGSingRate);
+    for (size_t i = 0; i < input.frames; i++) input.left[i] = input.right[i] = 0.25f;
+    SGWholeSeparator *separator = [[SGWholeSeparator alloc] initWithModel:nil];
+    SGSingEngine *engine = SGSingEngineCreate();
+    Source source = {input, 0};
+    SGSingEngineSetLevel(engine, 1);
+    SGSingEngineSetOn(engine, true);  // parked without a separator
+    SGSingEngineSetSeparator(engine, separator);
+    Audio first = play(engine, input, &source, 1024, 3, ^(double seconds) {});
+    CHECK(SGSingEngineReadStats(engine).windows > 0, "a separator arriving wakes an enabled worker");
+    SGSingEngineSetOn(engine, false);
+    SGSingEngineFlush(engine);
+    Audio dry = play(engine, input, &source, 1024, 0.2, ^(double seconds) {});
+    uint64_t before = SGSingEngineReadStats(engine).windows;
+    SGSingEngineSetOn(engine, true);
+    Audio second = play(engine, input, &source, 1024, 3, ^(double seconds) {});
+    CHECK(SGSingEngineReadStats(engine).windows > before, "switching on wakes the parked worker");
+    SGSingEngineSetPaused(engine, true);
+    SGSingEngineSetSeparator(engine, nil);
+    SGSingEngineSetSeparator(engine, separator);
+    before = SGSingEngineReadStats(engine).windows;
+    SGSingEngineSetPaused(engine, false);
+    Audio third = play(engine, input, &source, 1024, 2, ^(double seconds) {});
+    CHECK(SGSingEngineReadStats(engine).windows > before, "unpausing wakes a worker whose separator changed while held");
+    SGSingEngineSetOn(engine, false);
+    SGSingEngineDestroy(engine);
+    CHECK(YES, "a parked worker can be destroyed");
+    free(input.left); free(input.right);
+    free(first.left); free(first.right);
+    free(dry.left); free(dry.right);
+    free(second.left); free(second.right);
+    free(third.left); free(third.right);
+}
+
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IOLBF, 0);
     @autoreleasepool {
+        if (argc == 2 && (!strcmp(argv[1], "commands") || !strcmp(argv[1], "regressions"))) {
+            checkCommands();
+            if (!strcmp(argv[1], "regressions")) {
+                checkWorkerWake();
+                checkQuietStart();
+            }
+            return sg_failures ? 1 : 0;
+        }
         if (argc == 2 && !strcmp(argv[1], "spatial")) {
             sg_outDir = NSTemporaryDirectory();
             checkSTFT();
@@ -1254,7 +1339,9 @@ int main(int argc, char **argv) {
         }
         if (argc < 4 || (argc > 4 && strcmp(argv[4], "ane") && strcmp(argv[4], "cpu"))) {
             printf("usage: sing <separator-ane.mlmodelc> <voice> <out dir> [ane|cpu]   (with the Neural Engine copy beside the CPU's, the default, or the CPU's alone)\n"
-                   "       sing spatial\n");
+                   "       sing spatial\n"
+                   "       sing commands       (pending command ordering and fresh landing reports)\n"
+                   "       sing regressions    (commands, worker wakeups and quiet-start audio)\n");
             return 2;
         }
         NSString *modelPath = @(argv[1]);

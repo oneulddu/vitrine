@@ -17,6 +17,7 @@
 // Threading: main thread, but for SGSingRemoveOldModel; the session's delegate runs on a queue of its own and hands
 // back to the main thread.
 #import <CommonCrypto/CommonDigest.h>
+#import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "Sing.h"
 
@@ -187,10 +188,13 @@ static NSUInteger sg_removals[2];
     BOOL _resumed;                     // it carries on from resume data
     BOOL _restart;                     // resume data the server no longer takes: the file again from the start
     int _attempts;
-    BOOL _cancelled;
+    atomic_bool _cancelled;            // main cancels; the delegate can stop work before handing back to main
+    NSUInteger _removalGeneration;    // immutable after start; checked on main at every file/task commit
+    CFAbsoluteTime _reported;         // this download's delegate queue only
 }
 
 - (void)start {
+    _removalGeneration = sg_removals[self.model - kModels];
     NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.defaultSessionConfiguration;
     configuration.timeoutIntervalForRequest = 60;
     // Offline, a request (a retry too) waits for the network rather than failing at once; and so it does on cellular
@@ -217,7 +221,7 @@ static NSUInteger sg_removals[2];
         [session invalidateAndCancel];
         return;
     }
-    NSURL *resume = resumeFile(self.model, self.file);
+    NSURL *resume = resumeFile(self.model, task.taskDescription.intValue);
     NSUInteger index = (NSUInteger)(self.model - kModels), removals = sg_removals[index];
     [task cancelByProducingResumeData:^(NSData *data) {
         [session invalidateAndCancel];
@@ -232,10 +236,20 @@ static NSUInteger sg_removals[2];
 }
 
 - (void)download:(NSURL *)url resumeData:(NSData *)resume {
-    _resumed = resume != nil;
-    NSURLSessionDownloadTask *task = resume ? [_session downloadTaskWithResumeData:resume] : [_session downloadTaskWithURL:url];
-    self.task = task;
-    [task resume];
+    // Main owns cancellation, removal and commits. It never waits for the delegate queue.
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        if (![self mayCommit]) return;
+        self->_resumed = resume != nil;
+        NSURLSessionDownloadTask *task = resume ? [self->_session downloadTaskWithResumeData:resume] : [self->_session downloadTaskWithURL:url];
+        task.taskDescription = [NSString stringWithFormat:@"%d", self.file];
+        self.task = task;
+        [task resume];
+    });
+}
+
+// Main owns the removal generation and the active download identity.
+- (BOOL)mayCommit {
+    return !_cancelled && sg_downloader == self && sg_removals[self.model - kModels] == _removalGeneration;
 }
 
 - (NSURL *)fileURL {
@@ -254,20 +268,27 @@ static NSUInteger sg_removals[2];
         return;
     }
     // A stop's resume data is used once: if it fails, the file starts over.
-    NSData *resume = [NSData dataWithContentsOfURL:resumeFile(self.model, self.file)];
-    [NSFileManager.defaultManager removeItemAtURL:resumeFile(self.model, self.file) error:nil];
+    __block NSData *resume;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        if (![self mayCommit]) return;
+        resume = [NSData dataWithContentsOfURL:resumeFile(self.model, self.file)];
+        [NSFileManager.defaultManager removeItemAtURL:resumeFile(self.model, self.file) error:nil];
+    });
     [self download:[self fileURL] resumeData:resume];
     SGLog(@"sing: downloading %@/%@%@", self.model->folder, self.model->files[self.file].path, resume ? @", carrying on from the last download" : @"");
 }
 
 - (void)finish {
-    NSFileManager *files = NSFileManager.defaultManager;
-    // Resume data a stop wrote after the next download had already looked for it.
-    for (int i = 0; i < kFileCount; i++) [files removeItemAtURL:resumeFile(self.model, i) error:nil];
-    [files removeItemAtURL:modelFolder(self.model) error:nil];
-    NSError *error;
-    BOOL moved = [files moveItemAtURL:stagingFolder(self.model) toURL:modelFolder(self.model) error:&error];
-    [self endWithError:moved ? nil : [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.movefailed", @"The model could not be put in place (%@)"), error.localizedDescription]];
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        if (![self mayCommit]) return;
+        NSFileManager *files = NSFileManager.defaultManager;
+        // Resume data a stop wrote after the next download had already looked for it.
+        for (int i = 0; i < kFileCount; i++) [files removeItemAtURL:resumeFile(self.model, i) error:nil];
+        [files removeItemAtURL:modelFolder(self.model) error:nil];
+        NSError *error;
+        BOOL moved = [files moveItemAtURL:stagingFolder(self.model) toURL:modelFolder(self.model) error:&error];
+        [self endWithError:moved ? nil : [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.movefailed", @"The model could not be put in place (%@)"), error.localizedDescription]];
+    });
 }
 
 - (void)endWithError:(NSString *)error {
@@ -292,11 +313,11 @@ static NSUInteger sg_removals[2];
     for (int i = 0; i < self.file && i < kFileCount; i++) done += self.model->files[i].size;
     double progress = (double)done / totalBytes(self.model);
     // A few times a second is enough for the row and the button.
-    static CFAbsoluteTime reported;
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-    if (now - reported < 0.25 && progress < 1) return;
-    reported = now;
+    if (now - _reported < 0.25 && progress < 1) return;
+    _reported = now;
     dispatch_async(dispatch_get_main_queue(), ^{
+        if (sg_downloader != self) return;
         sg_progress = progress;
         sg_waitingForNetwork = NO;
         announce();
@@ -334,22 +355,26 @@ static NSUInteger sg_removals[2];
     }
     long long size = sizeOf(location);
     BOOL big = file.size > 1000 * 1000;
-    if (big) dispatch_async(dispatch_get_main_queue(), ^{ sg_checking = YES; announce(); });
+    if (big) dispatch_async(dispatch_get_main_queue(), ^{ if (sg_downloader == self) { sg_checking = YES; announce(); } });
     NSString *hash = size == file.size ? sha256Of(location) : nil;
-    if (big) dispatch_async(dispatch_get_main_queue(), ^{ sg_checking = NO; announce(); });
+    if (big) dispatch_async(dispatch_get_main_queue(), ^{ if (sg_downloader == self) { sg_checking = NO; announce(); } });
     SGLog(@"sing: %@ came in, %ld, %lld bytes", file.path, (long)status, size);
     if (!answered || size != file.size || ![hash isEqualToString:@(file.sha256)]) {
         self.error = !answered ? [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.serverstatus", @"The server answered %ld for %@"), (long)status, file.path]
                                  : [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.unexpectedfile", @"%@ is not the file Karaoke expects (%lld bytes%@)"), file.path, size, hash ? SGL(@"settings.karaoke.model.error.checksummismatch", @", another checksum") : @""];
         return;
     }
-    NSURL *target = [stagingFolder(self.model) URLByAppendingPathComponent:file.path];
-    [NSFileManager.defaultManager createDirectoryAtURL:target.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
-    [NSFileManager.defaultManager removeItemAtURL:target error:nil];
-    NSError *error;
-    if (![NSFileManager.defaultManager moveItemAtURL:location toURL:target error:&error]) {
-        self.error = [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.savefailed", @"%@ could not be kept (%@)"), file.path, error.localizedDescription];
-    }
+    // Keep the session's temporary file before this delegate returns, but only under the same owner as removal.
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        if (![self mayCommit]) return;
+        NSURL *target = [stagingFolder(self.model) URLByAppendingPathComponent:file.path];
+        [NSFileManager.defaultManager createDirectoryAtURL:target.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
+        [NSFileManager.defaultManager removeItemAtURL:target error:nil];
+        NSError *error;
+        if (![NSFileManager.defaultManager moveItemAtURL:location toURL:target error:&error]) {
+            self.error = [NSString stringWithFormat:SGL(@"settings.karaoke.model.error.savefailed", @"%@ could not be kept (%@)"), file.path, error.localizedDescription];
+        }
+    });
 }
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
@@ -485,6 +510,7 @@ void SGSingDownloadModel(void) {
     sg_lastError = nil;
     sg_progress = 0;
     sg_waitingForNetwork = NO;
+    sg_checking = NO;
     sg_downloader = [SGSingDownloader new];
     sg_downloader.model = chosen();
     [sg_downloader start];
@@ -609,13 +635,9 @@ void SGSingRemoveOldModel(void) {
     NSString *size = [NSByteCountFormatter stringFromByteCount:freed countStyle:NSByteCountFormatterCountStyleFile];
     if (old) SGLog(@"sing: the old voice model (separator.mlmodelc) is deleted, %@ freed; the full model is separator-ane.mlmodelc", size);
     else if (left) SGLog(@"sing: what the old voice model's download left is deleted, %@ freed", size);
-    // Which model is in use: a FLEX build's dev copy of the new one comes before the old, and Light needs neither.
+    // This runs on a utility queue too: report filesystem facts without entering the main-thread model cache.
     if (there && !replaced) {
-        SGLog(SGSingModelUpdateAvailable()
-              ? @"sing: the old voice model (separator.mlmodelc) is kept until separator-ane.mlmodelc is downloaded, and Karaoke runs on it, on the CPU alone"
-              : SGSingChosenModel() == SGSingModelLight
-              ? @"sing: the old voice model (separator.mlmodelc) is kept until separator-ane.mlmodelc is downloaded; Voice model is Light, so it is not in use"
-              : @"sing: the old voice model (separator.mlmodelc) is kept until separator-ane.mlmodelc is downloaded; the dev copy is in use");
+        SGLog(@"sing: the old voice model (separator.mlmodelc) is kept until separator-ane.mlmodelc is downloaded");
     }
 }
 

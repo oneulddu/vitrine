@@ -4,6 +4,9 @@ Two halves: the analyzer on the Mac, and the hook in the simulator. Beside them,
 pure steps on the Mac (`./build.sh && build/track`): the ISRC check, hand-built TRACK_V4 replies and Apple's
 catalog songs matched or turned down.
 
+`./build.sh && build/ring` checks the production event ring under Thread Sanitizer: full/empty behavior,
+discard, and a million concurrent events crossing reused slots without loss, duplication or torn fields.
+
 ## The analyzer on the Mac (`main.m`, `score.py`)
 
 `SGMusicAnalyzer.m` as the tweak compiles it, over a song decoded at the output's rate and handed over in IO

@@ -27,7 +27,7 @@
 // seeks or skips, which drops the sound held from before it.
 //
 // Threading: SGSingEngineRender on the render thread only, allocation and lock free; the worker is the
-// engine's own; everything else from any thread.
+// engine's own; everything else from any non-render thread.
 #import <Foundation/Foundation.h>
 #import <math.h>
 

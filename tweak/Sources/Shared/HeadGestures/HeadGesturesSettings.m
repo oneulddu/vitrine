@@ -64,8 +64,13 @@ UIViewController *SGHeadGesturesSettingsPage(void) {
     SGModRow *chime = SGWithSymbol(SGSwitchRow(SGL(@"settings.headgestures.chime.title", @"Chime on activation"), nil, SGKeyHeadChime), @"bell");
 
     __block __weak SGModPage *page;
+    __block NSString *tried = @"";
+    __block BOOL trying = NO;
     SGModRow *teach = SGStatActionRow(SGL(@"settings.headgestures.teach.title", @"Teach your gestures"), SGL(@"settings.headgestures.teach.subtitle", @"Five of each, one after each tone"), ^NSString *{ return learnedValue(); }, ^{
         if (!headTracking()) return;
+        SGHeadGesturesStopListening();
+        trying = NO;
+        tried = @"";
         SGPresentHeadGesturesTeaching(page, ^{ [page refreshVisibility]; });
     });
 
@@ -79,8 +84,6 @@ UIViewController *SGHeadGesturesSettingsPage(void) {
         ^NSString *(double value) { return [NSString stringWithFormat:SGL(@"settings.headgestures.sensitivity.format", @"%ld%%"), lround(value)]; });
 
     // What the last try picked up, read out on its row until the next; a new page starts blank.
-    __block NSString *tried = @"";
-    __block BOOL trying = NO;
     SGModRow *tryRow = SGStatActionRow(SGL(@"settings.headgestures.try.title", @"Try it"), SGL(@"settings.headgestures.try.subtitle", @"Listens after the tone and says what it picked up"), ^NSString *{ return tried; }, ^{
         if (trying || !headTracking()) return;
         trying = YES;

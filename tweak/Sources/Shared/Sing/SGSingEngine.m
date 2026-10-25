@@ -1,4 +1,3 @@
-#import <os/lock.h>
 #import <pthread.h>
 #import <stdatomic.h>
 #import "SGSingEngine.h"
@@ -35,7 +34,7 @@ static const uint64_t kReturn = kSGSingEngineHop;
 static const uint64_t kBudget = kSGSingRate * 8;
 // The loudness the Sing page draws: per tenth of a second of the song, kept for the last kLevelSlots of them.
 enum { kLevelBlock = kSGSingRate / 10, kLevelSlots = 128 };
-// How often the worker looks for a new window.
+// While active, how often the worker looks for a new window. Off, absent a separator or held, it parks.
 static const useconds_t kPoll = 10000;
 // Spatial voice: at 90 degrees the pan goes this far of the way to one ear, the far ear hears the voice this
 // many frames late (0.65 ms, sound's way around a head) and through a one-pole low-pass of this coefficient
@@ -99,7 +98,8 @@ struct SGSingEngine {
     // The worker's.
     pthread_t worker;
     atomic_bool alive;
-    os_unfair_lock lock;          // the separator, the error and `asked`
+    pthread_mutex_t lock;        // the separator, the error, `asked` and the worker's parking predicate
+    pthread_cond_t wake;
     void *separator;              // retained
     NSString *error;
     float *window[2], *vocals[2];
@@ -399,15 +399,18 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
 #pragma mark - the worker
 
 static void setError(SGSingEngine *engine, NSString *error) {
-    os_unfair_lock_lock(&engine->lock);
+    pthread_mutex_lock(&engine->lock);
     engine->error = error;
-    os_unfair_lock_unlock(&engine->lock);
+    pthread_mutex_unlock(&engine->lock);
 }
 
-static SGSingSeparator *currentSeparator(SGSingEngine *engine) {
-    os_unfair_lock_lock(&engine->lock);
+static SGSingSeparator *waitForSeparator(SGSingEngine *engine) {
+    pthread_mutex_lock(&engine->lock);
+    while (atomic_load(&engine->alive) && (!engine->separator || !atomic_load(&engine->on) || atomic_load(&engine->paused))) {
+        pthread_cond_wait(&engine->wake, &engine->lock);
+    }
     SGSingSeparator *separator = (__bridge SGSingSeparator *)engine->separator;
-    os_unfair_lock_unlock(&engine->lock);
+    pthread_mutex_unlock(&engine->lock);
     return separator;
 }
 
@@ -445,6 +448,8 @@ static void *work(void *argument) {
     unsigned generation = UINT_MAX;
     uint64_t start = 0, previousEnd = 0;
     while (atomic_load(&engine->alive)) {
+        SGSingSeparator *separator = waitForSeparator(engine);
+        if (!atomic_load(&engine->alive)) break;
         unsigned now = atomic_load(&engine->generation);
         if (now != generation) {
             generation = now;
@@ -452,10 +457,10 @@ static void *work(void *argument) {
             engine->nextLevel = (start + kLevelBlock - 1) / kLevelBlock;
             atomic_store_explicit(&engine->ready, start, memory_order_release);
         }
-        SGSingSeparator *separator = currentSeparator(engine);
         uint64_t written = atomic_load_explicit(&engine->written, memory_order_acquire);
         uint64_t played = atomic_load_explicit(&engine->played, memory_order_relaxed);
-        if (!separator || !atomic_load(&engine->on) || atomic_load(&engine->paused) || written < start + kSGSingWindowFrames) {
+        if (!atomic_load(&engine->on) || atomic_load(&engine->paused)) continue;
+        if (written < start + kSGSingWindowFrames) {
             usleep(kPoll);
             continue;
         }
@@ -515,7 +520,15 @@ static void *work(void *argument) {
 SGSingEngine *SGSingEngineCreate(void) {
     SGSingEngine *engine = calloc(1, sizeof *engine);
     if (!engine) return NULL;
-    engine->lock = OS_UNFAIR_LOCK_INIT;
+    if (pthread_mutex_init(&engine->lock, NULL) != 0) {
+        free(engine);
+        return NULL;
+    }
+    if (pthread_cond_init(&engine->wake, NULL) != 0) {
+        pthread_mutex_destroy(&engine->lock);
+        free(engine);
+        return NULL;
+    }
     engine->left = calloc(kRing, sizeof(float));
     engine->right = calloc(kRing, sizeof(float));
     engine->vocalsLeft = calloc(kRing, sizeof(float));
@@ -554,7 +567,10 @@ SGSingEngine *SGSingEngineCreate(void) {
 
 void SGSingEngineDestroy(SGSingEngine *engine) {
     if (!engine) return;
+    pthread_mutex_lock(&engine->lock);
     atomic_store(&engine->alive, false);
+    pthread_cond_signal(&engine->wake);
+    pthread_mutex_unlock(&engine->lock);
     if (engine->worker) pthread_join(engine->worker, NULL);
     if (engine->separator) CFRelease(engine->separator);
     engine->error = nil;
@@ -569,27 +585,33 @@ void SGSingEngineDestroy(SGSingEngine *engine) {
     SGDSPReverbFree(engine->room);
     free(engine->send[0]);
     free(engine->send[1]);
+    pthread_cond_destroy(&engine->wake);
+    pthread_mutex_destroy(&engine->lock);
     free(engine);
 }
 
 void SGSingEngineSetSeparator(SGSingEngine *engine, SGSingSeparator *separator) {
     void *retained = separator ? (void *)CFBridgingRetain(separator) : NULL;
-    os_unfair_lock_lock(&engine->lock);
+    pthread_mutex_lock(&engine->lock);
     void *old = engine->separator;
     engine->separator = retained;
-    os_unfair_lock_unlock(&engine->lock);
     atomic_store(&engine->hasSeparator, retained != NULL);
+    pthread_cond_signal(&engine->wake);
+    pthread_mutex_unlock(&engine->lock);
     // Released outside the lock; the worker holds its own reference while it runs one.
     if (old) CFRelease(old);
 }
 
 void SGSingEngineSetOn(SGSingEngine *engine, bool on) {
+    pthread_mutex_lock(&engine->lock);
     // Switched on again, it tries again with a full budget.
     if (on && !atomic_exchange(&engine->on, true)) {
         atomic_store(&engine->freshBudget, true);
         atomic_store(&engine->gaveUp, false);
     }
     atomic_store(&engine->on, on);
+    pthread_cond_signal(&engine->wake);
+    pthread_mutex_unlock(&engine->lock);
 }
 
 void SGSingEngineHoldBudget(SGSingEngine *engine, bool held) {
@@ -624,7 +646,10 @@ void SGSingEngineSetVoiceAngle(SGSingEngine *engine, float radians) {
 }
 
 void SGSingEngineSetPaused(SGSingEngine *engine, bool paused) {
+    pthread_mutex_lock(&engine->lock);
     atomic_store(&engine->paused, paused);
+    pthread_cond_signal(&engine->wake);
+    pthread_mutex_unlock(&engine->lock);
 }
 
 void SGSingEngineSetLeadCap(SGSingEngine *engine, double seconds) {
@@ -652,7 +677,7 @@ double SGSingEngineLead(SGSingEngine *engine) {
 
 double SGSingEngineLeadAt(SGSingEngine *engine, CFAbsoluteTime when) {
     if (!engine) return 0;
-    os_unfair_lock_lock(&engine->lock);
+    pthread_mutex_lock(&engine->lock);
     uint64_t ahead = 0;
     bool known = false;
     for (unsigned i = 0; i < kAsked && !known; i++) {
@@ -673,7 +698,7 @@ double SGSingEngineLeadAt(SGSingEngine *engine, CFAbsoluteTime when) {
         }
         engine->asked[engine->askedNext++ % kAsked] = (__typeof__(engine->asked[0])){when, ahead};
     }
-    os_unfair_lock_unlock(&engine->lock);
+    pthread_mutex_unlock(&engine->lock);
     // Less what was dropped since, which what plays skipped, a flush asked for with it.
     double dropped = (double)atomic_load_explicit(&engine->dropped, memory_order_relaxed) + (double)pendingDrop(engine);
     return ((double)ahead - dropped) / kSGSingRate;
@@ -701,9 +726,9 @@ SGSingEngineStats SGSingEngineReadStats(SGSingEngine *engine) {
 }
 
 NSString *SGSingEngineError(SGSingEngine *engine) {
-    os_unfair_lock_lock(&engine->lock);
+    pthread_mutex_lock(&engine->lock);
     NSString *error = engine->error;
-    os_unfair_lock_unlock(&engine->lock);
+    pthread_mutex_unlock(&engine->lock);
     return error;
 }
 

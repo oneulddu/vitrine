@@ -3,8 +3,8 @@
 # the Settings/ framework as they are in the tweak, main.m standing in for Spotify and the headphones.
 set -e
 SRC=$(cd "$(dirname "$0")/../../../tweak/Sources" && pwd)
-OUT=$(dirname "$0")/../build/sim   # under the gitignored build/ beside the Mac harness
-rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/HeadGesturesSim.app"
+OUT=${OUT:-$(dirname "$0")/../build/sim}
+mkdir -p "$OUT/gen" "$OUT/HeadGesturesSim.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/HeadGestures/HeadGestures.x" > "$OUT/gen/HeadGestures.m"
 
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)

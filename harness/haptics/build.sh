@@ -8,4 +8,6 @@ xcrun clang -fobjc-arc -O2 -Wall -Werror -I ../../tweak/Sources -framework Found
     main.m ../../tweak/Sources/Shared/Haptics/SGMusicAnalyzer.m -o build/haptics
 xcrun clang -fobjc-arc -O2 -Wall -Werror -I ../../tweak/Sources -framework Foundation \
     track.m ../../tweak/Sources/Shared/Haptics/SGHapticTrack.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m -o build/track
-echo "built build/haptics and build/track"
+xcrun clang -fobjc-arc -O1 -g -Wall -Werror -fsanitize=thread -I ../../tweak/Sources -framework Foundation \
+    ring.m -o build/ring
+echo "built build/haptics, build/track and build/ring"

@@ -42,6 +42,10 @@ shows only while something is learned, and asks before it clears both.
     xcrun simctl launch <udid> com.vitrine.headgesturessim    # then read the [harness] lines from the log
     xcrun simctl launch <udid> com.vitrine.headgesturessim live    # no checks: page, sheet, done or live, to screenshot
 
+The `cancel-try` argument runs the focused regression: start Try it, let teaching take over, dismiss teaching,
+then recognize another nod through Try it. It exits nonzero on failure. Set `OUT` when building to keep an
+existing simulator build untouched.
+
 `live` feeds double nods and then shakes in real time, 25 samples a second, so screenshots catch the ring mid-gesture.
 
 The steps wait on what they check rather than on a clock (each fails after 20 s), and the sheet's recordings are

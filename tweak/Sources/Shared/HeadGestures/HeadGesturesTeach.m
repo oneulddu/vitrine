@@ -191,7 +191,7 @@ static BOOL headOffset(double *pitch, double *yaw) {
     SGHeadMotionListen(@"teaching", ^(CMDeviceMotion *motion) { headMoved(motion); });
     _lastFrame = 0;
     _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(frame:)];
-    _link.preferredFrameRateRange = CAFrameRateRangeMake(30, 60, 60);
+    _link.preferredFrameRateRange = CAFrameRateRangeMake(30, 120, 60);
     [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 

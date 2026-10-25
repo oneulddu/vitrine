@@ -2,6 +2,14 @@
 
 Three parts: the separator and the engine on the Mac, Sing end to end in the simulator, and the mic button.
 
+Focused concurrency checks, without a model:
+
+    ./build.sh thread && build/sing-thread regressions
+
+This checks command snapshots under concurrent writers, stale completions preserving newer commands,
+post-command timestamps for seek/skip landings, worker wakeups after parking, and the existing quiet-start
+audio contract. `build/sing-thread commands` runs just the command cases.
+
 ## The separator and the engine on the Mac (`main.m`)
 
 Sing's loader, separator and engine (`tweak/Sources/Shared/Sing/SGSingLoader.m`, `SGSingSeparator.m`,

@@ -72,6 +72,7 @@
 #import "Shared/Player/SpeedPitch.h"
 #import "Sing.h"
 #import "SGSingEngine.h"
+#import "SGSingCommands.h"
 #import "SGSingLoader.h"
 #import "SGSingSeparator.h"
 
@@ -950,10 +951,6 @@ static void dropLead(NSString *why, SPTPlayerState *state) {
 // track or the target (a seek's, 0 for a skip's), or kLandWithin passes. Hooks set it from any thread, tick and the
 // track watcher clear it on main.
 static const NSTimeInterval kLandWithin = 5;
-static const double kLandedNear = 0.3;
-static _Atomic CFAbsoluteTime sg_commandAt;   // 0 with none on its way
-static double sg_commandTarget;               // -1 where it is not known (a relative seek)
-static NSString *sg_commandTrack;
 // On the queue's last track the lead is let play out a second before Spotify's decoder reaches the end, where Spotify
 // may stop its output with the lead still held.
 static const double kEndMargin = 1;
@@ -968,11 +965,8 @@ static NSString *nextTrack(SPTPlayerState *state) {
 
 static void commanded(NSString *why, double target) {
     flush(why);
-    sg_commandTarget = target;
-    sg_commandTrack = SGURIString(SGPlayerState().track.URI);
-    atomic_store(&sg_commandAt, CFAbsoluteTimeGetCurrent());
     SGSingEngine *engine = atomic_load(&sg_engine);
-    if (engine) SGSingEngineSetLeadCap(engine, 0);
+    SGSingCommandBegin(engine, SGURIString(SGPlayerState().track.URI), target, CFAbsoluteTimeGetCurrent());
 }
 
 static void updateCap(void) {
@@ -985,24 +979,24 @@ static void updateCap(void) {
         wasLast = last;
         SGLog(@"sing: %@", last ? @"the queue's last track: the lead is let play out a second before its end" : @"a track follows: the lead is read ahead to the end");
     }
-    double cap = atomic_load(&sg_commandAt) ? 0 : last ? fmax(0, state.duration - rawPosition(state) - kEndMargin) : INFINITY;
-    SGSingEngineSetLeadCap(engine, cap);
+    double cap = last ? fmax(0, state.duration - rawPosition(state) - kEndMargin) : INFINITY;
+    SGSingCommandCap(engine, cap);
 }
 
 // The seek or skip on its way landed, or is given up on: the lead is read ahead again.
 static void checkLanding(SPTPlayerState *state) {
-    CFAbsoluteTime asked = atomic_load(&sg_commandAt);
-    if (!asked) return;
+    SGSingCommand command = SGSingCommandRead();
+    if (!command.at) return;
     NSString *track = SGURIString(state.track.URI);
     NSDate *stamp = [state respondsToSelector:@selector(timestamp)] ? state.timestamp : nil;
     double at = state ? rawAsOf(state) : -1;
-    BOOL after = [stamp isKindOfClass:NSDate.class] && stamp.timeIntervalSinceReferenceDate >= asked;
-    BOOL landed = state && (sg_commandTarget < 0 ? after : (track && sg_commandTrack && ![track isEqualToString:sg_commandTrack]) || fabs(at - sg_commandTarget) < kLandedNear);
-    double waited = CFAbsoluteTimeGetCurrent() - asked;
+    CFAbsoluteTime reported = [stamp isKindOfClass:NSDate.class] ? stamp.timeIntervalSinceReferenceDate : NAN;
+    BOOL landed = state && SGSingCommandLanded(command, track, reported, at);
+    double waited = CFAbsoluteTimeGetCurrent() - command.at;
     if (!landed && waited < kLandWithin) return;
-    atomic_store(&sg_commandAt, 0);
+    if (!SGSingCommandFinish(command)) return;
     SGLog(@"sing: %@ %.2f s after it was asked, the lead is read ahead again", landed ? [NSString stringWithFormat:@"Spotify landed at %.2f s", at]
-          : [NSString stringWithFormat:@"no landing reported (Spotify at %.2f s, %@)", at, sg_commandTarget < 0 ? @"a relative seek" : [NSString stringWithFormat:@"asked for %.2f s", sg_commandTarget]], waited);
+          : [NSString stringWithFormat:@"no landing reported (Spotify at %.2f s, %@)", at, command.target < 0 ? @"a relative seek" : [NSString stringWithFormat:@"asked for %.2f s", command.target]], waited);
     updateCap();
 }
 

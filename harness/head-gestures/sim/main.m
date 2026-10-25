@@ -568,6 +568,43 @@ static Step waitFor(double seconds) {
     return steps;
 }
 
+- (NSArray<Step> *)cancelTryChecks {
+    return @[
+        ^BOOL {
+            SGSetEnabled(SGKeyHeadGestures, YES);
+            SGHeadGesturesSettingsChanged();
+            [self.page refreshVisibility];
+            [self tapRow:2 section:2];
+            check([[self rowAt:2 section:2].value() isEqualToString:@"Listening…"], @"Try it starts before teaching");
+            [self tapRow:0 section:2];
+            return YES;
+        },
+        until(^BOOL { return self.teach.viewIfLoaded.window != nil; }),
+        waitFor(0.5),
+        ^BOOL {
+            [self teachButton:@"primaryButton"];
+            UIBarButtonItem *cancel = self.teach.navigationItem.leftBarButtonItem;
+            [UIApplication.sharedApplication sendAction:cancel.action to:cancel.target from:cancel forEvent:nil];
+            return YES;
+        },
+        until(^BOOL { return self.nav.presentedViewController == nil; }),
+        waitFor(0.6),
+        ^BOOL {
+            [sg_calls removeAllObjects];
+            [self tapRow:2 section:2];
+            doubleNod(0.35, 0.4);
+            return YES;
+        },
+        until(^BOOL { return ![[self rowAt:2 section:2].value() isEqualToString:@"Listening…"]; }),
+        ^BOOL {
+            check([[self rowAt:2 section:2].value() isEqualToString:@"Nod twice"], @"Try it can recognize a nod after teaching cancelled the previous try");
+            NSLog(@"[harness] cancel-try %@", failures ? @"FAILED" : @"PASS");
+            exit(failures ? 1 : 0);
+            return YES;
+        },
+    ];
+}
+
 // Views to screenshot, no checks.
 - (NSArray<Step> *)shot:(NSString *)name {
     Step switchOn = ^BOOL {
@@ -672,7 +709,7 @@ static Step waitFor(double seconds) {
     [self.window makeKeyAndVisible];
 
     NSString *shot = NSProcessInfo.processInfo.arguments.count > 1 ? NSProcessInfo.processInfo.arguments[1] : nil;
-    self.steps = [@[waitFor(1.5)] arrayByAddingObjectsFromArray:shot ? [self shot:shot] : [self checks]];
+    self.steps = [@[waitFor(1.5)] arrayByAddingObjectsFromArray:[shot isEqualToString:@"cancel-try"] ? [self cancelTryChecks] : shot ? [self shot:shot] : [self checks]];
     [NSTimer scheduledTimerWithTimeInterval:0.25 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     return YES;
 }
