@@ -13,6 +13,7 @@
 // changes every ID, so the line showing is offered again over it.
 #import <MediaPlayer/MediaPlayer.h>
 #import <CommonCrypto/CommonDigest.h>
+#import <os/lock.h>
 #import "Core/SGCore.h"
 #import "LockScreenLyrics.h"
 #import "SGLyricsClip.h"
@@ -531,6 +532,8 @@ static void tick(void) {
         }];
         style = SGInt(SGKeyLockScreenLyricsStyle, SGLyricsClipStill);
         delay = SGKaraokeDelayMs();
+        // Writes arrive on any thread, so the snapshot is compared and moved under a lock.
+        static os_unfair_lock choiceLock = OS_UNFAIR_LOCK_INIT;
         [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
                                                     usingBlock:^(NSNotification *note) {
             // The style and the lyrics' delay apply at once, and move the artwork or its next change.
@@ -538,14 +541,19 @@ static void tick(void) {
             NSInteger nowStyle = SGInt(SGKeyLockScreenLyricsStyle, SGLyricsClipStill), nowDelay = SGKaraokeDelayMs();
             NSString *next = SGLyricsBackgroundIdentity(SGLyricsBackgroundRead(@"spotifyglass.lockscreen.background"));
             BOOL nowTranslation = SGFlag(SGKeyLockScreenTranslation, NO);
-            BOOL changed = ![next isEqual:background] || nowStyle != style;
             SGLockArtwork picked = SGLockScreenArtwork();
-            if (picked == choice && !changed && nowDelay == delay && nowTranslation == translation) return;
+            os_unfair_lock_lock(&choiceLock);
+            BOOL changed = ![next isEqual:background] || nowStyle != style;
+            if (picked == choice && !changed && nowDelay == delay && nowTranslation == translation) {
+                os_unfair_lock_unlock(&choiceLock);
+                return;
+            }
             background = next;
             style = nowStyle;
             delay = nowDelay;
             translation = nowTranslation;
             choice = picked;
+            os_unfair_lock_unlock(&choiceLock);
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (changed && SGLockArtworkShowsLyrics(picked)) {
                     clear();
