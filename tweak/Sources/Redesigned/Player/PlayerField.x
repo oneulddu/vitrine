@@ -47,6 +47,18 @@ SGRPlayerBackgroundKind SGRPlayerBackground(void) {
     return kind >= SGRPlayerBackgroundStill && kind <= SGRPlayerBackgroundPhoto ? kind : SGRPlayerBackgroundColours;
 }
 
+static NSUInteger sg_backgroundGeneration;
+
+NSUInteger SGRSetPlayerBackground(SGRPlayerBackgroundKind kind) {
+    NSUInteger generation = ++sg_backgroundGeneration;
+    SGSetInt(SGRKeyPlayerBackground, kind);
+    return generation;
+}
+
+NSUInteger SGRPlayerBackgroundGeneration(void) {
+    return sg_backgroundGeneration;
+}
+
 SGRPlayerBackgroundKind SGRPlayerArtworkBackground(void) {
     SGRPlayerBackgroundKind kind = SGRPlayerBackground();
     if (SGRPlayerBackgroundFromArtwork(kind)) return kind;

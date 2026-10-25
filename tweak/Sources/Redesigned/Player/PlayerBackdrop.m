@@ -11,7 +11,8 @@
 // kLongestSide pixels on its longer side at most, and kept as a JPEG in Library/Application Support/Vitrine. It is
 // read once a launch, when first shown. Nothing is uploaded.
 //
-// Threading: main thread only, but for the picked image's scaling and writing.
+// Threading: views and the prepared cache are main-thread only. Reading, decoding and brightness
+// measurement run off main; import generations and file commits share one serial queue.
 #import <PhotosUI/PhotosUI.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
@@ -27,24 +28,72 @@ static NSURL *photoURL(void) {
 }
 
 static UIImage *sg_photo;
-static BOOL sg_photoRead;
-static CGFloat sg_photoBright = -1;   // its bright end, measured once per photo
+static BOOL sg_photoRead, sg_photoLoading;
+static CGFloat sg_photoBright;
+static NSMutableArray<void (^)(BOOL)> *sg_photoWaiters;
+static NSUInteger sg_importGeneration;   // main: selections and completion delivery
+static NSUInteger sg_storeGeneration;    // photoQueue: generation admission and file commits
+
+static dispatch_queue_t photoQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("spotifyglass.player.photo", DISPATCH_QUEUE_SERIAL); });
+    return queue;
+}
+
+// Draw upright into a decoded bitmap off main, at the storage size. This same prepared image is
+// published after an import; neither the main thread nor a redisplay reopens or decodes its JPEG.
+static UIImage *preparePhoto(UIImage *image) {
+    CGSize pixels = CGSizeMake(image.size.width * image.scale, image.size.height * image.scale);
+    CGFloat longer = MAX(pixels.width, pixels.height);
+    if (longer <= 0) return nil;
+    CGFloat shrink = MIN(1, kLongestSide / longer);
+    CGSize size = CGSizeMake(MAX(1, round(pixels.width * shrink)), MAX(1, round(pixels.height * shrink)));
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = YES;
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size format:format];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [image drawInRect:(CGRect){CGPointZero, size}];
+    }];
+}
+
+// Main only: the pixels and their measurement become visible together, before any observer reloads.
+static void publishPhoto(UIImage *image, CGFloat brightness) {
+    sg_photo = image;
+    sg_photoBright = brightness;
+    sg_photoRead = YES;
+    sg_photoLoading = NO;
+    NSArray<void (^)(BOOL)> *waiters = sg_photoWaiters;
+    sg_photoWaiters = nil;
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerPhotoDidChangeNotification object:nil];
+    for (void (^done)(BOOL) in waiters) done(image != nil);
+}
+
+void SGRPlayerLoadPhoto(void (^done)(BOOL available)) {
+    if (sg_photoRead) {
+        if (done) done(sg_photo != nil);
+        return;
+    }
+    if (done) {
+        if (!sg_photoWaiters) sg_photoWaiters = [NSMutableArray array];
+        [sg_photoWaiters addObject:[done copy]];
+    }
+    if (sg_photoLoading) return;
+    sg_photoLoading = YES;
+    dispatch_async(photoQueue(), ^{
+        UIImage *image = preparePhoto([UIImage imageWithContentsOfFile:photoURL().path]);
+        CGFloat brightness = image ? SGRPlayerImageBrightEnd(image.CGImage) : 0;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // A prepared import can satisfy the pending read before its callback is delivered.
+            if (!sg_photoRead) publishPhoto(image, brightness);
+        });
+    });
+}
 
 static UIImage *storedPhoto(void) {
-    if (!sg_photoRead) {
-        sg_photoRead = YES;
-        sg_photo = [UIImage imageWithContentsOfFile:photoURL().path];
-    }
+    SGRPlayerLoadPhoto(nil);
     return sg_photo;
-}
-
-BOOL SGRPlayerHasPhoto(void) {
-    return storedPhoto() != nil;
-}
-
-static CGFloat photoBright(void) {
-    if (sg_photoBright < 0) sg_photoBright = storedPhoto() ? SGRPlayerImageBrightEnd(storedPhoto().CGImage) : 0;
-    return sg_photoBright;
 }
 
 #pragma mark - the view
@@ -94,13 +143,16 @@ static CGFloat photoBright(void) {
 
 - (void)reload {
     _kind = SGRPlayerBackground();
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     _photo.image = _kind == SGRPlayerBackgroundPhoto ? storedPhoto() : nil;
     [self updateDim];
+    [CATransaction commit];
     _blur.effect = _lyrics && _photo.image ? [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark] : nil;
 }
 
 - (void)updateDim {
-    CGFloat dim = _photo.image ? SGRPlayerClipDim(photoBright(), UIAccessibilityDarkerSystemColorsEnabled(), _lyrics) : 0;
+    CGFloat dim = _photo.image ? SGRPlayerClipDim(sg_photoBright, UIAccessibilityDarkerSystemColorsEnabled(), _lyrics) : 0;
     _dim.opacity = (float)dim;
 }
 
@@ -187,22 +239,6 @@ UIView *SGRPlayerBackdropPreview(void) {
 
 #pragma mark - picking the photo
 
-// Drawn upright at kLongestSide pixels on its longer side at most, as a JPEG.
-static NSData *jpegOf(UIImage *image) {
-    CGSize pixels = CGSizeMake(image.size.width * image.scale, image.size.height * image.scale);
-    CGFloat longer = MAX(pixels.width, pixels.height);
-    if (longer <= 0) return nil;
-    CGFloat shrink = MIN(1, kLongestSide / longer);
-    CGSize size = CGSizeMake(round(pixels.width * shrink), round(pixels.height * shrink));
-    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
-    format.scale = 1;
-    format.opaque = YES;
-    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size format:format];
-    return [renderer JPEGDataWithCompressionQuality:0.9 actions:^(UIGraphicsImageRendererContext *context) {
-        [image drawInRect:(CGRect){CGPointZero, size}];
-    }];
-}
-
 @interface SGRPlayerPhotoPicker : NSObject <PHPickerViewControllerDelegate>
 @property (nonatomic, copy) void (^done)(BOOL stored);
 @end
@@ -220,24 +256,34 @@ static SGRPlayerPhotoPicker *sg_picker;   // kept while the picker is up; its de
         if (done) done(NO);
         return;
     }
+    NSUInteger generation = ++sg_importGeneration;
+    // Admit the selection before starting its provider request. A later selection's admission and an
+    // older request's check/write are ordered on this queue, never a check followed by an unlocked write.
+    dispatch_async(photoQueue(), ^{ sg_storeGeneration = generation; });
     [provider loadObjectOfClass:UIImage.class completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
-        UIImage *image = [(id)object isKindOfClass:UIImage.class] ? (UIImage *)object : nil;
-        NSData *data = image ? jpegOf(image) : nil;
-        NSURL *url = photoURL();
-        NSError *failure = error;
-        BOOL stored = data && [NSFileManager.defaultManager createDirectoryAtURL:url.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:&failure]
-            && [data writeToURL:url options:NSDataWritingAtomic error:&failure];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (stored) {
-                sg_photoRead = NO;
-                sg_photo = nil;
-                sg_photoBright = -1;
-                SGLog(@"redesign player: a photo of %lu KB stored for behind the player", (unsigned long)(data.length / 1024));
-                [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerPhotoDidChangeNotification object:nil];
-            } else {
-                SGLog(@"redesign player: the picked photo could not be stored: %@", failure);
-            }
-            if (done) done(stored);
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            UIImage *image = [(id)object isKindOfClass:UIImage.class] ? preparePhoto((UIImage *)object) : nil;
+            NSData *data = image ? UIImageJPEGRepresentation(image, 0.9) : nil;
+            CGFloat brightness = image ? SGRPlayerImageBrightEnd(image.CGImage) : 0;
+            dispatch_async(photoQueue(), ^{
+                if (generation != sg_storeGeneration) {
+                    dispatch_async(dispatch_get_main_queue(), ^{ if (done) done(NO); });
+                    return;
+                }
+                NSURL *url = photoURL();
+                NSError *failure = error;
+                BOOL stored = data && [NSFileManager.defaultManager createDirectoryAtURL:url.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:&failure]
+                    && [data writeToURL:url options:NSDataWritingAtomic error:&failure];
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (stored) {
+                        publishPhoto(image, brightness);
+                        SGLog(@"redesign player: a photo of %lu KB stored for behind the player", (unsigned long)(data.length / 1024));
+                    } else {
+                        SGLog(@"redesign player: the picked photo could not be stored: %@", failure);
+                    }
+                    if (done) done(stored && generation == sg_importGeneration);
+                });
+            });
         });
     }];
 }

@@ -53,6 +53,10 @@ typedef NS_ENUM(NSInteger, SGRPlayerBackgroundKind) {
 };
 // The player's ⋯ menu switches between Fluid, Animated and Visualizer, which share the Fluid field, without a restart.
 SGRPlayerBackgroundKind SGRPlayerBackground(void);
+// Main-thread choices from the page and menu. Each choice advances the generation, even when the kind
+// stays the same, so an asynchronous Photo choice cannot override a later choice.
+NSUInteger SGRSetPlayerBackground(SGRPlayerBackgroundKind kind);
+NSUInteger SGRPlayerBackgroundGeneration(void);
 // Whether the kind is drawn from the artwork (Still to Visualizer), not black or a photo.
 static inline BOOL SGRPlayerBackgroundFromArtwork(SGRPlayerBackgroundKind kind) {
     return kind <= SGRPlayerBackgroundVisualiser;
@@ -68,7 +72,7 @@ NSArray<NSString *> *SGRPlayerBackgroundNames(void);
 
 #pragma mark - black or a photo behind the player (PlayerBackdrop.m)
 
-// Posted on the main thread when a new photo was stored.
+// Posted on the main thread when a prepared photo is ready, from disk or a successful import.
 extern NSNotificationName const SGRPlayerPhotoDidChangeNotification;
 // Lays black or the photo over the field while the background is one of them, and takes it away otherwise; the
 // field's layout calls it before the clip's (PlayerField.x).
@@ -79,7 +83,9 @@ BOOL SGRPlayerBackdropShowing(void);
 void SGRPlayerBackdropLyricsChanged(void);
 // A view drawing the chosen black or photo, for the Player page's card; nil for the artwork's choices.
 UIView *SGRPlayerBackdropPreview(void);
-BOOL SGRPlayerHasPhoto(void);
+// Loads and prepares the stored photo off main, once. The optional completion runs on main (immediately
+// when already prepared) with whether a photo is available; callers keep their current look meanwhile.
+void SGRPlayerLoadPhoto(void (^done)(BOOL available));
 // The photo library over `from`, one image: a picked one is stored, and `done` runs on the main thread with
 // whether it was (NO when canceled).
 void SGRPlayerPickPhoto(UIViewController *from, void (^done)(BOOL stored));

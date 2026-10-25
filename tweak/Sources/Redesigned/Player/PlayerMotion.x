@@ -815,7 +815,7 @@ BOOL SGPlayerMenuAnimatedArtwork(void) {
 
 void SGPlayerMenuSetAnimatedArtwork(BOOL on) {
     if (!SGPlayerMenuOffersAnimatedArtwork() || on == SGPlayerMenuAnimatedArtwork()) return;
-    SGSetInt(SGRKeyPlayerBackground, on ? SGRPlayerBackgroundAnimated : SGRPlayerBackgroundFluid);
+    SGRSetPlayerBackground(on ? SGRPlayerBackgroundAnimated : SGRPlayerBackgroundFluid);
     SGLog(@"redesign player: animated artwork switched %@ from the menu", on ? @"on" : @"off");
     // The playing track is let go, and looked up again when switched on.
     clear(YES);

@@ -186,6 +186,7 @@ static NSDictionary *noActions(void) {
     NSArray<UILabel *> *_lyricLabels;
     UILabel *_lyricFront;
     NSArray<SGKaraokeLine *> *_lines;
+    BOOL _linesTimed;
     NSString *_linesTrack;
     NSInteger _lineIndex;
     BOOL _asked;   // the playing track was asked for lyrics once
@@ -385,7 +386,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     _words.hidden = next != SGRLyricsStyle;
     if (next != SGRLyricsStyle) {
         for (UILabel *label in _lyricLabels) label.alpha = 0;
-        _lines = nil; _linesTrack = nil; _lineIndex = -1; _asked = NO;
+        _lines = nil; _linesTimed = NO; _linesTrack = nil; _lineIndex = -1; _asked = NO;
     } else {
         [self takeUpTrack];
         [self readLine];
@@ -447,6 +448,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     _sample = sample;
     // The card's lines are the sample's, never the playing song's.
     _lines = nil;
+    _linesTimed = NO;
     _linesTrack = nil;
     _asked = NO;
     _lineIndex = -1;
@@ -464,13 +466,14 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 // string it already holds; a track with none is asked for lyrics once, and the answer comes as
 // SGKaraokeLinesKeptNotification.
 - (NSArray<SGKaraokeLine *> *)lyricLines {
-    if (_sample) return _lines ?: (_lines = SGRLyricsSampleLines());
     // A view made while a track plays has had no state change yet to take it up; a track change does.
-    if (!_linesTrack) [self takeUpTrack];
-    if (!_lines && _linesTrack && !_asked) {
+    if (!_sample && !_linesTrack) [self takeUpTrack];
+    if (!_lines && (_sample || (_linesTrack && !_asked))) {
         _asked = YES;
-        _lines = SGKaraokeLinesForTrack(_linesTrack);
-        if (!_lines) SGKaraokeRequestLyrics(_linesTrack);
+        _lines = _sample ? SGRLyricsSampleLines() : SGKaraokeLinesForTrack(_linesTrack);
+        // Classify only when taking a new array, never on the frame clock.
+        _linesTimed = _lines && SGKaraokeLinesTiming(_lines) != SGKaraokeTimingNone;
+        if (!_sample && !_lines) SGKaraokeRequestLyrics(_linesTrack);
     }
     return _lines;
 }
@@ -481,6 +484,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     if (_linesTrack == track || [_linesTrack isEqualToString:track]) return;
     _linesTrack = [track copy];
     _lines = nil;
+    _linesTimed = NO;
     _asked = NO;
     _lineIndex = -1;
     for (UILabel *label in _lyricLabels) {
@@ -511,7 +515,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 // the player's own lyrics are open. No text is built here.
 - (NSInteger)lineAt:(NSInteger)ms lines:(NSArray<SGKaraokeLine *> *)lines {
     if (!lines.count || ms < 0 || self.blurred) return -1;
-    if (SGKaraokeLinesTiming(lines) == SGKaraokeTimingNone) return -1;
+    if (!_linesTimed) return -1;
     NSInteger index = SGKaraokeLeadLine(lines, ms);
     if (index < 0) return -1;
     SGKaraokeLine *line = lines[(NSUInteger)index];
@@ -581,6 +585,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 - (void)lyricsKept:(NSNotification *)note {
     if (_sample || ![note.object isEqual:SGKaraokePlayingTrack()]) return;
     _lines = nil;
+    _linesTimed = NO;
     _asked = NO;
     _lineIndex = -1;
     [self readLine];
@@ -1074,7 +1079,7 @@ void SGRPlayerMenuSetBackground(SGRPlayerBackgroundKind kind) {
     if (!SGPlayerMenuOffersAnimatedArtwork() || kind < SGRPlayerBackgroundFluid || kind == current) return;
     // Animated's own switch lets the clip go or looks it up, and calls back here.
     if (kind == SGRPlayerBackgroundAnimated || current == SGRPlayerBackgroundAnimated) SGPlayerMenuSetAnimatedArtwork(kind == SGRPlayerBackgroundAnimated);
-    if (kind != SGRPlayerBackgroundAnimated) SGSetInt(SGRKeyPlayerBackground, kind);
+    if (kind != SGRPlayerBackgroundAnimated) SGRSetPlayerBackground(kind);
     // The log keeps the English names; SGRPlayerBackgroundNames is translated for the page.
     SGLog(@"redesign player: background switched to %@ from the menu", @[@"Still", @"Colors", @"Fluid", @"Animated", @"Visualizer"][(NSUInteger)kind]);
     SGRPlayerHoldField();

@@ -342,7 +342,7 @@ static NSInteger segmentOf(SGRPlayerBackgroundKind kind) {
 }
 
 - (void)backgroundPicked {
-    SGSetInt(SGRKeyPlayerBackground, self.backgrounds.selectedSegmentIndex);
+    SGRSetPlayerBackground(self.backgrounds.selectedSegmentIndex);
     SGSetInt(SGRKeyPlayerArtworkBackground, self.backgrounds.selectedSegmentIndex);
     [self backgroundChanged];
 }
@@ -414,19 +414,28 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
         return behindNames()[kind == SGRPlayerBackgroundBlack ? 1 : kind == SGRPlayerBackgroundPhoto ? 2 : 0];
     }, ^(NSInteger index) {
         SGRPlayerPage *page = weakPlayerPage;
-        if (index == 2 && !SGRPlayerHasPhoto()) {
-            SGRPlayerPickPhoto(page, ^(BOOL stored) {
-                if (stored) SGSetInt(SGRKeyPlayerBackground, SGRPlayerBackgroundPhoto);
-                [page backgroundChanged];
+        if (index == 2) {
+            // Reserve this choice while the saved photo is prepared or the picker imports one, without
+            // replacing the current look. Every later page/menu choice supersedes its automatic switch.
+            NSUInteger choice = SGRSetPlayerBackground(SGRPlayerBackground());
+            SGRPlayerLoadPhoto(^(BOOL available) {
+                if (choice != SGRPlayerBackgroundGeneration()) return;
+                void (^usePhoto)(BOOL) = ^(BOOL stored) {
+                    if (!stored || choice != SGRPlayerBackgroundGeneration()) return;
+                    SGRSetPlayerBackground(SGRPlayerBackgroundPhoto);
+                    [page backgroundChanged];
+                };
+                if (available) usePhoto(YES);
+                else SGRPlayerPickPhoto(page, usePhoto);
             });
             return;
         }
-        SGSetInt(SGRKeyPlayerBackground, index == 1 ? SGRPlayerBackgroundBlack : index == 2 ? SGRPlayerBackgroundPhoto : SGRPlayerArtworkBackground());
+        SGRSetPlayerBackground(index == 1 ? SGRPlayerBackgroundBlack : SGRPlayerArtworkBackground());
         [page backgroundChanged];
     });
     SGModRow *choosePhoto = SGActionRow(SGL(@"settings.player.photo.choose", @"Choose Photo"), nil, ^{
         SGRPlayerPage *page = weakPlayerPage;
-        SGRPlayerPickPhoto(page, ^(BOOL stored) { [page backgroundChanged]; });
+        SGRPlayerPickPhoto(page, ^(BOOL stored) { if (stored) [page backgroundChanged]; });
     });
     choosePhoto.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundPhoto; };
 
