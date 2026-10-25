@@ -253,6 +253,11 @@ UIView *SGRPlayerConnectGlyphIn(UIView *host, UIView *connect);
 // Connect's touches only in a 44pt square over its glyph: `holder` is the view of the footer that holds Connect, whose
 // own view reaches far past the glyph (over Queue and the DJ button once the glyph is moved).
 void SGRPlayerCoverConnect(UIView *holder, UIView *glyph);
+// Whether a control is drawn lit: in the accent, judged as Follow the cover judges what it repaints.
+BOOL SGRPlayerAccentLike(UIColor *color);
+// The color an image is drawn in: the average of its opaque pixels, read once at 16 by 16 and kept on the image; nil
+// for one with too few.
+UIColor *SGRPlayerImageInk(UIImage *image);
 
 // The tap to seek around the progress bar (PlayerControls.x), apart for the harness: whether a tap at `point`
 // in the duration unit's view seeks, and the share of the song a point on the slider stands for, measured
