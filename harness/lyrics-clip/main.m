@@ -1,4 +1,4 @@
-// Renders lines of lyrics through the tweak's own SGLyricsClip.m, both styles, and reads every file back
+// Renders lines of lyrics through the tweak's own SGLyricsClip.m, both styles and every layout, and reads every file back
 // with AVFoundation: its length, its size, its frames, and that the words came out where they should.
 // Each clip's first frame is kept beside it as a PNG to look at. Exits 1 on any failure.
 #import <AVFoundation/AVFoundation.h>
@@ -75,6 +75,29 @@ static double wordsIn(CGImageRef image, CGImageRef backdrop, CGFloat fromY, CGFl
     return all ? (double)white / all : 0;
 }
 
+// The box, in pixels from the top left, of the pixels lighter than the backdrop's as wordsIn counts them.
+static CGRect litBounds(CGImageRef image, CGImageRef backdrop) {
+    size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, width * 4, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGContextRef under = CGBitmapContextCreate(NULL, width, height, 8, width * 4, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), image);
+    CGContextDrawImage(under, CGRectMake(0, 0, width, height), backdrop);
+    const uint8_t *pixels = CGBitmapContextGetData(context), *base = CGBitmapContextGetData(under);
+    size_t minX = width, maxX = 0, minY = height, maxY = 0;
+    for (size_t y = 0; y < height; y++) {
+        for (size_t x = 0; x < width; x++) {
+            const uint8_t *p = pixels + (y * width + x) * 4, *b = base + (y * width + x) * 4;
+            if (p[0] + p[1] + p[2] <= b[0] + b[1] + b[2] + 90) continue;
+            minX = MIN(minX, x), maxX = MAX(maxX, x), minY = MIN(minY, y), maxY = MAX(maxY, y);
+        }
+    }
+    CGContextRelease(context);
+    CGContextRelease(under);
+    CGColorSpaceRelease(space);
+    return minX > maxX ? CGRectNull : CGRectMake(minX, minY, maxX - minX + 1, maxY - minY + 1);
+}
+
 static void verify(NSURL *url, CGImageRef backdrop, CGSize size, SGLyricsClipStyle style, BOOL hasWords) {
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
     AVAssetTrack *track = [asset tracksWithMediaType:AVMediaTypeVideo].firstObject;
@@ -118,9 +141,18 @@ static void verify(NSURL *url, CGImageRef backdrop, CGSize size, SGLyricsClipSty
                                                                         top * 100, bottom * 100]);
     }
     if (first && late) {
-        // A still holds its frame to the end; it is the frame the preview image shows too.
+        // A still holds its frame to the end; it is the frame the preview image shows too. The encoder's loss on the
+        // edges of the letters grows with them: a block filling the space can move by some 4%.
         double a = wordsIn(first, NULL, kWordsFrom, kWordsTo), b = wordsIn(late, NULL, kWordsFrom, kWordsTo);
-        check(fabs(a - b) < 0.002, [NSString stringWithFormat:@"the words hold still to the end (%.3f%% / %.3f%%)", a * 100, b * 100]);
+        check(fabs(a - b) < MAX(0.002, a * 0.06), [NSString stringWithFormat:@"the words hold still to the end (%.3f%% / %.3f%%)", a * 100, b * 100]);
+        // Coverage alone passes a block moved whole: its box must stay put too, within the encoder's few pixels.
+        if (hasWords) {
+            CGRect from = litBounds(first, backdrop), to = litBounds(late, backdrop);
+            BOOL same = !CGRectIsNull(from) && !CGRectIsNull(to) && fabs(CGRectGetMinX(from) - CGRectGetMinX(to)) <= 4
+                && fabs(CGRectGetMinY(from) - CGRectGetMinY(to)) <= 4 && fabs(CGRectGetMaxX(from) - CGRectGetMaxX(to)) <= 4
+                && fabs(CGRectGetMaxY(from) - CGRectGetMaxY(to)) <= 4;
+            check(same, [NSString stringWithFormat:@"the words' box holds still to the end (%@ / %@)", NSStringFromRect(from), NSStringFromRect(to)]);
+        }
     }
     CGImageRelease(first);
     CGImageRelease(late);
@@ -156,22 +188,67 @@ int main(int argc, char **argv) {
             @[@"break", @"", @"번역만 있는 쉼", @"The first line, coming up"],
             @[@"last", @"The very last line", @"", @""],
             @[@"empty", @"", @"", @""],
+            // Too tall even at the smallest size: the next line and the translation go, and the line ends in an ellipsis.
+            @[@"overflow", [@"" stringByPaddingToLength:900 withString:@"Every word I never said keeps ringing out across the quiet night, " startingAtIndex:0],
+              [@"" stringByPaddingToLength:300 withString:@"and every promise I forgot comes back to find me here again, " startingAtIndex:0],
+              @"until the morning finds us"],
+            @[@"overflow-cjk", [@"" stringByPaddingToLength:420 withString:@"夜空に光る星を数えながら君の名前を何度も呼んだ、" startingAtIndex:0],
+              [@"" stringByPaddingToLength:200 withString:@"밤하늘에 빛나는 별을 세면서 너의 이름을 몇 번이고 불렀어, " startingAtIndex:0],
+              @"君の名前を呼んだ"],
         ];
-        for (NSArray *c in cases) {
-            for (SGLyricsClipStyle style = SGLyricsClipStill; style <= SGLyricsClipAnimated; style++) {
-                NSString *name = [NSString stringWithFormat:@"%@-%@.mp4", c[0], style == SGLyricsClipStill ? @"still" : @"animated"];
-                NSURL *url = [out URLByAppendingPathComponent:name];
-                CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
-                BOOL written = SGLyricsClipWrite(url, [c[0] isEqual:@"empty"] ? plain : backdrop, c[1], c[2], c[3], size, style);
-                double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000;
-                printf("%s\n", name.UTF8String);
-                check(written, [NSString stringWithFormat:@"written in %.0f ms", ms]);
-                if (!written) continue;
-                NSNumber *bytes = nil;
-                [url getResourceValue:&bytes forKey:NSURLFileSizeKey error:nil];
-                printf("  %.0f KB\n", bytes.doubleValue / 1024);
-                verify(url, [c[0] isEqual:@"empty"] ? plain : backdrop, size, style, [c[1] length] || [c[3] length]);
+        // Every case in each layout, Left (the files' plain names) in both styles, the others Still.
+        NSArray *layoutNames = @[@"", @"-centered", @"-poster"];
+        for (SGLyricsClipLayout layout = SGLyricsClipLeft; layout <= SGLyricsClipPoster; layout++) {
+            for (NSArray *c in cases) {
+                SGLyricsClipStyle last = layout == SGLyricsClipLeft ? SGLyricsClipAnimated : SGLyricsClipStill;
+                for (SGLyricsClipStyle style = SGLyricsClipStill; style <= last; style++) {
+                    NSString *name = [NSString stringWithFormat:@"%@%@-%@.mp4", c[0], layoutNames[layout], style == SGLyricsClipStill ? @"still" : @"animated"];
+                    NSURL *url = [out URLByAppendingPathComponent:name];
+                    CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
+                    BOOL written = SGLyricsClipWriteWithLayout(url, [c[0] isEqual:@"empty"] ? plain : backdrop, c[1], c[2], c[3], size, style, layout);
+                    double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000;
+                    printf("%s\n", name.UTF8String);
+                    check(written, [NSString stringWithFormat:@"written in %.0f ms", ms]);
+                    if (!written) continue;
+                    NSNumber *bytes = nil;
+                    [url getResourceValue:&bytes forKey:NSURLFileSizeKey error:nil];
+                    printf("  %.0f KB\n", bytes.doubleValue / 1024);
+                    verify(url, [c[0] isEqual:@"empty"] ? plain : backdrop, size, style, [c[1] length] || [c[3] length]);
+                }
             }
+        }
+        // What each layout does with the words, on the preview frame (the clip's, before the encoder).
+        printf("layouts\n");
+        {
+            CGImageRef leftFrame = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, @"we're almost there", size, SGLyricsClipLeft);
+            CGImageRef centredFrame = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, @"we're almost there", size, SGLyricsClipCentered);
+            CGRect left = litBounds(leftFrame, backdrop), centred = litBounds(centredFrame, backdrop);
+            CGImageRelease(leftFrame);
+            CGImageRelease(centredFrame);
+            CGFloat strip = size.width * 9 / 19.5 * 4 / 3, from = (size.width - strip) / 2;
+            check(fabs(CGRectGetMinX(left) - (from + strip * 0.08)) < size.width * 0.01,
+                  [NSString stringWithFormat:@"Left starts 8%% of the strip in (at %.0f, want %.0f)", CGRectGetMinX(left), from + strip * 0.08]);
+            check(fabs(CGRectGetMidX(centred) - size.width / 2) < size.width * 0.01 && CGRectGetMinX(centred) > CGRectGetMinX(left) + size.width * 0.05,
+                  [NSString stringWithFormat:@"Centered sits in the middle (%.0f to %.0f of %.0f)", CGRectGetMinX(centred), CGRectGetMaxX(centred), size.width]);
+            check(fabs(CGRectGetMidY(centred) - CGRectGetMidY(left)) < 2, @"Centered at Left's height");
+            CGImageRef alone = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, nil, size, SGLyricsClipLeft);
+            CGImageRef poster = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, nil, size, SGLyricsClipPoster);
+            CGImageRef posterNext = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, @"we're almost there", size, SGLyricsClipPoster);
+            CGImageRef posterTold = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", @"조금만 버텨", @"we're almost there", size, SGLyricsClipPoster);
+            double small = wordsIn(alone, backdrop, kWordsFrom, kWordsTo), large = wordsIn(poster, backdrop, kWordsFrom, kWordsTo);
+            CGRect a = litBounds(alone, backdrop), p = litBounds(poster, backdrop);
+            check(p.size.height > a.size.height * 1.45 && large > small * 2,
+                  [NSString stringWithFormat:@"Poster's line is larger and heavier (%.0f px tall, %.2f%% lit; Left %.0f px, %.2f%%)",
+                   p.size.height, large * 100, a.size.height, small * 100]);
+            check(fabs(CGRectGetMinX(p) - CGRectGetMinX(a)) < size.width * 0.01, @"Poster is left-aligned as Left is");
+            check(fabs(wordsIn(posterNext, backdrop, 0, 1) - wordsIn(poster, backdrop, 0, 1)) < 0.00001, @"Poster shows no next line");
+            check(wordsIn(posterTold, backdrop, kWordsFrom, kWordsTo) > wordsIn(posterNext, backdrop, kWordsFrom, kWordsTo),
+                  @"Poster keeps the translation under the line");
+            savePNG(posterTold, [out URLByAppendingPathComponent:@"preview-poster-translated.png"]);
+            CGImageRelease(alone);
+            CGImageRelease(poster);
+            CGImageRelease(posterNext);
+            CGImageRelease(posterTold);
         }
         for (SGLyricsBackgroundMode mode = SGLyricsBackgroundCover; mode <= SGLyricsBackgroundSolid; mode++) {
             SGLyricsBackgroundStyle backgroundStyle = {mode, .45, 20, 0x18354C};

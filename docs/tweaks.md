@@ -352,7 +352,13 @@ Shared:
                   and the next one smaller, in the regular weight at 0.6 of its size and half white, over the selected
                   background, SGLyricsClip.m; left-aligned 8% of the screen's width in, wrapping at 84% of it, the block
                   centred 40% down and its top no higher than 17%, clear of the clock and the media controls) written only when the lock screen asks for it,
-                  Still (one frame) or Animated (15 fps). Fallbacks use the screen's native width and the shared
+                  Still (one frame) or Animated (15 fps). Layout (SGKeyLockScreenLyricsLayout, under Lyrics style): Left
+                  as above (the default), Centered (each line centred in the same column) or Poster (the line alone at
+                  1.6 times the size in the heavy weight, left-aligned, its translation under it; at a rest the next
+                  line alone in its place, dimmed). In every layout a block still too tall at the smallest size, whose
+                  bottom would pass 65% of the screen, lets go of the line sung last, then the next line, then the
+                  translation, and last keeps the whole lines of the line that fit from 17% down, the last ending in an
+                  ellipsis. Fallbacks use the screen's native width and the shared
                   CPU renderer. Cover backgrounds load the current URI's metadata artwork through
                   SGShownTrackArtwork, not title-matched system artwork that may be a placeholder or the
                   previous song's cover. Missing or failed covers use the dark fallback; late results are
@@ -367,12 +373,14 @@ Shared:
                   to 30 fps, with the line sung last dimmed above (dim, bright, dim). The video is decoded as BGRA, the
                   rows behind the words are blurred (Accelerate's tent blur, 16% of the width across, at most 127
                   pixels) and faded in, every row of the cut is darkened in one pass (0.25, and 0.6 across the words,
-                  up to 0.8 over a bright picture: from the first frame, held for the clip, enough that the brightest
-                  tenth behind the words comes to 0.22 of white), and the words with a tight dark shadow are
+                  up to 0.8 over a bright picture: by the brightest of four frames spread from the clip's first to its
+                  last, read once with an image generator before the clip is written, held for the clip, enough that
+                  the brightest tenth behind the words comes to 0.22 of white; the preview judges the same stretch,
+                  so it matches), and the words with a tight dark shadow are
                   drawn on; the encoder cuts the 3:4 middle as SGMotionClip.m does, so nothing is scaled on the CPU.
-                  The IDs end in the style and, over moving artwork, m and the first 16 characters of the file's name
-                  (SGLyricsClipLook), so the clip arriving, a Canvas after an animated cover, or a change of style
-                  re-offers the line showing. Until it comes, and for a track with no moving artwork, the lines are drawn
+                  The IDs end in the style, the layout and, over moving artwork, m and the first 16 characters of the
+                  file's name (SGLyricsClipLook), so the clip arriving, a Canvas after an animated cover, or a change of
+                  style or layout re-offers the line showing. Until it comes, and for a track with no moving artwork, the lines are drawn
                   as Lyrics draws them, in the chosen style; so are they over a video that will not draw (turned, its
                   frames another size than it states, as a video with non-square pixels has, cut short or gone from the
                   store), which is remembered for the launch and tried again only when handed over again. A track with

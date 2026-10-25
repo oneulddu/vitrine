@@ -22,6 +22,9 @@ NSArray *SGLockScreenMotionRows(void) {
         SGModRow *style = SGChoiceRow(SGL(@"settings.lockscreen.lyrics_style.title", @"Lyrics style"), SGL(@"settings.lockscreen.lyrics_style.subtitle", @"Still draws each line once; Animated gently moves the selected background. Applies when moving artwork is unavailable."),
                                       SGKeyLockScreenLyricsStyle, @[SGL(@"settings.lockscreen.lyrics_style.choice.still", @"Still"), SGL(@"settings.lockscreen.lyrics_style.choice.animated", @"Animated")], 0);
         style.visible = ^BOOL { return SGLockArtworkShowsLyrics(SGLockScreenArtwork()); };
+        SGModRow *layout = SGChoiceRow(SGL(@"settings.lockscreen.lyrics_layout.title", @"Layout"), SGL(@"settings.lockscreen.lyrics_layout.subtitle", @"Where the lyrics sit. Poster shows the line alone, larger."),
+                                       SGKeyLockScreenLyricsLayout, @[SGL(@"settings.lockscreen.lyrics_layout.choice.left", @"Left"), SGL(@"settings.lockscreen.lyrics_layout.choice.centered", @"Centered"), SGL(@"settings.lockscreen.lyrics_layout.choice.poster", @"Poster")], 0);
+        layout.visible = style.visible;
         SGModRow *translation = SGOptionRow(SGL(@"settings.lockscreen.translations.title", @"Translations"), SGL(@"settings.lockscreen.translations.subtitle", @"Under the line, when the lyrics have one or automatic translation makes one"), SGKeyLockScreenTranslation);
         translation.visible = style.visible;
         SGModRow *lowData = SGOptionRow(SGL(@"settings.lockscreen.low_data.title", @"Download in Low Data Mode"), SGL(@"settings.lockscreen.low_data.subtitle", @"Moving artwork, up to about 7 MB a song. Applies to animated artwork throughout Vitrine."), SGKeyMotionLowData);
@@ -48,6 +51,7 @@ NSArray *SGLockScreenMotionRows(void) {
         NSMutableArray *rows = [@[
             artwork,
             style,
+            layout,
             translation,
             star,
             sources,
@@ -62,7 +66,7 @@ NSArray *SGLockScreenMotionRows(void) {
                 return (picked == SGLockArtworkEverySong || SGLockArtworkShowsLyrics(picked)) && (!visible || visible());
             };
         }
-        [rows insertObjects:background atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(2, background.count)]];
+        [rows insertObjects:background atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(3, background.count)]];
         return rows;
     }
     return @[SGLockScreenArtworkNeedsRow()];

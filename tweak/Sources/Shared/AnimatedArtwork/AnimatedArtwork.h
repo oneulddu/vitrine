@@ -28,6 +28,8 @@ static inline BOOL SGLockArtworkShowsLyrics(SGLockArtwork artwork) {
 }
 // How the lyrics are drawn, stored as the index of SGLyricsClipStyle (Still unless changed).
 #define SGKeyLockScreenLyricsStyle @"spotifyglass.lockscreen.lyricsStyle"
+// Where the lyrics sit, stored as the index of SGLyricsClipLayout (Left unless changed).
+#define SGKeyLockScreenLyricsLayout @"spotifyglass.lockscreen.lyricsLayout"
 // Off until switched on: the line's translation, where the lyrics have one (or automatic translation makes
 // one), shows smaller under the line. Read on each tick, so a change applies at once.
 #define SGKeyLockScreenTranslation @"spotifyglass.lockscreen.translation"

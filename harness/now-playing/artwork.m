@@ -161,22 +161,23 @@ CGSize SGLyricsClipSize(CGFloat pixels) { return CGSizeMake(24, 32); }
 CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) {
     return CGImageRetain(cover ?: blue.CGImage);
 }
-CGImageRef SGLyricsClipFrame(CGImageRef backdrop, NSString *line, NSString *translation, NSString *next, CGSize size) {
+CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, NSString *line, NSString *translation, NSString *next, CGSize size,
+                                       SGLyricsClipLayout layout) {
     return CGImageRetain(backdrop);
 }
-NSString *SGLyricsClipLook(NSURL *motion, SGLyricsClipStyle style) {
-    return [NSString stringWithFormat:@"style%ld%@", (long)style, motion ? motion.lastPathComponent : @""];
+NSString *SGLyricsClipLook(NSURL *motion, SGLyricsClipStyle style, SGLyricsClipLayout layout) {
+    return [NSString stringWithFormat:@"style%ldl%ld%@", (long)style, (long)layout, motion ? motion.lastPathComponent : @""];
 }
 static BOOL writeFrame(NSURL *file, CGImageRef frame) {
     NSData *data = UIImagePNGRepresentation([UIImage imageWithCGImage:frame]);
     return [data writeToURL:file atomically:YES];
 }
-BOOL SGLyricsClipWrite(NSURL *file, CGImageRef backdrop, NSString *line, NSString *translation, NSString *next,
-                       CGSize size, SGLyricsClipStyle style) { return writeFrame(file, backdrop); }
+BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, NSString *line, NSString *translation, NSString *next,
+                                 CGSize size, SGLyricsClipStyle style, SGLyricsClipLayout layout) { return writeFrame(file, backdrop); }
 BOOL SGLyricsClipWriteOverMotion(NSURL *file, NSURL *motion, NSString *previous, NSString *line, NSString *translation,
-                                 NSString *next, double from, double seconds) { return writeFrame(file, blue.CGImage); }
+                                 NSString *next, double from, double seconds, SGLyricsClipLayout layout) { return writeFrame(file, blue.CGImage); }
 CGImageRef SGLyricsClipMotionFrame(NSURL *motion, NSString *previous, NSString *line, NSString *translation,
-                                   NSString *next, double from) { return CGImageRetain(blue.CGImage); }
+                                   NSString *next, double from, double seconds, SGLyricsClipLayout layout) { return CGImageRetain(blue.CGImage); }
 BOOL SGMotionClipShape(NSURL *file, CGFloat ratio, NSURL *out) { return writeFrame(out, blue.CGImage); }
 CGImageRef SGFluidClipFrame(CGImageRef cover, CGSize size) { return CGImageRetain(cover); }
 BOOL SGFluidClipWrite(NSURL *file, CGImageRef cover, CGSize size) { return writeFrame(file, cover); }

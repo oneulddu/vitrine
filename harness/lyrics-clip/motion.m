@@ -5,7 +5,8 @@
 // the file: length, 3:4 size, H.264, frame count, words in the middle and none under the clock or the
 // controls, the picture moving, the preview matching the first frame. It times each clip against the video
 // cut alone (SGMotionClipShape) and the Animated lyrics clip, and prints the contrast of the words with the
-// brightest of the picture behind them. Exits 1 on any failure.
+// brightest of the picture behind them. Over the stand-ins it does so in every layout, and over a video dark at
+// its start and bright later it checks the band is judged across the clip's stretch. Exits 1 on any failure.
 #import <AVFoundation/AVFoundation.h>
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
@@ -94,6 +95,19 @@ static void drawDark(CGContextRef c, size_t w, size_t h, double t) {
         CGFloat x = fmod(i * 97.3 + t * 20, w), y = fmod(i * 211.7, h), r = 1.5 + (i % 3);
         CGContextFillEllipseInRect(c, CGRectMake(x, y, r * 2, r * 2));
     }
+}
+
+// A frame of a video dark at its start and bright later: two seconds of a flat mid grey (0.4 of white) with a
+// dimmer disc drifting across, then the flag.
+static void drawDusk(CGContextRef c, size_t w, size_t h, double t) {
+    if (t >= 2) {
+        drawFlag(c, w, h, t);
+        return;
+    }
+    CGContextSetRGBFillColor(c, 0.4, 0.4, 0.4, 1);
+    CGContextFillRect(c, CGRectMake(0, 0, w, h));
+    CGContextSetRGBFillColor(c, 0.3, 0.3, 0.32, 1);
+    CGContextFillEllipseInRect(c, CGRectMake(w * (0.1 + 0.3 * t), h * 0.2, w * 0.3, w * 0.3));
 }
 
 static BOOL makeVideo(NSURL *url, size_t w, size_t h, int fps, int seconds, void (*draw)(CGContextRef, size_t, size_t, double)) {
@@ -208,6 +222,24 @@ static double differ(CGImageRef a, CGImageRef b) {
     return w == w2 && h == h2 ? sum / (w * h * 3) : 255;
 }
 
+// The mean of the color channels in rows `from` to `to` of the height, counted from the top, 0 to 255, as the
+// image holds them: in its own color space, so a decoded frame (Core Media's Rec. 709) and a preview (sRGB) both
+// give the values SGLyricsClip.m worked on.
+static double meanIn(CGImageRef image, double from, double to) {
+    size_t w = CGImageGetWidth(image), h = CGImageGetHeight(image);
+    uint8_t *p = calloc(w * h, 4);
+    CGContextRef context = CGBitmapContextCreate(p, w, h, 8, w * 4, CGImageGetColorSpace(image), (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGContextDrawImage(context, CGRectMake(0, 0, w, h), image);
+    CGContextRelease(context);
+    double sum = 0;
+    size_t count = 0;
+    for (size_t y = from * h; y < to * h; y++) {
+        for (size_t x = 0; x < w; x++, count += 3) sum += p[(y * w + x) * 4] + p[(y * w + x) * 4 + 1] + p[(y * w + x) * 4 + 2];
+    }
+    free(p);
+    return count ? sum / count : 0;
+}
+
 typedef struct { double seconds; int frames; CGSize size; BOOL h264; } Read;
 
 static Read readBack(NSURL *url) {
@@ -302,7 +334,7 @@ int motionMain(NSURL *out, int argc, char **argv) {
         CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
         BOOL ok = !strcmp(argv[0], "one")
             ? SGLyricsClipWriteOverMotion([out URLByAppendingPathComponent:@"one.mp4"], video, @"(And I turn into a stalker)",
-                                          @"I stare at the moon", nil, @"When nighttime comes", 1, 4.5)
+                                          @"I stare at the moon", nil, @"When nighttime comes", 1, 4.5, SGLyricsClipLeft)
             : SGMotionClipShape(video, 0.75, [out URLByAppendingPathComponent:@"one-cut.mp4"]);
         printf("%s %s in %.0f ms; footprint now %.1f MB, peak %.1f MB\n", argv[0], ok ? "written" : "FAILED",
                (CFAbsoluteTimeGetCurrent() - start) * 1000, footprintMB(NO), footprintMB(YES));
@@ -317,13 +349,20 @@ int motionMain(NSURL *out, int argc, char **argv) {
     printf("artwork IDs\n");
     NSURL *a = [NSURL fileURLWithPath:@"/c/Motion/3f9a0c11d2e4b5a6978877665544332211009988.mp4"];
     NSURL *b = [NSURL fileURLWithPath:@"/c/Motion/3f9a77aa00bb11cc22dd33ee44ff556677889900.mp4"];
-    check(![SGLyricsClipLook(a, SGLyricsClipStill) isEqual:SGLyricsClipLook(a, SGLyricsClipAnimated)],
-          [NSString stringWithFormat:@"the style is in it over moving artwork (%@, %@)", SGLyricsClipLook(a, SGLyricsClipStill),
-           SGLyricsClipLook(a, SGLyricsClipAnimated)]);
-    check(![SGLyricsClipLook(a, SGLyricsClipStill) isEqual:SGLyricsClipLook(b, SGLyricsClipStill)], @"another video gives another one");
-    check([SGLyricsClipLook(a, SGLyricsClipStill) isEqual:SGLyricsClipLook([a copy], SGLyricsClipStill)], @"the same video and style give the same one");
-    check(![SGLyricsClipLook(nil, SGLyricsClipStill) isEqual:SGLyricsClipLook(a, SGLyricsClipStill)]
-          && ![SGLyricsClipLook(nil, SGLyricsClipStill) isEqual:SGLyricsClipLook(nil, SGLyricsClipAnimated)], @"over the cover, the style alone");
+    SGLyricsClipLayout left = SGLyricsClipLeft;
+    check(![SGLyricsClipLook(a, SGLyricsClipStill, left) isEqual:SGLyricsClipLook(a, SGLyricsClipAnimated, left)],
+          [NSString stringWithFormat:@"the style is in it over moving artwork (%@, %@)", SGLyricsClipLook(a, SGLyricsClipStill, left),
+           SGLyricsClipLook(a, SGLyricsClipAnimated, left)]);
+    check(![SGLyricsClipLook(a, SGLyricsClipStill, left) isEqual:SGLyricsClipLook(b, SGLyricsClipStill, left)], @"another video gives another one");
+    check([SGLyricsClipLook(a, SGLyricsClipStill, left) isEqual:SGLyricsClipLook([a copy], SGLyricsClipStill, left)],
+          @"the same video, style and layout give the same one");
+    check(![SGLyricsClipLook(nil, SGLyricsClipStill, left) isEqual:SGLyricsClipLook(a, SGLyricsClipStill, left)]
+          && ![SGLyricsClipLook(nil, SGLyricsClipStill, left) isEqual:SGLyricsClipLook(nil, SGLyricsClipAnimated, left)], @"over the cover, the style alone");
+    NSSet *looks = [NSSet setWithArray:@[SGLyricsClipLook(a, SGLyricsClipStill, left), SGLyricsClipLook(a, SGLyricsClipStill, SGLyricsClipCentered),
+                                         SGLyricsClipLook(a, SGLyricsClipStill, SGLyricsClipPoster), SGLyricsClipLook(nil, SGLyricsClipStill, left),
+                                         SGLyricsClipLook(nil, SGLyricsClipStill, SGLyricsClipCentered), SGLyricsClipLook(nil, SGLyricsClipStill, SGLyricsClipPoster)]];
+    check(looks.count == 6, [NSString stringWithFormat:@"the layout is in it, over moving artwork and the cover (%@)",
+                             [looks.allObjects componentsJoinedByString:@", "]]);
 
     // A video gone from the store or cut short fails at once, with no preview, for LyricsArtwork.x to remember.
     printf("videos that will not read\n");
@@ -334,9 +373,9 @@ int motionMain(NSURL *out, int argc, char **argv) {
     for (NSURL *bad in @[gone, cutShort]) {
         NSURL *clip = [out URLByAppendingPathComponent:[@"from-" stringByAppendingString:bad.lastPathComponent]];
         CFAbsoluteTime started = CFAbsoluteTimeGetCurrent();
-        BOOL written = SGLyricsClipWriteOverMotion(clip, bad, nil, @"A line", nil, @"the next", 1, 3);
+        BOOL written = SGLyricsClipWriteOverMotion(clip, bad, nil, @"A line", nil, @"the next", 1, 3, left);
         double ms = (CFAbsoluteTimeGetCurrent() - started) * 1000;
-        CGImageRef preview = SGLyricsClipMotionFrame(bad, nil, @"A line", nil, @"the next", 1);
+        CGImageRef preview = SGLyricsClipMotionFrame(bad, nil, @"A line", nil, @"the next", 1, 3, left);
         check(!written && !preview && ![NSFileManager.defaultManager fileExistsAtPath:clip.path],
               [NSString stringWithFormat:@"%@: not written (in %.0f ms) and no preview", bad.lastPathComponent, ms]);
         CGImageRelease(preview);
@@ -362,7 +401,15 @@ int motionMain(NSURL *out, int argc, char **argv) {
         @[@"whole", @"Before", @"A line longer than the video", @"", @3.0, @20.0],
         @[@"rest", @"", @"", @"The first line, coming up", @0.0, @4.0],
         @[@"bare", @"", @"", @"", @2.0, @2.0],
+        // Too tall even at the smallest size: the lines either side and the translation go, the line ends in an ellipsis.
+        @[@"overflow", @"Hold on", [@"" stringByPaddingToLength:900 withString:@"Every word I never said keeps ringing out across the quiet night, " startingAtIndex:0],
+          @"until the morning finds us", @1.0, @3.0,
+          [@"" stringByPaddingToLength:300 withString:@"and every promise I forgot comes back to find me here again, " startingAtIndex:0]],
+        @[@"overflow-cjk", @"前の行", [@"" stringByPaddingToLength:420 withString:@"夜空に光る星を数えながら君の名前を何度も呼んだ、" startingAtIndex:0],
+          @"君の名前を呼んだ", @1.0, @3.0,
+          [@"" stringByPaddingToLength:200 withString:@"밤하늘에 빛나는 별을 세면서 너의 이름을 몇 번이고 불렀어, " startingAtIndex:0]],
     ];
+    NSArray *layoutNames = @[@"", @"-centered", @"-poster"];
     for (NSURL *video in videos) {
         NSString *name = video.lastPathComponent.stringByDeletingPathExtension;
         AVURLAsset *asset = [AVURLAsset URLAssetWithURL:video options:@{AVURLAssetPreferPreciseDurationAndTimingKey: @YES}];
@@ -396,15 +443,18 @@ int motionMain(NSURL *out, int argc, char **argv) {
         SGMotionClipShape(video, 0.75, [out URLByAppendingPathComponent:[name stringByAppendingString:@"-cut.mp4"]]);
         double cutMs = (CFAbsoluteTimeGetCurrent() - start) * 1000;
         printf("  the cut alone: %.0f ms for %.2f s, %.1f ms a frame\n", cutMs, length, cutMs / (length * fps));
+        // Every case in Left; the others, only over the stand-ins, without the looks behind the words.
+        SGLyricsClipLayout lastLayout = [video isEqual:flag] || [video isEqual:dark] ? SGLyricsClipPoster : SGLyricsClipLeft;
+        for (SGLyricsClipLayout layout = SGLyricsClipLeft; layout <= lastLayout; layout++)
         for (NSArray *c in cases) @autoreleasepool {
             double from = [c[4] doubleValue] < 0 ? length + [c[4] doubleValue] : [c[4] doubleValue], seconds = [c[5] doubleValue];
             double wanted = MIN(seconds, length);
             NSString *translation = c.count > 6 ? c[6] : nil;
-            NSURL *url = [out URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@.mp4", name, c[0]]];
+            NSURL *url = [out URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@%@.mp4", name, c[0], layoutNames[layout]]];
             start = CFAbsoluteTimeGetCurrent();
-            BOOL written = SGLyricsClipWriteOverMotion(url, video, c[1], c[2], translation, c[3], from, seconds);
+            BOOL written = SGLyricsClipWriteOverMotion(url, video, c[1], c[2], translation, c[3], from, seconds, layout);
             if (!matches) {
-                CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from);
+                CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from, seconds, layout);
                 check(!written && !preview && ![NSFileManager.defaultManager fileExistsAtPath:url.path],
                       @"not written and no preview, so the line falls back to the cover rather than showing without its words");
                 CGImageRelease(preview);
@@ -436,15 +486,16 @@ int motionMain(NSURL *out, int argc, char **argv) {
             check(whiteIn(first, 0, 0.15, 225) < 0.0005 && whiteIn(first, 0.65, 1, 225) < 0.0005, @"nothing white under the clock or the controls");
             double moved = differ(first, middle);
             check(moved > 2, [NSString stringWithFormat:@"the picture moves (%.1f of 255 between the start and the middle)", moved]);
-            CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from);
+            CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from, seconds, layout);
             double off = preview ? differ(preview, first) : 255;
             check(off < 10, [NSString stringWithFormat:@"the preview is the first frame (%.1f of 255 apart, the encode's loss)", off]);
             if (preview && ([c[0] isEqual:@"line"] || translation))
-                savePNG(preview, [out URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@-preview.png", name, c[0]]]);
-            if (preview && translation) {
+                savePNG(preview, [out URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@%@-preview.png", name, c[0], layoutNames[layout]]]);
+            if (preview && translation && layout == SGLyricsClipLeft && ![c[0] hasPrefix:@"overflow"]) {
                 // Behind the dimmed lines: on the bright flag, the narrower softening and fixed band before left the
                 // stars' pattern at 1.31 and a dimmed line 3.4:1 on the brightest there.
-                CGImageRef behind = SGLyricsClipMotionFrame(video, blanked(c[1]), blanked(c[2]), blanked(translation), blanked(c[3]), from);
+                CGImageRef behind = SGLyricsClipMotionFrame(video, blanked(c[1]), blanked(c[2]), blanked(translation), blanked(c[3]), from,
+                                                            seconds, layout);
                 double dimmed, outside, pattern = behind ? behindDimmed(preview, behind, &dimmed, &outside) : -1;
                 NSString *what = [NSString stringWithFormat:@"behind the translation and the next line: pattern %.2f of 255, a dimmed "
                                   "line on the brightest %.1f:1 (the blank frame %.2f apart away from the words)", pattern, dimmed, outside];
@@ -453,7 +504,7 @@ int motionMain(NSURL *out, int argc, char **argv) {
                 CGImageRelease(behind);
             }
             CGImageRelease(preview);
-            if ([c[0] isEqual:@"bare"]) {
+            if ([c[0] isEqual:@"bare"] && layout == SGLyricsClipLeft) {
                 // The picture under the words, as dimmed: white on its brightest 5%, and the dimmed lines' 40% white over it.
                 double mean, top = brightIn(first, 0.30, 0.50, &mean);
                 double dimTop = linear(255 * (0.4 + 0.6 * pow(top, 1 / 2.2)));
@@ -467,6 +518,45 @@ int motionMain(NSURL *out, int argc, char **argv) {
             CGImageRelease(first);
             CGImageRelease(middle);
         }
+    }
+
+    // Over a video dark at its start and bright later, the band is as dark as the brightest of the clip's stretch
+    // asks, from its first frame on, and the preview for that stretch agrees. Judged by the first frame alone, as
+    // before, it kept kBandDim's 0.4 of the picture, which the stretch over the grey alone still gives.
+    printf("\na video dark at its start and bright later\n");
+    NSURL *dusk = [out URLByAppendingPathComponent:@"source-dusk.mp4"];
+    check(makeVideo(dusk, 720, 960, 30, 6, drawDusk), @"made it, 720x960, 30 fps, 6 s: 2 s of mid grey, then the flag");
+    {
+        // The lines as spaces, so the rows looked at hold the picture alone.
+        NSString *p = blanked(@"(And I turn into a stalker)"), *l = blanked(@"I stare at the moon"), *n = blanked(@"When nighttime comes");
+        NSURL *url = [out URLByAppendingPathComponent:@"dusk-blank.mp4"];
+        start = CFAbsoluteTimeGetCurrent();
+        BOOL written = SGLyricsClipWriteOverMotion(url, dusk, p, l, nil, n, 0, 3.5, left);
+        double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000;
+        check(written, [NSString stringWithFormat:@"0 to 3.5 s written in %.0f ms, %.1f ms a frame", ms, ms / 105]);
+        CGImageRef first = frameAt(url, 0), late = frameAt(url, 3), sourceFirst = frameAt(dusk, 0), sourceLate = frameAt(dusk, 3);
+        CGImageRef preview = SGLyricsClipMotionFrame(dusk, p, l, nil, n, 0, 3.5, left);
+        CGImageRef early = SGLyricsClipMotionFrame(dusk, p, l, nil, n, 0, 1.5, left);
+        if (written && first && late && sourceFirst && sourceLate && preview && early) {
+            double grey = meanIn(sourceFirst, 0.3, 0.5);
+            double keptEarly = meanIn(early, 0.3, 0.5) / grey, keptFirst = meanIn(first, 0.3, 0.5) / grey;
+            double keptPreview = meanIn(preview, 0.3, 0.5) / grey, keptLate = meanIn(late, 0.3, 0.5) / meanIn(sourceLate, 0.3, 0.5);
+            check(fabs(keptEarly - 0.4) < 0.03,
+                  [NSString stringWithFormat:@"over 0 to 1.5 s, the grey alone, the band keeps %.2f of the picture, as first-frame fitting did", keptEarly]);
+            check(keptFirst < keptEarly * 0.8 && keptLate < keptEarly * 0.8,
+                  [NSString stringWithFormat:@"over 0 to 3.5 s it is darker from the first frame on: keeps %.2f at 0 s and %.2f at 3 s, "
+                   "against %.2f by the first frame", keptFirst, keptLate, keptEarly]);
+            check(fabs(keptPreview - keptFirst) < 0.02,
+                  [NSString stringWithFormat:@"the preview for the same stretch has the same band (keeps %.2f, the clip %.2f)", keptPreview, keptFirst]);
+        } else {
+            check(NO, @"frames read back");
+        }
+        CGImageRelease(first);
+        CGImageRelease(late);
+        CGImageRelease(sourceFirst);
+        CGImageRelease(sourceLate);
+        CGImageRelease(preview);
+        CGImageRelease(early);
     }
     printf("\nfootprint now %.1f MB, peak %.1f MB\n", footprintMB(NO), footprintMB(YES));
     printf("%s, clips in %s\n", failures ? "FAILED" : "all passed", out.path.UTF8String);
