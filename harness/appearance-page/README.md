@@ -23,3 +23,17 @@ file registers nothing.
 
 What it does not cover: a finger on the pull-down (UIKit opens it only from a touch), the document picker itself,
 and Fonts.x's hooks, which only Spotify can show.
+
+`font-race` is an offline, self-terminating regression using the simulator's Chalkduster file.
+It pauses the real import at its worker copy, selects the real New York row, and verifies that import
+completion registers/makes the family available without overriding the choice. Direct defaults removal
+(reset) and replacement (restore) during an import must also survive completion. An unchanged stored
+choice or unchanged absent preference must select Custom. Failures log and exit nonzero, never crash.
+It also switches Avenir Next → Georgia through the actual More fonts row, changes a library identifier
+without changing its enum, and requests a real restart while an unset-start import is pending.
+Registration still completes during the restart delay, but auto-selection must not undo the reset.
+`OUT` may select an isolated build directory.
+
+    OUT=/absolute/unique/output ./build.sh
+    xcrun simctl install <udid> /absolute/unique/output/AppearancePageHarness.app
+    xcrun simctl launch --console <udid> com.vojta.appearancepageharness font-race

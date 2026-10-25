@@ -1,5 +1,6 @@
 #import "SGPrefs.h"
 #import <os/lock.h>
+#import <stdatomic.h>
 
 // Hooks read switches on every layout and frame, and a defaults read takes CFPreferences' lock: each key's
 // stored value (NSNull for none) is kept after its first read and all are dropped whenever the defaults
@@ -7,6 +8,7 @@
 static os_unfair_lock memoLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableDictionary<NSString *, id> *memo;
 static NSUInteger memoGeneration;
+static atomic_bool restartPending;
 
 NSSet<NSString *> *SGPrivatePreferenceKeys(void) {
     static NSSet<NSString *> *keys;
@@ -102,7 +104,12 @@ void SGMigrateKey(NSString *from, NSString *to) {
     [store removeObjectForKey:from];
 }
 
+BOOL SGRestartPending(void) {
+    return atomic_load(&restartPending);
+}
+
 void SGRestartSpotify(void) {
+    atomic_store(&restartPending, YES);
     [NSUserDefaults.standardUserDefaults synchronize];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ exit(0); });
 }

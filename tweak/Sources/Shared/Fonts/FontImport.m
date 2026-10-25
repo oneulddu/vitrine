@@ -77,14 +77,14 @@ NSString *SGRegisterCustomFont(void) {
 }
 
 // The imported files unregistered and deleted, and the choice forgotten.
-static void removeImported(void) {
+static void removeImported(BOOL resetSelection) {
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     for (NSURL *url in storedFiles()) {
         CTFontManagerUnregisterFontsForURL((__bridge CFURLRef)url, kCTFontManagerScopeProcess, NULL);
         [NSFileManager.defaultManager removeItemAtURL:url error:nil];
     }
     for (NSString *key in @[SGKeyAppFontFiles, SGKeyAppFontName]) [store removeObjectForKey:key];
-    if (SGAppFontChosen() == SGAppFontCustom) SGSetInt(SGKeyAppFont, SGAppFontSpotify);
+    if (resetSelection && SGAppFontChosen() == SGAppFontCustom) SGSetInt(SGKeyAppFont, SGAppFontSpotify);
 }
 
 static void tell(NSString *title, NSString *message, BOOL restart) {
@@ -100,8 +100,17 @@ static void tell(NSString *title, NSString *message, BOOL restart) {
 
 // The files are checked and copied aside before the ones in use are touched, so files Core Text will not read,
 // of more than one family, or that fail to copy change nothing.
+static NSArray *fontSelection(void) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    // NSNull preserves absent preferences, distinct from explicit values including the default zero.
+    return @[[store objectForKey:SGKeyAppFont] ?: NSNull.null,
+             [store objectForKey:SGKeyAppFontFamily] ?: NSNull.null,
+             [store objectForKey:SGKeyAppFontLibrary] ?: NSNull.null];
+}
+
 static BOOL sg_importing;
 static void import(NSArray<NSURL *> *picked, dispatch_block_t done) {
+    NSArray *selection = fontSelection();
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     NSMutableArray<NSURL *> *scoped = [NSMutableArray array];
     NSMutableArray<NSString *> *families = [NSMutableArray array];
@@ -129,7 +138,7 @@ static void import(NSArray<NSURL *> *picked, dispatch_block_t done) {
     dispatch_async(dispatch_get_main_queue(), ^{
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     if (family && copied.count == picked.count) {
-        removeImported();
+        removeImported(NO); // replacing the files is not a user font selection
         for (NSString *file in copied) {
             NSURL *target = [fontFolder() URLByAppendingPathComponent:file];
             [files removeItemAtURL:target error:nil];
@@ -138,15 +147,19 @@ static void import(NSArray<NSURL *> *picked, dispatch_block_t done) {
         [files removeItemAtURL:incoming error:nil];
         [store setObject:copied forKey:SGKeyAppFontFiles];
         [store setObject:family forKey:SGKeyAppFontName];
+        // Keep the imported family available even during a pending restart, but never change its
+        // selection: a reset/restore may have left the same (including unset) preference values.
         if (SGRegisterCustomFont()) {
-            SGSetInt(SGKeyAppFont, SGAppFontCustom);
-            tell(SGL(@"settings.font.imported.alert.title", @"Font imported"), [NSString stringWithFormat:SGL(@"settings.font.imported.alert.message", @"%@ becomes the app's font when Spotify starts again."), family], YES);
+            if (!SGRestartPending() && [selection isEqual:fontSelection()]) {
+                SGSetInt(SGKeyAppFont, SGAppFontCustom);
+                tell(SGL(@"settings.font.imported.alert.title", @"Font imported"), [NSString stringWithFormat:SGL(@"settings.font.imported.alert.message", @"%@ becomes the app's font when Spotify starts again."), family], YES);
+            }
             done();
             return;
         }
     }
     [files removeItemAtURL:incoming error:nil];
-    if (family && copied.count == picked.count) removeImported();   // copied in but Core Text took none of it
+    if (family && copied.count == picked.count) removeImported(YES);   // copied in but Core Text took none of it
     tell(SGL(@"settings.font.failed.alert.title", @"Font not imported"), fonts && !family ? SGL(@"settings.font.failed.multiple_families.alert.message", @"These files are more than one family. Pick the files of one family together.")
                                                : SGL(@"settings.font.failed.invalid_files.alert.message", @"Choose valid .ttf, .otf, .ttc or .otc font files."), NO);
     done();
@@ -383,7 +396,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     if (path.section != SGFontYours || path.row != 0 || !self.importedName.length) return nil;
     UIContextualAction *delete = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:SGL(@"common.delete", @"Delete")
         handler:^(UIContextualAction *action, UIView *view, void (^done)(BOOL)) {
-            removeImported();
+            removeImported(YES);
             [self refresh];
             done(YES);
         }];

@@ -64,6 +64,9 @@ int main(void) {
         [store removeObjectForKey:SGKeyStock];
 
         for (NSString *key in @[flag, choice]) [store removeObjectForKey:key];
+        CHECK(!SGRestartPending());
+        SGRestartSpotify();
+        dispatch_sync(dispatch_get_global_queue(0, 0), ^{ CHECK(SGRestartPending()); });
         puts("prefs: ok");
     }
     return 0;

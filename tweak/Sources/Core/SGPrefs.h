@@ -42,6 +42,8 @@ void SGMigrateKey(NSString *from, NSString *to);
 
 // Quits Spotify so the hooks read the switches afresh on the next launch; the writes reach cfprefsd first.
 void SGRestartSpotify(void);
+// Set immediately when a restart is requested, until process exit. Safe to read on any thread.
+BOOL SGRestartPending(void);
 
 // Apple Music's red, 0xRRGGBB, offered under either look's accent color.
 #define SGAppleMusicRed 0xFA2D48
