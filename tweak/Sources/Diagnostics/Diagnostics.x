@@ -3,6 +3,7 @@
 // the background or the full player appears.
 #import "Core/SGCore.h"
 #import "Diagnostics.h"
+#import "SGDriverAuth.h"
 #import <sys/socket.h>
 #import <ifaddrs.h>
 #import <arpa/inet.h>
@@ -73,9 +74,10 @@ static void appendModState(NSMutableString *out) {
     [out appendFormat:@"== mod\nstock %@\n", [stored[SGKeyStock] boolValue] ? @"yes" : @"no"];
     NSArray<NSString *> *local = @[@"spotifyglass.adblock.counts", @"spotifyglass.privacy.counts", @"spotifyglass.update.",
                                    @"spotifyglass.signing.", @"spotifyglass.onboarding.", @"spotifyglass.navbar.stock", @"spotifyglass.redesign.navbar.stock",
-                                   @"spotifyglass.musixmatch.token"];
+    ];
     for (NSString *key in [stored.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
         if (![key hasPrefix:@"spotifyglass."] || [key isEqualToString:SGKeyStock]) continue;
+        if (SGPrivatePreferenceKey(key)) continue;
         BOOL skip = NO;
         for (NSString *prefix in local) skip |= [key hasPrefix:prefix];
         if (!skip) [out appendFormat:@"%@ = %@\n", key, describeValue(stored[key])];
@@ -153,10 +155,6 @@ static NSString *readRequest(int client) {
     return [[NSString alloc] initWithData:request encoding:NSUTF8StringEncoding] ?: @"";
 }
 
-#if SG_DRIVER
-static NSString *driverToken(void);
-#endif
-
 // `tailnet`: the client came in on the Tailscale listener, which answers nothing without the token.
 static void serve(int client, BOOL tailnet) {
     struct timeval timeout = {2, 0};
@@ -168,8 +166,7 @@ static void serve(int client, BOOL tailnet) {
 #else
     NSString *request = readRequest(client);
     if (tailnet) {
-        NSString *token = [NSString stringWithFormat:@"\r\nX-Phone-Token: %@\r\n", driverToken()];
-        if ([request rangeOfString:token options:NSCaseInsensitiveSearch].location == NSNotFound) {
+        if (!SGDriverRequestAuthorized(request, SGDriverToken())) {
             respond(client, @"403 Forbidden", @"application/json", [@"{\"ok\":false,\"error\":\"the tailnet listener needs the X-Phone-Token header\"}" dataUsingEncoding:NSUTF8StringEncoding]);
             close(client);
             return;
@@ -238,24 +235,8 @@ static int listenOn(in_addr_t address, BOOL tailnet, dispatch_source_t __strong 
 // The tailnet listener: the user asked to drive the app from their Mac over Tailscale. It binds the phone's
 // exact Tailscale address (a utun interface in 100.64.0.0/10), never every interface and never Wi-Fi or
 // cellular, so only the user's own tailnet reaches it, and every request on it needs the token, made once and
-// kept in the app's defaults, which the log prints at launch for scripts/phone.py.
-static NSString *driverToken(void) {
-    static NSString *token;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        NSString *const key = @"spotifyglass.driver.token";
-        token = [NSUserDefaults.standardUserDefaults stringForKey:key];
-        if (token.length < 32) {
-            uint8_t bytes[16];
-            arc4random_buf(bytes, sizeof(bytes));   // cryptographically random on Darwin
-            NSMutableString *hex = [NSMutableString string];
-            for (size_t i = 0; i < sizeof(bytes); i++) [hex appendFormat:@"%02x", bytes[i]];
-            token = hex;
-            [NSUserDefaults.standardUserDefaults setObject:token forKey:key];
-        }
-    });
-    return token;
-}
+// kept in the app's defaults. SGDriverAuth owns migration and comparison; local tooling reads the
+// stored credential through the loopback pref command, never through a log or screen tree.
 
 static in_addr_t tailnetAddress(void) {
     struct ifaddrs *list = NULL;
@@ -295,13 +276,16 @@ static void watchTailnet(void) {
             return;
         }
         bound = address;
-        SGLog(@"driver: tailnet listener on %s:%u, token %@", text, kTreePort, driverToken());
+        SGLog(@"driver: tailnet listener on %s:%u, authentication required", text, kTreePort);
     });
     dispatch_resume(timer);
 }
 #endif
 
 static void startTreeServer(void) {
+#if SG_DRIVER
+    SGDriverToken();   // migrate before accepting requests, including loopback pref reads
+#endif
     static dispatch_source_t source;
     if (listenOn(htonl(INADDR_LOOPBACK), NO, &source) < 0) {   // loopback, which only the cable's iproxy reaches
         SGLog(@"tree server: could not listen on %u", kTreePort);

@@ -909,7 +909,8 @@ static NSDictionary<NSString *, SGCommand> *commands(void) {
                 if (p[@"remove"]) [store removeObjectForKey:key];
                 else if (p[@"text"]) [store setObject:p[@"text"] forKey:key];
                 else if (p[@"value"]) [store setInteger:[p[@"value"] integerValue] forKey:key];
-                return @{@"key" : key, @"now" : [store objectForKey:key] ?: [NSNull null]};
+                return @{@"key" : key, @"now" : [store objectForKey:key] ?: [NSNull null],
+                         @"private" : @(SGPrivatePreferenceKey(key))};
             },
             @"settings.open" : ^NSDictionary *(NSDictionary *p) {
                 return onMain(^id {

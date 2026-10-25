@@ -8,6 +8,13 @@
 
 int main(void) {
     @autoreleasepool {
+        for (NSString *key in @[@"spotifyglass.driver.token", @"spotifyglass.driver.token.rotated",
+                                @"vitrine.private.driver.token.rotated",
+                                @"spotifyglass.musixmatch.token", @"spotifyglass.motion.token"])
+            HARNESS_CHECK(SGPrivatePreferenceKey(key));
+        HARNESS_CHECK(!SGPrivatePreferenceKey(@"spotifyglass.redesign"));
+        HARNESS_CHECK(!SGPrivatePreferenceKey(@"spotifyglass.motion.sources"));
+
         NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
         NSString *flag = @"spotifyglass.test.flag", *choice = @"spotifyglass.test.int";
         for (NSString *key in @[flag, choice, SGKeyStock]) [store removeObjectForKey:key];

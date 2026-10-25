@@ -8,6 +8,20 @@ static os_unfair_lock memoLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableDictionary<NSString *, id> *memo;
 static NSUInteger memoGeneration;
 
+NSSet<NSString *> *SGPrivatePreferenceKeys(void) {
+    static NSSet<NSString *> *keys;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        keys = [NSSet setWithArray:@[SGKeyDriverToken, SGKeyDriverTokenRotated, SGKeyDriverTokenLegacyRotation,
+                                    @"spotifyglass.musixmatch.token", @"spotifyglass.motion.token"]];
+    });
+    return keys;
+}
+
+BOOL SGPrivatePreferenceKey(NSString *key) {
+    return [SGPrivatePreferenceKeys() containsObject:key];
+}
+
 void SGPrefsChanged(void) {
     os_unfair_lock_lock(&memoLock);
     [memo removeAllObjects];

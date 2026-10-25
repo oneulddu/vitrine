@@ -6,12 +6,14 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "Settings/SGPageStyle.h"
 #import "About.h"
+#import "SGDiagnosticRedaction.h"
 #import "Redesigned/Player/Player.h"
 
 // Every key under the prefix travels, the way the reset sweeps them, so a new switch needs nothing
 // here. What is left out belongs to this install rather than to its user's choices.
 static BOOL isSetting(NSString *key) {
     if (![key hasPrefix:@"spotifyglass."]) return NO;
+    if (SGPrivatePreferenceKey(key)) return NO;
     for (NSString *local in @[@"spotifyglass.adblock.counts", @"spotifyglass.privacy.counts", @"spotifyglass.update.",
                               @"spotifyglass.signing.", @"spotifyglass.onboarding.", @"spotifyglass.navbar.stock",
                               @"spotifyglass.redesign.navbar.stock", @"spotifyglass.automix.saved",
@@ -25,11 +27,14 @@ static NSDictionary *storedDefaults(void) {
     return [NSUserDefaults.standardUserDefaults persistentDomainForName:NSBundle.mainBundle.bundleIdentifier] ?: @{};
 }
 
-static void showAlert(UIViewController *presenter, NSString *title, NSString *message, UIAlertAction *confirm) {
+static UIAlertController *showAlert(UIViewController *presenter, NSString *title, NSString *message, UIAlertAction *confirm, void (^cancelled)(void)) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     if (confirm) [alert addAction:confirm];
-    [alert addAction:[UIAlertAction actionWithTitle:confirm ? SGL(@"common.cancel", @"Cancel") : SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:confirm ? SGL(@"common.cancel", @"Cancel") : SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
+        if (cancelled) cancelled();
+    }]];
     [presenter presentViewController:alert animated:YES completion:nil];
+    return alert;
 }
 
 void SGExportSettings(void) {
@@ -108,7 +113,8 @@ static NSError *writeDiagnostics(NSMutableString *text, NSURL *url) {
                                                     encoding:NSUTF8StringEncoding error:nil];
         [text appendFormat:@"\n\n== config Spotify's server last sent\n%@", config ?: @"(none yet: Spoof Premium is off, or no fetch so far)\n"];
         NSError *writeError = nil;
-        [text writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
+        NSString *safe = SGRedactDiagnostics(text, NSUserDefaults.standardUserDefaults.dictionaryRepresentation);
+        [safe writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
         if (writeError) SGLog(@"diagnostics export failed: %@", writeError.localizedDescription);
         return writeError;
 }
@@ -150,7 +156,7 @@ void SGShareDiagnostics(UIViewController *presenter) {
         UIViewController *owner = weakPresenter;
         if (!SGDiagnosticsCanPresentFrom(owner)) return;
         if (error) {
-            showAlert(owner, SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), error.localizedDescription, nil);
+            showAlert(owner, SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), error.localizedDescription, nil, nil);
             return;
         }
         UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
@@ -223,31 +229,105 @@ static void importSettings(NSDictionary *settings) {
 }
 
 @interface SGSettingsPicker : NSObject <UIDocumentPickerDelegate>
+@property (nonatomic, weak) UIViewController *presenter;
+@property (nonatomic, weak) UIDocumentPickerViewController *picker;
+@property (nonatomic) BOOL pending, reading;
+- (void)finish;
 @end
+
+static const NSUInteger kSettingsImportLimitBytes = 5 * 1024 * 1024;
+
+// The picker gives us a local copy. Reject a large file before reading it, and bound the stream too
+// so a file that grows after the size check cannot make the import allocate without a limit.
+static NSDictionary *readSettingsFile(NSURL *url) {
+    NSNumber *size = nil;
+    if (![url getResourceValue:&size forKey:NSURLFileSizeKey error:nil] || size.unsignedLongLongValue > kSettingsImportLimitBytes) return nil;
+    NSInputStream *stream = [NSInputStream inputStreamWithURL:url];
+    [stream open];
+    NSMutableData *data = [NSMutableData data];
+    uint8_t buffer[16384];
+    NSInteger count = 0;
+    while (data.length <= kSettingsImportLimitBytes
+           && (count = [stream read:buffer maxLength:MIN(sizeof(buffer), kSettingsImportLimitBytes + 1 - data.length)]) > 0) {
+        [data appendBytes:buffer length:(NSUInteger)count];
+    }
+    [stream close];
+    if (count < 0 || data.length > kSettingsImportLimitBytes) return nil;
+    id file = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+    return [file isKindOfClass:NSDictionary.class] && [file[@"settings"] isKindOfClass:NSDictionary.class] ? file : nil;
+}
 
 @implementation SGSettingsPicker
 
-- (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    NSData *data = [NSData dataWithContentsOfURL:urls.firstObject];
-    id file = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
-    NSDictionary *settings = [file isKindOfClass:NSDictionary.class] ? file[@"settings"] : nil;
-    if (![settings isKindOfClass:NSDictionary.class]) {
-        showAlert(SGTopController(), SGL(@"settings.mod.backup.invalid_file.alert.title", @"Not a settings file"), SGL(@"settings.mod.backup.invalid_file.alert.message", @"Pick a file made by Export settings."), nil);
+- (void)finish {
+    self.pending = NO;
+    self.reading = NO;
+    self.presenter = nil;
+    self.picker = nil;
+}
+
+- (void)presentFile:(NSDictionary *)file {
+    UIViewController *owner = self.presenter;
+    if (!SGDiagnosticsCanPresentFrom(owner)) {
+        [self finish];
         return;
     }
-    NSString *mod = [file[@"mod"] isKindOfClass:NSString.class] ? file[@"mod"] : @"unknown";
-    NSString *message = [NSString stringWithFormat:SGL(@"settings.mod.backup.import_confirm.alert.message", @"Your settings are replaced by the file's, exported from version %@. Anything it does not have goes back to its default, and Spotify restarts."), mod];
-    showAlert(SGTopController(), SGL(@"settings.mod.backup.import_confirm.alert.title", @"Import settings?"), message, [UIAlertAction actionWithTitle:SGL(@"settings.mod.backup.action.import_and_restart", @"Import and restart") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-        importSettings(settings);
-    }]);
+    NSString *title, *message;
+    UIAlertAction *confirm = nil;
+    if (file) {
+        NSString *mod = [file[@"mod"] isKindOfClass:NSString.class] ? file[@"mod"] : @"unknown";
+        title = SGL(@"settings.mod.backup.import_confirm.alert.title", @"Import settings?");
+        message = [NSString stringWithFormat:SGL(@"settings.mod.backup.import_confirm.alert.message", @"Your settings are replaced by the file's, exported from version %@. Anything it does not have goes back to its default, and Spotify restarts."), mod];
+        confirm = [UIAlertAction actionWithTitle:SGL(@"settings.mod.backup.action.import_and_restart", @"Import and restart") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            [self finish];
+            importSettings(file[@"settings"]);
+        }];
+    } else {
+        title = SGL(@"settings.mod.backup.invalid_file.alert.title", @"Not a settings file");
+        message = SGL(@"settings.mod.backup.invalid_file.alert.message", @"Pick a file made by Export settings.");
+    }
+    UIAlertController *alert = showAlert(owner, title, message, confirm, ^{ [self finish]; });
+    if (owner.presentedViewController != alert) [self finish];
+}
+
+- (void)documentPickerWasCancelled:(UIDocumentPickerViewController *)picker {
+    if (self.picker == picker) [self finish];
+}
+
+- (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
+    if (!self.pending || self.reading || self.picker != picker) return;
+    self.reading = YES;
+    NSURL *url = urls.firstObject;
+    // Finish the picker's own dismissal before reading, so even a tiny file cannot race it.
+    void (^read)(void) = ^{
+        if (self.picker != picker) return;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSDictionary *file = readSettingsFile(url);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (self.picker == picker) [self presentFile:file];
+            });
+        });
+    };
+    if (picker.isBeingDismissed && picker.transitionCoordinator) {
+        [picker.transitionCoordinator animateAlongsideTransition:nil completion:^(id<UIViewControllerTransitionCoordinatorContext> context) { read(); }];
+    } else if (picker.presentingViewController) {
+        [picker dismissViewControllerAnimated:YES completion:read];
+    } else {
+        read();
+    }
 }
 
 @end
 
-void SGImportSettings(void) {
+void SGImportSettings(UIViewController *presenter) {
     static SGSettingsPicker *delegate;
     if (!delegate) delegate = [SGSettingsPicker new];
+    if (delegate.pending || !SGDiagnosticsCanPresentFrom(presenter)) return;
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeJSON] asCopy:YES];
+    delegate.pending = YES;
+    delegate.presenter = presenter;
+    delegate.picker = picker;
     picker.delegate = delegate;
-    [SGTopController() presentViewController:picker animated:YES completion:nil];
+    [presenter presentViewController:picker animated:YES completion:nil];
+    if (presenter.presentedViewController != picker) [delegate finish];
 }

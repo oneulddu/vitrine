@@ -33,17 +33,22 @@ Every command prints the app's JSON answer, {"ok": true, ...} or {"ok": false, "
 when it is not ok. --label and --text match whole and ignore case; --contains 1 matches a part. Points are
 screen points, the frame `find` prints. A log wait looks at the lines since the last command that did
 something began, so `player.more` then `wait --log ...` sees a line that came before the wait.
+Private preference values are redacted in command output. Pref replies from older drivers without
+privacy metadata are also redacted.
 
 The server listens on the phone's loopback only, port 8085, so this goes through iproxy over USB: it uses
 whatever already answers on 127.0.0.1:8085 (an iproxy left running, or the simulator, whose apps share the
 Mac's loopback) and otherwise starts iproxy and leaves it running for the next call. PHONE_PORT changes the
-port. Over Tailscale: PHONE_HOST=100.71.6.75 scripts/phone.py state (PHONE_TOKEN, or the token from the
-device log; FLEX builds listen on the phone's Tailscale address too, token required). Needs a FLEX build (make install FLEX=1) open in the foreground: iOS suspends it in the background.
+port. For Tailscale, set PHONE_HOST to the phone's current Tailscale IP. PHONE_TOKEN supplies its
+credential; without it, the script reads spotifyglass.driver.token over USB/loopback first, so the cable
+path must be available. Credential discovery never prints the token. FLEX builds listen on the phone's
+Tailscale address too, with authentication required. Needs a FLEX build (make install FLEX=1) open in
+the foreground: iOS suspends it in the background.
 """
 import base64
+import http.client
 import json
 import os
-import re
 import shutil
 import socket
 import subprocess
@@ -54,23 +59,30 @@ import urllib.parse
 import urllib.request
 
 PORT = int(os.environ.get("PHONE_PORT", "8085"))
-# Over Tailscale instead of the cable: the phone's tailnet address and the token the app logs at launch
-# ("driver: tailnet listener on 100.x.y.z:8085, token ..."), read from the device log when not given.
+# Tailscale destination. Authentication uses PHONE_TOKEN or reads the stored key through the cable;
+# that lookup bypasses HOST so it never needs the credential it is trying to retrieve.
 HOST = os.environ.get("PHONE_HOST")
-LOG = "/tmp/claude-501/device.log"
+
+
+def checked_token(value):
+    if not isinstance(value, str) or len(value) != 32 or any(c not in "0123456789abcdef" for c in value):
+        sys.exit("driver token must be exactly 32 lowercase hex characters; refresh the stored token or set a valid PHONE_TOKEN")
+    return value
 
 
 def token():
     if os.environ.get("PHONE_TOKEN"):
-        return os.environ["PHONE_TOKEN"]
+        return checked_token(os.environ["PHONE_TOKEN"])
     try:
-        with open(LOG, errors="replace") as f:
-            found = re.findall(r"driver: tailnet listener on \S+, token ([0-9a-f]{32})", f.read())
-    except OSError:
-        found = []
-    if not found:
-        sys.exit(f"no PHONE_TOKEN and no token in {LOG}: run once over the cable, or read it from the app's log")
-    return found[-1]
+        query = urllib.parse.urlencode({"key": "spotifyglass.driver.token"})
+        answer = json.loads(fetch(f"pref?{query}", 20, loopback=True))
+    except (SystemExit, OSError, ValueError):
+        sys.exit("no PHONE_TOKEN and the USB/loopback token lookup failed: connect and trust the iPhone "
+                 "with a FLEX build open in the foreground, or set PHONE_TOKEN")
+    value = answer.get("now") if isinstance(answer, dict) and answer.get("ok") is True else None
+    if not isinstance(value, str) or not value:
+        sys.exit("USB/loopback did not return a stored driver token: open a current FLEX build, or set PHONE_TOKEN")
+    return checked_token(value)
 # The argument a command takes without a flag.
 POSITIONAL = {"type": "text", "menu.pick": "title", "seek": "seconds", "speed": "arg", "sing": "arg", "lossless": "arg", "tab": "arg", "settings.page": "title"}
 
@@ -96,23 +108,23 @@ def ensure_tunnel():
     sys.exit(f"iproxy did not open 127.0.0.1:{PORT}: is the iPhone plugged in and trusted?")
 
 
-def fetch(path, timeout):
+def fetch(path, timeout, *, loopback=False):
     # The header the app asks of a driver command, which a web page on the phone cannot send.
     headers = {"X-Phone-Driver": "1"}
-    if HOST:
-        headers["X-Phone-Token"] = token()
-        url = f"http://{HOST}:{PORT}/{path}"
-    else:
-        ensure_tunnel()
-        url = f"http://127.0.0.1:{PORT}/{path}"
-    request = urllib.request.Request(url, headers=headers)
     try:
+        if HOST and not loopback:
+            headers["X-Phone-Token"] = token()
+            url = f"http://{HOST}:{PORT}/{path}"
+        else:
+            ensure_tunnel()
+            url = f"http://127.0.0.1:{PORT}/{path}"
+        request = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return response.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        return e.read().decode("utf-8", "replace")
-    except (urllib.error.URLError, ConnectionError, socket.timeout) as e:
-        sys.exit(f"the app did not answer ({e}): is a FLEX build open in the foreground?")
+    except urllib.error.HTTPError:
+        sys.exit("the driver rejected the HTTP request; check the connection and credential")
+    except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException):
+        sys.exit("the app did not answer; check USB/Tailscale and keep a FLEX build open in the foreground")
 
 
 def parse(args):
@@ -147,8 +159,14 @@ def run(argv):
     text = fetch(f"{urllib.parse.quote(command)}?{urllib.parse.urlencode(params, quote_via=urllib.parse.quote)}", timeout)
     try:
         answer = json.loads(text)
+        if not isinstance(answer, dict):
+            raise ValueError
     except ValueError:
-        sys.exit(f"not a driver answer (a build without the driver serves only the tree):\n{text[:300]}")
+        sys.exit("not a driver answer: use a FLEX build with the phone driver")
+    if command == "pref" and answer.get("private") is not False and "now" in answer:
+        # Privacy is decided by the app's central denylist. Older drivers without that metadata
+        # are redacted too; token() consumes its raw loopback reply without using this output path.
+        answer["now"] = "[redacted]"
     if out and answer.get("ok"):
         with open(out, "wb") as f:
             f.write(base64.b64decode(answer.pop("png")))
