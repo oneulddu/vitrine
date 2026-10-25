@@ -222,9 +222,11 @@ UIViewController *SGPlayerSettingsPage(void) {
         [sections addObjectsFromArray:SGNativePlayerScreenSections()];
     }
     // Switch to video is the same chip of Spotify's player under either look.
-    [sections addObject:SGSection(native ? nil : SGL(@"settings.player.hide.header", @"Hide on the player"), @[
-        SGHideRow(SGL(@"settings.player.hide_video_switch.title", @"Switch to video"), SGL(@"settings.player.hide_video_switch.subtitle", @"The chip over the title of a song with a music video"), SGKeyHideVideoSwitch),
-    ])];
+    SGModRow *video = SGHideRow(SGL(@"settings.player.hide_video_switch.title", @"Switch to video"), SGL(@"settings.player.hide_video_switch.subtitle", @"The chip over the title of a song with a music video"), SGKeyHideVideoSwitch);
+    // The native look's Shuffle and Repeat rows are in its Hide on the player section, with their own keys.
+    NSArray<SGModRow *> *hidden = native ? @[video]
+        : @[SGHideRow(SGL(@"settings.player.hide.shuffle.title", @"Shuffle"), nil, SGRKeyPlayerHideShuffle), SGHideRow(SGL(@"settings.player.hide.repeat.title", @"Repeat"), nil, SGRKeyPlayerHideRepeat), video];
+    [sections addObject:SGSection(native ? nil : SGL(@"settings.player.hide.header", @"Hide on the player"), hidden)];
 
     [sections addObject:SGNotedSection(SGL(@"settings.lossless.header", @"Lossless"), @[
         SGOptionRow(SGL(@"settings.lossless.files.title", @"Lossless files"), SGL(@"settings.lossless.files.subtitle", @"Your own FLACs in place of Spotify's stream"), SGKeyLossless),
