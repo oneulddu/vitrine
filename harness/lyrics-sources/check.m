@@ -496,8 +496,50 @@ static void checkLanguagesAndTitles(void) {
     printf("language: ja/ko/en/es, repeated lines, kana override and uncertainty passed; titles: %lu cases; furigana: 6 cases, UTF-16 and concurrent cache passed; note copy passed\n", (unsigned long)titles.count);
 }
 
+static void checkMalformedTiming(void) {
+    for (id rows in @[NSNull.null, @"not rows", @{}, @[]]) {
+        NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"lyrics": @{@"syncType": @"LINE_SYNCED", @"lines": rows}} options:0 error:nil];
+        CHECK(!SGKaraokeLinesFromBody(json));
+    }
+    for (id time in @[NSNull.null, @[], @{}, @YES, @(-1), @1.5, @86400001, @"9223372036854775807", @"12oops", @""]) {
+        NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"lyrics": @{@"syncType": @"LINE_SYNCED", @"lines": @[@{@"words": @"Hi", @"startTimeMs": time}]}} options:0 error:nil];
+        CHECK(!SGKaraokeLinesFromBody(json));
+    }
+    CHECK(!SGKaraokeLinesFromBody([@"{\"lyrics\":{\"syncType\":\"LINE_SYNCED\",\"lines\":[{\"words\":\"Hi\"}]}}" dataUsingEncoding:NSUTF8StringEncoding]));
+    NSArray *plain = SGKaraokeLinesFromBody([@"{\"lyrics\":{\"syncType\":\"UNSYNCED\",\"lines\":[{\"words\":\"Hi\",\"startTimeMs\":null}]}}" dataUsingEncoding:NSUTF8StringEncoding]);
+    CHECK([SGKaraokeLineText(plain.firstObject) isEqual:@"Hi"]);
+    NSArray<SGKaraokeLine *> *timed = SGKaraokeLinesFromBody([@"{\"lyrics\":{\"syncType\":\"LINE_SYNCED\",\"lines\":[{\"words\":\"Hi\",\"startTimeMs\":\"1234\"}]}}" dataUsingEncoding:NSUTF8StringEncoding]);
+    CHECK(timed.firstObject.start == 1234);
+
+    // Unsorted and duplicate starts keep their original order. A break still limits the preceding line.
+    timed = SGKaraokeEstimatedLines(@[@3000, @1000, @1000, @1500], @[@"Last", @"One", @"Two", @""]);
+    CHECK([[timed valueForKey:@"start"] isEqual:(@[@3000, @1000, @1000])]);
+    CHECK([[timed valueForKey:@"end"] isEqual:(@[@3650, @1500, @1500])]);
+    NSMutableArray *starts = [NSMutableArray array], *texts = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 20000; i++) { [starts addObject:@0]; [texts addObject:@"Hi"]; }
+    CHECK(SGKaraokeEstimatedLines(starts, texts).count == 20000);
+    NSMutableString *repeated = [NSMutableString string];
+    for (NSUInteger i = 0; i < 20000; i++) [repeated appendString:@"[00:00]"];
+    [repeated appendString:@"Hi"];
+    CHECK(!SGLyricsLRCResult(repeated));
+    CHECK(SGLyricsLRCResult(@"[00:01][00:02]Hi").karaokeLines.count == 2);
+
+    for (NSString *bad in @[
+        @"[0,1000](9223372036854775807,1,0)Hi",
+        @"[0,1000](0,9223372036854775807,0)Hi",
+        @"[86400000,1](86400000,1,0)Hi",
+        @"[1000,1000](999,1,0)Hi",
+        @"[0,1000](100,1,0)Hi (50,1,0)there",
+        @"[0,1000](0,-1,0)Hi",
+        @"[0,1000](-1,1,0)Hi"]) CHECK(!SGLyricsPieceLines(bad, NO));
+    CHECK(!SGLyricsPieceLines(@"[1000,1000]<86400000,1,0>Hi", YES));
+    CHECK(!SGLyricsPieceLines(@"[0,1000]<9223372036854775807,1,0>Hi", YES));
+    puts("timing: malformed JSON, expanded stamps, ordered estimation and bounded piece clocks passed");
+}
+
 int main(int argc, char **argv) {
     @autoreleasepool {
+        checkMalformedTiming();
         // Thai, Lao, Khmer and Burmese, long lines with no space, and Thai among Latin and brackets.
         checkSplit(@"ฉันรักเธอมากกว่าสิ่งใดในโลกนี้และจะอยู่เคียงข้างเธอตลอดไป", YES);
         checkSplit(@"วันนี้อากาศดีมากเราไปเดินเล่นที่สวนสาธารณะด้วยกันไหมนะที่รัก", YES);

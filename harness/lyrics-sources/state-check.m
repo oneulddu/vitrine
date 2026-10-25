@@ -4,6 +4,7 @@
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Settings/SGSourcesPage.h"
 #import <objc/runtime.h>
+#import <Security/Security.h>
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
 
 static void (^sg_pinnedReply)(SGLyricsResult *);
@@ -42,12 +43,31 @@ void SGRPlayerLandscapeLinesChanged(void) {}
 #undef completed
 #undef timingName
 
+// Exercise the real Spicy provider through the real walk, with only transport and Keychain mocked.
+static void (^sg_spicyReply)(id, NSHTTPURLResponse *);
+static NSString *sg_spicyAuthorization;
+static void heldSpicyJSON(NSURL *url, NSDictionary *headers, void (^done)(id, NSHTTPURLResponse *)) {
+    sg_spicyAuthorization = headers[@"Authorization"];
+    sg_spicyReply = done;
+}
+static OSStatus ignoreSpicyDelete(CFDictionaryRef query) { return errSecSuccess; }
+static OSStatus emptySpicyKey(CFDictionaryRef query, CFTypeRef *data) { return errSecItemNotFound; }
+#define SGLyricsGetJSONReply heldSpicyJSON
+#define SecItemDelete ignoreSpicyDelete
+#define SecItemCopyMatching emptySpicyKey
+#define kKeptTracks kSpicyKeptTracks
+#import "Shared/LyricsSources/SpicyLyrics.m"
+#undef kKeptTracks
+#undef SecItemCopyMatching
+#undef SecItemDelete
+#undef SGLyricsGetJSONReply
+
 // The rest of the app has no work in this check. The one enabled provider holds its answer.
 static void (^sg_providerReply)(SGLyricsResult *);
 SGLyricsAsk SGMusixmatchAsk = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { sg_providerReply = done; };
-SGLyricsAsk SGBiniLyricsAsk, SGUnisonAsk, SGNetEaseAsk, SGSpicyLyricsAsk, SGQQMusicAsk, SGKuGouAsk;
+SGLyricsAsk SGBiniLyricsAsk, SGUnisonAsk, SGNetEaseAsk, SGQQMusicAsk, SGKuGouAsk;
 SGLyricsAsk SGBugsAsk, SGGenieAsk, SGLyricsPlusAsk, SGDeezerAsk, SGImportedLRCAsk, SGGeniusAsk;
-NSString *const SGSpicyLyricsKey = @"spicylyrics", *const SGImportedLRCKey = @"importedlrc";
+NSString *const SGImportedLRCKey = @"importedlrc";
 @implementation SGSource
 + (instancetype)sourceWithKey:(NSString *)key name:(NSString *)name detail:(NSString *)detail { return [self new]; }
 @end
@@ -56,7 +76,7 @@ NSString *SGL(NSString *key, NSString *english) { return english; }
 NSString *SGLyricsLeadArtist(NSString *artist) { return artist; }
 void SGMusixmatchTranslations(NSString *track, NSString *language, void (^done)(NSDictionary *)) { done(nil); }
 NSArray *SGMusixmatchTranslatedLines(NSArray *lines, NSDictionary *byLine) { return nil; }
-NSString *SGSpicyLyricsStatus(void) { return nil; }
+SGModRow *SGStatActionRow(NSString *title, NSString *subtitle, NSString *(^value)(void), void (^action)(void)) { return nil; }
 UIViewController *SGTopController(void) { return nil; }
 UIViewController *SGSourcesPageMake(NSString *title, NSString *note, NSArray *all, NSArray *(^order)(void), void (^setOrder)(NSArray *)) { return nil; }
 void SGRegisterFlagForcer(BOOL beatsOverride, SGFlagForcer launch, SGFlagForcer locked) {}
@@ -290,6 +310,88 @@ static SGLyricsResult *madeUpLyrics(NSString *name, SGKaraokeTiming timing) {
     NSArray *lines = timing == SGKaraokeTimingNone ? SGKaraokeStaticLines(@[name]) : SGKaraokeEstimatedLines(@[@1000], @[name]);
     for (SGKaraokeLine *line in lines) line.timing = timing;
     return SGLyricsResultWithLines(lines, name);
+}
+
+static void checkSpicyCancellation(void) {
+    SGLyricsProvider *spicy = SGLyricsProviderFor(SGSpicyLyricsKey), *other = SGLyricsProviderFor(@"musixmatch");
+    SGLyricsAsk savedSpicy = spicy.ask, savedOther = other.ask;
+    __block NSString *key;
+    spicy.ask = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *)) { SGSpicyLyricsAskWith(key, query, done); };
+    other.ask = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *)) { done(nil); };
+    for (NSInteger mode = 0; mode <= 2; mode++) {
+        SGSpicyLyricsForgetKey();
+        SGSetInt(SGKeyLyricsAskMode, mode);
+        SGLyricsSetOrder(@[SGSpicyLyricsKey, @"musixmatch"]);
+        NSString *track = [NSString stringWithFormat:@"0123456789abcdefghijk%ld", (long)mode];
+        key = @"sl_pk_old_harness";
+        __block NSUInteger completed = 0;
+        SGLyricsFetch(track, ^(SGLyricsResult *result) { CHECK(!result); completed++; });
+        pumpUntil(^BOOL { return sg_spicyReply != nil; });
+        SGSpicyLyricsForgetKey();
+        key = @"sl_pk_new_harness";
+        NSHTTPURLResponse *refused = [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://api.spicylyrics.org/"]
+            statusCode:401 HTTPVersion:@"HTTP/1.1" headerFields:nil];
+        void (^old)(id, NSHTTPURLResponse *) = sg_spicyReply; sg_spicyReply = nil;
+        old(@{@"error": @"key_revoked"}, refused);
+        pumpUntil(^BOOL { return completed != 0; });
+        CHECK(completed == 1 && SGLyricsMayHave(track));
+        // A stale completion must leave the walk retryable, not a cached authoritative miss.
+        __block BOOL retried = NO;
+        __block SGLyricsResult *answer;
+        SGLyricsFetch(track, ^(SGLyricsResult *result) { answer = result; retried = YES; });
+        pumpUntil(^BOOL { return sg_spicyReply != nil || retried; });
+        CHECK(sg_spicyReply && [sg_spicyAuthorization isEqual:@"Bearer sl_pk_new_harness"]);
+        NSHTTPURLResponse *ok = [[NSHTTPURLResponse alloc] initWithURL:refused.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:nil];
+        void (^fresh)(id, NSHTTPURLResponse *) = sg_spicyReply; sg_spicyReply = nil;
+        fresh(@{@"Body": @{@"Type": @"Line", @"Content": @[@{@"Text": @"New key", @"StartTime": @1, @"EndTime": @2}]}}, ok);
+        pumpUntil(^BOOL { return retried; });
+        CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"New key"]);
+    }
+    spicy.ask = savedSpicy; other.ask = savedOther;
+    SGLyricsSetOrder(@[@"musixmatch"]);
+    SGSetInt(SGKeyLyricsAskMode, 0);
+    puts("Spicy cancellation: all three walk modes retry the new credential after stale completion");
+}
+
+static void checkMissingRecovery(void) {
+    for (NSNumber *early in @[@NO, @YES]) {
+        NSString *track = NSUUID.UUID.UUIDString;
+        SGLyricsProvider *provider = SGLyricsProviderFor(@"musixmatch");
+        SGLyricsAsk saved = provider.ask;
+        SGLyricsSetOrder(@[@"musixmatch"]);
+        SGSetInt(SGKeyLyricsAskMode, early.boolValue ? 1 : 0);
+        provider.ask = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { done(nil); };
+        __block BOOL completed = NO;
+        SGLyricsFetch(track, ^(SGLyricsResult *result) { CHECK(!result); completed = YES; });
+        pumpUntil(^BOOL { return completed; });
+        CHECK(!SGLyricsMayHave(track));
+        // Evict through normal requests, not by clearing the negative marker under test.
+        for (NSUInteger i = 0; i < 41; i++) {
+            completed = NO;
+            SGLyricsFetch(NSUUID.UUID.UUIDString, ^(SGLyricsResult *result) { completed = YES; });
+            pumpUntil(^BOOL { return completed; });
+        }
+        provider.ask = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { done(madeUpLyrics(@"Recovered", SGKaraokeTimingLine)); };
+        SGLyricsAsk tail = SGLyricsProviderFor(@"netease").ask;
+        void (^__block later)(SGLyricsResult *);
+        if (early.boolValue) {
+            SGLyricsSetOrder(@[@"musixmatch", @"netease"]);
+            SGLyricsProviderFor(@"netease").ask = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { later = done; };
+        }
+        completed = NO;
+        SGLyricsFetch(track, ^(SGLyricsResult *result) {
+            CHECK([result.provider isEqual:@"Recovered"]);
+            CHECK(SGLyricsMayHave(track));
+            completed = YES;
+        });
+        pumpUntil(^BOOL { return completed; });
+        if (early.boolValue) { pumpUntil(^BOOL { return later != nil; }); later(nil); }
+        provider.ask = saved;
+        SGLyricsProviderFor(@"netease").ask = tail;
+    }
+    SGLyricsSetOrder(@[@"musixmatch"]);
+    SGSetInt(SGKeyLyricsAskMode, 0);
+    puts("missing recovery: final and early positive deliveries clear negative marks");
 }
 
 static void checkWalkTypes(void) {
@@ -1175,6 +1277,8 @@ int main(void) {
         sg_requested = [NSMutableSet set]; sg_asking = [NSMutableSet set]; sg_looking = [NSMutableSet set];
         sg_losses = [NSMutableDictionary dictionary]; sg_ownSources = YES;
         sg_lastSeenID = @"song";
+        checkMissingRecovery();
+        checkSpicyCancellation();
         const char *race = getenv("VITRINE_PICK_RACE");
         if (race) { checkPickRaces((NSUInteger)atoi(race)); return 0; }
         HarnessPort *port = [HarnessPort new]; port.UID = @"headphones-one"; port.portName = @"Headphones"; port.portType = AVAudioSessionPortBluetoothA2DP;

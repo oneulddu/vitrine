@@ -3,6 +3,12 @@
 // the words are filler. Exits non-zero on the first wrong answer.
 #import <UIKit/UIKit.h>
 #import "Shared/LyricsSources/LyricsSources.h"
+#import <Security/Security.h>
+// Credential invalidation is real; the harness never touches the user's Keychain.
+static OSStatus ignoreKeyDelete(CFDictionaryRef query) { return errSecSuccess; }
+#define SecItemDelete ignoreKeyDelete
+#import "Shared/LyricsSources/SpicyLyrics.m"
+#undef SecItemDelete
 
 // What SpicyLyrics.m reaches outside the parser for; none of it but the result class is used here.
 @implementation SGLyricsResult
@@ -21,9 +27,12 @@ static NSHTTPURLResponse *sg_reply;
 static id sg_body;
 static NSUInteger sg_sent, sg_lost;
 static NSDictionary *sg_headers;
+static BOOL sg_holdReply;
+static void (^sg_delayedReply)(id, NSHTTPURLResponse *);
 void SGLyricsGetJSONReply(NSURL *url, NSDictionary *headers, void (^done)(id root, NSHTTPURLResponse *response)) {
     sg_sent++;
     sg_headers = headers;
+    if (sg_holdReply) { sg_delayedReply = done; return; }
     done(sg_body, sg_reply);
 }
 void SGLyricsNoteReply(NSURLResponse *response, NSError *error) { if (error) sg_lost++; }
@@ -59,8 +68,54 @@ static SGLyricsResult *parse(NSString *json) {
     return SGSpicyLyricsResult([NSJSONSerialization JSONObjectWithData:[json dataUsingEncoding:NSUTF8StringEncoding] options:0 error:nil]);
 }
 
+static void checkTTML(void) {
+    for (NSString *spans in @[
+        @"<span begin=\"1\" end=\"2\">Hello </span><span begin=\"2\" end=\"3\">world</span>",
+        @"<span begin=\"1\" end=\"2\">Hello</span><span begin=\"2\" end=\"3\"> world</span>",
+        @"<span begin=\"1\" end=\"2\">Hello</span><span begin=\"2\" end=\"2\"> </span><span begin=\"2\" end=\"3\">world</span>"]) {
+        NSString *xml = [NSString stringWithFormat:@"<tt><body><p begin=\"1\" end=\"3\">%@</p></body></tt>", spans];
+        CHECK([SGKaraokeLineText(SGTTMLLines(xml).firstObject) isEqual:@"Hello world"]);
+    }
+    CHECK([SGKaraokeLineText(SGTTMLLines(@"<tt><body><p begin=\"1\" end=\"3\"><span begin=\"1\" end=\"2\">日</span><span begin=\"2\" end=\"3\">本</span></p></body></tt>").firstObject) isEqual:@"日本"]);
+    CHECK(!SGTTMLLines(@"<tt><body><p begin=\"1\" end=\"3\"><span begin=\"1\" end=\"2\">Hello</span></p><p>"));
+    puts("TTML: internal whitespace, joined syllables and truncated XML passed");
+}
+
+static void checkCredentialGeneration(void) {
+    SGSpicyLyricsForgetKey();
+    SGLyricsQuery *query = [SGLyricsQuery new];
+    query.trackID = @"0123456789abcdefghijkZ";
+    sg_holdReply = YES;
+    __block NSUInteger completed = 0;
+    SGSpicyLyricsAskWith(@"sl_pk_old_harness", query, ^(SGLyricsResult *result) { CHECK(!result); completed++; });
+    SGSpicyLyricsForgetKey();
+    sg_holdReply = NO;
+    sg_delayedReply(@{@"error": @"key_revoked"}, reply(401, @{}));
+    sg_delayedReply = nil;
+    CHECK(completed == 1);
+    sg_reply = reply(200, @{});
+    sg_body = @{@"Body": @{@"Type": @"Static", @"Lines": @[@{@"Text": @"New credential"}]}};
+    __block SGLyricsResult *answer;
+    SGSpicyLyricsAskWith(@"sl_pk_new_harness", query, ^(SGLyricsResult *result) { answer = result; });
+    CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"New credential"]);
+    // A stale success must not seed the new credential's cache or rate-limit clock either.
+    SGSpicyLyricsForgetKey();
+    sg_holdReply = YES;
+    SGSpicyLyricsAskWith(@"sl_pk_old_harness", query, ^(SGLyricsResult *result) { CHECK(!result); });
+    SGSpicyLyricsForgetKey();
+    sg_holdReply = NO;
+    sg_delayedReply(@{@"Body": @{@"Type": @"Static", @"Lines": @[@{@"Text": @"Old credential"}]}},
+                    reply(200, @{@"RateLimit-Remaining": @"0", @"RateLimit-Reset": @"60"}));
+    sg_delayedReply = nil;
+    answer = nil;
+    SGSpicyLyricsAskWith(@"sl_pk_new_harness", query, ^(SGLyricsResult *result) { answer = result; });
+    CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"New credential"]);
+    puts("credentials: stale refusal, answer and rate limit discarded with completion");
+}
+
 int main(void) {
     @autoreleasepool {
+        checkTTML();
         SGLyricsResult *syllable = parse(@"{\"Body\":{\"Type\":\"Syllable\",\"source\":\"spicy_lyrics\",\"StartTime\":1.5,\"EndTime\":9,"
             "\"UploadAttribution\":{\"Uploader\":{\"username\":\"up\"},\"Maker\":{\"username\":\"mk\"}},"
             "\"Content\":["
@@ -196,6 +251,7 @@ int main(void) {
         sg_body = @{@"Body": @{@"error": @"origin_not_allowed"}};
         CHECK(!ask(@"0123456789abcdefghijkD") && sg_sent == 5);
         CHECK(!ask(@"0123456789abcdefghijkE") && sg_sent == 5 && sg_lost == 1);
+        checkCredentialGeneration();
         puts("spicy lyrics: all checks passed");
     }
     return 0;

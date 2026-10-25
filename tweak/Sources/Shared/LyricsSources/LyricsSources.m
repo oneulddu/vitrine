@@ -588,8 +588,9 @@ static void finish(SGLyricsWalk *walk) {
         // against Spotify's own lines as any walk's does, and the next walk asks the pick first again.
         if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
         sg_kept[trackID] = lyrics ?: NSNull.null;
-        if (!lyrics) {
-            @synchronized (sg_missing) { [sg_missing addObject:trackID]; }
+        @synchronized (sg_missing) {
+            if (lyrics) [sg_missing removeObject:trackID];
+            else [sg_missing addObject:trackID];
         }
     }
     SGLog(@"lyrics: %@ ends with %@", trackID, lyrics
@@ -622,6 +623,7 @@ static BOOL releaseAnswer(SGLyricsWalk *walk) {
         if (!picked) {
             if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
             sg_kept[query.trackID] = merged;
+            @synchronized (sg_missing) { [sg_missing removeObject:query.trackID]; }
         }
         while (walk.waiting.count && sg_waiting[query.trackID] == walk.waiting) {
             void (^done)(SGLyricsResult *) = walk.waiting.firstObject;
@@ -705,6 +707,7 @@ static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyrics
     if (walk.answered && finer && !picked) {
         if (sg_kept.count >= kKeptTracks && !sg_kept[query.trackID]) [sg_kept removeAllObjects];
         sg_kept[query.trackID] = merged;
+        @synchronized (sg_missing) { [sg_missing removeObject:query.trackID]; }
         SGLyricsSetCredit(query.trackID, merged.provider);
         if (!currentWalk(walk)) return NO;
         SGKaraokeKeepLines(query.trackID, merged.karaokeLines);

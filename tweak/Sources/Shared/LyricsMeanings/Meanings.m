@@ -92,11 +92,15 @@ static NSString *stringIn(id value) {
     return [value isKindOfClass:NSString.class] ? value : nil;
 }
 
+static BOOL flagIn(id value) {
+    return [value isKindOfClass:NSNumber.class] && [value boolValue];
+}
+
 // By the annotation, not the referent: a referent the artist spoke to is "verified" as a whole, the
 // editors' annotations under it too.
 static SGLyricsMeaningAuthor authorOf(NSDictionary *annotation) {
     NSString *state = stringIn(annotation[@"state"]);
-    if ([annotation[@"verified"] boolValue] || [state isEqualToString:@"verified"]) return SGLyricsMeaningByArtist;
+    if (flagIn(annotation[@"verified"]) || [state isEqualToString:@"verified"]) return SGLyricsMeaningByArtist;
     if ([state isEqualToString:@"accepted"]) return SGLyricsMeaningByEditors;
     return SGLyricsMeaningByCommunity;
 }
@@ -104,12 +108,12 @@ static SGLyricsMeaningAuthor authorOf(NSDictionary *annotation) {
 static void addMeanings(NSDictionary *response, NSMutableArray<SGLyricsMeaning *> *into) {
     id referents = response[@"referents"];
     for (NSDictionary *referent in [referents isKindOfClass:NSArray.class] ? referents : @[]) {
-        if (![referent isKindOfClass:NSDictionary.class] || [referent[@"is_description"] boolValue]) continue;
+        if (![referent isKindOfClass:NSDictionary.class] || flagIn(referent[@"is_description"])) continue;
         NSString *fragment = stringIn(referent[@"fragment"]);
         id annotations = referent[@"annotations"];
         if (!fragment.length || ![annotations isKindOfClass:NSArray.class]) continue;
         for (NSDictionary *annotation in annotations) {
-            if (![annotation isKindOfClass:NSDictionary.class] || [annotation[@"deleted"] boolValue]) continue;
+            if (![annotation isKindOfClass:NSDictionary.class] || flagIn(annotation[@"deleted"])) continue;
             if ([stringIn(annotation[@"state"]) isEqualToString:@"rejected"]) continue;
             id body = annotation[@"body"];
             NSString *text = [stringIn([body isKindOfClass:NSDictionary.class] ? body[@"plain"] : nil)
@@ -125,13 +129,14 @@ static void addMeanings(NSDictionary *response, NSMutableArray<SGLyricsMeaning *
     }
 }
 
-static void fetchReferents(NSNumber *song, NSUInteger page, NSMutableArray<SGLyricsMeaning *> *into, void (^done)(void)) {
+static void fetchReferents(NSNumber *song, NSUInteger page, NSMutableArray<SGLyricsMeaning *> *into, void (^done)(BOOL complete)) {
     getJSON(kReferents, @{@"song_id": song.stringValue, @"text_format": @"plain",
                           @"per_page": @(kPerPage).stringValue, @"page": @(page).stringValue}, ^(NSDictionary *response) {
+        if (![response[@"referents"] isKindOfClass:NSArray.class]) { done(NO); return; }
         addMeanings(response, into);
         id next = response[@"next_page"];
         if ([next isKindOfClass:NSNumber.class] && page < kMostPages) fetchReferents(song, page + 1, into, done);
-        else done();
+        else done(![next isKindOfClass:NSNumber.class]);
     });
 }
 
@@ -140,9 +145,13 @@ static void fetchReferents(NSNumber *song, NSUInteger page, NSMutableArray<SGLyr
 // Main queue only: every meaning Genius has for a track, empty for none.
 static NSMutableDictionary<NSString *, NSArray<SGLyricsMeaning *> *> *sg_meanings;
 static NSMutableDictionary<NSString *, NSMutableArray *> *sg_waiting;
+static const NSUInteger kKeptTracks = 40;
 
 static void answer(NSString *trackID, NSArray<SGLyricsMeaning *> *meanings, BOOL keep) {
-    if (keep) sg_meanings[trackID] = meanings;
+    if (keep) {
+        if (sg_meanings.count >= kKeptTracks && !sg_meanings[trackID]) [sg_meanings removeAllObjects];
+        sg_meanings[trackID] = [meanings copy];
+    }
     NSArray *waiting = sg_waiting[trackID];
     [sg_waiting removeObjectForKey:trackID];
     for (void (^each)(NSArray<SGLyricsMeaning *> *) in waiting) each(meanings);
@@ -179,9 +188,9 @@ static void meaningsOf(NSString *trackID, void (^done)(NSArray<SGLyricsMeaning *
             return;
         }
         NSMutableArray<SGLyricsMeaning *> *meanings = [NSMutableArray array];
-        fetchReferents(song, 1, meanings, ^{
+        fetchReferents(song, 1, meanings, ^(BOOL complete) {
             SGLog(@"meanings: Genius song %@ for %@ has %lu annotations", song, title, (unsigned long)meanings.count);
-            answer(trackID, meanings, YES);
+            answer(trackID, meanings, complete);
         });
     });
 }

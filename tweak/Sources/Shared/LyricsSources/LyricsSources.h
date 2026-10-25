@@ -239,7 +239,7 @@ static inline BOOL SGLyricsNumber(id value, double *number) {
         scanner.charactersToBeSkipped = nil;
         if (![scanner scanDouble:number] || !scanner.isAtEnd) return NO;
     } else return NO;
-    return isfinite(*number) && *number >= 0 && *number <= 86400000;
+    return isfinite(*number) && *number >= 0 && *number <= SGKaraokeMaxTimeMs;
 }
 static inline NSString *SGLyricsDecimalID(id value) {
     NSString *text = [value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()

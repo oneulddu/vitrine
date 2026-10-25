@@ -1,5 +1,6 @@
 #import "Lyrics.h"
 #import "Shared/AdBlock/Protobuf.h"
+#import <math.h>
 
 @implementation SGKaraokeWord
 @end
@@ -305,13 +306,18 @@ NSArray<SGKaraokeLine *> *SGKaraokeEstimatedLines(NSArray<NSNumber *> *starts, N
     // the lines are put in time order where they are kept (SGKaraokeInTimeOrder).
     NSUInteger count = MIN(texts.count, starts.count);
     NSMutableArray<SGKaraokeLine *> *lines = [NSMutableArray array];
+    NSArray<NSNumber *> *ordered = [[starts subarrayWithRange:NSMakeRange(0, count)] sortedArrayUsingSelector:@selector(compare:)];
+    NSMutableDictionary<NSNumber *, NSNumber *> *gaps = [NSMutableDictionary dictionary];
+    NSNumber *next = nil;
+    for (NSNumber *value in ordered.reverseObjectEnumerator) {
+        NSNumber *start = @(value.integerValue);
+        if (gaps[start]) continue;
+        gaps[start] = next ? @(next.integerValue - start.integerValue) : @0;
+        next = start;
+    }
     for (NSUInteger i = 0; i < count; i++) {
         if (isBreak(texts[i])) continue;
-        NSInteger start = starts[i].integerValue, gap = 0;
-        for (NSUInteger j = 0; j < count; j++) {   // ponytail: quadratic, a song's few hundred lines at most
-            NSInteger after = starts[j].integerValue - start;
-            if (after > 0 && (!gap || after < gap)) gap = after;
-        }
+        NSInteger start = starts[i].integerValue, gap = gaps[@(start)].integerValue;
         [lines addObject:timedLine(texts[i], start, gap)];
     }
     return lines.count ? lines : nil;
@@ -375,18 +381,35 @@ static NSArray<SGKaraokeLine *> *fromProtobuf(NSData *body) {
 
 // { "lyrics": { "syncType": "LINE_SYNCED", "lines": [ { "startTimeMs": "1234", "words": "..." } ] } },
 // or "UNSYNCED" with every start 0.
+static BOOL jsonTime(id value, NSInteger *ms) {
+    double number;
+    if ([value isKindOfClass:NSNumber.class] && CFGetTypeID((__bridge CFTypeRef)value) != CFBooleanGetTypeID()) {
+        number = [value doubleValue];
+    } else if ([value isKindOfClass:NSString.class] && [value length] && [value length] <= 8) {
+        NSCharacterSet *digits = [NSCharacterSet characterSetWithCharactersInString:@"0123456789"];
+        if ([value rangeOfCharacterFromSet:digits.invertedSet].location != NSNotFound) return NO;
+        number = [value doubleValue];
+    } else return NO;
+    if (!isfinite(number) || number < 0 || number > SGKaraokeMaxTimeMs || floor(number) != number) return NO;
+    *ms = (NSInteger)number;
+    return YES;
+}
+
 static NSArray<SGKaraokeLine *> *fromJSON(NSData *body) {
     NSDictionary *root = [NSJSONSerialization JSONObjectWithData:body options:0 error:nil];
     NSDictionary *lyrics = [root isKindOfClass:NSDictionary.class] ? root[@"lyrics"] : nil;
     if (![lyrics isKindOfClass:NSDictionary.class]) return nil;
     BOOL synced = [lyrics[@"syncType"] isEqual:@"LINE_SYNCED"];
     if (!synced && ![lyrics[@"syncType"] isEqual:@"UNSYNCED"]) return nil;
+    if (![lyrics[@"lines"] isKindOfClass:NSArray.class]) return nil;
     NSMutableArray<NSNumber *> *starts = [NSMutableArray array];
     NSMutableArray<NSString *> *texts = [NSMutableArray array];
     for (NSDictionary *line in lyrics[@"lines"]) {
         if (![line isKindOfClass:NSDictionary.class]) continue;
         id words = line[@"words"];
-        [starts addObject:@([line[@"startTimeMs"] integerValue])];
+        NSInteger start = 0;
+        if (synced && !jsonTime(line[@"startTimeMs"], &start)) return nil;
+        [starts addObject:@(start)];
         [texts addObject:[words isKindOfClass:NSString.class] ? words : @""];
     }
     return synced ? SGKaraokeEstimatedLines(starts, texts) : SGKaraokeStaticLines(texts);

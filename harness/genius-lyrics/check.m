@@ -7,6 +7,45 @@
 #import <UIKit/UIKit.h>
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Settings/SGModPage.h"
+#import "Core/SGCore.h"
+#import "Headers/SPTPlayer.h"
+#import "Shared/LyricsMeanings/Meanings.h"
+
+// Only the network boundary is replaced; pagination, matching, caching and waiters are production.
+static id (^sg_meaningReply)(NSURLRequest *, NSInteger *);
+@interface HarnessMeaningTask : NSObject
+@property (nonatomic, copy) dispatch_block_t work;
+- (void)resume;
+@end
+@implementation HarnessMeaningTask
+- (void)resume { dispatch_async(dispatch_get_main_queue(), self.work); }
+@end
+@interface HarnessMeaningSession : NSObject
++ (instancetype)sharedSession;
+- (HarnessMeaningTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))done;
+@end
+@implementation HarnessMeaningSession
++ (instancetype)sharedSession { return [self new]; }
+- (HarnessMeaningTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))done {
+    HarnessMeaningTask *task = [HarnessMeaningTask new];
+    task.work = ^{
+        NSInteger status = 200;
+        id response = sg_meaningReply(request, &status);
+        NSData *body = response ? [NSJSONSerialization dataWithJSONObject:@{@"response": response} options:0 error:nil] : nil;
+        done(body, [[NSHTTPURLResponse alloc] initWithURL:request.URL statusCode:status HTTPVersion:@"HTTP/1.1" headerFields:nil], nil);
+    };
+    return task;
+}
+@end
+#define NSURLSession HarnessMeaningSession
+#import "Shared/LyricsMeanings/Meanings.m"
+#undef NSURLSession
+
+@interface HarnessMeaningTrack : NSObject
+@property (nonatomic, copy) NSString *trackTitle, *artistName;
+@end
+@implementation HarnessMeaningTrack
+@end
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
 
@@ -16,11 +55,15 @@
 @end
 @implementation SGLyricsQuery
 @end
-NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+NSInteger SGInt(NSString *key, NSInteger fallback) { return [key isEqual:SGKeyLyricsMeanings] ? SGLyricsMeaningsAll : fallback; }
 NSString *SGL(NSString *key, NSString *english) { return english; }
 void SGLyricsSourceRequest(NSURL *url, NSDictionary *headers, NSData *body, void (^done)(NSData *, NSInteger)) { done(nil, 404); }
 SGModRow *SGChoiceRow(NSString *title, NSString *subtitle, NSString *key, NSArray<NSString *> *choices, NSInteger fallback) { return nil; }
-SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) { return nil; }
+SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) {
+    HarnessMeaningTrack *track = [HarnessMeaningTrack new];
+    track.trackTitle = @"Song"; track.artistName = @"Singer";
+    return (id)track;
+}
 void SGLyricsPageLines(NSArray<SGKaraokeLine *> *lines, NSArray<NSNumber *> **starts, NSArray<NSString *> **texts) {}
 NSURL *SGLyricsURL(NSString *base, NSDictionary<NSString *, NSString *> *query) {
     NSURLComponents *url = [NSURLComponents componentsWithString:base];
@@ -161,6 +204,48 @@ static void checkEmbed(void) {
 }
 
 // The real thing, each track named as the player names it: searched on genius.com, the song it picks, and that song's embed read.
+static NSDictionary *meaningsFor(NSString *track) {
+    __block NSDictionary *answer;
+    SGLyricsMeaningsFor(track, SGKaraokeStaticLines(@[@"Filler line"]), ^(NSDictionary *value) { answer = value; });
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
+    while (!answer && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    CHECK(answer);
+    return answer;
+}
+
+static void checkMeanings(void) {
+    __block NSInteger failedPage = 1;
+    __block BOOL twoPages = NO;
+    __block NSString *body = @"Recovered";
+    sg_meaningReply = ^id(NSURLRequest *request, NSInteger *status) {
+        if ([request.URL.path containsString:@"search"]) return reply(@[@[@1, @"Song", @[@"Singer"]]]);
+        NSInteger page = 1;
+        for (NSURLQueryItem *item in [NSURLComponents componentsWithURL:request.URL resolvingAgainstBaseURL:NO].queryItems)
+            if ([item.name isEqual:@"page"]) page = item.value.integerValue;
+        if (page == failedPage) { *status = 503; return nil; }
+        NSString *text = page == 2 ? @"Second page" : body;
+        return @{@"referents": @[@{@"fragment": @"Filler line", @"is_description": NSNull.null,
+            @"annotations": @[@{@"body": @{@"plain": text}, @"verified": @[], @"deleted": NSNull.null}]}],
+            @"next_page": twoPages && page == 1 ? @2 : NSNull.null};
+    };
+    CHECK(meaningsFor(@"failed-first").count == 0);
+    failedPage = 0;
+    NSArray<SGLyricsMeaning *> *found = meaningsFor(@"failed-first")[@0];
+    CHECK(found.count == 1 && [found[0].body isEqual:@"Recovered"] && found[0].author == SGLyricsMeaningByCommunity);
+    twoPages = YES; failedPage = 2; body = @"Partial";
+    CHECK([((SGLyricsMeaning *)[meaningsFor(@"failed-second")[@0] firstObject]).body isEqual:@"Partial"]);
+    failedPage = 0; body = @"Fresh first page";
+    found = meaningsFor(@"failed-second")[@0];
+    CHECK(found.count == 2 && [found[0].body isEqual:@"Fresh first page"] && [found[1].body isEqual:@"Second page"]);
+    twoPages = NO; body = @"Before eviction";
+    CHECK(meaningsFor(@"evicted")[@0] != nil);
+    for (NSUInteger i = 0; i < 41; i++) CHECK(meaningsFor([NSString stringWithFormat:@"cache-%lu", (unsigned long)i])[@0] != nil);
+    body = @"After eviction";
+    CHECK([((SGLyricsMeaning *)[meaningsFor(@"evicted")[@0] firstObject]).body isEqual:@"After eviction"]);
+    puts("meanings: malformed flags, retry after failed pages and bounded cache passed");
+}
+
 static void checkLive(void) {
     NSArray *tracks = @[
         @[@"Bohemian Rhapsody - Remastered 2011", @"Queen", @1063],
@@ -215,6 +300,7 @@ int main(int argc, char **argv) {
         sg_live = argc > 1 && !strcmp(argv[1], "live");
         checkPicks();
         checkEmbed();
+        checkMeanings();
         if (sg_live) checkLive();
         printf("all good\n");
     }

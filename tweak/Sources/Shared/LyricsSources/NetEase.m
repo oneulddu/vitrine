@@ -36,9 +36,9 @@ NSArray<SGKaraokeLine *> *SGLyricsPieceLines(NSString *body, BOOL krc) {
     static NSRegularExpression *header, *yrcPiece, *krcPiece;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        header = [NSRegularExpression regularExpressionWithPattern:@"^\\[(\\d+),(\\d+)\\]" options:0 error:nil];
-        yrcPiece = [NSRegularExpression regularExpressionWithPattern:@"\\((\\d+),(\\d+),-?\\d+\\)" options:0 error:nil];
-        krcPiece = [NSRegularExpression regularExpressionWithPattern:@"<(\\d+),(\\d+),-?\\d+>" options:0 error:nil];
+        header = [NSRegularExpression regularExpressionWithPattern:@"^\\[(-?\\d+),(-?\\d+)\\]" options:0 error:nil];
+        yrcPiece = [NSRegularExpression regularExpressionWithPattern:@"\\((-?\\d+),(-?\\d+),-?\\d+\\)" options:0 error:nil];
+        krcPiece = [NSRegularExpression regularExpressionWithPattern:@"<(-?\\d+),(-?\\d+),-?\\d+>" options:0 error:nil];
     });
     NSRegularExpression *piece = krc ? krcPiece : yrcPiece;
     NSMutableArray<SGKaraokeLine *> *lines = [NSMutableArray array];
@@ -46,21 +46,32 @@ NSArray<SGKaraokeLine *> *SGLyricsPieceLines(NSString *body, BOOL krc) {
         NSTextCheckingResult *head = [header firstMatchInString:row options:0 range:NSMakeRange(0, row.length)];
         if (!head) continue;
         NSArray<NSTextCheckingResult *> *pieces = [piece matchesInString:row options:0 range:NSMakeRange(NSMaxRange(head.range), row.length - NSMaxRange(head.range))];
-        NSInteger lineStart = [row substringWithRange:[head rangeAtIndex:1]].integerValue;
+        double startMs, durationMs;
+        if (!SGLyricsNumber([row substringWithRange:[head rangeAtIndex:1]], &startMs) ||
+            !SGLyricsNumber([row substringWithRange:[head rangeAtIndex:2]], &durationMs) ||
+            startMs + durationMs > SGKaraokeMaxTimeMs) return nil;
+        NSInteger lineStart = (NSInteger)startMs, lineEnd = lineStart + (NSInteger)durationMs;
+        NSInteger previous = lineStart;
         NSMutableArray<SGKaraokePiece *> *timed = [NSMutableArray array];
         for (NSUInteger i = 0; i < pieces.count; i++) {
             NSUInteger from = NSMaxRange(pieces[i].range), to = i + 1 < pieces.count ? pieces[i + 1].range.location : row.length;
             NSString *raw = [row substringWithRange:NSMakeRange(from, to - from)];
             SGKaraokePiece *piece = [SGKaraokePiece new];
             piece.text = [raw stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-            piece.start = [row substringWithRange:[pieces[i] rangeAtIndex:1]].integerValue + (krc ? lineStart : 0);
+            double atMs, lengthMs;
+            if (!SGLyricsNumber([row substringWithRange:[pieces[i] rangeAtIndex:1]], &atMs) ||
+                !SGLyricsNumber([row substringWithRange:[pieces[i] rangeAtIndex:2]], &lengthMs)) return nil;
+            if (krc) atMs += lineStart;
+            if (atMs < previous || atMs + MAX(lengthMs, 1) > SGKaraokeMaxTimeMs) return nil;
+            piece.start = (NSInteger)atMs;
             // A piece of no length is still shown, for a moment.
-            piece.end = piece.start + MAX([row substringWithRange:[pieces[i] rangeAtIndex:2]].integerValue, 1);
+            piece.end = piece.start + MAX((NSInteger)lengthMs, 1);
+            previous = piece.start;
             // A space ends the word after the piece, even one in front of it.
             piece.spaceAfter = raw.length > piece.text.length;
             [timed addObject:piece];
         }
-        SGKaraokeLine *line = SGKaraokePieceLine(timed, lineStart, lineStart + [row substringWithRange:[head rangeAtIndex:2]].integerValue);
+        SGKaraokeLine *line = SGKaraokePieceLine(timed, lineStart, lineEnd);
         if (line) [lines addObject:line];
     }
     return lines.count ? lines : nil;

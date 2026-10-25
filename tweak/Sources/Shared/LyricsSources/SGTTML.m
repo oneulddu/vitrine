@@ -194,8 +194,10 @@ typedef NS_ENUM(NSInteger, SGTTMLPart) {
     }
     if (![element isEqualToString:@"span"] || !_stack.count) return;
     if (_word && _spanDepth == _wordDepth) {
-        NSString *text = [_word stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        NSCharacterSet *space = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+        NSString *text = [_word stringByTrimmingCharactersInSet:space];
         SGTTMLContainer *into = self.top;
+        if (_word.length && [space characterIsMember:[_word characterAtIndex:0]]) into.spaced = YES;
         if (text.length) {
             SGKaraokeWord *word = [SGKaraokeWord new];
             word.text = text;
@@ -203,7 +205,7 @@ typedef NS_ENUM(NSInteger, SGTTMLPart) {
             word.end = _wordEnd;
             word.joined = into.words.count > 0 && !into.spaced;
             [into.words addObject:word];
-            into.spaced = NO;
+            into.spaced = [space characterIsMember:[_word characterAtIndex:_word.length - 1]];
         }
         _word = nil;
         _wordDepth = 0;
@@ -334,7 +336,7 @@ NSArray<SGKaraokeLine *> *SGTTMLLines(NSString *xml) {
     // The TTML namespaces carry nothing the reader needs, and the prefixes it matches on
     // ("ttm:agent") only survive while they are left alone.
     parser.shouldProcessNamespaces = NO;
-    [parser parse];
+    if (![parser parse]) return nil;
     if (!reader.lines.count) return nil;
     SGKaraokeAlignVoices(reader.lines);
     addHead(reader);

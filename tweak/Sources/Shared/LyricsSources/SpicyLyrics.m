@@ -28,6 +28,7 @@ static NSString *const kAgent = @"Vitrine/" SG_VERSION " (Spotify for iOS lyrics
 static const NSUInteger kKeptTracks = 100;
 static const NSTimeInterval kMostWait = 3600, kDefaultWait = 60, kRefusedWait = 600;
 static NSString *const kService = @"Vitrine.SpicyLyrics", *const kAccount = @"api-key";
+static NSUInteger sg_keyGeneration;
 NSString *const SGSpicyLyricsKey = @"spicylyrics";
 
 #pragma mark - the key
@@ -391,7 +392,14 @@ void SGSpicyLyricsAskWith(NSString *key, SGLyricsQuery *query, void (^done)(SGLy
     }
     NSURL *url = [NSURL URLWithString:[kAPI stringByAppendingString:trackID]];
     NSDictionary *headers = @{@"Authorization": [@"Bearer " stringByAppendingString:key], @"Accept": @"application/json", @"User-Agent": kAgent};
+    NSUInteger generation = sg_keyGeneration;
     SGLyricsGetJSONReply(url, headers, ^(id root, NSHTTPURLResponse *reply) {
+        if (generation != sg_keyGeneration) {
+            // This credential was retired, not an authoritative answer that the track has no lyrics.
+            SGLyricsNoteReply(nil, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]);
+            done(nil);
+            return;
+        }
         NSInteger status = reply.statusCode;
         NSTimeInterval wait = SGSpicyLyricsWait(reply, NSDate.date);
         if (wait > 0) {
@@ -438,6 +446,9 @@ NSString *SGSpicyLyricsKeyProblem(NSString *key) {
 // takes it out, as it can answer nothing without one. Either way a refusal of the old key is forgotten.
 static void setKey(NSString *key) {
     storeKey(key);
+    sg_keyGeneration++;
+    [sg_answers removeAllObjects];
+    sg_waitUntil = 0;
     sg_refused = nil;
     sg_refusedUntil = 0;
     NSMutableArray<NSString *> *order = [SGLyricsOrder() mutableCopy];
@@ -449,6 +460,9 @@ static void setKey(NSString *key) {
 // Clear Keychain: the key goes and the refusal it earned is forgotten; the lyrics order is a setting, so it stays.
 void SGSpicyLyricsForgetKey(void) {
     storeKey(nil);
+    sg_keyGeneration++;
+    [sg_answers removeAllObjects];
+    sg_waitUntil = 0;
     sg_refused = nil;
     sg_refusedUntil = 0;
 }

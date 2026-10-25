@@ -93,6 +93,8 @@ typedef NS_ENUM(NSUInteger, SGKaraokeAlign) {
 };
 
 // Times in milliseconds from the start of the track.
+// Provider clocks beyond a day are not usable song timing.
+static const NSInteger SGKaraokeMaxTimeMs = 86400000;
 @interface SGKaraokeWord : NSObject
 @property (nonatomic, copy) NSString *text;
 @property (nonatomic) NSInteger start, end;

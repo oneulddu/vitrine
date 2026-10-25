@@ -14,6 +14,7 @@ static NSString *const kGet = @"https://lrclib.net/api/get";
 static NSString *const kSearch = @"https://lrclib.net/api/search";
 // Line timing is only worth taking from a recording of about the same length as the one playing.
 static const NSInteger kLengthSlack = 4;
+static const NSUInteger kMostTimedRows = 4000;
 
 static NSDictionary<NSString *, NSString *> *headers(void) {
     return @{@"User-Agent": @"Vitrine " @SG_VERSION};
@@ -78,6 +79,7 @@ static NSArray<SGKaraokeLine *> *linesFromLRC(NSString *lrc) {
                 NSString *digits = [row substringWithRange:part];
                 fraction = digits.integerValue * (digits.length == 1 ? 100 : digits.length == 2 ? 10 : 1);
             }
+            if (stamped.count + at.count >= kMostTimedRows) return nil;
             [at addObject:@((minutes * 60 + seconds) * 1000 + fraction)];
         }
         if (!at.count) continue;
