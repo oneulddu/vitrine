@@ -656,17 +656,24 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 
 // With the link down (a pause, a scrub while paused) a position report is the only clock there is.
 - (void)playerStateDidReport:(SPTPlayerState *)state {
+    // Off the screen nothing is read: the Player page's preview is kept between taps and held by nothing once
+    // the page is gone, and a report there would only advance its sample's lines and measure its labels.
+    if (!self.window || self.hidden) return;
     if (_style == SGRLyricsStyle && (!_link || _sample)) [self readLine];
 }
 
 - (void)didMoveToWindow {
     [super didMoveToWindow];
+    // Back on a window, the line the reports read while it was off is read once more.
+    if (self.window && _style == SGRLyricsStyle) [self readLine];
     [self updateMotion];
 }
 
 - (void)setHidden:(BOOL)hidden {
     if (self.hidden == hidden) return;
     [super setHidden:hidden];
+    // Shown again, the line the reports skipped while it was hidden is read once more.
+    if (!hidden && self.window && _style == SGRLyricsStyle) [self readLine];
     [self updateMotion];
 }
 
@@ -1003,10 +1010,23 @@ BOOL SGRPlayerVisualiserShowing(void) {
     return SGRPlayerBackground() == SGRPlayerBackgroundVisualiser;
 }
 
+// The card's own hills, kept between taps on the background choices: a view taken off the card and shown again
+// is the same one, with its link and the palette read it started let alone, where a new one a tap raced the old
+// one's teardown.
+static SGRVisualiserView *sg_preview;
+
 UIView *SGRPlayerVisualiserPreview(void) {
+    if (sg_preview) {
+        // Out of whatever held it before, in case it is another card's.
+        [sg_preview removeFromSuperview];
+        sg_preview.sample = YES;
+        [sg_preview appear:NO];
+        return sg_preview;
+    }
     SGRVisualiserView *view = [[SGRVisualiserView alloc] initWithFrame:CGRectZero];
     // No track plays in the card, so the Lyrics style reads LyricsLook's sample lines there.
     view.sample = YES;
+    sg_preview = view;
     return view;
 }
 

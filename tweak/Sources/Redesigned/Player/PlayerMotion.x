@@ -249,6 +249,11 @@ static UIBlurEffect *blurEffect(void) {
 }
 
 - (void)dealloc {
+    // A looper let go while it plays is what AVFoundation minds: the player stops, the looper stops watching it,
+    // and the layer lets the player go before any of them can be freed playing.
+    [_player pause];
+    [_looper disableLooping];
+    _clip.player = nil;
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
@@ -587,10 +592,26 @@ BOOL SGRPlayerMotionShowing(void) {
     return sg_motion != nil;
 }
 
+// The card's one clip and the file it plays: a tap on another background choice takes the view off the card
+// and the next tap puts it back, so the same file is not made a playing looper a second time.
+static SGRPlayerMotionView *sg_previewView;
+static NSURL *sg_previewViewFile;
+
 static UIView *previewOf(NSURL *file, UIImage *poster) {
+    // A view the card has just taken off is still the one for this file: it comes back as it is, so nothing it
+    // was playing is let go while it plays. Out of whatever held it before, in case it is another card's.
+    if (sg_previewView && [sg_previewViewFile isEqual:file]) {
+        SGRPlayerMotionView *preview = sg_previewView;
+        [preview removeFromSuperview];
+        [preview appear:NO then:^{}];
+        return preview;
+    }
+    [sg_previewView removeFromSuperview];
     SGRPlayerMotionView *preview = [[SGRPlayerMotionView alloc] initWithFrame:CGRectZero];
     [preview playFile:file poster:poster];
     [preview appear:NO then:^{}];
+    sg_previewView = preview;
+    sg_previewViewFile = file;
     return preview;
 }
 

@@ -497,6 +497,12 @@ static void fadeControls(BOOL faded) {
     }
 }
 
+// Whether the fade below holds `view`'s alpha: a track change that lays the bottom stack out again must not
+// bring the view back over the lyrics (SGRPlayerPlaceVolume).
+BOOL SGRPlayerLyricsFadeHolds(UIView *view) {
+    return view && sg_faded && [sg_faded containsObject:view];
+}
+
 // Where the lines go on their own: the whole safe area, kLyricsBottom in at both ends, over everything that
 // faded. The safe area keeps them from under the status bar and the Dynamic Island. Keeping the title, they
 // start where they did under it and grow down alone.

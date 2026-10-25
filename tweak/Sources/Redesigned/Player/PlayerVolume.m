@@ -187,7 +187,9 @@ BOOL SGRPlayerPlaceVolume(UIView *stack, UIView *controls, UIView *row, CGFloat 
     // The lyrics fade the stack's views by their alpha and bring back only the ones they faded.
     // The track and thumb are 14pt of the row's 34: it fits with the glyphs' and buttons' own clearance around it.
     BOOL fits = room >= height * 0.6;
-    if (!fits) volume.alpha = 0;
+    // A track change lays the stack out again while the lines are alone: the row must stay away from them until
+    // the fade lets it go, rather than be shown here over the lyrics.
+    if (!fits || SGRPlayerLyricsFadeHolds(volume)) volume.alpha = 0;
     else if (volume.alpha < 0.01 && controls.alpha > 0.99) volume.alpha = 1;
     return fits;
 }
