@@ -150,6 +150,7 @@ UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track) { return nil; }
 // The lyrics source chain and its settings page (LyricsSources.m): no provider is asked here, the
 // harness feeds SGRKaraokeView its lines itself.
 #import "Shared/LyricsSources/LyricsSources.h"
+NSNotificationName const SGLyricsSourceChosenNotification = @"spotifyglass.lyricsSourceChosen";
 NSNotificationName const SGLyricsDidReloadNotification = @"harness.lyricsDidReload";
 NSNotificationName const SGLyricsOffsetsDidChangeNotification = @"harness.lyricsOffsetsDidChange";
 NSNotificationName const SGLyricsPinDidChangeNotification = @"harness.lyricsPinDidChange";
