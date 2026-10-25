@@ -60,7 +60,6 @@ static BOOL sg_reachable;                      // Shared/Player reaches Spotify'
 // thread never reads half of a change (flags in the low 32 bits, then channels, then bytes per sample).
 static atomic_uint_fast64_t sg_rateBits;
 static atomic_uint_fast64_t sg_layout;
-static atomic_uint_fast64_t sg_skipped;        // renders whose buffers were not laid out as the format says
 
 static os_unfair_lock sg_errorLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableDictionary<NSString *, NSString *> *sg_errors;
@@ -80,8 +79,6 @@ static double loadDouble(atomic_uint_fast64_t *slot) {
 
 #pragma mark - the render thread
 
-static float sg_left[kScratchFrames], sg_right[kScratchFrames];
-
 static inline float readSample(const void *data, UInt32 index, UInt32 bytes, BOOL isFloat, UInt32 fraction) {
     if (bytes == 4) {
         if (isFloat) return ((const float *)data)[index];
@@ -91,87 +88,12 @@ static inline float readSample(const void *data, UInt32 index, UInt32 bytes, BOO
     return ((const int16_t *)data)[index] / 32768.0f;
 }
 
-// The same scale back as readSample's, rounded, so 16-bit samples the effects leave alone come back exact.
-static inline void writeSample(void *data, UInt32 index, float value, UInt32 bytes, BOOL isFloat, UInt32 fraction) {
-    if (bytes == 4 && isFloat) {
-        ((float *)data)[index] = value;
-        return;
-    }
-    if (bytes == 4) {
-        double scale = fraction ? (double)(1u << fraction) : 2147483648.0;
-        ((int32_t *)data)[index] = (int32_t)llrint(fmax(-2147483648.0, fmin(value * scale, 2147483647.0)));
-    } else {
-        ((int16_t *)data)[index] = (int16_t)lrintf(fmaxf(-32768, fminf(value * 32768, 32767)));
-    }
-}
-
-static BOOL anySound(const float *samples, UInt32 count) {
-    for (UInt32 i = 0; i < count; i++) if (samples[i] != 0) return YES;
-    return NO;
-}
-
 static BOOL laidOut(const AudioBufferList *data, UInt32 frames, UInt32 channels, UInt32 bytes, BOOL split) {
     BOOL fits = split ? data->mNumberBuffers == channels : data->mNumberBuffers == 1 && data->mBuffers[0].mNumberChannels == channels;
     for (UInt32 b = 0; fits && b < data->mNumberBuffers; b++) {
         fits = data->mBuffers[b].mData && data->mBuffers[b].mDataByteSize == frames * bytes * (split ? 1 : channels);
     }
     return fits;
-}
-
-// The buffer through the engine in place, whatever its format: the buffers themselves as the engine's lanes
-// when they are float, one per channel (the hardware's usual), otherwise read into the scratch lanes and
-// written back. The first two channels are the engine's; a mono output is fed to both and gets their mean.
-static void processBuffer(SGDSPEngine *engine, AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data) {
-    uint64_t layout = atomic_load_explicit(&sg_layout, memory_order_relaxed);
-    UInt32 formatFlags = (UInt32)layout, channels = (UInt32)(layout >> 32) & 0xffff, bytes = (UInt32)(layout >> 48);
-    BOOL isFloat = (formatFlags & kAudioFormatFlagIsFloat) != 0;
-    BOOL split = (formatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
-    UInt32 fraction = (formatFlags & kLinearPCMFormatFlagsSampleFractionMask) >> kLinearPCMFormatFlagsSampleFractionShift;
-    if ((bytes != 2 && bytes != 4) || channels < 1) return;
-    // Buffers not laid out as the format says are left alone rather than read as noise: the format read at
-    // the start can be a moment old.
-    if (!laidOut(data, frames, channels, bytes, split)) {
-        atomic_fetch_add_explicit(&sg_skipped, 1, memory_order_relaxed);
-        return;
-    }
-    // A silent buffer's contents are not promised; the engine gets zeros, and its tail replaces them.
-    BOOL silent = (*flags & kAudioUnitRenderAction_OutputIsSilence) != 0;
-    BOOL loud = NO;
-
-    if (split && isFloat && bytes == 4 && channels >= 2) {
-        float *left = data->mBuffers[0].mData, *right = data->mBuffers[1].mData;
-        if (silent) {
-            memset(left, 0, frames * sizeof(float));
-            memset(right, 0, frames * sizeof(float));
-        }
-        SGDSPEngineProcessEffects(engine, left, right, frames);
-        loud = !silent || anySound(left, frames) || anySound(right, frames);
-    } else {
-        for (UInt32 done = 0; done < frames;) {
-            UInt32 count = MIN(frames - done, (UInt32)kScratchFrames);
-            const void *first = data->mBuffers[0].mData, *second = split && channels > 1 ? data->mBuffers[1].mData : first;
-            UInt32 stride = split ? 1 : channels, secondOffset = !split && channels > 1 ? 1 : 0;
-            for (UInt32 i = 0; i < count; i++) {
-                UInt32 at = (done + i) * stride;
-                sg_left[i] = silent ? 0 : readSample(first, at, bytes, isFloat, fraction);
-                sg_right[i] = silent ? 0 : readSample(second, at + secondOffset, bytes, isFloat, fraction);
-            }
-            SGDSPEngineProcessEffects(engine, sg_left, sg_right, count);
-            loud = loud || !silent || anySound(sg_left, count) || anySound(sg_right, count);
-            void *firstOut = data->mBuffers[0].mData, *secondOut = split && channels > 1 ? data->mBuffers[1].mData : firstOut;
-            for (UInt32 i = 0; i < count; i++) {
-                UInt32 at = (done + i) * stride;
-                if (channels == 1) {
-                    writeSample(firstOut, at, 0.5f * (sg_left[i] + sg_right[i]), bytes, isFloat, fraction);
-                } else {
-                    writeSample(firstOut, at, sg_left[i], bytes, isFloat, fraction);
-                    writeSample(secondOut, at + secondOffset, sg_right[i], bytes, isFloat, fraction);
-                }
-            }
-            done += count;
-        }
-    }
-    if (loud) *flags &= ~kAudioUnitRenderAction_OutputIsSilence;
 }
 
 #pragma mark - the output's sound, read (AudioEffects.h)
@@ -207,12 +129,16 @@ static void readOut(SGAudioOutputReader reader, AudioUnitRenderActionFlags flags
 
 // Shared/Player admits these callbacks, with its always-run per-output control
 // between the effects and the reader. Refusal bypasses effects, never attenuation.
-static void renderEffects(AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data) {
+static BOOL renderEffects(float *left, float *right, UInt32 frames, double rate) {
     if (atomic_load_explicit(&sg_running, memory_order_acquire)) {
         SGDSPEngine *engine = atomic_load_explicit(&sg_engine, memory_order_acquire);
         // A new rate is being set up on the queue: until then the sound passes as it is.
-        if (engine && SGDSPEngineSampleRate(engine) == loadDouble(&sg_rateBits)) processBuffer(engine, flags, frames, data);
+        if (engine && SGDSPEngineSampleRate(engine) == rate) {
+            SGDSPEngineProcessEffects(engine, left, right, frames);
+            return YES;
+        }
     }
+    return NO;
 }
 
 static void readOutput(AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data) {
@@ -460,8 +386,8 @@ static void applyAll(SGDSPEngine *engine) {
 static void tend(void) {
     SGDSPEngine *engine = atomic_load(&sg_engine);
     SGDSPEngineCollect(engine);
-    static uint64_t faults, blocks, skipped;
-    static CFAbsoluteTime summarized, skipsLogged;
+    static uint64_t faults, blocks;
+    static CFAbsoluteTime summarized;
     SGDSPEngineStats stats = SGDSPEngineReadStats(engine, true);
     if (stats.faults != faults) {
         faults = stats.faults;
@@ -470,12 +396,6 @@ static void tend(void) {
         applyAll(engine);
     }
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-    uint64_t skippedNow = atomic_load(&sg_skipped);
-    if (skippedNow != skipped && now - skipsLogged >= 10) {
-        SGLog(@"dsp: %llu renders left alone, their buffers not laid out as the output's format says", skippedNow - skipped);
-        skipped = skippedNow;
-        skipsLogged = now;
-    }
     if (stats.blocks != blocks && now - summarized >= kSummaryEvery) {
         summarized = now;
         SGLog(@"dsp: %llu blocks processed, %llu passed dry while settings changed, %.2f ms a block (%.1f%% of its time), %.2f ms at most",
@@ -502,6 +422,7 @@ static void setTending(BOOL on) {
 // it was, and the notify let in or kept out. Answers whether every effect was set.
 static BOOL applyMaster(void) {
     if (!SGDSPSwitch(SGKeyDSP)) {
+        SGPlayerSetOutputProcessing(NULL, readOutput);
         SGPlayerSetOutputControl(NO, 0, 0, 100);
         setTending(NO);
         if (atomic_exchange(&sg_running, false)) SGLog(@"dsp: off, Spotify's sound passes as it is");
@@ -543,6 +464,7 @@ static BOOL applyMaster(void) {
         SGLog(@"dsp: on");
     }
     setTending(YES);
+    SGPlayerSetOutputProcessing(renderEffects, readOutput);
     return everything;
 }
 
@@ -612,7 +534,7 @@ static void followRoute(void) {
 }
 
 %ctor {
-    SGPlayerSetOutputProcessing(renderEffects, readOutput);
+    SGPlayerSetOutputProcessing(NULL, readOutput);
     // Posted on the audio session's thread: handed to main without waiting, so it cannot deadlock against main.
     [NSNotificationCenter.defaultCenter addObserverForName:AVAudioSessionRouteChangeNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {

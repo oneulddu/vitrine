@@ -22,7 +22,10 @@ static dispatch_queue_t sg_storeQueue;
     BOOL _busy, _looked, _looking, _nextHas, _nextLooking;
     NSString *_next;
     NSTimer *_ticker;
+    // Store queue only: cache change detection alongside the serialized lookups.
+    NSString *_storeNext;
     NSDate *_folderChanged;
+    BOOL _storeNextHas;
     int _failures;
     uint64_t _gaveUpEpoch;
     double _retryAt;
@@ -77,25 +80,33 @@ static dispatch_queue_t sg_storeQueue;
     id upcoming = [future isKindOfClass:NSArray.class] ? [(NSArray *)future firstObject] : nil;
     SPTPlayerTrack *next = [upcoming isKindOfClass:objc_getClass("SPTPlayerTrack")] ? upcoming : nil;
     NSString *nextURI = SGURIString(next.URI);
-    // Again when the folder changes: a file can arrive while the song before plays.
-    NSDate *changed = [NSFileManager.defaultManager attributesOfItemAtPath:SGLosslessStoreDirectory() error:NULL].fileModificationDate;
-    if (!_nextLooking && (![nextURI isEqualToString:_next] || ![changed isEqualToDate:_folderChanged])) {
+    if (!(nextURI == _next || [nextURI isEqualToString:_next])) {
         _next = nextURI;
-        _folderChanged = changed;
         _nextHas = NO;
-        if (nextURI) {
-            // Spotify's quality stays as it is until the answer is in; a tick then sets it.
-            _nextLooking = YES;
-            NSString *title = next.trackTitle ?: @"";
-            dispatch_async(sg_storeQueue, ^{
-                BOOL has = SGLosslessStoreHas(nextURI, title);
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    self->_nextLooking = NO;
+        SGLosslessLowerQuality(NO);
+    }
+    if (!_nextLooking && nextURI) {
+        _nextLooking = YES;
+        NSString *title = next.trackTitle ?: @"";
+        dispatch_async(sg_storeQueue, ^{
+            // Directory creation, metadata and candidate lookup all stay off main.
+            NSDate *changed = [NSFileManager.defaultManager attributesOfItemAtPath:SGLosslessStoreDirectory() error:NULL].fileModificationDate;
+            if (![nextURI isEqualToString:self->_storeNext] || ![changed isEqualToDate:self->_folderChanged]) {
+                self->_storeNext = nextURI;
+                self->_folderChanged = changed;
+                self->_storeNextHas = SGLosslessStoreHas(nextURI, title);
+            }
+            BOOL has = self->_storeNextHas;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                self->_nextLooking = NO;
+                if ([nextURI isEqualToString:self->_next]) {
                     self->_nextHas = has;
+                    SGLosslessLowerQuality(has);
+                } else {
                     [self tick];
-                });
+                }
             });
-        }
+        });
     }
     if (!_nextLooking) SGLosslessLowerQuality(_nextHas);
 
@@ -117,7 +128,7 @@ static dispatch_queue_t sg_storeQueue;
             if (![track isEqualToString:self->_track]) return;
             if (anchored) {
                 self->_failures = 0;
-                SGLosslessStoreRemember(track, path);
+                dispatch_async(sg_storeQueue, ^{ SGLosslessStoreRemember(track, path); });
                 SGLog(@"lossless: playing %@ from %.2f s", path.lastPathComponent, [anchored[@"file_seconds"] doubleValue]);
                 return;
             }

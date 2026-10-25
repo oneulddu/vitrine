@@ -42,6 +42,91 @@ static BOOL samplesEqual(float *left, float *right, float expected) {
     return YES;
 }
 
+static void renderData(Output *output, UInt32 frames, AudioBufferList *data) {
+    AudioTimeStamp stamp = {0};
+    AudioUnitRenderActionFlags flags = kAudioUnitRenderAction_PreRender;
+    rendered(output, &flags, &stamp, 0, frames, data);
+    flags = kAudioUnitRenderAction_PostRender;
+    rendered(output, &flags, &stamp, 0, frames, data);
+}
+
+static BOOL boost(float *left, float *right, UInt32 frames, double sampleRate) {
+    for (UInt32 i = 0; i < frames; ++i) {
+        left[i] *= 2;
+        right[i] *= 2;
+    }
+    return YES;
+}
+
+static void headroomAndBypass(Output *output) {
+    float warmLeft[1024], warmRight[1024];
+    SGPlayerSetGain(1);
+    for (unsigned i = 0; i < 30; ++i) renderConstant(output, warmLeft, warmRight, YES);
+    SGPlayerSetOutputControl(YES, -12.041199826559248, 0, 60); // amplitude 0.25
+    renderConstant(output, warmLeft, warmRight, YES);
+    SGPlayerSetOutputProcessing(boost, NULL);
+    // More than one scratch chunk, including peaks that exceed integer full
+    // scale inside the effect but fit after the compensating post gain.
+    enum { frames = 5003 };
+    static float left[frames], right[frames];
+    static int16_t pcm[frames * 2];
+    const int16_t wave[] = {8192, 16384, 24576, 16384, 8192, -8192, -16384, -24576};
+    for (UInt32 i = 0; i < frames; ++i) {
+        int16_t sample = wave[i % 8];
+        left[i] = right[i] = sample / 32768.0f;
+        pcm[i * 2] = pcm[i * 2 + 1] = sample;
+    }
+    struct { AudioBufferList list; AudioBuffer second; } floats =
+        {{2, {{1, sizeof left, left}}}, {1, sizeof right, right}};
+    renderData(output, frames, &floats.list);
+    atomic_store(&output->hardware.bytes, 2);
+    atomic_store(&output->hardware.flags, kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked);
+    AudioBufferList integers = {1, {{2, sizeof pcm, pcm}}};
+    renderData(output, frames, &integers);
+    BOOL agrees = YES;
+    for (UInt32 i = 0; i < frames; ++i) {
+        float expected = wave[i % 8] / 65536.0f; // input * 2 * 0.25
+        agrees &= fabsf(left[i] - expected) < 0.000001f && fabsf(right[i] - expected) < 0.000001f;
+        agrees &= fabsf(pcm[i * 2] / 32768.0f - expected) <= 1.0f / 32768
+            && fabsf(pcm[i * 2 + 1] / 32768.0f - expected) <= 1.0f / 32768;
+    }
+    expect(agrees, "float and s16 preserve boosted peaks through compensating post gain before quantization");
+    for (UInt32 i = 0; i < frames * 2; ++i) pcm[i] = 24576;
+    closeProcessing();
+    renderData(output, frames, &integers);
+    openProcessing();
+    BOOL attenuated = YES;
+    for (UInt32 i = 0; i < frames * 2; ++i) attenuated &= pcm[i] == 6144;
+    expect(attenuated, "s16 refusal skips only the boost, never mandatory post gain");
+
+    SGPlayerSetOutputProcessing(NULL, NULL);
+    SGPlayerSetOutputControl(NO, 0, 0, 60);
+    formatAt(&output->hardware, 48000);
+    renderConstant(output, warmLeft, warmRight, YES);
+    atomic_store(&output->hardware.flags, kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked);
+    int32_t words[] = {INT32_MIN, INT32_MAX, 16777217, -16777217, 1, -1, 123456789, -123456789};
+    int32_t original[8];
+    memcpy(original, words, sizeof words);
+    AudioBufferList exact = {1, {{2, sizeof words, words}}};
+    renderData(output, 4, &exact);
+    expect(!memcmp(words, original, sizeof words), "settled disabled output control preserves every s32 bit");
+    formatAt(&output->hardware, 48000);
+    SGPlayerSetOutputControl(YES, 0, -12, 60);
+    renderConstant(output, warmLeft, warmRight, YES);
+    expect(samplesEqual(warmLeft, warmRight, 0.25118864f), "enabling the limiter leaves unity bypass immediately");
+    SGPlayerSetOutputControl(NO, 0, 0, 60);
+    renderConstant(output, warmLeft, warmRight, YES);
+    expect(samplesEqual(warmLeft, warmRight, 1), "disabling limiting releases its envelope to exact unity");
+    SGPlayerSetGain(0.25);
+    renderConstant(output, warmLeft, warmRight, YES);
+    expect(fabsf(warmLeft[0] - 0.99995833f) < 0.000001f && fabsf(warmLeft[1023] - 0.95733333f) < 0.000001f,
+           "starting a fade leaves unity bypass on the next buffer");
+    SGPlayerSetGain(1);
+    renderConstant(output, warmLeft, warmRight, YES);
+    expect(fabsf(warmLeft[0] - 0.957375f) < 0.000001f && fabsf(warmLeft[1023] - 1) < 0.000001f,
+           "cancelling a fade reverses the envelope on the next buffer");
+}
+
 static atomic_bool stopNonowner, nonownerStarted;
 static void *nonowner(void *context) {
     AudioUnit unit = context;
@@ -149,6 +234,8 @@ static void runTests(void) {
     atomic_store(&second->running, false);
     atomic_store(&second->unit, NULL);
     atomic_store(&output->running, false);
+
+    headroomAndBypass(output);
 
     SGTimePitch *initial = unitForFormat();
     expect(initial != NULL, "initial pitch unit created");

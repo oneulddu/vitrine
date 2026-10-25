@@ -101,7 +101,10 @@ void SGPlayerEndProcessing(void);
 // Called under shared admission: effects first, then mandatory per-output
 // control, then the reader. Register once at launch; callbacks never wait.
 typedef void (*SGPlayerOutputProcessor)(AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data);
-void SGPlayerSetOutputProcessing(SGPlayerOutputProcessor effects, SGPlayerOutputProcessor reader);
+// Effects receive normalized float lanes, with headroom preserved until output
+// control and final quantization. False leaves the lanes unchanged.
+typedef BOOL (*SGPlayerOutputEffects)(float *left, float *right, UInt32 frames, double sampleRate);
+void SGPlayerSetOutputProcessing(SGPlayerOutputEffects effects, SGPlayerOutputProcessor reader);
 // Control side only. Gain/limiter settings for music outputs, independent of
 // shared-effect admission. Sleep-timer gain remains independent of this switch.
 void SGPlayerSetOutputControl(BOOL on, double gainDB, double thresholdDB, double releaseMS);

@@ -132,7 +132,8 @@ static pthread_mutex_t sg_outputsLock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 static dispatch_queue_t sg_outputsQueue;
 static SGPlayerOutputWatcher sg_watchers[kMaxWatchers];
 static BOOL sg_reachable;                    // Spotify's AudioOutputUnitStart could be rebound
-static _Atomic(SGPlayerOutputProcessor) sg_outputEffects, sg_outputReader;
+static _Atomic(SGPlayerOutputEffects) sg_outputEffects;
+static _Atomic(SGPlayerOutputProcessor) sg_outputReader;
 // Under sg_outputsLock. Coefficients are made off render for each hardware rate.
 static double sg_outputGain = 1, sg_outputThreshold = INFINITY, sg_outputReleaseMS = 100;
 // The timer publishes the process-wide fade level through SGPlayerSetGain.
@@ -175,7 +176,7 @@ void SGPlayerEndProcessing(void) {
     SGRenderGateLeave(&sg_processing);
 }
 
-void SGPlayerSetOutputProcessing(SGPlayerOutputProcessor effects, SGPlayerOutputProcessor reader) {
+void SGPlayerSetOutputProcessing(SGPlayerOutputEffects effects, SGPlayerOutputProcessor reader) {
     atomic_store(&sg_outputEffects, effects);
     atomic_store(&sg_outputReader, reader);
 }
@@ -478,12 +479,11 @@ static inline void writeSample(void *data, UInt32 index, float value, UInt32 byt
         ((float *)data)[index] = value;
         return;
     }
-    value = fmaxf(-1, fminf(value, 1));
     if (bytes == 4) {
-        double scale = fraction ? (double)(1u << fraction) : 2147483647.0;
-        ((int32_t *)data)[index] = (int32_t)(value * scale);
+        double scale = fraction ? (double)(1u << fraction) : 2147483648.0;
+        ((int32_t *)data)[index] = (int32_t)llrint(fmax(-2147483648.0, fmin(value * scale, 2147483647.0)));
     } else {
-        ((int16_t *)data)[index] = (int16_t)(value * 32767);
+        ((int16_t *)data)[index] = (int16_t)lrintf(fmaxf(-32768, fminf(value * 32768, 32767)));
     }
 }
 
@@ -553,8 +553,10 @@ static void scaleSample(void *data, UInt32 at, UInt32 bytes, BOOL isFloat, float
 }
 
 // Always runs, including when shared effects are unavailable during handoff.
-// No shared scratch or envelope; one output's render thread owns every field.
-static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data, BOOL musicBuffer) {
+// Envelopes are per-output. Only admitted effects use the shared scratch lanes;
+// their float headroom survives mandatory control and is quantized at the end.
+static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBufferList *data,
+                               BOOL musicBuffer, SGPlayerOutputEffects effects) {
     Format *hardware = &output->hardware;
     UInt32 bytes = atomic_load_explicit(&hardware->bytes, memory_order_relaxed);
     double rate = rateOf(hardware);
@@ -563,7 +565,8 @@ static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags
     BOOL isFloat = (formatFlags & kAudioFormatFlagIsFloat) != 0;
     BOOL split = (formatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
     UInt32 channels = atomic_load_explicit(&hardware->channels, memory_order_relaxed);
-    if (!channels || (split ? data->mNumberBuffers != channels : data->mNumberBuffers != 1)) return;
+    if (!channels || (split ? data->mNumberBuffers != channels
+        : data->mNumberBuffers != 1 || data->mBuffers[0].mNumberChannels != channels)) return;
     for (UInt32 b = 0; b < data->mNumberBuffers; b++) {
         if (!data->mBuffers[b].mData || data->mBuffers[b].mDataByteSize / bytes / (split ? 1 : channels) < frames) return;
     }
@@ -574,6 +577,7 @@ static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags
     BOOL beginsMusic = musicBuffer && !output->controlledMusic;
     if (beginsMusic)
         output->outputEnvelope = (SGOutputEnvelope){settings.gain, 1};
+    if (settings.threshold == INFINITY) output->outputEnvelope.limiter = 1;
     output->controlledMusic = musicBuffer;
     float from = output->outputEnvelope.gain, step = (settings.gain - from) / frames;
     BOOL starting = atomic_exchange(&output->sleepStarting, false);
@@ -582,19 +586,58 @@ static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags
     float most = (float)(frames / (kGainSlew * rate));
     float sleepTo = sleepFrom + fmaxf(-most, fminf(target - sleepFrom, most));
     output->sleepGain = sleepTo;
+    BOOL neutral = from == 1 && settings.gain == 1 && settings.threshold == INFINITY
+        && output->outputEnvelope.limiter == 1 && sleepFrom == 1 && sleepTo == 1;
+    // State adoption above is mandatory even on bypass. No samples are read or
+    // rewritten while output control is settled and no effects are admitted.
+    if (neutral && !effects) return;
     UInt32 fraction = (formatFlags & kLinearPCMFormatFlagsSampleFractionMask) >> kLinearPCMFormatFlagsSampleFractionShift;
     BOOL silent = (*flags & kAudioUnitRenderAction_OutputIsSilence) != 0;
-    for (UInt32 i = 0; i < frames; ++i) {
-        UInt32 at = split ? i : i * channels;
-        float l = silent ? 0 : readSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
-        float r = channels < 2 ? l : silent ? 0 : readSample(data->mBuffers[split ? 1 : 0].mData, split ? i : at + 1, bytes, isFloat, fraction);
-        float gain = from == settings.gain ? from : from + step * (i + 1);
-        float scale = SGOutputFrameScale(&output->outputEnvelope, settings, gain, l, r);
-        float sleep = sleepFrom + (sleepTo - sleepFrom) * (i + 1) / frames;
-        if (!silent) for (UInt32 c = 0; c < channels; ++c) {
-            scaleSample(data->mBuffers[split ? c : 0].mData, split ? i : at + c, bytes, isFloat, (c < 2 ? scale : 1) * sleep);
+    BOOL loud = !silent;
+    for (UInt32 done = 0; done < frames;) {
+        UInt32 count = MIN(frames - done, (UInt32)kSGTimePitchMaxFrames);
+        BOOL direct = split && isFloat && bytes == 4 && channels >= 2;
+        float *left = NULL, *right = NULL;
+        BOOL processed = NO;
+        if (effects) {
+            // Only an admitted callback uses the shared scratch lanes. The
+            // in-place pitch stage has finished with them before this stage.
+            left = direct ? (float *)data->mBuffers[0].mData + done : sg_scratch[0];
+            right = direct ? (float *)data->mBuffers[1].mData + done : sg_scratch[1];
+            if (!direct || silent) for (UInt32 j = 0; j < count; ++j) {
+                UInt32 at = split ? done + j : (done + j) * channels;
+                left[j] = silent ? 0 : readSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
+                right[j] = channels < 2 ? left[j] : silent ? 0
+                    : readSample(data->mBuffers[split ? 1 : 0].mData, split ? done + j : at + 1, bytes, isFloat, fraction);
+            }
+            processed = effects(left, right, count, rate);
         }
+        if (neutral && (!processed || (direct && !silent))) {
+            done += count;
+            continue;
+        }
+        for (UInt32 j = 0; j < count; ++j) {
+            UInt32 i = done + j, at = split ? i : i * channels;
+            float l = processed ? left[j] : silent ? 0 : readSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
+            float r = processed ? right[j] : channels < 2 ? l : silent ? 0
+                : readSample(data->mBuffers[split ? 1 : 0].mData, split ? i : at + 1, bytes, isFloat, fraction);
+            if (processed && channels == 1) l = r = 0.5f * (l + r);
+            float gain = from == settings.gain ? from : from + step * (i + 1);
+            float scale = neutral ? 1 : SGOutputFrameScale(&output->outputEnvelope, settings, gain, l, r);
+            float sleep = sleepFrom + (sleepTo - sleepFrom) * (i + 1) / frames;
+            if (processed) {
+                l *= scale * sleep;
+                r *= scale * sleep;
+                writeSample(data->mBuffers[0].mData, at, l, bytes, isFloat, fraction);
+                if (channels > 1) writeSample(data->mBuffers[split ? 1 : 0].mData, split ? i : at + 1, r, bytes, isFloat, fraction);
+                loud = loud || l != 0 || r != 0;
+            }
+            if (!silent) for (UInt32 c = processed ? 2 : 0; c < channels; ++c)
+                scaleSample(data->mBuffers[split ? c : 0].mData, split ? i : at + c, bytes, isFloat, (c < 2 ? scale : 1) * sleep);
+        }
+        done += count;
     }
+    if (loud) *flags &= ~kAudioUnitRenderAction_OutputIsSilence;
     output->outputEnvelope.gain = settings.gain;
 }
 
@@ -615,9 +658,9 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
         if (unit && SGTimePitchSampleRate(unit) == rateOf(&output->hardware))
             shiftInPlace(unit, &output->hardware, flags, frames, data);
     }
-    SGPlayerOutputProcessor effects = atomic_load(&sg_outputEffects), reader = atomic_load(&sg_outputReader);
-    if (admitted && effects) effects(flags, frames, data);
-    applyOutputControl(output, flags, frames, data, musicBuffer);
+    SGPlayerOutputEffects effects = admitted ? atomic_load(&sg_outputEffects) : NULL;
+    SGPlayerOutputProcessor reader = atomic_load(&sg_outputReader);
+    applyOutputControl(output, flags, frames, data, musicBuffer, effects);
     if (admitted && reader) reader(flags, frames, data);
     if (admitted) SGPlayerEndProcessing();
     return noErr;
