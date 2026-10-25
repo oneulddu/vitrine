@@ -33,9 +33,12 @@ static const CGFloat kBreath = 0.06;   // how much bigger the cover grows at the
 // Over moving artwork, judged on bright, busy and dark clips in harness/lyrics-clip: the picture is dimmed by
 // kMotionDim, and by kBandDim where the words sit, fading between the two over kBandReach of the height above
 // and below the middle, so white in it stays under 0.4 of the words' white there; behind the words it is
-// blurred, a tent kSoftWidth of the width across, so its edges do not cross the letters; the words carry a
-// tight dark shadow kShadowBlur of the font size wide, and the dimmed lines are kMotionNextAlpha white.
-static const CGFloat kMotionDim = 0.25, kBandDim = 0.6, kBandReach = 0.3, kSoftWidth = 0.06;
+// blurred, a tent kSoftWidth of the width across (127 pixels at most), so no pattern in it crosses the letters,
+// the dimmed ones included; the words carry a tight dark shadow kShadowBlur of the font size wide, and the dimmed lines are
+// kMotionNextAlpha white. Over a bright picture the band is darker, by its first frame, held for the clip:
+// enough that the brightest tenth behind the words comes to kBandLight of white, up to kBandDarkest.
+static const CGFloat kMotionDim = 0.25, kBandDim = 0.6, kBandReach = 0.3, kSoftWidth = 0.16;
+static const CGFloat kBandLight = 0.22, kBandDarkest = 0.8;
 static const CGFloat kShadowAlpha = 0.9, kShadowBlur = 0.15, kMotionNextAlpha = 0.55;
 // A faster video keeps only this many frames a second: each costs a draw on the CPU.
 static const double kMotionFPS = 30;
@@ -306,15 +309,20 @@ typedef struct {
     CGRect soft;          // the rows behind the words, across the cut, in the stored frame
     uint8_t *blurred;     // those rows blurred, NULL with no words
     uint16_t *feather;    // how much of the blurred rows each row takes, of 256, fading in and out at the top and bottom
+    BOOL fitted;          // whether `keep` is set to the picture behind the words yet, which the first frame does
 } Over;
 
-// How dark row `y` of `height` (from the top) is made: kBandDim across the middle 40% of the band about the
+// How dark row `y` of `height` (from the top) is made: `band` across the middle 40% of the band about the
 // words, kMotionDim past it, straight between.
-static CGFloat dimAt(size_t y, size_t height) {
+static CGFloat dimAt(size_t y, size_t height, CGFloat band) {
     CGFloat reach = height * kBandReach, t = (y - (height * kCentreY - reach)) / (2 * reach);
     if (t <= 0 || t >= 1) return kMotionDim;
     CGFloat edge = MIN(MIN(t, 1 - t) / 0.3, 1);
-    return kMotionDim + (kBandDim - kMotionDim) * edge;
+    return kMotionDim + (band - kMotionDim) * edge;
+}
+
+static void setKeep(Over *over, size_t rows, CGFloat band) {
+    for (size_t y = 0; y < rows; y++) over->keep[y] = (uint16_t)round(256 * (1 - dimAt(y, rows, band)));
 }
 
 static Over makeOver(Motion motion, NSString *previous, NSString *line, NSString *translation, NSString *next) {
@@ -322,13 +330,16 @@ static Over makeOver(Motion motion, NSString *previous, NSString *line, NSString
     over.words = newWords(previous, line, translation, next, motion.cut, &over.drawn);
     size_t rows = (size_t)motion.cut.height;
     over.keep = malloc(rows * sizeof(uint16_t));
-    for (size_t y = 0; y < rows; y++) over.keep[y] = (uint16_t)round(256 * (1 - dimAt(y, rows)));
+    setKeep(&over, rows, kBandDim);
     if (!over.words) return over;
     CGRect cut = cutIn(motion);
-    over.soft = CGRectMake(cut.origin.x, cut.origin.y + over.drawn.origin.y, cut.size.width, over.drawn.size.height);
-    // Faded over the margin newWords leaves about the words, a font size, so every line is on blurred picture.
+    // A font size past the margin newWords leaves about the words, itself a font size, and faded in over both, so
+    // every line is on picture blurred whole and the blur's edge is gentle and away from them.
+    CGFloat reach = round(motion.cut.width * kFont);
+    over.soft = CGRectIntersection(CGRectMake(cut.origin.x, cut.origin.y + over.drawn.origin.y - reach, cut.size.width,
+                                              over.drawn.size.height + 2 * reach), cut);
     size_t width = (size_t)over.soft.size.width, height = (size_t)over.soft.size.height;
-    size_t fade = MAX(MIN((size_t)(motion.cut.width * kFont), height / 2), 1);
+    size_t fade = MAX(MIN((size_t)(2 * reach), height / 2), 1);
     over.blurred = malloc(width * height * 4);
     over.feather = malloc(height * sizeof(uint16_t));
     for (size_t y = 0; y < height; y++) over.feather[y] = (uint16_t)(256 * MIN(1.0, MIN(y, height - 1 - y) / (double)fade));
@@ -343,10 +354,11 @@ static void freeOver(Over over) {
 }
 
 // The softening, the dimming and the words, drawn into `buffer`, a BGRA frame of the video: the rows behind
-// the words blurred (Accelerate's tent blur) and faded in, every row of the cut darkened by its share in one
-// pass, and one image the size of the words. All on the CPU. NO, with the frame left as it is, for a frame of
-// another size or format than the track states, so the clip is not written without its words.
-static BOOL drawOver(CVPixelBufferRef buffer, Motion motion, Over over) {
+// the words blurred (Accelerate's tent blur) and faded in, on the first frame the band's darkness set by how
+// bright they are, every row of the cut darkened by its share in one pass, and one image the size of the
+// words. All on the CPU. NO, with the frame left as it is, for a frame of another size or format than the
+// track states, so the clip is not written without its words.
+static BOOL drawOver(CVPixelBufferRef buffer, Motion motion, Over *over) {
     CVPixelBufferLockBaseAddress(buffer, 0);
     uint8_t *base = CVPixelBufferGetBaseAddress(buffer);
     size_t bytesPerRow = CVPixelBufferGetBytesPerRow(buffer);
@@ -357,39 +369,59 @@ static BOOL drawOver(CVPixelBufferRef buffer, Motion motion, Over over) {
     CGRect frame = CGRectMake(0, 0, frameWidth, frameHeight);
     if (!base || CVPixelBufferIsPlanar(buffer) || CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_32BGRA
         || frameWidth != (size_t)motion.stored.width || frameHeight != (size_t)motion.stored.height || bytesPerRow < frameWidth * 4
-        || !CGRectContainsRect(frame, cut) || (over.blurred && !CGRectContainsRect(frame, over.soft))) {
+        || !CGRectContainsRect(frame, cut) || (over->blurred && !CGRectContainsRect(frame, over->soft))) {
         CVPixelBufferUnlockBaseAddress(buffer, 0);
         return NO;
     }
-    if (over.blurred) {
+    if (over->blurred) {
         // An image counts its rows from the top, Core Graphics from the bottom.
-        size_t top = (size_t)(motion.stored.height - CGRectGetMaxY(over.soft)), height = (size_t)over.soft.size.height;
-        size_t width = (size_t)over.soft.size.width, rowBytes = width * 4;
-        uint8_t *rows = base + top * bytesPerRow + (size_t)over.soft.origin.x * 4;
-        vImage_Buffer from = {rows, height, width, bytesPerRow}, to = {over.blurred, height, width, rowBytes};
-        uint32_t kernel = (uint32_t)(width * kSoftWidth) | 1;
-        if (vImageTentConvolve_ARGB8888(&from, &to, NULL, 0, 0, kernel, kernel, NULL, kvImageEdgeExtend) == kvImageNoError) {
+        size_t top = (size_t)(motion.stored.height - CGRectGetMaxY(over->soft)), height = (size_t)over->soft.size.height;
+        size_t width = (size_t)over->soft.size.width, rowBytes = width * 4;
+        uint8_t *rows = base + top * bytesPerRow + (size_t)over->soft.origin.x * 4;
+        // Accelerate's tent takes about 0.5 ms here up to 127 pixels across and some 40 times that past it.
+        uint32_t kernel = MIN((uint32_t)(width * kSoftWidth) | 1, 127);
+        // Read from the picture above and below the rows as far as the blur reaches, where the frame has it, so
+        // their top and bottom are blurred with what is there rather than their edge drawn out.
+        size_t above = MIN(kernel / 2, top), below = MIN(kernel / 2, frameHeight - top - height);
+        vImage_Buffer from = {rows - above * bytesPerRow, height + above + below, width, bytesPerRow};
+        vImage_Buffer to = {over->blurred, height, width, rowBytes};
+        if (vImageTentConvolve_ARGB8888(&from, &to, NULL, 0, above, kernel, kernel, NULL, kvImageEdgeExtend) == kvImageNoError) {
             for (size_t y = 0; y < height; y++) {
                 uint8_t *sharp = rows + y * bytesPerRow;
-                const uint8_t *soft = over.blurred + y * rowBytes;
-                uint16_t share = over.feather[y];
+                const uint8_t *soft = over->blurred + y * rowBytes;
+                uint16_t share = over->feather[y];
                 if (share == 256) memcpy(sharp, soft, rowBytes);
                 else if (share) for (size_t i = 0; i < rowBytes; i++) sharp[i] += (uint8_t)(((soft[i] - sharp[i]) * share) >> 8);
             }
+        }
+        if (!over->fitted) {
+            // The luma (Rec. 709's weights on the stored values) the brightest tenth of the picture behind the
+            // words reaches, as it shows there, softened.
+            size_t histogram[256] = {0}, count = 0, seen = 0;
+            for (size_t y = 0; y < height; y++) {
+                const uint8_t *pixel = rows + y * bytesPerRow + (size_t)over->drawn.origin.x * 4;
+                for (size_t x = 0; x < (size_t)over->drawn.size.width; x++, pixel += 4, count++)
+                    histogram[(pixel[2] * 54 + pixel[1] * 183 + pixel[0] * 19) >> 8]++;
+            }
+            int light = 255;
+            while (light > 0 && (seen += histogram[light]) < count / 10) light--;
+            CGFloat band = MIN(MAX(1 - kBandLight * 255 / MAX(light, 1), kBandDim), kBandDarkest);
+            setKeep(over, (size_t)cut.size.height, band);
+            over->fitted = YES;
         }
     }
     // Blue and red, then green, each scaled in its own lane of the pixel; alpha is left as it is.
     size_t top = (size_t)cut.origin.y, width = (size_t)cut.size.width;
     for (size_t y = 0; y < (size_t)cut.size.height; y++) {
-        uint32_t *pixel = (uint32_t *)(base + (top + y) * bytesPerRow) + (size_t)cut.origin.x, keep = over.keep[y];
+        uint32_t *pixel = (uint32_t *)(base + (top + y) * bytesPerRow) + (size_t)cut.origin.x, keep = over->keep[y];
         for (size_t x = 0; x < width; x++) {
             uint32_t v = pixel[x];
             pixel[x] = (((v & 0x00FF00FFu) * keep >> 8) & 0x00FF00FFu) | (((v & 0x0000FF00u) * keep >> 8) & 0x0000FF00u) | (v & 0xFF000000u);
         }
     }
-    if (over.words) {
+    if (over->words) {
         CGContextRef context = newContext(motion.stored, base, bytesPerRow);
-        CGContextDrawImage(context, CGRectOffset(over.drawn, cut.origin.x, cut.origin.y), over.words);
+        CGContextDrawImage(context, CGRectOffset(over->drawn, cut.origin.x, cut.origin.y), over->words);
         CGContextRelease(context);
     }
     CVPixelBufferUnlockBaseAddress(buffer, 0);
@@ -449,11 +481,11 @@ CGImageRef SGLyricsClipMotionFrame(NSURL *motionFile, NSString *previous, NSStri
     Motion motion;
     AVAssetTrack *track = motionTrack(asset, &motion);
     if (!track) return NULL;
-    Over over = makeOver(motion, previous, line, translation, next);
+    __block Over over = makeOver(motion, previous, line, translation, next);
     __block CGImageRef frame = NULL;
     eachFrame(asset, track, motion, from, motion.length, ^BOOL(CMSampleBufferRef sample) {
         CVPixelBufferRef buffer = CMSampleBufferGetImageBuffer(sample);
-        if (!drawOver(buffer, motion, over)) return NO;
+        if (!drawOver(buffer, motion, &over)) return NO;
         CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
         CGContextRef context = newContext(motion.stored, CVPixelBufferGetBaseAddress(buffer), CVPixelBufferGetBytesPerRow(buffer));
         CGImageRef whole = CGBitmapContextCreateImage(context);
@@ -490,10 +522,10 @@ BOOL SGLyricsClipWriteOverMotion(NSURL *file, NSURL *motionFile, NSString *previ
     [writer addInput:input];
     if (![writer startWriting]) return NO;
     [writer startSessionAtSourceTime:kCMTimeZero];
-    Over over = makeOver(motion, previous, line, translation, next);
+    __block Over over = makeOver(motion, previous, line, translation, next);
     __block BOOL ok = YES, any = NO;
     BOOL read = eachFrame(asset, track, motion, from, seconds, ^BOOL(CMSampleBufferRef sample) {
-        if (!drawOver(CMSampleBufferGetImageBuffer(sample), motion, over)) {
+        if (!drawOver(CMSampleBufferGetImageBuffer(sample), motion, &over)) {
             ok = NO;
             return NO;
         }

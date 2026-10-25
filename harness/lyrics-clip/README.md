@@ -29,7 +29,11 @@ translation (its preview saved as `<video>-translated-preview.png`), a long line
 stretch round the video's end, one longer than the video (written whole), a break and no words. Each is
 read back and checked: length, the 3:4 cut's size, H.264, frames at up to 30 fps, words in the upper middle
 and nothing white under the clock (the top 15%) or the controls (the bottom 35%), the picture moving, and the preview the same as the first
-frame. A video whose frames decode at another size than it states (non-square pixels, made with ffmpeg's
+frame. With the translation, it draws the same preview again with the lines as spaces, the picture behind them
+alone, and over the flag checks the picture behind the translation and the next line in the phone's strip:
+little pattern left (the mean step between neighbouring pixels under 0.65 of 255; the narrower blur and fixed
+band before left 1.31) and a dimmed line at more than 4.2:1 on its brightest 5% (before, 3.4:1); over other
+videos it prints the same. A video whose frames decode at another size than it states (non-square pixels, made with ffmpeg's
 `setsar=4/3`) must not be written and give no preview, so the line falls back to the cover; so must a video
 that is gone or cut short. It also checks the artwork ID's ending (`SGLyricsClipLook`): another style or
 another video gives another one. It prints each clip's time a frame against the video cut alone (`SGMotionClipShape`) and the

@@ -356,8 +356,10 @@ Shared:
                   from the line's start to the next's plus a second, 2 to 8 s; a video no longer than that is written
                   whole, turned to start there, so its loop has no seam), at the video's own 3:4 cut and frame rate up
                   to 30 fps, with the line sung last dimmed above (dim, bright, dim). The video is decoded as BGRA, the
-                  rows behind the words are blurred (Accelerate's tent blur) and faded in, every row of the cut is
-                  darkened in one pass (0.25, and 0.6 across the words), and the words with a tight dark shadow are
+                  rows behind the words are blurred (Accelerate's tent blur, 16% of the width across, at most 127
+                  pixels) and faded in, every row of the cut is darkened in one pass (0.25, and 0.6 across the words,
+                  up to 0.8 over a bright picture: from the first frame, held for the clip, enough that the brightest
+                  tenth behind the words comes to 0.22 of white), and the words with a tight dark shadow are
                   drawn on; the encoder cuts the 3:4 middle as SGMotionClip.m does, so nothing is scaled on the CPU.
                   The IDs end in the style and, over moving artwork, m and the first 16 characters of the file's name
                   (SGLyricsClipLook), so the clip arriving, a Canvas after an animated cover, or a change of style

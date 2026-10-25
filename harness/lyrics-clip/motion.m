@@ -232,6 +232,67 @@ static double contrast(double lighter, double darker) {
     return (lighter + 0.05) / (darker + 0.05);
 }
 
+// The lines as spaces: the same layout, so the same softening and dimming, with no words on it.
+static NSString *blanked(NSString *text) {
+    return [@"" stringByPaddingToLength:text.length withString:@" " startingAtIndex:0];
+}
+
+static double lumaAt(const uint8_t *q) {
+    return 0.2126 * q[0] + 0.7152 * q[1] + 0.0722 * q[2];
+}
+
+// The picture behind a translation and the next line, in the middle 9:19.5 strip a phone shows. `words` is a
+// frame with them and `behind` the same frame with them as spaces; rows where `words` is lighter are the lines',
+// and the last two runs of them (the translation and the next line, or the line and its translation run
+// together and the next) are looked at. Returns the picture's pattern there, the mean step between neighbouring
+// pixels' luma, 0 to 255; `dimmed` gets the contrast a dimmed line (0.55 white, unshadowed) has on its brightest
+// 5%, and `outside` the mean difference of the two frames away from the words, which is 0 when the layout and
+// dimming match.
+static double behindDimmed(CGImageRef words, CGImageRef behind, double *dimmed, double *outside) {
+    size_t w, h, w2, h2;
+    uint8_t *p = pixelsOf(words, &w, &h), *q = pixelsOf(behind, &w2, &h2);
+    double pattern = -1;
+    *dimmed = 0;
+    *outside = 255;
+    size_t left = w * (1 - 9 / 19.5 * 4 / 3) / 2, right = w - left, runs[8][2], n = 0, unlit = 0;
+    BOOL in = NO;
+    for (size_t y = 0; w == w2 && h == h2 && y < h; y++) {
+        BOOL lit = NO;
+        for (size_t x = left; x < right && !lit; x++) lit = lumaAt(p + (y * w + x) * 4) - lumaAt(q + (y * w + x) * 4) > 40;
+        if (n == 8) break;
+        if (lit && !in) runs[n][0] = y, in = YES;
+        if (lit) unlit = 0, runs[n][1] = y + 1;
+        // A run ends after three rows without a lit pixel, so a gap inside a line does not split it.
+        else if (in && ++unlit >= 3) n++, in = NO;
+    }
+    if (in) n++;
+    if (n >= 3) {
+        size_t from = runs[n - 2][0], to = runs[n - 1][1], count = 0, away = 0;
+        double steps = 0, apart = 0;
+        NSMutableArray<NSNumber *> *lights = [NSMutableArray array];
+        for (size_t y = from; y < to; y++) {
+            for (size_t x = left; x < right; x++, count++) {
+                const uint8_t *r = q + (y * w + x) * 4;
+                steps += fabs(lumaAt(r + 4) - lumaAt(r)) + fabs(lumaAt(r + w * 4) - lumaAt(r));
+                [lights addObject:@(0.2126 * linear(r[0]) + 0.7152 * linear(r[1]) + 0.0722 * linear(r[2]))];
+            }
+        }
+        // Away from the words: a font size (about 5% of the width) past the first and last runs.
+        for (size_t y = 0; y < h; y++) {
+            if (y + w / 20 >= runs[0][0] && y <= runs[n - 1][1] + w / 20) continue;
+            for (size_t i = y * w * 4; i < (y + 1) * w * 4; i++, away++) apart += abs(p[i] - q[i]);
+        }
+        pattern = steps / count;
+        [lights sortUsingSelector:@selector(compare:)];
+        double top = lights[(NSUInteger)(lights.count * 0.95)].doubleValue;
+        *dimmed = contrast(linear(255 * (0.55 + 0.45 * pow(top, 1 / 2.2))), top);
+        *outside = away ? apart / away : 255;
+    }
+    free(p);
+    free(q);
+    return pattern;
+}
+
 int motionMain(NSURL *out, int argc, char **argv) {
     printf("footprint at start %.1f MB\n", footprintMB(NO));
     // `motion one video` and `motion cut video`: a single line's clip, or the video cut alone as LockScreenMotion.x
@@ -380,6 +441,17 @@ int motionMain(NSURL *out, int argc, char **argv) {
             check(off < 10, [NSString stringWithFormat:@"the preview is the first frame (%.1f of 255 apart, the encode's loss)", off]);
             if (preview && ([c[0] isEqual:@"line"] || translation))
                 savePNG(preview, [out URLByAppendingPathComponent:[NSString stringWithFormat:@"%@-%@-preview.png", name, c[0]]]);
+            if (preview && translation) {
+                // Behind the dimmed lines: on the bright flag, the narrower softening and fixed band before left the
+                // stars' pattern at 1.31 and a dimmed line 3.4:1 on the brightest there.
+                CGImageRef behind = SGLyricsClipMotionFrame(video, blanked(c[1]), blanked(c[2]), blanked(translation), blanked(c[3]), from);
+                double dimmed, outside, pattern = behind ? behindDimmed(preview, behind, &dimmed, &outside) : -1;
+                NSString *what = [NSString stringWithFormat:@"behind the translation and the next line: pattern %.2f of 255, a dimmed "
+                                  "line on the brightest %.1f:1 (the blank frame %.2f apart away from the words)", pattern, dimmed, outside];
+                if ([video isEqual:flag]) check(pattern >= 0 && pattern < 0.65 && dimmed > 4.2 && outside < 0.5, what);
+                else printf("  %s\n", what.UTF8String);
+                CGImageRelease(behind);
+            }
             CGImageRelease(preview);
             if ([c[0] isEqual:@"bare"]) {
                 // The picture under the words, as dimmed: white on its brightest 5%, and the dimmed lines' 40% white over it.
