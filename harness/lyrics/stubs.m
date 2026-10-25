@@ -261,6 +261,7 @@ NSString *SGLyricsAIName(NSInteger service) { return @"Gemini"; }
 // is kept for the song as AIServices.m keeps it, so the view reads it back the way it does on the phone.
 void SGLyricsSaveAI(NSString *kind, NSString *track, NSString *variant, NSDictionary<NSString *, NSString *> *byLine);
 NSDictionary<NSString *, NSString *> *SGLyricsSavedAI(NSString *kind, NSString *track, NSString *variant);
+void (^SGHarnessAIRequested)(NSString *kind, NSString *track);
 extern NSNotificationName const SGLyricsAIResultDidChangeNotification;
 static void keepAnswer(NSString *kind, NSString *track, NSString *variant, NSArray<SGKaraokeLine *> *lines, NSArray<NSString *> *answer) {
     NSMutableDictionary *byLine = [NSMutableDictionary dictionary];
@@ -273,6 +274,7 @@ static void keepAnswer(NSString *kind, NSString *track, NSString *variant, NSArr
 }
 void SGLyricsAIPronounce(NSInteger service, NSString *trackID, NSArray<SGKaraokeLine *> *lines,
                         void (^done)(NSArray<NSString *> *spoken, NSString *error)) {
+    if (SGHarnessAIRequested) SGHarnessAIRequested(@"pronunciation", trackID);
     NSMutableArray *out = [NSMutableArray array];
     // A sound unlike the line, as a service's would be: a pronunciation that reads the same as its line is dropped.
     for (SGKaraokeLine *line in lines) [out addObject:SGLyricsRomanised(SGKaraokeLineText(line), YES) ?: ([NSUserDefaults.standardUserDefaults boolForKey:@"aiCheck"] ? @"ha ha" : @"")];
@@ -281,6 +283,7 @@ void SGLyricsAIPronounce(NSInteger service, NSString *trackID, NSArray<SGKaraoke
 }
 void SGLyricsAINotes(NSInteger service, NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                     void (^done)(NSArray<NSString *> *notes, NSString *error)) {
+    if (SGHarnessAIRequested) SGHarnessAIRequested(@"notes", trackID);
     NSMutableArray *out = [NSMutableArray array];
     [lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
         [out addObject:i % 3 == 1 && SGKaraokeLineText(line).length ? @"A made-up note on what this line refers to, for the harness." : @""];

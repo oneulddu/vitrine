@@ -45,6 +45,7 @@
 // HEAD's sources (build.sh old) may be from before the lyrics had anything but their words.
 #if __has_include("Redesigned/Lyrics/LyricsText.h")
 #import "Redesigned/Lyrics/LyricsText.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #endif
 
 NSArray<SGKaraokeLine *> *SGTTMLLines(NSString *xml);
@@ -616,10 +617,11 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
     }
     if ([args objectForKey:@"askAI"]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([args doubleForKey:@"askAI"] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SEL ask = NSSelectorFromString(@"askAI:notes:");
+            SEL ask = NSSelectorFromString(@"askAI:notes:track:language:");
             if (![karaoke respondsToSelector:ask]) return;
-            ((void (*)(id, SEL, NSInteger, BOOL))objc_msgSend)(karaoke, ask, 0, NO);
-            ((void (*)(id, SEL, NSInteger, BOOL))objc_msgSend)(karaoke, ask, 0, YES);
+            NSString *track = SGKaraokePlayingTrack(), *language = SGLyricsGeminiLanguage();
+            ((void (*)(id, SEL, NSInteger, BOOL, id, id))objc_msgSend)(karaoke, ask, 0, NO, track, language);
+            ((void (*)(id, SEL, NSInteger, BOOL, id, id))objc_msgSend)(karaoke, ask, 0, YES, track, language);
         });
     }
     if ([args objectForKey:@"translateIn"]) {

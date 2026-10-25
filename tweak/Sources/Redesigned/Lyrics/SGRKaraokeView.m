@@ -888,6 +888,22 @@ static SGRKaraokeLayout *layOut(SGKaraokeLine *line, CGFloat width, SGRKaraokeSt
 // thread, and a song's worth of it is kept off it: the first card of a track lays out while the
 // player is opening, and a frame that measured every line then was a frame the animation lost.
 // Where each line starts in the stack, and one more: where the stack ends, which the credit follows.
+// Taken on main before dispatch: translators and AI results can replace these fields while text is
+// measured. Words are immutable once built; the line objects, including their attached runs, are not.
+static SGKaraokeLine *layoutSnapshot(SGKaraokeLine *line) {
+    if (!line) return nil;
+    SGKaraokeLine *copy = [line copy];
+    copy.backing = layoutSnapshot(line.backing);
+    copy.pronunciation = layoutSnapshot(line.pronunciation);
+    return copy;
+}
+
+static NSArray<SGKaraokeLine *> *layoutSnapshots(NSArray<SGKaraokeLine *> *lines) {
+    NSMutableArray<SGKaraokeLine *> *copies = [NSMutableArray arrayWithCapacity:lines.count];
+    for (SGKaraokeLine *line in lines) [copies addObject:layoutSnapshot(line)];
+    return copies;
+}
+
 static NSArray<NSNumber *> *topsOf(NSArray<SGKaraokeLine *> *lines, CGFloat width, SGRKaraokeStyle *style, CGFloat gap) {
     NSMutableArray<NSNumber *> *tops = [NSMutableArray arrayWithCapacity:lines.count + 1];
     CGFloat top = 0;
@@ -1736,12 +1752,7 @@ typedef struct {
 // go, and the ones kept for it next are built the way a new song's are.
 - (void)pinChanged:(NSNotification *)note {
     if (_sample || ![note.object isEqual:_track]) return;
-    _lines = nil;
-    _passedOver = nil;
-    _builtWidth = 0;
-    [self creditTo:nil];
-    [self dropLineViews];
-    [self offerExtras];
+    [self dropLines];
 }
 
 // Karaoke's settings switched the mic off or on: hidden at once, Karaoke itself as it was.
@@ -2235,7 +2246,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     if (width <= 0) return;
     _font = [UIFont systemFontOfSize:_fontSize weight:UIFontWeightBold];
     SGRKaraokeStyle *style = _style = [self styleNow];
-    NSArray<SGKaraokeLine *> *lines = _lines;
+    NSArray<SGKaraokeLine *> *lines = layoutSnapshots(_lines);
     CGFloat gap = _lineGap;
     NSUInteger build = _build;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
@@ -2272,9 +2283,13 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 - (void)restyle {
     [self queueAutomaticTranslation];
     [self offerExtras];
-    if (!_lines || !_tops || _builtWidth <= 0) return;   // the next build picks the style up
+    if (!_lines || _builtWidth <= 0) return;
+    if (!_tops) {
+        [self rebuild];   // invalidate the pending measurement, which captured the previous style
+        return;
+    }
     SGRKaraokeStyle *style = [self styleNow];
-    NSArray<SGKaraokeLine *> *lines = _lines;
+    NSArray<SGKaraokeLine *> *lines = layoutSnapshots(_lines);
     CGFloat width = _builtWidth - 2 * _margin, gap = _lineGap;
     NSUInteger build = ++_build;
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
@@ -2470,8 +2485,12 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         for (NSNumber *service in services) {
             SGLyricsAI ai = service.integerValue;
             NSString *name = SGLyricsAIName(ai);
-            [pronounce addObject:[UIAction actionWithTitle:name image:nil identifier:nil handler:^(UIAction *action) { [weakSelf askAI:ai notes:NO]; }]];
-            [explain addObject:[UIAction actionWithTitle:name image:nil identifier:nil handler:^(UIAction *action) { [weakSelf askAI:ai notes:YES]; }]];
+            [pronounce addObject:[UIAction actionWithTitle:name image:nil identifier:nil handler:^(UIAction *action) {
+                [weakSelf askAI:ai notes:NO track:menuTrack language:language];
+            }]];
+            [explain addObject:[UIAction actionWithTitle:name image:nil identifier:nil handler:^(UIAction *action) {
+                [weakSelf askAI:ai notes:YES track:menuTrack language:language];
+            }]];
         }
         UIMenu *spoken = [UIMenu menuWithTitle:SGL(@"settings.lyricstools.menu.pronounce", @"Write Pronunciation") image:[UIImage systemImageNamed:@"waveform"]
                                     identifier:nil options:0 children:pronounce];
@@ -2786,7 +2805,8 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 }
 
 // Asks the service for the song's pronunciation or its notes, keeps the answer for the song, and shows it.
-- (void)askAI:(SGLyricsAI)service notes:(BOOL)notes {
+- (void)askAI:(SGLyricsAI)service notes:(BOOL)notes track:(NSString *)asked language:(NSString *)askedIn {
+    if (![_track isEqualToString:asked] || ![SGLyricsGeminiLanguage() isEqualToString:askedIn]) return;
     NSArray<SGKaraokeLine *> *lines = _lines;
     NSString *track = _track, *language = SGLyricsGeminiLanguage();
     NSString *notation = [NSString stringWithFormat:@"%ld", (long)SGInt(SGKeyLyricsPronunciationNotation, 0)];

@@ -62,6 +62,7 @@ static UIFont *capsuleFont(void) {
     UIImageView *_glyph;
     UILabel *_title;
     __weak UIImageView *_watchedGlyph;
+    UIImage *_takenGlyph;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -135,7 +136,8 @@ static UIFont *capsuleFont(void) {
     }
     if (![_glyph.tintColor isEqual:content]) _glyph.tintColor = content;
 
-    if (glyph.image && _glyph.image != glyph.image) {
+    if (glyph.image && _takenGlyph != glyph.image) {
+        _takenGlyph = glyph.image;
         _glyph.image = [glyph.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
         static dispatch_once_t once;
         dispatch_once(&once, ^{

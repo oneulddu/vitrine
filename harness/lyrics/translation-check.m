@@ -107,8 +107,18 @@ static void googleHolds(void) {
 #ifdef SG_HARNESS_AUTO_TRANSLATION
 #include "auto-check.inc"
 #endif
+#include "review-check.inc"
 
 void SGHarnessRunTranslationCheck(UIWindow *window) {
+    if (getenv("SG_LYRICS_REVIEW_ONLY")) {
+        [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:NO block:^(NSTimer *timer) {
+            reviewChecks(window);
+            printf("%d failed\n", sg_failed);
+            fflush(stdout);
+            exit(sg_failed);
+        }];
+        return;
+    }
     NSUserDefaults *args = NSUserDefaults.standardUserDefaults;
     for (NSString *key in @[@"translateTo", SGRKeyLyricsTranslation]) [args removeObjectForKey:key];
 #ifdef SG_HARNESS_AUTO_TRANSLATION
@@ -272,6 +282,7 @@ void SGHarnessRunTranslationCheck(UIWindow *window) {
     // A timer leaves the dispatch-main callback before the automatic tests pump their nested run loop.
     // Otherwise queued translator completions cannot run while this main-queue block is still executing.
     [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:NO block:^(NSTimer *timer) {
+        reviewChecks(window);
 #ifdef SG_HARNESS_AUTO_TRANSLATION
         autoCheck(window);
 #endif

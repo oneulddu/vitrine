@@ -8,8 +8,9 @@
 // B-spline's weights and the transition's mix are all positive, and sRGB's curve is convex, so every color drawn
 // stays under the ceiling. A little noise breaks up the banding a smooth gradient shows in eight bits.
 //
-// Drawn at one pixel a point (the picture is a blur) by a display link at up to 30 Hz, only while it moves or a
-// new cover runs in, and never while the app is in the background. Held, it keeps its last frame and draws
+// Drawn at one pixel a point (the picture is a blur), at most 30 times a second by a display link that allows
+// 120 Hz UI motion. Only while it moves or a new cover runs in, and never in the background or during the
+// player's open/close transition. Held, it keeps its last frame and draws
 // nothing. The shader compiles once, off the main thread, from source; until it is ready, or if it fails, the
 // layer draws nothing and `drawn` is never called, and SGRFluidLayer keeps the Light renderer in its place.
 //

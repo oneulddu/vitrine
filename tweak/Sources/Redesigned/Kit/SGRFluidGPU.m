@@ -4,9 +4,11 @@
 #import "Core/SGCore.h"
 #import "SGRFluidGPU.h"
 #import "SGRTokens.h"
+#import "SGRBridges.h"
 
 // How long a new cover takes to run in. Under Reduce Motion it fades over SGRCrossfade instead.
 static const CFTimeInterval kRunIn = 1.4;
+static const double kDrawFramesPerSecond = 30;
 
 // In the shader's order and layout (a float4 first, so both sides pad the same way).
 typedef struct {
@@ -160,7 +162,7 @@ static id<MTLTexture> textureOf(id picture) {
 
 // A suspended app may not use the GPU; a locked phone with Spotify in front is inactive and may.
 static BOOL mayDraw(void) {
-    return UIApplication.sharedApplication.applicationState != UIApplicationStateBackground;
+    return UIApplication.sharedApplication.applicationState != UIApplicationStateBackground && !SGRPlayerIsTransitioning();
 }
 
 @interface SGRFluidGPULayer ()
@@ -217,6 +219,9 @@ static BOOL mayDraw(void) {
         name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(update)
         name:UIApplicationDidEnterBackgroundNotification object:nil];
+    // A cover running in keeps drawing even while moving is NO. Hold that work too while the player
+    // opens or closes, and resume its clock only after the transition has finished.
+    SGRObservePlayerTransition(self, ^(id owner) { [owner update]; }, ^(id owner) { [owner update]; });
     return self;
 }
 
@@ -308,7 +313,7 @@ static BOOL mayDraw(void) {
         SGRFluidTicker *ticker = [SGRFluidTicker new];
         ticker.layer = self;
         _link = [CADisplayLink displayLinkWithTarget:ticker selector:@selector(tick:)];
-        _link.preferredFrameRateRange = CAFrameRateRangeMake(15, 30, 30);
+        _link.preferredFrameRateRange = CAFrameRateRangeMake(15, 120, kDrawFramesPerSecond);
         _last = 0;
         [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     } else if (!wants && _link) {
@@ -324,6 +329,9 @@ static BOOL mayDraw(void) {
         return;
     }
     CFTimeInterval now = link.timestamp;
+    // Accept the display's 120 Hz cadence without rendering a blurred cover more than 30 times a
+    // second. Keep the elapsed time since the last rendered tick, not since a skipped callback.
+    if (_last > 0 && floor(now * kDrawFramesPerSecond) == floor(_last * kDrawFramesPerSecond)) return;
     CFTimeInterval step = _last > 0 ? MIN(0.1, now - _last) : 0;
     _last = now;
     if (_moving) _time += step * _rate;
