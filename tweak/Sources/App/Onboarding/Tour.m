@@ -603,10 +603,11 @@ static BOOL adFree(void) {
 // Below iOS 26 the note above the button has said what the redesign risks there, so picking it and
 // going on is the warning accepted (SGSetRedesignedUI stores that).
 - (void)finish {
+    BOOL restart = self.needsRestart;
     SGSetEnabled(SGKeyOnboardingSeen, YES);
     SGSetRedesignedUI(_redesigned.selected);
     if (_ads.on) for (NSString *key in adKeys()) SGSetEnabled(key, YES);
-    if (self.needsRestart) {
+    if (restart) {
         SGRestartSpotify();
         return;
     }

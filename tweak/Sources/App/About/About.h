@@ -75,9 +75,16 @@ void SGImportSettings(void);
 // A text file for a bug report through the share sheet: the versions and switches, the ad counts, this launch's
 // log lines and the config Spotify's server last sent (Shared/AdBlock/Premium.m). No account details or settings
 // values beyond the switches named; the log can name songs played.
-void SGShareDiagnostics(void);
-// The same report without presenting a share sheet, for Pixie's combined diagnostic export.
+// The initiating page, not whatever page happens to be on top when the export finishes.
+void SGShareDiagnostics(UIViewController *presenter);
+// Main thread: the page is visible and neither it nor its containers are presenting or transitioning.
+BOOL SGDiagnosticsCanPresentFrom(UIViewController *presenter);
+// Pixie's synchronous export ABI; call off main. It snapshots UI metadata on main, then generates
+// the file on the background writer queue.
 NSURL *SGWriteDiagnosticsFile(void);
+// Called on main: snapshots the metadata, then generates `url` off main. Completion is on main;
+// nil completion logs a write failure without presenting anything.
+void SGExportDiagnosticsToURL(NSURL *url, void (^completion)(NSError *error));
 
 UIViewController *SGAboutPage(void);   // the Mod page
 

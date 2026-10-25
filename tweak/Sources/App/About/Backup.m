@@ -25,11 +25,11 @@ static NSDictionary *storedDefaults(void) {
     return [NSUserDefaults.standardUserDefaults persistentDomainForName:NSBundle.mainBundle.bundleIdentifier] ?: @{};
 }
 
-static void showAlert(NSString *title, NSString *message, UIAlertAction *confirm) {
+static void showAlert(UIViewController *presenter, NSString *title, NSString *message, UIAlertAction *confirm) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     if (confirm) [alert addAction:confirm];
     [alert addAction:[UIAlertAction actionWithTitle:confirm ? SGL(@"common.cancel", @"Cancel") : SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [SGTopController() presentViewController:alert animated:YES completion:nil];
+    [presenter presentViewController:alert animated:YES completion:nil];
 }
 
 void SGExportSettings(void) {
@@ -52,7 +52,7 @@ void SGExportSettings(void) {
     [top presentViewController:sheet animated:YES completion:nil];
 }
 
-NSURL *SGWriteDiagnosticsFile(void) {
+static NSMutableString *diagnosticMetadata(void) {
     NSMutableString *text = [NSMutableString string];
     struct utsname machine;
     uname(&machine);
@@ -68,37 +68,96 @@ NSURL *SGWriteDiagnosticsFile(void) {
         [text appendFormat:@"%@: %lu%@\n", label, (unsigned long)SGAdBlockCount(label),
             checked == NSNotFound ? @"" : [NSString stringWithFormat:@" of %lu", (unsigned long)checked]];
     }
-    // This launch's lines, from the system log: release builds keep none of their own.
-    [text appendString:@"\n== log, this launch\n"];
-    NSError *error;
-    OSLogStore *store = [OSLogStore storeWithScope:OSLogStoreCurrentProcessIdentifier error:&error];
-    // FLEX builds dump the screen's views into the log, page after page; the report keeps the lines.
-    NSPredicate *ours = [NSPredicate predicateWithFormat:
-        @"composedMessage BEGINSWITH '[spotifyglass]' AND NOT composedMessage BEGINSWITH '[spotifyglass] screen dump'"];
-    NSMutableArray<NSString *> *lines = [NSMutableArray array];
-    for (OSLogEntry *entry in [store entriesEnumeratorWithOptions:0 position:nil predicate:ours error:&error]) {
-        [lines addObject:[NSString stringWithFormat:@"%@ %@", entry.date, [entry.composedMessage substringFromIndex:15]]];
-    }
-    // ponytail: the last 1500 lines only; a whole day's launch can hold tens of thousands.
-    NSUInteger keep = MIN(lines.count, 1500);
-    [text appendString:[[lines subarrayWithRange:NSMakeRange(lines.count - keep, keep)] componentsJoinedByString:@"\n"]];
-    if (!lines.count) [text appendFormat:@"(none: %@)", error.localizedDescription ?: @"the log is empty"];
-    NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
-    NSString *config = [NSString stringWithContentsOfURL:[caches URLByAppendingPathComponent:@"Vitrine/live-config.txt"]
-                                                encoding:NSUTF8StringEncoding error:nil];
-    [text appendFormat:@"\n\n== config Spotify's server last sent\n%@", config ?: @"(none yet: Spoof Premium is off, or no fetch so far)\n"];
-
-    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-diagnostics.txt"]];
-    [text writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:nil];
-    return url;
+    return text;
 }
 
-void SGShareDiagnostics(void) {
-    NSURL *url = SGWriteDiagnosticsFile();
-    UIViewController *top = SGTopController();
-    UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
-    sheet.popoverPresentationController.sourceView = top.view;
-    [top presentViewController:sheet animated:YES completion:nil];
+static dispatch_queue_t diagnosticWriter(void) {
+    static dispatch_queue_t writer;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ writer = dispatch_queue_create("spotifyglass.diagnostics.export", DISPATCH_QUEUE_SERIAL); });
+    return writer;
+}
+
+// Only the writer queue reads the system log and writes diagnostic files.
+static NSError *writeDiagnostics(NSMutableString *text, NSURL *url) {
+        // Release builds keep no log of their own. Retain only the newest matching lines, even
+        // when a whole day's launch holds tens of thousands.
+        [text appendString:@"\n== log, this launch\n"];
+        NSError *error = nil;
+        OSLogStore *store = [OSLogStore storeWithScope:OSLogStoreCurrentProcessIdentifier error:&error];
+        NSPredicate *ours = [NSPredicate predicateWithFormat:
+            @"composedMessage BEGINSWITH '[spotifyglass]' AND NOT composedMessage BEGINSWITH '[spotifyglass] screen dump'"];
+        const NSUInteger limit = 1500;
+        NSMutableArray<NSString *> *lines = [NSMutableArray arrayWithCapacity:limit];
+        NSUInteger oldest = 0;
+        for (OSLogEntry *entry in [store entriesEnumeratorWithOptions:0 position:nil predicate:ours error:&error]) {
+            @autoreleasepool {
+                NSString *line = [NSString stringWithFormat:@"%@ %@", entry.date, [entry.composedMessage substringFromIndex:15]];
+                if (lines.count < limit) [lines addObject:line];
+                else {
+                    lines[oldest] = line;
+                    oldest = (oldest + 1) % limit;
+                }
+            }
+        }
+        for (NSUInteger i = 0; i < lines.count; i++)
+            [text appendFormat:@"%@%@", i ? @"\n" : @"", lines[(oldest + i) % lines.count]];
+        if (!lines.count) [text appendFormat:@"(none: %@)", error.localizedDescription ?: @"the log is empty"];
+        NSURL *caches = [NSFileManager.defaultManager URLsForDirectory:NSCachesDirectory inDomains:NSUserDomainMask].firstObject;
+        NSString *config = [NSString stringWithContentsOfURL:[caches URLByAppendingPathComponent:@"Vitrine/live-config.txt"]
+                                                    encoding:NSUTF8StringEncoding error:nil];
+        [text appendFormat:@"\n\n== config Spotify's server last sent\n%@", config ?: @"(none yet: Spoof Premium is off, or no fetch so far)\n"];
+        NSError *writeError = nil;
+        [text writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:&writeError];
+        if (writeError) SGLog(@"diagnostics export failed: %@", writeError.localizedDescription);
+        return writeError;
+}
+
+void SGExportDiagnosticsToURL(NSURL *url, void (^completion)(NSError *error)) {
+    NSMutableString *text = diagnosticMetadata();
+    dispatch_async(diagnosticWriter(), ^{
+        NSError *error = writeDiagnostics(text, url);
+        if (completion) dispatch_async(dispatch_get_main_queue(), ^{ completion(error); });
+    });
+}
+
+// NativeDownloads resolves this exact signature with dlsym from its report queue.
+NSURL *SGWriteDiagnosticsFile(void) {
+    __block NSMutableString *text;
+    dispatch_sync(dispatch_get_main_queue(), ^{ text = diagnosticMetadata(); });
+    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-diagnostics.txt"]];
+    __block NSError *error;
+    dispatch_sync(diagnosticWriter(), ^{ error = writeDiagnostics(text, url); });
+    return error ? nil : url;
+}
+
+BOOL SGDiagnosticsCanPresentFrom(UIViewController *presenter) {
+    if (!presenter.viewIfLoaded.window) return NO;
+    for (UIViewController *page = presenter; page; page = page.parentViewController) {
+        if (page.presentedViewController || page.isBeingPresented || page.isBeingDismissed || page.transitionCoordinator) return NO;
+    }
+    return YES;
+}
+
+void SGShareDiagnostics(UIViewController *presenter) {
+    static BOOL exporting;   // main thread, from the settings action and the export's completion
+    if (exporting || !SGDiagnosticsCanPresentFrom(presenter)) return;
+    exporting = YES;
+    __weak UIViewController *weakPresenter = presenter;
+    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-diagnostics.txt"]];
+    SGExportDiagnosticsToURL(url, ^(NSError *error) {
+        exporting = NO;
+        UIViewController *owner = weakPresenter;
+        if (!SGDiagnosticsCanPresentFrom(owner)) return;
+        if (error) {
+            showAlert(owner, SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), error.localizedDescription, nil);
+            return;
+        }
+        UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
+        sheet.popoverPresentationController.sourceView = owner.view;
+        SGPresentDark(sheet);
+        [owner presentViewController:sheet animated:YES completion:nil];
+    });
 }
 
 static Class kindOf(id value) {
@@ -129,6 +188,7 @@ static NSDictionary *fromChroma(NSDictionary *settings) {
         id value = settings[key];
         if ([dropped containsObject:key]) continue;
         if ([key isEqualToString:@"spotifyglass.redesign.player.backdrop"]) {
+            if (![value isKindOfClass:NSNumber.class] && ![value isKindOfClass:NSString.class]) continue;
             ours[@"spotifyglass.redesign.player.background"] = @([value integerValue] == 1 ? SGRPlayerBackgroundAnimated : SGRPlayerBackgroundFluid);
         } else if ([key isEqualToString:@"spotifyglass.redesign.player.artworksources"] && [value isKindOfClass:NSArray.class]) {
             NSMutableArray *sources = [NSMutableArray array];
@@ -172,12 +232,12 @@ static void importSettings(NSDictionary *settings) {
     id file = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
     NSDictionary *settings = [file isKindOfClass:NSDictionary.class] ? file[@"settings"] : nil;
     if (![settings isKindOfClass:NSDictionary.class]) {
-        showAlert(SGL(@"settings.mod.backup.invalid_file.alert.title", @"Not a settings file"), SGL(@"settings.mod.backup.invalid_file.alert.message", @"Pick a file made by Export settings."), nil);
+        showAlert(SGTopController(), SGL(@"settings.mod.backup.invalid_file.alert.title", @"Not a settings file"), SGL(@"settings.mod.backup.invalid_file.alert.message", @"Pick a file made by Export settings."), nil);
         return;
     }
     NSString *mod = [file[@"mod"] isKindOfClass:NSString.class] ? file[@"mod"] : @"unknown";
     NSString *message = [NSString stringWithFormat:SGL(@"settings.mod.backup.import_confirm.alert.message", @"Your settings are replaced by the file's, exported from version %@. Anything it does not have goes back to its default, and Spotify restarts."), mod];
-    showAlert(SGL(@"settings.mod.backup.import_confirm.alert.title", @"Import settings?"), message, [UIAlertAction actionWithTitle:SGL(@"settings.mod.backup.action.import_and_restart", @"Import and restart") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+    showAlert(SGTopController(), SGL(@"settings.mod.backup.import_confirm.alert.title", @"Import settings?"), message, [UIAlertAction actionWithTitle:SGL(@"settings.mod.backup.action.import_and_restart", @"Import and restart") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         importSettings(settings);
     }]);
 }

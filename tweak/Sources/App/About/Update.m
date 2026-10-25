@@ -152,16 +152,22 @@ NSArray<SGUpdateChange *> *SGUpdateChangesIn(NSString *body) {
 // beta stored before it, and Include betas can go off after a check. Pre-releases are dropped here as
 // well as at the check, by GitHub's mark or, for a list stored before the mark was, by the "-" in the
 // version.
+static NSString *eligibleVersion(id entry, BOOL betas) {
+    if (![entry isKindOfClass:NSDictionary.class]) return nil;
+    NSString *version = stringOr(entry[@"version"], nil);
+    if (!version.length) return nil;
+    if (!betas && ([entry[@"prerelease"] boolValue] || [version containsString:@"-"])) return nil;
+    return version;
+}
+
 NSArray<SGUpdateRelease *> *SGUpdateReleases(void) {
     NSArray *stored = [NSUserDefaults.standardUserDefaults arrayForKey:kReleases];
     NSMutableArray<SGUpdateRelease *> *releases = [NSMutableArray array];
     BOOL betas = SGUpdateIncludesBetas();
     for (id entry in stored) {
-        if (![entry isKindOfClass:NSDictionary.class]) continue;
-        NSString *version = stringOr(entry[@"version"], nil);
-        if (!version.length) continue;
+        NSString *version = eligibleVersion(entry, betas);
+        if (!version) continue;
         BOOL prerelease = [entry[@"prerelease"] boolValue] || [version containsString:@"-"];
-        if (prerelease && !betas) continue;
         SGUpdateRelease *release = [SGUpdateRelease new];
         release.version = version;
         release.prerelease = prerelease;
@@ -186,8 +192,12 @@ BOOL SGUpdateChecked(void) {
 }
 
 NSString *SGUpdateVersion(void) {
-    NSString *newest = SGUpdateNewestRelease().version;
-    return SGUpdateIsNewer(newest) ? newest : nil;
+    BOOL betas = SGUpdateIncludesBetas();
+    for (id entry in [NSUserDefaults.standardUserDefaults arrayForKey:kReleases]) {
+        NSString *version = eligibleVersion(entry, betas);
+        if (version) return SGUpdateIsNewer(version) ? version : nil;
+    }
+    return nil;
 }
 
 // What the Updates row shows on the right; the page's own ticker reads it while the page is open,

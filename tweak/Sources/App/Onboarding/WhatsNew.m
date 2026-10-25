@@ -108,8 +108,9 @@ static UILabel *label(NSString *text, UIFontTextStyle style, UIFontWeight weight
     [self.view addSubview:scroll];
 
     UIButton *done = SGOnboardingButton(@"Continue");
+    __weak typeof(self) weakSelf = self;
     [done addAction:[UIAction actionWithHandler:^(UIAction *action) {
-        [self dismissViewControllerAnimated:YES completion:nil];
+        [weakSelf dismissViewControllerAnimated:YES completion:nil];
     }] forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:done];
 

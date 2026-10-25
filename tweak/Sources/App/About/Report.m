@@ -67,14 +67,6 @@ static void writeMeta(NSURL *folder, NSDictionary *meta) {
     [data writeToURL:[folder URLByAppendingPathComponent:kReportFile] atomically:YES];
 }
 
-// The diagnostics of Backup.m, copied into the report so the folder alone says what build it came from.
-static void writeDiagnostics(NSURL *folder) {
-    NSData *data = [NSData dataWithContentsOfURL:SGWriteDiagnosticsFile()];
-    if (!data) return;
-    [NSFileManager.defaultManager createDirectoryAtURL:folder withIntermediateDirectories:YES attributes:nil error:nil];
-    [data writeToURL:[folder URLByAppendingPathComponent:kDiagnosticsFile] atomically:YES];
-}
-
 static NSArray<NSString *> *recordingsIn(NSDictionary *meta) {
     NSArray *names = meta[@"recordings"];
     return [names isKindOfClass:NSArray.class] ? names : @[];
@@ -420,6 +412,8 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
     NSString *_recordingStatus;            // the sentence under Record, until the page is left
     UIView *_shareFrom;                    // the cell the share sheet points its popover at
     BOOL _deleted;                         // the folder is gone; nothing may write it back
+    NSArray<NSDictionary *> *_reports;     // the snapshot represented by the table's row indices
+    BOOL _sending;
 }
 
 - (instancetype)initWithReport:(NSString *)identifier {
@@ -427,6 +421,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
     _identifier = [identifier copy];
     if (identifier) _meta = [readMeta(reportFolder(identifier)) mutableCopy];
     if (!_meta) _meta = [NSMutableDictionary dictionary];
+    _reports = allReports();
     self.title = SGL(@"settings.report.title", @"Report a problem");
     return self;
 }
@@ -438,9 +433,11 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    [self reloadList];
     // An older report's diagnostics are brought up to this build whenever it is opened, so what Send
     // hands over never describes the build before.
-    if (_identifier && !_deleted) writeDiagnostics(reportFolder(_identifier));
+    if (_identifier && !_deleted)
+        SGExportDiagnosticsToURL([reportFolder(_identifier) URLByAppendingPathComponent:kDiagnosticsFile], nil);
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
@@ -496,6 +493,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
 
 - (void)reloadList {
     dispatch_async(dispatch_get_main_queue(), ^{
+        self->_reports = allReports();
         [self.tableView reloadData];
         UIAccessibilityPostNotification(UIAccessibilityLayoutChangedNotification, nil);
     });
@@ -511,7 +509,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
 }
 
 - (void)send {
-    if (_deleted) return;
+    if (_deleted || _sending || !SGDiagnosticsCanPresentFrom(self)) return;
     [self saveText];
     [self reloadList];
     NSString *text = _text ? _text.text : (_meta[@"text"] ?: @"");
@@ -523,7 +521,21 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
         return;
     }
     NSURL *folder = reportFolder([self ensureReport]);
-    writeDiagnostics(folder);
+    _sending = YES;
+    SGExportDiagnosticsToURL([folder URLByAppendingPathComponent:kDiagnosticsFile], ^(NSError *error) {
+        // The flag owns the export only. A skipped or refused presentation must never latch Send.
+        self->_sending = NO;
+        if (self->_deleted || !SGDiagnosticsCanPresentFrom(self)) return;
+        if (error) {
+            reportAlert(SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), error.localizedDescription);
+            return;
+        }
+        [self shareText:text folder:folder];
+    });
+}
+
+- (void)shareText:(NSString *)text folder:(NSURL *)folder {
+    BOOL hasText = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
     NSMutableArray *items = [NSMutableArray array];
     if (hasText) [items addObject:text];
     NSURL *diagnostics = [folder URLByAppendingPathComponent:kDiagnosticsFile];
@@ -546,9 +558,9 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
     }
     __weak SGReportPage *weakSelf = self;
     sheet.completionWithItemsHandler = ^(UIActivityType type, BOOL completed, NSArray *returned, NSError *error) {
-        if (!completed) return;
         SGReportPage *page = weakSelf;
-        if (!page || page->_deleted || !page->_identifier) return;
+        if (!page) return;
+        if (!completed || page->_deleted || !page->_identifier) return;
         page->_meta[@"shared"] = isoNow();
         writeMeta(reportFolder(page->_identifier), page->_meta);
         [page reloadList];
@@ -597,8 +609,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
 // ---- the table ----
 
 - (NSDictionary *)metaForRow:(NSInteger)row {
-    NSArray<NSDictionary *> *reports = allReports();
-    return row < (NSInteger)reports.count ? reports[(NSUInteger)row] : nil;
+    return row >= 0 && row < (NSInteger)_reports.count ? _reports[(NSUInteger)row] : nil;
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
@@ -609,7 +620,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
     switch (section) {
         case SGReportSectionText: return 1;
         case SGReportSectionActions: return 2;
-        case SGReportSectionList: return (NSInteger)allReports().count;
+        case SGReportSectionList: return (NSInteger)_reports.count;
         default: return _identifier ? 1 : 0;   // a report with nothing on disk yet cannot be deleted
     }
 }
@@ -626,7 +637,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
     switch (section) {
         case SGReportSectionText: return SGL(@"settings.report.what.note", @"What you were doing, which song, and what the screen did. It stays on this phone until you send it.");
         case SGReportSectionList:
-            return allReports().count ? nil : SGL(@"settings.report.list.empty", @"No reports on this phone yet.");
+            return _reports.count ? nil : SGL(@"settings.report.list.empty", @"No reports on this phone yet.");
         default: return nil;
     }
 }
@@ -746,6 +757,7 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
 
 - (void)textViewDidEndEditing:(UITextView *)textView {
     [self saveText];
+    [self reloadList];
 }
 
 @end

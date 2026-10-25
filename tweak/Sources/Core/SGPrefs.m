@@ -29,6 +29,9 @@ static id stored(NSString *key) {
     os_unfair_lock_unlock(&memoLock);
     if (value) return value == NSNull.null ? nil : value;
     value = [NSUserDefaults.standardUserDefaults objectForKey:key];
+    // These readers accept numeric values and numeric strings. Other property-list values
+    // from an import or hand edit are unset, including the stock marker.
+    if (![value isKindOfClass:NSNumber.class] && ![value isKindOfClass:NSString.class]) value = nil;
     os_unfair_lock_lock(&memoLock);
     // A write during the read dropped the memo, and the value read may predate it.
     if (generation == memoGeneration) memo[key] = value ?: NSNull.null;

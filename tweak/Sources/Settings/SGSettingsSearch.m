@@ -150,10 +150,27 @@ static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewControlle
     NSArray<SGSettingsHit *> *_all;
     NSArray<SGSettingsHit *> *_hits;
     UILabel *_none;
+    id _defaultsObserver;
 }
 
 - (instancetype)init {
-    return [super initWithStyle:UITableViewStyleInsetGrouped];
+    if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    __weak typeof(self) weakSelf = self;
+    _defaultsObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [weakSelf invalidateIndex];
+            });
+        }];
+    return self;
+}
+
+- (void)invalidateIndex {
+    _all = nil;
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:_defaultsObserver];
 }
 
 - (void)viewDidLoad {

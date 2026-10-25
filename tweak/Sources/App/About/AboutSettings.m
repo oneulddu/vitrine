@@ -68,6 +68,7 @@ static SGModRow *withSymbol(SGModRow *row, NSString *symbol) {
 // Which build this is, whether GitHub has a newer release, and where to reach the mod: without these
 // rows a build that is already installed has no way of telling its user that anything moved on.
 UIViewController *SGAboutPage(void) {
+    __block __weak SGModPage *owner = nil;
     SGModRow *reset = withSymbol(SGActionRow(SGL(@"settings.mod.reset.title", @"Reset all settings"), nil, ^{ confirmReset(); }), @"trash");
     reset.color = SGRed();
     // Reset all removes the settings; the keys live in the Keychain, which it leaves alone, so this takes them.
@@ -96,16 +97,18 @@ UIViewController *SGAboutPage(void) {
         SGStatRow(@"Spotify", ^NSString *{ return spotify; }), nil];
     SGModRow *signedUntil = SGSigningExpiryRow();
     if (signedUntil) [build addObject:signedUntil];
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.mod.title", @"Mod") intro:nil sections:@[
+    SGModPage *page = [[SGModPage alloc] initWithTitle:SGL(@"settings.mod.title", @"Mod") intro:nil sections:@[
         SGSection(nil, build),
         SGSection(nil, links),
         SGSection(nil, @[
             withSymbol(SGActionRow(SGL(@"settings.mod.export_settings.title", @"Export settings"), nil, ^{ SGExportSettings(); }), @"square.and.arrow.up"),
             withSymbol(SGActionRow(SGL(@"settings.mod.import_settings.title", @"Import settings"), nil, ^{ SGImportSettings(); }), @"square.and.arrow.down"),
             withSymbol(SGActionRow(SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), SGL(@"settings.mod.share_diagnostics.subtitle", @"For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show."),
-                                   ^{ SGShareDiagnostics(); }), @"stethoscope"),
+                                   ^{ SGShareDiagnostics(owner); }), @"stethoscope"),
             SGWithNew(withSymbol(SGPageRow(SGL(@"settings.mod.report.title", @"Report a problem"), ^UIViewController *{ return SGReportListPage(); }), @"exclamationmark.bubble"), @"reportProblem"),
         ]),
         SGSection(nil, @[clearKeys, reset]),
     ] footer:nil];
+    owner = page;
+    return page;
 }
