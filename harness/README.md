@@ -52,6 +52,7 @@ their check executable in the workflow.
 | `autoeq/build.sh` | Default offline index/preset fixtures, not `online`. |
 | `clean-links/build.sh` | Pure URL-cleaning assertions. |
 | `connection-test-settings/check.sh` | Catalyst lifecycle assertions with a fake backend. |
+| `driver/auth-check.sh` | Foundation driver-token rotation, header and diagnostic-redaction checks; runs with `driver/phone-check.py`. |
 | `fluid-clip/build.sh` | Generated cover/video, decoded-frame and loop assertions. |
 | `haptics/build.sh` | `build/track`: synthetic ISRC/protobuf/catalog assertions. |
 | `head-gestures/build.sh` | Synthetic motion traces with expected gestures. |
@@ -68,6 +69,7 @@ their check executable in the workflow.
 | `motion/build.sh` | Generated Canvas cuts and synthetic protobuf replies. |
 | `now-playing/build.sh` | Logos setter hooks with system setter replaced, lyrics off/on. |
 | `palette/build.sh` | Generated image with asserted edge/main colors. |
+| `palette/field-check.sh` | Catalyst player field palette requests across mode changes and stale replies. |
 | `pitch/build.sh` | Synthetic sine pitch/speed assertions, no song argument. |
 | `player/title-notification-check.sh` | Real Logos controller with offline notification fixtures. |
 | `radio-modes/build.sh` | Foundation Spotify mocks, spoofing off/on. |
@@ -79,7 +81,7 @@ their check executable in the workflow.
 
 ## Excluded scripts
 
-This inventory covers all 70 shell scripts, including the 29 included above.
+This inventory covers all 73 shell scripts, including the 31 included above.
 Simulator checks are excluded even when they assert; visual-only simulator
 scenarios are not promoted to CI by merely compiling them.
 
@@ -98,6 +100,7 @@ scenarios are not promoted to CI by merely compiling them.
 | `driver/build.sh` | iOS simulator driver app. |
 | `glass/build.sh` | iOS simulator visual rendering. |
 | `haptics-page/build.sh` | iOS simulator UI. |
+| `home-tiles/build.sh` | iOS simulator UI. |
 | `haptics/build-sim.sh` | iOS simulator audio/haptics hooks. |
 | `head-gestures/sim/build.sh` | iOS simulator hooks and teaching UI. |
 | `launch/build.sh` | Requires an untracked flag table extracted from a Spotify IPA. |
