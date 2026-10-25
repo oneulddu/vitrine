@@ -59,6 +59,11 @@ SGHistoryImport *SGReadHistoryURLs(NSArray<NSURL *> *urls);
 // Before initial loading completes the snapshot contains only newly recorded plays.
 @property (nonatomic, readonly) NSArray<SGPlay *> *plays;
 @property (nonatomic, readonly) NSError *loadError;
+// Main-thread cursor for incremental readers. Changes when history is replaced (load/import/erase),
+// never on recorder appends. An index from another generation must be discarded.
+@property (nonatomic, readonly) NSUInteger playsGeneration;
+// Immutable suffix only; index must be within the current generation's published play count.
+- (NSArray<SGPlay *> *)playsFromIndex:(NSUInteger)index;
 // Startup recovers the recorder journal and removes abandoned staging files off main.
 - (void)loadWithCompletion:(void (^)(void))completion;
 - (void)record:(SGPlay *)play;

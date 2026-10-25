@@ -385,6 +385,7 @@ static NSMutableArray<SGPlay *> *playsFromTSV(NSString *text) {
     NSMutableArray<SGPlay *> *_visible;
     NSMutableArray<NSDictionary *> *_pending;
     NSError *_publishedError;
+    NSUInteger _playsGeneration;
 }
 
 - (instancetype)initWithPath:(NSString *)path {
@@ -458,6 +459,10 @@ static SGHistoryFileKind historyFileKind(NSString *suffix) {
 
 - (NSArray<SGPlay *> *)plays { return [_visible copy]; }
 - (NSError *)loadError { return _publishedError; }
+- (NSUInteger)playsGeneration { return _playsGeneration; }
+- (NSArray<SGPlay *> *)playsFromIndex:(NSUInteger)index {
+    return [_visible subarrayWithRange:NSMakeRange(index, _visible.count - index)];
+}
 
 - (BOOL)drainForTermination {
     dispatch_semaphore_t drained = dispatch_semaphore_create(0);
@@ -487,6 +492,7 @@ static SGHistoryFileKind historyFileKind(NSString *suffix) {
         if (generation == self->_generation) {
             self->_publishedError = error;
             self->_visible = [snapshot mutableCopy];
+            self->_playsGeneration++;
             NSMutableArray *pending = [NSMutableArray array];
             for (NSDictionary *row in self->_pending) {
                 if ([included containsObject:row[@"id"]]) continue;
@@ -502,8 +508,16 @@ static SGHistoryFileKind historyFileKind(NSString *suffix) {
 
 - (void)loadWithCompletion:(void (^)(void))completion {
     dispatch_async(_io, ^{
+        BOOL ready = self->_ready;
+        NSUInteger generation = self->_workerGeneration;
         [self load];
-        [self publishWithCompletion:completion announce:NO];
+        if (!ready || generation != self->_workerGeneration) {
+            [self publishWithCompletion:completion announce:NO];
+        } else if (completion) {
+            // load's writer barrier orders completed record acknowledgements before this callback.
+            // An already-loaded history has no replacement to publish or copy.
+            dispatch_async(dispatch_get_main_queue(), completion);
+        }
     });
 }
 
@@ -777,6 +791,7 @@ static BOOL hasNearbyEnd(NSDictionary *buckets, int64_t end) {
 
 - (void)erase {
     NSUInteger generation = ++_generation;
+    _playsGeneration++;
     _publishedError = nil;
     [_visible removeAllObjects];
     [_pending removeAllObjects];

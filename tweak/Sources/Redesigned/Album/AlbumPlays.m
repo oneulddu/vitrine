@@ -7,7 +7,7 @@
 //
 // The counts are added up off the main thread from a snapshot of the log, once when an album row first asks
 // and again whenever the log changes. The log only ever grows at its end except when it is erased or read
-// again, so a change on the same array adds only the plays past the ones already counted.
+// again, so an unchanged log generation adds only the plays past the ones already counted.
 // Threading: main thread only, but for the adding up.
 #import "Core/SGCore.h"
 #import "Shared/ListeningStats/ListeningStats.h"
@@ -17,7 +17,7 @@
 NSNotificationName const SGRAlbumPlayCountsDidChangeNotification = @"SGRAlbumPlayCountsDidChange";
 
 static NSDictionary<NSString *, NSNumber *> *sgr_counts;
-static NSArray<SGPlay *> *sgr_source;   // the log's array the counts were taken from
+static NSUInteger sgr_generation;     // the log generation the counts were taken from
 static NSUInteger sgr_counted;          // how many of its plays they cover
 static BOOL sgr_started, sgr_busy, sgr_again;
 
@@ -34,11 +34,11 @@ static NSString *keyOf(NSString *album, NSString *title) {
 
 static void refresh(void);
 
-static void counted(NSArray<SGPlay *> *source, NSUInteger total, NSDictionary *counts) {
+static void counted(NSUInteger generation, NSUInteger total, NSDictionary *counts) {
     sgr_busy = NO;
     BOOL changed = ![counts isEqualToDictionary:sgr_counts ?: @{}];
     sgr_counts = counts;
-    sgr_source = source;
+    sgr_generation = generation;
     sgr_counted = total;
     if (changed) [NSNotificationCenter.defaultCenter postNotificationName:SGRAlbumPlayCountsDidChangeNotification object:nil];
     if (sgr_again) {
@@ -55,15 +55,16 @@ static void refresh(void) {
     sgr_busy = YES;
     SGPlayLog *log = SGListeningLog();
     [log loadWithCompletion:^{
-        // A log that could not be read has no plays to read: -plays would read the file on the main thread.
+        // A failed load has no complete history to count.
         if (log.loadError) {
-            counted(nil, 0, @{});
+            counted(log.playsGeneration, 0, @{});
             return;
         }
-        NSArray<SGPlay *> *all = log.plays;
-        BOOL grew = all == sgr_source && all.count >= sgr_counted;
-        NSUInteger from = grew ? sgr_counted : 0, total = all.count;
-        NSArray<SGPlay *> *fresh = [all subarrayWithRange:NSMakeRange(from, total - from)];
+        NSUInteger generation = log.playsGeneration;
+        BOOL grew = generation == sgr_generation;
+        NSUInteger from = grew ? sgr_counted : 0;
+        NSArray<SGPlay *> *fresh = [log playsFromIndex:from];
+        NSUInteger total = from + fresh.count;
         NSDictionary *base = grew ? sgr_counts : @{};
         dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             NSMutableDictionary<NSString *, NSNumber *> *counts = [base mutableCopy] ?: [NSMutableDictionary dictionary];
@@ -80,7 +81,7 @@ static void refresh(void) {
                 if (key.length) counts[key] = @(counts[key].unsignedIntegerValue + 1);
             }
             NSDictionary *done = [counts copy];
-            dispatch_async(dispatch_get_main_queue(), ^{ counted(all, total, done); });
+            dispatch_async(dispatch_get_main_queue(), ^{ counted(generation, total, done); });
         });
     }];
 }

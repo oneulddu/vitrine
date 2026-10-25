@@ -44,6 +44,9 @@ Initial TSV loading, JSON parsing, folder walking, aggregation and export serial
 The build also runs the production Logos recorder in an isolated Catalyst home. Independent fake
 player reports and a continuous clock cover metadata arriving on report-only updates: an unnamed
 track receives its names and produces one forty-second play at the next track.
+The build also runs `album-plays.m` against the production album counter and log. It checks the
+generation/suffix cursor on append, complete recounts after import and erase, and counting again
+after erase. Already-loaded reads preserve the generation rather than republishing the history.
 `SGPlayLog` serializes loading and indexed imports on its IO queue, with main-queue completions and
 independently published snapshots/errors. A separate recorder queue appends and syncs each small
 journal row in order, without blocking main, queuing behind imports, or rewriting history.
