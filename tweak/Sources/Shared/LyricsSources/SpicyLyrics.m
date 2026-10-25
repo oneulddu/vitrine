@@ -29,6 +29,8 @@ static const NSUInteger kKeptTracks = 100;
 static const NSTimeInterval kMostWait = 3600, kDefaultWait = 60, kRefusedWait = 600;
 static NSString *const kService = @"Vitrine.SpicyLyrics", *const kAccount = @"api-key";
 static NSUInteger sg_keyGeneration;
+static NSString *sg_key;
+static BOOL sg_keyLoaded;
 NSString *const SGSpicyLyricsKey = @"spicylyrics";
 
 #pragma mark - the key
@@ -39,16 +41,26 @@ static NSDictionary *keyQuery(void) {
 }
 
 static NSString *storedKey(void) {
+    if (sg_keyLoaded) return sg_key;
     NSMutableDictionary *query = [keyQuery() mutableCopy];
     query[(__bridge id)kSecReturnData] = @YES;
     query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
     CFTypeRef data = NULL;
-    if (SecItemCopyMatching((__bridge CFDictionaryRef)query, &data) != errSecSuccess || !data) return nil;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &data);
+    if (status != errSecSuccess && status != errSecItemNotFound) {
+        SGLyricsNoteReply(nil, [NSError errorWithDomain:NSOSStatusErrorDomain code:status userInfo:nil]);
+        return nil;
+    }
+    sg_keyLoaded = YES;
+    if (status == errSecItemNotFound || !data) return nil;
     NSString *key = [[NSString alloc] initWithData:(__bridge_transfer NSData *)data encoding:NSUTF8StringEncoding];
-    return key.length ? key : nil;
+    sg_key = key.length ? key : nil;
+    return sg_key;
 }
 
 static void storeKey(NSString *key) {
+    sg_key = nil;
+    sg_keyLoaded = NO;
     SecItemDelete((__bridge CFDictionaryRef)keyQuery());
     if (!key.length) return;
     NSMutableDictionary *item = [keyQuery() mutableCopy];
@@ -366,6 +378,13 @@ static void keepAnswer(NSString *trackID, id answer) {
 }
 
 // The ask with the key passed in, which harness/spicy-lyrics/ drives without a Keychain.
+static BOOL deliverCached(NSString *trackID, void (^done)(SGLyricsResult *)) {
+    id kept = trackID ? sg_answers[trackID] : nil;
+    if (!kept) return NO;
+    done(kept == NSNull.null ? nil : kept);
+    return YES;
+}
+
 void SGSpicyLyricsAskWith(NSString *key, SGLyricsQuery *query, void (^done)(SGLyricsResult *result));
 void SGSpicyLyricsAskWith(NSString *key, SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
     NSString *trackID = query.trackID;
@@ -373,11 +392,7 @@ void SGSpicyLyricsAskWith(NSString *key, SGLyricsQuery *query, void (^done)(SGLy
         done(nil);
         return;
     }
-    id kept = sg_answers[trackID];
-    if (kept) {
-        done(kept == NSNull.null ? nil : kept);
-        return;
-    }
+    if (deliverCached(trackID, done)) return;
     NSTimeInterval now = uptime();
     if (sg_refused && now < sg_refusedUntil) {
         done(nil);
@@ -425,6 +440,7 @@ void SGSpicyLyricsAskWith(NSString *key, SGLyricsQuery *query, void (^done)(SGLy
 }
 
 SGLyricsAsk SGSpicyLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
+    if (deliverCached(query.trackID, done)) return;
     SGSpicyLyricsAskWith(storedKey(), query, done);
 };
 

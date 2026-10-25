@@ -189,6 +189,7 @@ void SGKaraokeAlignVoices(NSArray<SGKaraokeLine *> *lines) {
     for (SGKaraokeLine *line in lines) {
         if (!line.voice.length || [heard containsObject:line.voice]) continue;
         [heard addObject:line.voice];
+        if (heard.count == 2) break;
     }
     if (heard.count < 2) return;   // one voice, or none named: every line leads, as it already does
     NSString *trailing = heard[1];

@@ -8,6 +8,8 @@
 
 static NSString *sg_jwt;
 static NSUInteger sg_generation;
+static NSString *sg_arl;
+static BOOL sg_arlLoaded;
 
 static NSDictionary *keyQuery(void) {
     return @{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
@@ -15,14 +17,22 @@ static NSDictionary *keyQuery(void) {
 }
 
 static NSString *storedARL(void) {
+    if (sg_arlLoaded) return sg_arl;
     NSMutableDictionary *query = [keyQuery() mutableCopy];
     query[(__bridge id)kSecReturnData] = @YES;
     query[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
     CFTypeRef data = NULL;
-    if (SecItemCopyMatching((__bridge CFDictionaryRef)query, &data) != errSecSuccess || !data) return nil;
+    OSStatus status = SecItemCopyMatching((__bridge CFDictionaryRef)query, &data);
+    if (status != errSecSuccess && status != errSecItemNotFound) {
+        SGLyricsNoteReply(nil, [NSError errorWithDomain:NSOSStatusErrorDomain code:status userInfo:nil]);
+        return nil;
+    }
+    sg_arlLoaded = YES;
+    if (status == errSecItemNotFound || !data) return nil;
     id value = CFBridgingRelease(data);
     if (![value isKindOfClass:NSData.class] || [value length] > 4096) return nil;
-    return [[NSString alloc] initWithData:value encoding:NSUTF8StringEncoding];
+    sg_arl = [[NSString alloc] initWithData:value encoding:NSUTF8StringEncoding];
+    return sg_arl;
 }
 
 BOOL SGDeezerARLSet(void) { return storedARL().length > 0; }
@@ -33,6 +43,8 @@ void SGDeezerForgetKey(void) {
     SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
                                               (__bridge id)kSecAttrService: @"Vitrine.Deezer"});
     sg_jwt = nil;
+    sg_arl = nil;
+    sg_arlLoaded = NO;
     sg_generation++;
 }
 
@@ -58,6 +70,8 @@ static BOOL storeARL(NSString *arl) {
     }
     if (status != errSecSuccess) { SGLog(@"deezer: Keychain write failed (%d)", (int)status); return NO; }
     sg_jwt = nil;
+    sg_arl = nil;
+    sg_arlLoaded = NO;
     sg_generation++;
     NSMutableArray *order = [SGLyricsOrder() mutableCopy];
     [order removeObject:@"deezer"];

@@ -8,6 +8,25 @@
 #import <UIKit/UIKit.h>
 #import <zlib.h>
 #import "Shared/LyricsSources/LyricsSources.h"
+#import <Security/Security.h>
+
+// Real provider behavior, with no access to the user's Keychain.
+static NSString *sg_testARL;
+static NSUInteger sg_arlReads;
+static OSStatus sg_arlReadStatus;
+static OSStatus readTestARL(CFDictionaryRef query, CFTypeRef *data) {
+    sg_arlReads++;
+    if (sg_arlReadStatus != errSecSuccess) return sg_arlReadStatus;
+    if (!sg_testARL) return errSecItemNotFound;
+    *data = CFBridgingRetain([sg_testARL dataUsingEncoding:NSUTF8StringEncoding]);
+    return errSecSuccess;
+}
+static OSStatus deleteTestARL(CFDictionaryRef query) { sg_testARL = nil; return errSecSuccess; }
+#define SecItemCopyMatching readTestARL
+#define SecItemDelete deleteTestARL
+#import "Shared/LyricsSources/Deezer.m"
+#undef SecItemDelete
+#undef SecItemCopyMatching
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
 
@@ -25,7 +44,8 @@ void SGLyricsPageLines(NSArray<SGKaraokeLine *> *lines, NSArray<NSNumber *> **st
     *starts = at;
     *texts = said;
 }
-void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {}
+static NSError *sg_replyFailure;
+void SGLyricsNoteReply(NSURLResponse *response, NSError *error) { if (error) sg_replyFailure = error; }
 NSURL *SGLyricsURL(NSString *base, NSDictionary<NSString *, NSString *> *query) {
     NSURLComponents *url = [NSURLComponents componentsWithString:base];
     NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray array];
@@ -496,6 +516,67 @@ static void checkLanguagesAndTitles(void) {
     printf("language: ja/ko/en/es, repeated lines, kana override and uncertainty passed; titles: %lu cases; furigana: 6 cases, UTF-16 and concurrent cache passed; note copy passed\n", (unsigned long)titles.count);
 }
 
+static void checkVoiceScaling(void) {
+    for (NSNumber *size in @[@10000, @20000]) {
+        NSMutableArray<SGKaraokeLine *> *lines = [NSMutableArray array];
+        for (NSUInteger i = 0; i < size.unsignedIntegerValue; i++) {
+            SGKaraokeLine *line = [SGKaraokeLine new];
+            line.voice = [NSString stringWithFormat:@"voice-%lu", (unsigned long)i];
+            line.backing = [SGKaraokeLine new];
+            [lines addObject:line];
+        }
+        SGKaraokeLine *duplicate = [SGKaraokeLine new]; duplicate.voice = @"voice-0";
+        [lines insertObject:duplicate atIndex:1];
+        [lines insertObject:[SGKaraokeLine new] atIndex:2];
+        NSTimeInterval began = NSProcessInfo.processInfo.systemUptime;
+        SGKaraokeAlignVoices(lines);
+        NSTimeInterval elapsed = NSProcessInfo.processInfo.systemUptime - began;
+        for (SGKaraokeLine *line in lines) {
+            SGKaraokeAlign expected = [line.voice isEqual:@"voice-1"] ? SGKaraokeAlignTrailing : SGKaraokeAlignLeading;
+            CHECK(line.align == expected);
+            if (line.backing) CHECK(line.backing.align == expected);
+        }
+        printf("voice scaling: %lu distinct agents, %.6fs\n", (unsigned long)size.unsignedIntegerValue, elapsed);
+    }
+}
+
+static void checkDeezerKeychain(void) {
+    SGDeezerForgetKey();
+    SGLyricsQuery *query = [SGLyricsQuery new]; // No names: no network request, regardless of credential.
+    for (NSUInteger i = 0; i < 10; i++) SGDeezerAsk(query, ^(SGLyricsResult *result) { CHECK(!result); });
+    CHECK(sg_arlReads == 1 && !SGDeezerARLSet());
+    SGDeezerForgetKey();
+    sg_testARL = @"harness_arl";
+    for (NSUInteger i = 0; i < 10; i++) SGDeezerAsk(query, ^(SGLyricsResult *result) { CHECK(!result); });
+    CHECK(sg_arlReads == 2 && SGDeezerARLSet());
+    SGDeezerForgetKey();
+    CHECK(!SGDeezerARLSet() && sg_arlReads == 3);
+    SGDeezerForgetKey();
+    sg_testARL = @"unlocked_arl";
+    sg_arlReadStatus = errSecInteractionNotAllowed;
+    sg_replyFailure = nil;
+    query.title = @"Song"; query.artist = @"Singer";
+    SGDeezerAsk(query, ^(SGLyricsResult *result) { CHECK(!result); });
+    CHECK([sg_replyFailure.domain isEqual:NSOSStatusErrorDomain] && sg_replyFailure.code == errSecInteractionNotAllowed);
+    id (^saved)(NSURL *, NSDictionary *, NSData *, NSInteger *) = sg_sourceAnswer;
+    sg_sourceAnswer = ^id(NSURL *url, NSDictionary *headers, NSData *body, NSInteger *status) {
+        if ([url.host isEqual:@"api.deezer.com"])
+            return @{@"data": @[@{@"id": @7, @"title": @"Song", @"artist": @{@"name": @"Singer"}}]};
+        if ([url.host isEqual:@"auth.deezer.com"]) {
+            CHECK([headers[@"Cookie"] isEqual:@"arl=unlocked_arl"]);
+            return @{@"jwt": @"harness.jwt.signature"};
+        }
+        return deezerBody(@{@"text": @"Recovered after unlock"});
+    };
+    sg_arlReadStatus = errSecSuccess;
+    __block SGLyricsResult *answer;
+    SGDeezerAsk(query, ^(SGLyricsResult *result) { answer = result; });
+    CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"Recovered after unlock"]);
+    CHECK(SGDeezerARLSet() && sg_arlReads == 5);
+    sg_sourceAnswer = saved;
+    puts("Deezer credentials: present/absent reads cached until credential invalidation");
+}
+
 static void checkMalformedTiming(void) {
     // The unpacked 100k-piece sheet is below KuGou's 1 MiB input bound.
     for (NSNumber *size in @[@25000, @100000]) {
@@ -553,6 +634,7 @@ static void checkMalformedTiming(void) {
 int main(int argc, char **argv) {
     @autoreleasepool {
         checkMalformedTiming();
+        checkVoiceScaling();
         // Thai, Lao, Khmer and Burmese, long lines with no space, and Thai among Latin and brackets.
         checkSplit(@"ฉันรักเธอมากกว่าสิ่งใดในโลกนี้และจะอยู่เคียงข้างเธอตลอดไป", YES);
         checkSplit(@"วันนี้อากาศดีมากเราไปเดินเล่นที่สวนสาธารณะด้วยกันไหมนะที่รัก", YES);
@@ -700,6 +782,7 @@ int main(int argc, char **argv) {
         CHECK(!got && !asked);
 
         checkNewSources();
+        checkDeezerKeychain();
         checkReadingAndSearch();
         checkLanguagesAndTitles();
         // Lyricsfile: the spec's own example, two words timed to the end of each.

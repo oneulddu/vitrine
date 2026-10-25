@@ -5,10 +5,22 @@
 #import "Shared/LyricsSources/LyricsSources.h"
 #import <Security/Security.h>
 // Credential invalidation is real; the harness never touches the user's Keychain.
-static OSStatus ignoreKeyDelete(CFDictionaryRef query) { return errSecSuccess; }
+static NSString *sg_testKey;
+static NSUInteger sg_keyReads;
+static OSStatus sg_keyReadStatus;
+static OSStatus ignoreKeyDelete(CFDictionaryRef query) { sg_testKey = nil; return errSecSuccess; }
+static OSStatus readTestKey(CFDictionaryRef query, CFTypeRef *data) {
+    sg_keyReads++;
+    if (sg_keyReadStatus != errSecSuccess) return sg_keyReadStatus;
+    if (!sg_testKey) return errSecItemNotFound;
+    *data = CFBridgingRetain([sg_testKey dataUsingEncoding:NSUTF8StringEncoding]);
+    return errSecSuccess;
+}
 #define SecItemDelete ignoreKeyDelete
+#define SecItemCopyMatching readTestKey
 #import "Shared/LyricsSources/SpicyLyrics.m"
 #undef SecItemDelete
+#undef SecItemCopyMatching
 
 // What SpicyLyrics.m reaches outside the parser for; none of it but the result class is used here.
 @implementation SGLyricsResult
@@ -35,7 +47,10 @@ void SGLyricsGetJSONReply(NSURL *url, NSDictionary *headers, void (^done)(id roo
     if (sg_holdReply) { sg_delayedReply = done; return; }
     done(sg_body, sg_reply);
 }
-void SGLyricsNoteReply(NSURLResponse *response, NSError *error) { if (error) sg_lost++; }
+static NSError *sg_replyFailure;
+void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {
+    if (error) { sg_lost++; sg_replyFailure = error; }
+}
 NSArray<NSString *> *SGLyricsOrder(void) { return @[]; }
 void SGLyricsSetOrder(NSArray<NSString *> *keys) {}
 SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (^a)(void)) { return nil; }
@@ -111,6 +126,48 @@ static void checkCredentialGeneration(void) {
     SGSpicyLyricsAskWith(@"sl_pk_new_harness", query, ^(SGLyricsResult *result) { answer = result; });
     CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"New credential"]);
     puts("credentials: stale refusal, answer and rate limit discarded with completion");
+}
+
+static void checkKeychainCache(void) {
+    SGSpicyLyricsForgetKey();
+    SGLyricsQuery *query = [SGLyricsQuery new];
+    query.trackID = @"0123456789abcdefghijkK";
+    sg_reply = reply(200, @{});
+    sg_body = @{@"Body": @{@"Type": @"Static", @"Lines": @[@{@"Text": @"Cached answer"}]}};
+    SGSpicyLyricsAskWith(@"sl_pk_explicit_key", query, ^(SGLyricsResult *result) { CHECK(result); });
+    __block SGLyricsResult *answer;
+    SGSpicyLyricsAsk(query, ^(SGLyricsResult *result) { answer = result; });
+    CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"Cached answer"] && sg_keyReads == 0);
+    SGSpicyLyricsForgetKey();
+    for (NSUInteger i = 0; i < 10; i++)
+        SGSpicyLyricsAsk(query, ^(SGLyricsResult *result) { CHECK(!result); });
+    CHECK(sg_keyReads == 1 && !SGSpicyLyricsKeySet());
+    // A changed credential generation invalidates the cached absence.
+    SGSpicyLyricsForgetKey();
+    sg_testKey = @"sl_pk_new_stored_key";
+    sg_body = @{@"Body": @{@"Type": @"Static", @"Lines": @[@{@"Text": @"Stored credential"}]}};
+    SGSpicyLyricsAsk(query, ^(SGLyricsResult *result) { answer = result; });
+    CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"Stored credential"]);
+    CHECK([sg_headers[@"Authorization"] isEqual:@"Bearer sl_pk_new_stored_key"]);
+    for (NSUInteger i = 0; i < 10; i++) CHECK(SGSpicyLyricsKeySet());
+    CHECK(sg_keyReads == 2);
+    SGSpicyLyricsForgetKey();
+    CHECK(!SGSpicyLyricsKeySet() && sg_keyReads == 3);
+    SGSpicyLyricsForgetKey();
+    sg_testKey = @"sl_pk_unlocked_key";
+    sg_keyReadStatus = errSecInteractionNotAllowed;
+    NSUInteger failures = sg_lost;
+    SGSpicyLyricsAsk(query, ^(SGLyricsResult *result) { CHECK(!result); });
+    CHECK(sg_lost == failures + 1 && [sg_replyFailure.domain isEqual:NSOSStatusErrorDomain] &&
+          sg_replyFailure.code == errSecInteractionNotAllowed);
+    // Unlocking needs neither a save/remove nor a restart to recover.
+    sg_keyReadStatus = errSecSuccess;
+    answer = nil;
+    SGSpicyLyricsAsk(query, ^(SGLyricsResult *result) { answer = result; });
+    CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"Stored credential"]);
+    CHECK([sg_headers[@"Authorization"] isEqual:@"Bearer sl_pk_unlocked_key"] && sg_keyReads == 5);
+    CHECK(SGSpicyLyricsKeySet() && sg_keyReads == 5);
+    puts("Spicy credentials: cached answers bypass Keychain; present/absent reads cached per generation");
 }
 
 int main(void) {
@@ -252,6 +309,7 @@ int main(void) {
         CHECK(!ask(@"0123456789abcdefghijkD") && sg_sent == 5);
         CHECK(!ask(@"0123456789abcdefghijkE") && sg_sent == 5 && sg_lost == 1);
         checkCredentialGeneration();
+        checkKeychainCache();
         puts("spicy lyrics: all checks passed");
     }
     return 0;
