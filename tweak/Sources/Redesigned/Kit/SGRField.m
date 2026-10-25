@@ -156,6 +156,7 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
     _black.hidden = fluid || _flows;
     if (fluid) _backdrop.hidden = YES;
     if (fluid && _image) [_fluidLayer setArtwork:_image animated:NO];
+    if (!fluid && !_flows) [self readPaletteAnimated:NO];
     [self watch];
     [self updateMotion];
     [self setNeedsLayout];

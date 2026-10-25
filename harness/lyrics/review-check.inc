@@ -22,6 +22,7 @@ static BOOL reviewShowsText(UIView *view, NSString *text) {
 }
 
 #include "round-two-check.inc"
+#include "song-language-check.inc"
 
 static void reviewChecks(UIWindow *window) {
     NSUserDefaults *args = NSUserDefaults.standardUserDefaults;
@@ -87,4 +88,5 @@ static void reviewChecks(UIWindow *window) {
     [args setBool:NO forKey:@"ai"];
     [args removeObjectForKey:@"translateTo"];
     roundTwoChecks(window);
+    songLanguageChecks();
 }

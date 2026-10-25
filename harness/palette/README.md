@@ -9,6 +9,7 @@ status is the number of failures.
 
 `bash harness/palette/field-check.sh` runs the production artwork field and flow layer on Mac Catalyst
 with controlled palette replies. It covers artwork arriving before Colours is selected, reusing retained
-artwork after a completed mode change, and late palette replies in both directions. The palette service,
-player-transition observer and unused Fluid renderer are test doubles; no Spotify or GPU run is implied.
+artwork after a completed mode change, late palette replies in both directions, and restoration of the
+still backdrop after leaving Fluid, including repeated round trips and a late Fluid palette. The palette
+service, player-transition observer and Fluid renderer are test doubles; no Spotify or GPU run is implied.
 The temporary executable and its debug symbols are removed on exit.

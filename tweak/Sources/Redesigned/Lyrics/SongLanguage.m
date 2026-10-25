@@ -28,6 +28,7 @@ UIMenu *SGRSongLanguageMenu(NSString *trackID, NSArray<SGKaraokeLine *> *lines, 
     NSMutableArray<UIMenuElement *> *picks = [NSMutableArray array];
     UIAction *automatic = [UIAction actionWithTitle:SGL(@"settings.songlanguage.automatic", @"Automatic")
                                               image:nil identifier:nil handler:^(UIAction *action) {
+        if (![trackID isEqualToString:SGKaraokePlayingTrack()]) return;
         SGLyricsSetTrackLanguage(trackID, nil);
         follow(detected);
         if (apply) apply();
@@ -40,6 +41,7 @@ UIMenu *SGRSongLanguageMenu(NSString *trackID, NSArray<SGKaraokeLine *> *lines, 
     if (set && ![tags containsObject:set]) [tags insertObject:set atIndex:0];
     for (NSString *tag in tags) {
         UIAction *pick = [UIAction actionWithTitle:SGRLanguageName(tag) image:nil identifier:nil handler:^(UIAction *action) {
+            if (![trackID isEqualToString:SGKaraokePlayingTrack()]) return;
             SGLyricsSetTrackLanguage(trackID, tag);
             follow(tag);
             if (apply) apply();
@@ -58,6 +60,7 @@ UIMenu *SGRSongLanguageMenu(NSString *trackID, NSArray<SGKaraokeLine *> *lines, 
     NSString *name = SGRLanguageName(language);
     UIAction *keep = [UIAction actionWithTitle:[NSString stringWithFormat:SGL(@"settings.songlanguage.keep.format", @"Keep for %@ Songs"), name]
                                          image:[UIImage systemImageNamed:@"pin"] identifier:nil handler:^(UIAction *action) {
+        if (![trackID isEqualToString:SGKaraokePlayingTrack()]) return;
         SGLyricsSetLanguageRule(language, SGFlag(SGRKeyLyricsTranslation, NO), SGFlag(SGRKeyLyricsPronunciation, NO));
         if (apply) apply();
     }];

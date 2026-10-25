@@ -47,7 +47,8 @@ with `-iframework $SDK/System/iOSSupport/System/Library/Frameworks`, and the bin
 
 `SG_LYRICS_REVIEW_ONLY=1 bash harness/lyrics/translation-check.sh` runs the focused regressions:
 background layout snapshots, style changes during first measurement, stale AI actions, preview siblings,
-track changes during a seek hold, and cancellation during the download glyph's ring-closing delay.
+track changes during a seek hold, cancellation during the download glyph's ring-closing delay, and
+stale song-language actions (manual, Automatic, and Keep) with current-track controls.
 The glyph is production code; the clock, providers and Spotify view-tree reader are test doubles.
 Artwork association in `SGRBridges.x` still needs a Spotify/device check.
 
