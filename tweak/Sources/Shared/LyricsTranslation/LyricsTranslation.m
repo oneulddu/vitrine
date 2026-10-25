@@ -39,6 +39,15 @@ static NSString *geminiThinkingLevel(void) {
     return [@[@"medium", @"high"] containsObject:level] ? level : @"low";
 }
 
+static NSMutableDictionary *geminiGenerationConfig(SGLyricsReplyFormat format) {
+    NSMutableDictionary *config = [@{@"thinkingConfig": @{@"thinkingLevel": geminiThinkingLevel()}} mutableCopy];
+    if (format == SGLyricsReplyJSON) {
+        config[@"responseMimeType"] = @"application/json";
+        config[@"responseSchema"] = @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}};
+    }
+    return config;
+}
+
 #pragma mark - the key
 
 static NSDictionary *keyQuery(void) {
@@ -225,11 +234,7 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
                                  @"HARM_CATEGORY_SEXUALLY_EXPLICIT", @"HARM_CATEGORY_DANGEROUS_CONTENT"]) {
         [safety addObject:@{@"category": category, @"threshold": @"BLOCK_NONE"}];
     }
-    NSMutableDictionary *config = [@{@"thinkingConfig": @{@"thinkingLevel": geminiThinkingLevel()}} mutableCopy];
-    if (format == SGLyricsReplyJSON) {
-        config[@"responseMimeType"] = @"application/json";
-        config[@"responseSchema"] = @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}};
-    }
+    NSMutableDictionary *config = geminiGenerationConfig(format);
     NSDictionary *body = @{
         @"systemInstruction": @{@"parts": @[@{@"text": SGLyricsTranslationInstructionForFormat(format)}]},
         @"contents": @[@{@"parts": @[@{@"text": prompt}]}],
@@ -365,8 +370,7 @@ NSURLRequest *SGGeminiAIRequestWithFormat(NSString *system, NSString *prompt, SG
     request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
         @"systemInstruction": @{@"parts": @[@{@"text": system}]},
         @"contents": @[@{@"parts": @[@{@"text": prompt}]}], @"safetySettings": safety,
-        @"generationConfig": format == SGLyricsReplyJSON
-            ? @{@"responseMimeType": @"application/json", @"responseSchema": @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}}} : @{}
+        @"generationConfig": geminiGenerationConfig(format)
     } options:0 error:nil];
     return request;
 }

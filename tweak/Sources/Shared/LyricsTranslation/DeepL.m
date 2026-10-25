@@ -147,7 +147,8 @@ static void sendRequest(NSURLRequest *request, BOOL retryServer, BOOL (^allowed)
     NSURLSessionConfiguration *config = NSURLSessionConfiguration.ephemeralSessionConfiguration;
     config.URLCache = nil;
     config.HTTPShouldSetCookies = NO;
-    config.timeoutIntervalForResource = 60;
+    // A Gemini job's chosen timeout (30–300 s) bounds the whole job; every other caller asks for 60 s or less.
+    config.timeoutIntervalForResource = MAX(60, request.timeoutInterval);
     NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:receiver delegateQueue:NSOperationQueue.mainQueue];
     [[session dataTaskWithRequest:request] resume];
 }

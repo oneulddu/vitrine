@@ -6,6 +6,7 @@
 // are not in yet it looks four times a second. The lock screen keeps the line it was left on until the
 // sound starts again.
 #import <MediaPlayer/MediaPlayer.h>
+#import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "LockScreenLyrics.h"
 #import "Shared/Lyrics/Lyrics.h"
@@ -313,14 +314,13 @@ static void lookNow(void) {
     }];
     // The lyrics' delay applies at once, and moves the next change. Every write in the app posts this, so it is
     // compared on the writing thread and handed to main without waiting only when it moved (AGENTS.md).
-    static NSInteger delay;
-    delay = SGKaraokeDelayMs();
+    static _Atomic NSInteger delay;
+    atomic_store(&delay, SGKaraokeDelayMs());
     [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {
         SGPrefsChanged();
         NSInteger now = SGKaraokeDelayMs();
-        if (now == delay) return;
-        delay = now;
+        if (atomic_exchange(&delay, now) == now) return;
         dispatch_async(dispatch_get_main_queue(), ^{ lookNow(); });
     }];
     // The timer waits for Spotify to report a playing track; nothing before that has a line to show.

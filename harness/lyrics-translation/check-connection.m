@@ -140,6 +140,10 @@ static NSInteger connectionHTTPStatus;
 static NSData *connectionHTTPData;
 static BOOL connectionHTTPHold;
 static NSUInteger connectionHTTPStarts;
+static NSTimeInterval connectionRequestTimeout, connectionResourceTimeout;
+static BOOL connectionRequestCookies;
+// Kept alive so its resource timeout can be read after production has finished setting policies.
+static NSURLSessionConfiguration *connectionFixtureConfiguration;
 @interface SGConnectionProtocol : NSURLProtocol
 @end
 @implementation SGConnectionProtocol
@@ -147,8 +151,9 @@ static NSUInteger connectionHTTPStarts;
 + (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
 - (void)startLoading {
     dispatch_async(dispatch_get_main_queue(), ^{
-    connectionHTTPStarts++;
-    CHECK(self.request.timeoutInterval == 20 && !self.request.HTTPShouldHandleCookies);
+    connectionHTTPStarts++; connectionRequestTimeout = self.request.timeoutInterval;
+    connectionRequestCookies = self.request.HTTPShouldHandleCookies;
+    connectionResourceTimeout = connectionFixtureConfiguration.timeoutIntervalForResource;
     if (connectionHTTPHold) return;
     NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:connectionHTTPStatus HTTPVersion:@"HTTP/1.1" headerFields:@{}];
     [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
@@ -166,6 +171,7 @@ static NSUInteger connectionHTTPStarts;
 @implementation NSURLSessionConfiguration (SGConnectionFixture)
 + (NSURLSessionConfiguration *)sg_connectionEphemeral {
     NSURLSessionConfiguration *config = [self sg_connectionEphemeral];
+    connectionFixtureConfiguration = config;
     config.protocolClasses = @[SGConnectionProtocol.class];
     return config;
 }
@@ -187,7 +193,7 @@ static void checkConnectionTransport(void) {
             CHECK([data isEqual:connectionHTTPData]);
         });
         waitFor(^BOOL { return calls > 0; });
-        CHECK(connectionHTTPStarts == before + 1);
+        CHECK(connectionHTTPStarts == before + 1 && connectionRequestTimeout == 20 && !connectionRequestCookies);
     }
     // Unknown-length payloads exercise accumulation bounds, not merely Content-Length rejection.
     for (NSNumber *size in @[@(512 * 1024), @(512 * 1024 + 1)]) {
@@ -208,12 +214,24 @@ static void checkConnectionTransport(void) {
     waitFor(^BOOL { return connectionHTTPStarts > before; });
     [task cancel]; waitFor(^BOOL { return calls == 1; });
     connectionHTTPHold = NO;
+    // A Gemini job's chosen timeout (30–300 s) bounds the whole job; every 60 s caller keeps the old resource cap.
+    for (NSNumber *seconds in @[@30, @60, @120, @300]) {
+        NSMutableURLRequest *job = [request mutableCopy];
+        job.timeoutInterval = seconds.doubleValue;
+        connectionHTTPStatus = 200; connectionHTTPData = [@"fixture" dataUsingEncoding:NSUTF8StringEncoding];
+        __block NSUInteger calls = 0;
+        SGLyricsTranslationRealSendRequest(job, YES, nil, ^(NSData *data, NSInteger status, NSError *error) {
+            CHECK(NSThread.isMainThread && ++calls == 1 && !error);
+        });
+        waitFor(^BOOL { return calls > 0; });
+        CHECK(connectionRequestTimeout == seconds.doubleValue && connectionResourceTimeout == MAX(60, seconds.doubleValue));
+    }
     SGLyricsTranslationRequest *receiver = [SGLyricsTranslationRequest new];
     __block BOOL refused = NO;
     [receiver URLSession:NSURLSession.sharedSession task:task willPerformHTTPRedirection:[[NSHTTPURLResponse alloc] initWithURL:request.URL statusCode:302 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Location": @"https://other.invalid/"}] newRequest:request completionHandler:^(NSURLRequest *redirect) { CHECK(!redirect); refused = YES; }];
     CHECK(refused);
     method_exchangeImplementations(original, fixture);
-    puts("Connection transport: real SendOnce, 20s request, 429/503 no retry, cancel, 512 KiB boundary; direct redirect delegate passed");
+    puts("Connection transport: real SendOnce, 20s request, 429/503 no retry, cancel, 512 KiB boundary, Gemini job resource timeout; direct redirect delegate passed");
 }
 static void checkConnection(void) {
     NSArray *settings = @[SGKeyLyricsOpenAIBaseURL, SGKeyLyricsOpenAIModel];

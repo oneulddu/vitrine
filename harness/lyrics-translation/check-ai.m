@@ -829,6 +829,28 @@ static void checkAIJobs(void) {
     CHECK([body[@"generationConfig"][@"responseSchema"][@"items"][@"type"] isEqual:@"STRING"]);
     CHECK([body[@"safetySettings"] count] == 4);
     for (NSDictionary *entry in body[@"safetySettings"]) CHECK([entry[@"threshold"] isEqual:@"BLOCK_NONE"]);
+    // The stored thinking level reaches AI jobs too, in both wire formats, and the chosen timeout stays on the request.
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    id keptThinking = [defaults objectForKey:SGKeyAIThinking];
+    id keptTimeout = [defaults objectForKey:SGKeyAITimeout];
+    for (NSString *level in @[@"low", @"medium", @"high"]) {
+        if ([level isEqual:@"low"]) [defaults removeObjectForKey:SGKeyAIThinking];
+        else [defaults setObject:level forKey:SGKeyAIThinking];
+        aiReplies = [NSMutableArray arrayWithObject:@{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": @"[\"A reference.\",\"\",\"\"]"}]}, @"finishReason": @"STOP"}]}];
+        CHECK(askAI(SGLyricsAIGemini, [@"thinking-" stringByAppendingString:level], texts, YES, &problem) && !problem);
+        NSDictionary *jsonBody = [NSJSONSerialization JSONObjectWithData:lastAIRequest.HTTPBody options:0 error:nil];
+        CHECK([jsonBody[@"generationConfig"][@"thinkingConfig"][@"thinkingLevel"] isEqual:level]);
+        CHECK([jsonBody[@"generationConfig"][@"responseMimeType"] isEqual:@"application/json"]);
+        NSURLRequest *plainRequest = SGGeminiAIRequestWithFormat(@"system", @"prompt", SGLyricsReplyIndexed, &problem);
+        NSDictionary *plainBody = [NSJSONSerialization JSONObjectWithData:plainRequest.HTTPBody options:0 error:nil];
+        CHECK([plainBody[@"generationConfig"][@"thinkingConfig"][@"thinkingLevel"] isEqual:level] && !plainBody[@"generationConfig"][@"responseMimeType"]);
+    }
+    [defaults setInteger:300 forKey:SGKeyAITimeout];
+    CHECK(SGGeminiAIRequest(@"system", @"prompt", &problem).timeoutInterval == 300);
+    [defaults removeObjectForKey:SGKeyAITimeout];
+    CHECK(SGGeminiAIRequest(@"system", @"prompt", &problem).timeoutInterval == 120);
+    if (keptThinking) [defaults setObject:keptThinking forKey:SGKeyAIThinking]; else [defaults removeObjectForKey:SGKeyAIThinking];
+    if (keptTimeout) [defaults setObject:keptTimeout forKey:SGKeyAITimeout]; else [defaults removeObjectForKey:SGKeyAITimeout];
     aiReplies = [NSMutableArray arrayWithObject:@{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": @"[42,\"\",\"\"]"}]}}]}];
     CHECK(!askAI(SGLyricsAIGemini, @"gemini-invalid", texts, YES, &problem) && problem.length);
 
@@ -869,7 +891,7 @@ static void checkAIJobs(void) {
     testKeys = [NSSet set];
     CHECK(!askAI(SGLyricsAIClaude, @"missing-key", texts, NO, &problem) && [problem containsString:@"key"]);
     CHECK(SGLyricsAIAvailable().count == 0);
-    puts("AI jobs: prompt JSON, notation, note limits, all three requests, strict replies, main completion, coalescing and memo passed");
+    puts("AI jobs: prompt JSON, notation, note limits, all three requests, thinking level, timeout, strict replies, main completion, coalescing and memo passed");
 }
 static void checkAIStore(void) {
     SGLyricsDeleteSavedTranslations();
