@@ -96,10 +96,15 @@ void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *a
 SGModRow *SGMotionSourcesRow(void);
 
 // Any remote video (a Canvas) as a local file, or nil. Main queue.
+// Retain the returned URL while consuming it: the store excludes retained handoffs from eviction.
 void SGMotionFile(NSURL *remote, void (^done)(NSURL *file));
 // Where a video the mod makes itself is kept under `key`, among the downloads, which are kept to the
-// newest few. Whether it is there yet is the caller's to check. Any thread.
+// newest few. Pure filename derivation; does not access the filesystem. Any thread.
 NSURL *SGMotionMadeFile(NSString *key);
+// Serial store queue: checks for an existing file, creates/trims the folder, then writes if needed.
+// Both blocks run off main on that queue. done reports whether the file is ready.
+// The supplied URL pins a ready file until its last consumer releases that URL.
+void SGMotionMakeFile(NSURL *file, BOOL (^write)(void), void (^done)(BOOL));
 
 // The first frame of a local video. Main queue.
 void SGMotionPoster(NSURL *file, void (^done)(UIImage *poster));

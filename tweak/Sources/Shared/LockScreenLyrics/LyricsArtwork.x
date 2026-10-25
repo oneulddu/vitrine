@@ -68,7 +68,8 @@ static NSURL *sg_motion;
 // Paths of moving artwork that would not draw (turned, its frames another size than it states, cut short, or
 // gone from the store), so each line goes straight to the cover; a file handed over again is tried again. Read
 // on main and both queues, so only under its own lock.
-static NSMutableSet<NSString *> *sg_failedMotion;
+static const NSUInteger kFailedMotionEntries = 32;
+static NSMutableOrderedSet<NSString *> *sg_failedMotion;
 
 static BOOL motionFailed(NSURL *file) {
     @synchronized (sg_failedMotion) {
@@ -79,6 +80,7 @@ static BOOL motionFailed(NSURL *file) {
 static void markMotionFailed(NSURL *file, NSString *artworkID) {
     @synchronized (sg_failedMotion) {
         if ([sg_failedMotion containsObject:file.path]) return;
+        if (sg_failedMotion.count >= kFailedMotionEntries) [sg_failedMotion removeObjectAtIndex:0];
         [sg_failedMotion addObject:file.path];
     }
     SGLog(@"lock lyrics: %@ would not draw for %@, the lines go over the cover for it", file.lastPathComponent, artworkID);
@@ -388,8 +390,9 @@ static NSTimeInterval update(void) {
                 translatedLines = lines;
                 SGRAutoTranslateWithoutView(trackID, lines, ^BOOL {
                     return [trackID isEqualToString:SGKaraokePlayingTrack()] && SGFlag(SGKeyLockScreenTranslation, NO)
+                        && lines == SGKaraokeLinesForTrack(trackID) && [language isEqual:SGLyricsGeminiLanguage()]
                         && SGLockArtworkShowsLyrics(SGLockScreenArtwork());
-                });
+                }, ^{ tick(); });
             }
         }
         NSInteger ms = SGKaraokeMsToChange(lines, position, -1);
@@ -540,7 +543,7 @@ static void tick(void) {
         sg_queue = dispatch_queue_create("spotifyglass.lockscreen.lyrics", DISPATCH_QUEUE_SERIAL);
         sg_previewQueue = dispatch_queue_create("spotifyglass.lockscreen.lyrics.preview", DISPATCH_QUEUE_SERIAL);
         sg_previews = [NSCache new];
-        sg_failedMotion = [NSMutableSet set];
+        sg_failedMotion = [NSMutableOrderedSet orderedSet];
         sg_previews.countLimit = 4;
         static SGLyricsArtwork *observer;
         observer = [SGLyricsArtwork new];
@@ -565,8 +568,12 @@ static void tick(void) {
                     || ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()]
                     || !SGFlag(SGKeyLockScreenTranslation, NO)) return;
                 NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(track);
-                SGLyricsSyncSavedTranslation(track, note.userInfo[@"language"], lines);
-                tick();
+                NSString *language = note.userInfo[@"language"];
+                SGLyricsLoadTranslation(track, language, lines, ^BOOL {
+                    return [track isEqual:SGKaraokePlayingTrack()] && [language isEqual:SGLyricsGeminiLanguage()]
+                        && lines == SGKaraokeLinesForTrack(track) && SGLockArtworkShowsLyrics(SGLockScreenArtwork())
+                        && SGFlag(SGKeyLockScreenTranslation, NO);
+                }, ^{ tick(); });
             });
         }];
         style = SGInt(SGKeyLockScreenLyricsStyle, SGLyricsClipStill);

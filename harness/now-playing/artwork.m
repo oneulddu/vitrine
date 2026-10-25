@@ -158,6 +158,11 @@ static UIImage *image(UIColor *color) {
         UIRectFill(CGRectMake(0, 0, 24, 32));
     }];
 }
+void SGMotionMakeFile(NSURL *file, BOOL (^write)(void), void (^done)(BOOL)) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        done([NSFileManager.defaultManager fileExistsAtPath:file.path] || write());
+    });
+}
 CGSize SGLyricsClipSize(CGFloat pixels) { return CGSizeMake(24, 32); }
 CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) {
     return CGImageRetain(cover ?: blue.CGImage);

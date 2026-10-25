@@ -143,13 +143,8 @@ static void offerVideo(void) {
                     completion(file);
                     return;
                 }
-                dispatch_async(sg_queue, ^{
-                    CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
-                    BOOL ok = [NSFileManager.defaultManager fileExistsAtPath:shaped.path] || SGMotionClipShape(file, ratio, shaped);
-                    SGLog(@"lock motion: %@ cut to %@ %@ in %.0f ms", file.lastPathComponent, ratio == 1 ? @"1:1" : @"3:4",
-                          ok ? @"ready" : @"not written", (CFAbsoluteTimeGetCurrent() - start) * 1000);
-                    completion(ok ? shaped : nil);
-                });
+                SGMotionMakeFile(shaped, ^BOOL { return SGMotionClipShape(file, ratio, shaped); },
+                                ^(BOOL ok) { completion(ok ? shaped : nil); });
             }];
         SGNowPlayingSetExtras(@"motion", @{key: artwork}, title);
         sg_pendingFile = nil;
@@ -298,9 +293,9 @@ static void offerCover(void) {
                     });
                 }
                 videoAssetFileURLRequestHandler:^(CGSize wanted, void (^completion)(NSURL *)) {
-                    dispatch_async(sg_queue, ^{
-                        BOOL ok = !offered.cancelled && ([NSFileManager.defaultManager fileExistsAtPath:file.path]
-                                                       || SGFluidClipWrite(file, backdrop.CGImage, size));
+                    SGMotionMakeFile(file, ^BOOL {
+                        return !offered.cancelled && SGFluidClipWrite(file, backdrop.CGImage, size);
+                    }, ^(BOOL ok) {
                         completion(ok && !offered.cancelled ? file : nil);
                     });
                 }];
