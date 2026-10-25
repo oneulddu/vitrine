@@ -22,6 +22,7 @@ static const NSUInteger kMaxChars = 30;
 static NSObject *sg_lock;
 static NSDictionary *sg_spotifyInfo;
 static CFAbsoluteTime sg_spotifyInfoAt;
+static BOOL sg_refreshPending; // under sg_lock; a background setter burst needs one main refresh
 static NSString *sg_shownLine;
 static _Thread_local BOOL sg_resending;
 static dispatch_source_t sg_timer;
@@ -188,7 +189,7 @@ static double rateOf(NSDictionary *info) {
     return rate.doubleValue > 0 ? rate.doubleValue : 1;
 }
 
-static void tick(void);
+static void tick(BOOL force);
 static BOOL playingBy(NSDictionary *info);
 
 // Main thread, as everything the timer touches is. Stops the timer, or arms it to look again `wait`
@@ -207,7 +208,7 @@ static void lookIn(NSTimeInterval wait, NSDictionary *info) {
             static int late;
             CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
             if (now - sg_due > 2 && late++ < 5) SGLog(@"%s: ticked %.1f s late", __FILE_NAME__, now - sg_due);
-            tick();
+            tick(NO);
         });
         dispatch_resume(sg_timer);
     }
@@ -216,24 +217,28 @@ static void lookIn(NSTimeInterval wait, NSDictionary *info) {
     dispatch_source_set_timer(sg_timer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(seconds * NSEC_PER_SEC)), DISPATCH_TIME_FOREVER, 10 * NSEC_PER_MSEC);
 }
 
-static void tick(void) {
+static void tick(BOOL force) {
     NSDictionary *info;
     CFAbsoluteTime reportedAt;
     @synchronized (sg_lock) {
         info = sg_spotifyInfo;
         reportedAt = sg_spotifyInfoAt;
     }
-    if (!info[MPNowPlayingInfoPropertyElapsedPlaybackTime]) return;
-    CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-    double elapsed = elapsedAt(info, reportedAt, now);
-    NSTimeInterval wait;
-    NSString *line = lineFor(info, elapsed, &wait);
-    // A saved translation can redraw a paused song, but must not restart its clock's timer.
+    NSDictionary *shown = info;
+    NSString *line = nil;
+    NSTimeInterval wait = -1;
+    if (info[MPNowPlayingInfoPropertyElapsedPlaybackTime]) {
+        double elapsed = elapsedAt(info, reportedAt, CFAbsoluteTimeGetCurrent());
+        line = lineFor(info, elapsed, &wait);
+        shown = withLine(info, line, elapsed);
+    }
+    // A queued setter must restore its latest snapshot even when the line is unchanged
+    // (including nil), but refreshing a paused or empty snapshot never starts a timer.
     lookIn(playingBy(info) ? wait : -1, info);
-    if (line == sg_shownLine || [line isEqualToString:sg_shownLine]) return;
+    if (!force && (line == sg_shownLine || [line isEqualToString:sg_shownLine])) return;
     sg_shownLine = line;
     sg_resending = YES;
-    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = withLine(info, line, elapsed);
+    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = shown;
     sg_resending = NO;
 }
 
@@ -260,16 +265,23 @@ static void lookNow(void) {
         return;
     }
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
+    BOOL needsRefresh = !NSThread.isMainThread || !info[MPNowPlayingInfoPropertyElapsedPlaybackTime];
+    BOOL enqueueRefresh = NO;
     @synchronized (sg_lock) {
         sg_spotifyInfo = info;
         sg_spotifyInfoAt = now;
+        if (needsRefresh && !sg_refreshPending) {
+            sg_refreshPending = YES;
+            enqueueRefresh = YES;
+        }
     }
     BOOL playing = playingBy(info) && info[MPNowPlayingInfoPropertyElapsedPlaybackTime] != nil;
-    // Karaoke's lyrics are main-thread state; off it the info goes out as it is and a tick at once adds the line.
-    if (!NSThread.isMainThread || !info[MPNowPlayingInfoPropertyElapsedPlaybackTime]) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            sg_shownLine = nil;
-            lookIn(playing ? 0 : -1, info);
+    // Karaoke's lyrics are main-thread state. Restore the latest snapshot on main even
+    // when paused: an older tick may have republished its own snapshot after this setter.
+    if (needsRefresh) {
+        if (enqueueRefresh) dispatch_async(dispatch_get_main_queue(), ^{
+            @synchronized (sg_lock) { sg_refreshPending = NO; }
+            tick(YES);
         });
         %orig;
         return;
@@ -306,12 +318,12 @@ static void lookNow(void) {
                 || SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) != SGLockScreenLyricsLineTranslation) return;
             SGLyricsSyncSavedTranslation(track, note.userInfo[@"language"], SGKaraokeLinesForTrack(track));
             sg_shownLine = nil;
-            tick();
+            tick(NO);
         });
     }];
     // Lines kept for a track, or replaced by better timed ones, can change the line at once.
     [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesKeptNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
-        if (!note.object || [note.object isEqual:SGKaraokePlayingTrack()]) tick();
+        if (!note.object || [note.object isEqual:SGKaraokePlayingTrack()]) tick(NO);
     }];
     // The lyrics' delay applies at once, and moves the next change. Every write in the app posts this, so it is
     // compared on the writing thread and handed to main without waiting only when it moved (AGENTS.md).

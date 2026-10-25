@@ -42,9 +42,11 @@ NSURL *SGMotionCanvasIn(NSDictionary *metadata) {
     return video && [address isKindOfClass:NSString.class] ? [NSURL URLWithString:address] : nil;
 }
 
-// What the service answered for each track this launch, its Canvas's address or NSNull for none, and the
-// askers waiting on an answer in flight. A request that failed is not kept, so the next walk asks again.
+// The latest completed answers, a Canvas address or NSNull for none. In-flight askers
+// live separately and are never evicted. Failed and evicted requests can be asked again.
+static const NSUInteger kCanvasAnswerEntries = 200;
 static NSMutableDictionary<NSString *, id> *sg_answers;
+static NSMutableArray<NSString *> *sg_answerOrder;
 static NSMutableDictionary<NSString *, NSMutableArray *> *sg_asking;
 
 static void canvasFromService(NSString *uri, void (^done)(NSURL *canvas)) {
@@ -70,7 +72,10 @@ static void canvasFromService(NSString *uri, void (^done)(NSURL *canvas)) {
         done(nil);
         return;
     }
-    if (!sg_answers) sg_answers = [NSMutableDictionary dictionary];
+    if (!sg_answers) {
+        sg_answers = [NSMutableDictionary dictionary];
+        sg_answerOrder = [NSMutableArray array];
+    }
     if (!sg_asking) sg_asking = [NSMutableDictionary dictionary];
     sg_asking[uri] = [NSMutableArray arrayWithObject:[done copy]];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:@"https://spclient.wg.spotify.com/canvaz-cache/v0/canvases"]];
@@ -87,7 +92,14 @@ static void canvasFromService(NSString *uri, void (^done)(NSURL *canvas)) {
         dispatch_async(dispatch_get_main_queue(), ^{
             static NSUInteger logged;
             if (logged++ < 5 || status != 200) SGLog(@"motion: Canvas service for %@: %ld, %@", uri, (long)status, address ? @"a video" : @"none");
-            if (status == 200) sg_answers[uri] = address ?: (id)NSNull.null;
+            if (status == 200) {
+                if (sg_answerOrder.count >= kCanvasAnswerEntries) {
+                    [sg_answers removeObjectForKey:sg_answerOrder.firstObject];
+                    [sg_answerOrder removeObjectAtIndex:0];
+                }
+                sg_answers[uri] = address ?: (id)NSNull.null;
+                [sg_answerOrder addObject:uri];
+            }
             NSArray *waiting = sg_asking[uri];
             [sg_asking removeObjectForKey:uri];
             for (void (^waiter)(NSURL *) in waiting) waiter(address ? [NSURL URLWithString:address] : nil);

@@ -19,3 +19,12 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi \
     ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionClip.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m \
     -o "$OUT/state-check"
 "$OUT/state-check"
+xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi \
+    -isysroot "$(xcrun --sdk macosx --show-sdk-path)" \
+    -iframework "$(xcrun --sdk macosx --show-sdk-path)/System/iOSSupport/System/Library/Frameworks" \
+    -fobjc-arc -I ../../tweak/Sources \
+    -framework UIKit -framework Foundation -framework CoreGraphics -framework AVFoundation -framework CoreMedia -framework CoreVideo \
+    sources-check.m ../../tweak/Sources/Shared/AnimatedArtwork/MotionSources.m \
+    ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionClip.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m \
+    -o "$OUT/sources-check"
+"$OUT/sources-check"

@@ -70,8 +70,18 @@ BOOL SGFlag(NSString *key, BOOL fallback) {
 
 static SGStubPlayer *sg_player;
 static NSArray<SGKaraokeLine *> *sg_lines;
+static void (^sg_afterTickSnapshot)(void);
+static NSUInteger sg_lyricReads;
 
-id SGKaraokePlayer(void) { return sg_player; }
+id SGKaraokePlayer(void) {
+    if (NSThread.isMainThread) {
+        sg_lyricReads++;
+        void (^gate)(void) = sg_afterTickSnapshot;
+        sg_afterTickSnapshot = nil;
+        if (gate) gate();
+    }
+    return sg_player;
+}
 NSString *SGKaraokePlayingTrack(void) { return sg_player.state.track.URI; }
 NSArray<SGKaraokeLine *> *SGKaraokeLinesForTrack(NSString *trackID) { return sg_lines; }
 void SGKaraokeRequestLyrics(NSString *trackID) {}
@@ -180,6 +190,35 @@ static void translation(void) {
     sg_showTranslation = NO;
 }
 
+static void pausedTrackDuringTick(void) {
+    MPNowPlayingInfoCenter *center = MPNowPlayingInfoCenter.defaultCenter;
+    NSArray *saved = sg_lines;
+    sg_lines = @[lineOf(@"A before", 0, 1000)];
+    center.nowPlayingInfo = spotifyInfo(@"Song", 0, 1);
+    sg_lines = @[lineOf(@"A after", 0, 1000)];
+    __block BOOL gated = NO;
+    sg_afterTickSnapshot = ^{
+        gated = YES;
+        dispatch_semaphore_t published = dispatch_semaphore_create(0);
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            center.nowPlayingInfo = spotifyInfo(@"Paused B", 7, 0);
+            dispatch_semaphore_signal(published);
+        });
+        check(dispatch_semaphore_wait(published, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0,
+              @"paused B publishes off-main while A's tick is held after its snapshot");
+    };
+    [NSNotificationCenter.defaultCenter postNotificationName:SGKaraokeLinesKeptNotification object:nil];
+    check(gated, @"the production lyric tick reaches the snapshot gate");
+    runFor(.05);
+    check([sg_system[MPMediaItemPropertyTitle] isEqual:@"Paused B"] && systemElapsed() == 7
+          && [sg_system[MPNowPlayingInfoPropertyPlaybackRate] doubleValue] == 0,
+          @"draining main restores paused B after A's stale resend");
+    NSUInteger reads = sg_lyricReads;
+    runFor(.35);
+    check(sg_lyricReads == reads, @"paused B leaves no timer polling the lyric player");
+    sg_lines = saved;
+}
+
 // Two tracks with one title: what the first had must not stay on the second's info once it is cleared.
 static void sameTitle(void) {
     MPNowPlayingInfoCenter *center = MPNowPlayingInfoCenter.defaultCenter;
@@ -231,6 +270,7 @@ int main(void) {
         printf("lock screen lyrics %s\n", lyrics ? "on" : "off");
         if (lyrics) progressBar();
         if (lyrics) translation();
+        if (lyrics) pausedTrackDuringTick();
         sameTitle();
         artworkChecks();
         printf(failures ? "%d failed\n" : "all passed\n", failures);
