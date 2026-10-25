@@ -2,6 +2,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "SGRAccent.h"
+#import "SGRHeaderInfo.h"
 
 // The preset is read off the color stored, so the hooks keep the one key they read and a color set before
 // presets existed stays in effect: Apple Music's red reads as Apple Music, Spotify's own (-1) as Spotify, and
@@ -40,5 +41,6 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) {
         SGWithSymbol(menu, @"paintpalette"),
         SGWithSymbol(colour, @"eyedropper"),
         SGWithSymbol(SGOptionRow(SGL(@"settings.appearance.plain_checkmark.title", @"Plain checkmark"), SGL(@"settings.appearance.plain_checkmark.subtitle", @"A saved song's tick without its circle, in the accent"), SGRKeyPlainCheck), @"checkmark"),
+        SGWithSymbol(SGSwitchRow(SGL(@"settings.appearance.full_bleed.title", @"Full bleed covers"), SGL(@"settings.appearance.full_bleed.subtitle", @"Album and playlist covers across the top. Off, a square cover; an animated cover still fills the top"), SGRKeyFullBleedCovers), @"photo"),
     ];
 }

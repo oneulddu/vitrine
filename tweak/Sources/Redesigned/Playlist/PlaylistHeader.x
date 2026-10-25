@@ -126,6 +126,7 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 // The tap that opens the cover goes on `layout`, the header's content layout over the hero. The same layout
 // again is a no-op; nothing while the switch is off.
 - (void)openFrom:(UIView *)layout;
+@property (nonatomic) BOOL squareOnly;
 @end
 
 @implementation SGRPlaylistHero {
@@ -178,7 +179,15 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 
 // The part of the picture over no text: the title and the creator start SGRHeaderInfoTitleRise above its bottom.
 - (CGRect)sgr_coverArea {
+    if (_squareOnly && _cover) return [_cover convertRect:_cover.bounds toView:self];
     return CGRectMake(0, 0, self.bounds.size.width, MAX(0, self.bounds.size.height - SGRHeaderInfoTitleRise));
+}
+
+- (void)setSquareOnly:(BOOL)squareOnly {
+    _squareOnly = squareOnly;
+    // Keep the invisible hero accessible and its layout's cover tap alive over Spotify's square.
+    _picture.hidden = squareOnly;
+    _scrim.hidden = squareOnly;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
@@ -300,6 +309,10 @@ static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *bloc
 
     [hero followCover:coverImageIn(cover)];
     [hero openFrom:layout];
+    // Full bleed covers off: Spotify's own square stays above the block, shrinking as the header collapses, and the
+    // hero only reads the picture for the field. A mix's picture is full bleed in Spotify's own layout, so it stays.
+    hero.squareOnly = !SGRFullBleedCovers() && [cover.accessibilityIdentifier isEqualToString:@"Components.Header.UI.ArtworkImage"];
+    if (hero.squareOnly) return;
     conceal(cover);
 }
 
