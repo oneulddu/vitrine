@@ -24,7 +24,7 @@ const CGFloat SGRHomeTileRadius = 14;
 // as the reference's pills are (brightness 178 over a fill of 65 in the first pixel row, none at the sides).
 static const CGFloat kRimAlpha = 0.5, kRimSideShare = 0.3;
 
-static char kSurfaceKey, kImageKey, kShownKey, kTitleKey, kMineKey, kPlayingKey, kRimKey;
+static char kSurfaceKey, kImageKey, kShownKey, kTitleKey, kMineKey, kPlayingKey, kRimKey, kOwnershipKey;
 static void rim(UIView *surface);
 // The tile's trailing padding, after the title or the playing indicator.
 static const CGFloat kTrailing = 12;
@@ -179,6 +179,7 @@ static void retitle(UIView *tile) {
 }
 
 void SGRHomeUnstyleTile(UIView *button) {
+    objc_setAssociatedObject(button, &kOwnershipKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     UIView *surface = objc_getAssociatedObject(button, &kSurfaceKey);
     UILabel *mine = objc_getAssociatedObject(button, &kMineKey);
     if (!surface && !mine) return;
@@ -249,11 +250,17 @@ void SGRHomeStyleTile(UIView *tile) {
     CFTimeInterval began = SGRHomeProbeBegin();
     UIImageView *cover = partsOf(tile).cover;
     if (!cover) return;
+    NSObject *ownership = objc_getAssociatedObject(tile, &kOwnershipKey);
+    if (!ownership) {
+        ownership = [NSObject new];
+        objc_setAssociatedObject(tile, &kOwnershipKey, ownership, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
     __weak UIView *weakTile = tile;
     // The block is replaced on every pass, so a cover taken into another tile tells the tile it is in now.
     SGRObserveImage(cover, ^(UIImageView *view) {
         UIView *strongTile = weakTile;
-        if (strongTile && [view isDescendantOfView:strongTile]) refresh(strongTile);
+        if (strongTile && objc_getAssociatedObject(strongTile, &kOwnershipKey) == ownership
+            && [view isDescendantOfView:strongTile]) refresh(strongTile);
     });
     refresh(tile);
     SGRHomeProbeEnd(SGRHomeProbeTiles, began);
