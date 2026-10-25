@@ -67,6 +67,11 @@ static NSInteger ms(id seconds) {
     return [seconds respondsToSelector:@selector(doubleValue)] ? (NSInteger)llround([seconds doubleValue] * 1000) : 0;
 }
 
+// A flag the response gives. A null one is NSNull, which does not answer boolValue.
+static BOOL flagIn(id value) {
+    return [value isKindOfClass:NSNumber.class] && [value boolValue];
+}
+
 static NSString *stringIn(NSDictionary *object, NSString *name) {
     id value = [object isKindOfClass:NSDictionary.class] ? object[name] : nil;
     return [value isKindOfClass:NSString.class] && [value length] ? value : nil;
@@ -92,7 +97,7 @@ static SGKaraokeLine *syllableLine(NSDictionary *part, NSString *field) {
         word.end = MAX(ms(syllable[@"EndTime"]), word.start);
         word.joined = words.count && runsOn;
         [words addObject:word];
-        runsOn = [syllable[@"IsPartOfWord"] boolValue];
+        runsOn = flagIn(syllable[@"IsPartOfWord"]);
     }
     if (!words.count) return nil;
     SGKaraokeLine *line = [SGKaraokeLine new];
@@ -126,7 +131,7 @@ static NSArray<SGKaraokeLine *> *syllableLines(NSArray *content) {
         NSDictionary *lead = item[@"Lead"];
         SGKaraokeLine *line = syllableLine(lead, @"Text");
         if (!line) continue;
-        line.align = [item[@"OppositeAligned"] boolValue] ? SGKaraokeAlignTrailing : SGKaraokeAlignLeading;
+        line.align = flagIn(item[@"OppositeAligned"]) ? SGKaraokeAlignTrailing : SGKaraokeAlignLeading;
         // A line can have several background phrases; the view has one backing line, so they share it,
         // and their translations join the lead's.
         NSMutableArray *backing = [NSMutableArray array];
@@ -174,7 +179,7 @@ static NSArray<SGKaraokeLine *> *lineLines(NSArray *content) {
     NSArray<SGKaraokeLine *> *lines = SGKaraokeEstimatedLines(starts, texts);
     // Breaks were left out of kept, so the lines and kept pair up one to one.
     for (NSUInteger i = 0; i < lines.count && i < kept.count; i++) {
-        if ([kept[i][@"OppositeAligned"] boolValue]) lines[i].align = SGKaraokeAlignTrailing;
+        if (flagIn(kept[i][@"OppositeAligned"])) lines[i].align = SGKaraokeAlignTrailing;
         lines[i].pronunciation = SGLyricsPronunciation(nil, stringIn(kept[i], @"TransliteratedText"), lines[i]);
         lines[i].translation = translationOf(stringIn(kept[i], @"TranslatedText"), lines[i]);
     }

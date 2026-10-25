@@ -21,7 +21,9 @@ static NSDictionary *bestOf(id results, NSInteger seconds) {
     NSInteger bestOff = NSIntegerMax;
     for (NSDictionary *found in [results isKindOfClass:NSArray.class] ? results : @[]) {
         if (![found isKindOfClass:NSDictionary.class] || ![found[@"lyricsUrl"] isKindOfClass:NSString.class]) continue;
-        NSInteger length = [found[@"duration"] integerValue];
+        // A length of null, or one that is not a number, is none to go on.
+        double duration;
+        NSInteger length = SGLyricsNumber(found[@"duration"], &duration) ? (NSInteger)duration : 0;
         NSInteger off = seconds > 0 && length > 0 ? labs(length - seconds) : 0;
         if (off > kLengthSlack) continue;
         BOOL wordTimed = [found[@"timing_type"] isEqual:@"word"];

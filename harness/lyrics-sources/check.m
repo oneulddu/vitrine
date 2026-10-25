@@ -99,6 +99,16 @@ static void checkReadingAndSearch(void) {
     CHECK([found[0][@"title"] isEqual:@"Song"] && [found[0][@"artist"] isEqual:@"Singer"] && [found[0][@"album"] isEqual:@""]);
     CHECK([found[0][@"synced"] boolValue] && ![found[0][@"instrumental"] boolValue] && [found[0][@"seconds"] isEqual:@200.2]);
     CHECK([found[0][@"record"] isEqual:near]);
+    // A length the server spells as null is no length to go on: the record is kept with 0 seconds, not
+    // messaged with integerValue/doubleValue, which NSNull does not answer.
+    NSDictionary *unsized = @{@"id": @20, @"trackName": @"Song", @"artistName": @"Singer", @"duration": NSNull.null,
+                              @"syncedLyrics": @"[00:01.00]a line"};
+    id sizedReply = reply;
+    reply = @[unsized, near];
+    SGLrcLibSearch(@"Song", @"Singer", 200, ^(NSArray *records) { found = records; });
+    CHECK(found.count == 2 && [found[1][@"id"] isEqual:@20] && [found[1][@"seconds"] isEqual:@0]);
+    CHECK(SGLrcLibRecordResult(unsized).karaokeLines.count == 1);
+    reply = sizedReply;
     CHECK([SGLrcLibRecordResult(near).provider isEqual:@"LRCLIB"] && SGLrcLibRecordResult(plain).karaokeLines.count == 1);
     CHECK(!SGLrcLibRecordResult(@{@"plainLyrics": @"  ", @"instrumental": NSNull.null}));
     CHECK(SGLrcLibRecordResult(@{@"instrumental": @YES}).instrumental);
@@ -767,6 +777,32 @@ int main(int argc, char **argv) {
         found = @[unreadable, @{@"id": @11, @"trackName": @"a", @"artistName": @"b", @"duration": @200, @"syncedLyrics": @"[00:01.00]a\n[00:02.00]b\n[00:03.00]c\n"}];
         got = lrclibAnswer(query, nil);
         CHECK(!got.wordTimed && got.synced && got.karaokeLines.count == 3);
+        // A length spelled as null is unknown, not a crash: matching keeps such a record whole, and the
+        // ranking weighs it as having no length to go on rather than messaging NSNull. Each record's words
+        // say which one won.
+        query.seconds = 200;
+        NSDictionary *unsized = @{@"id": @13, @"trackName": @"a", @"artistName": @"b", @"duration": NSNull.null,
+                                  @"syncedLyrics": @"[00:01.00]alone\n[00:02.00]alone b\n"};
+        found = @[unsized];
+        got = lrclibAnswer(query, nil);
+        CHECK(got && got.synced && got.karaokeLines.count == 2);
+        CHECK([SGKaraokeLineText(got.karaokeLines[0]) isEqualToString:@"alone"]);
+        // Two with no length and one 4 s off the track, inside the slack: the one that says its length wins,
+        // since the ones that do not are 200 s off.
+        found = @[unsized, @{@"id": @14, @"trackName": @"a", @"artistName": @"b", @"duration": NSNull.null,
+                             @"syncedLyrics": @"[00:01.00]unsized again\n[00:02.00]unsized again b\n", @"plainLyrics": @"x\ny"},
+                  @{@"id": @15, @"trackName": @"a", @"artistName": @"b", @"duration": @204,
+                    @"syncedLyrics": @"[00:01.00]sized\n[00:02.00]sized b\n"}];
+        got = lrclibAnswer(query, nil);
+        CHECK(got && got.synced && got.karaokeLines.count == 2);
+        CHECK([SGKaraokeLineText(got.karaokeLines[0]) isEqualToString:@"sized"]);
+        // With no length among them the first is kept, as the walk is not made to prefer any of them.
+        found = @[unsized, @{@"id": @14, @"trackName": @"a", @"artistName": @"b", @"duration": NSNull.null,
+                             @"syncedLyrics": @"[00:01.00]unsized again\n[00:02.00]unsized again b\n", @"plainLyrics": @"x\ny"}];
+        got = lrclibAnswer(query, nil);
+        CHECK(got && got.synced);
+        CHECK([SGKaraokeLineText(got.karaokeLines[0]) isEqualToString:@"alone"]);
+
         // With no length to go on, a record whose LRC is null against one whose LRC is empty: the plain text wins.
         query.seconds = 0;
         found = @[@{@"id": @4, @"trackName": @"a", @"artistName": @"b", @"syncedLyrics": NSNull.null, @"plainLyrics": @"x"},

@@ -44,6 +44,14 @@ static BOOL boundedRecord(id record) {
         boundedSheet(record[@"syncedLyrics"]) && boundedSheet(record[@"plainLyrics"]);
 }
 
+// A record's length in seconds, or 0 for none: the bounds above say nothing about it, and a record
+// whose duration is null spells that length as NSNull.
+static NSInteger secondsIn(id record) {
+    double seconds;
+    return [record isKindOfClass:NSDictionary.class] && SGLyricsNumber(record[@"duration"], &seconds)
+        ? (NSInteger)seconds : 0;
+}
+
 // [00:34.30] Look — the timestamp in minutes, seconds and hundredths, or thousandths where a line
 // carries three digits. A line may be stamped more than once when it is sung more than once, and
 // the tags LRC opens with ([ar:…], [length:…]) are not timestamps, so they fall out on their own.
@@ -226,8 +234,8 @@ static BOOL betterRecord(NSDictionary *record, NSDictionary *best, NSInteger sec
     BOOL wasSynced = [best[@"syncedLyrics"] isKindOfClass:NSString.class] && [best[@"syncedLyrics"] length];
     if (synced != wasSynced) return synced;
     if (seconds > 0) {
-        NSInteger off = labs((NSInteger)[record[@"duration"] doubleValue] - seconds);
-        NSInteger wasOff = labs((NSInteger)[best[@"duration"] doubleValue] - seconds);
+        NSInteger off = labs(secondsIn(record) - seconds);
+        NSInteger wasOff = labs(secondsIn(best) - seconds);
         return off < wasOff;
     }
     NSString *text = record[@"syncedLyrics"] ?: record[@"plainLyrics"] ?: @"";
@@ -244,7 +252,7 @@ static NSArray<NSDictionary *> *matching(id found, SGLyricsQuery *query) {
     for (NSDictionary *record in [found isKindOfClass:NSArray.class] ? found : @[]) {
         if (read++ >= 100) break;
         if (!boundedRecord(record)) continue;
-        NSInteger length = (NSInteger)[record[@"duration"] doubleValue];
+        NSInteger length = secondsIn(record);
         if (query.seconds > 0 && length > 0 && labs(length - query.seconds) > kLengthSlack) continue;
         NSString *artists = [record[@"artistName"] isKindOfClass:NSString.class] ? record[@"artistName"] : @"";
         if (!SGLyricsSongRank(query.title, query.artist, record[@"trackName"], @[artists])) continue;

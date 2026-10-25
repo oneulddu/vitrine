@@ -130,6 +130,13 @@ int main(void) {
         CHECK([SGKaraokeLineText(parse(@"{\"Body\":{\"Type\":\"Line\",\"Content\":[{\"Text\":\"東京\",\"TransliteratedText\":\"Tokyo\","
             "\"StartTime\":1,\"EndTime\":3}]}}").karaokeLines[0].pronunciation) isEqualToString:@"Tokyo"]);
 
+        // A flag the API spells as null is false, not a message NSNull cannot answer.
+        SGLyricsResult *nulls = parse(@"{\"Body\":{\"Type\":\"Syllable\",\"source\":\"spotify\",\"Content\":[{\"OppositeAligned\":null,\"Lead\":{"
+            "\"StartTime\":1,\"EndTime\":2,\"Syllables\":[{\"Text\":\"a\",\"StartTime\":1,\"EndTime\":1.5,\"IsPartOfWord\":null},"
+            "{\"Text\":\"b\",\"StartTime\":1.5,\"EndTime\":2,\"IsPartOfWord\":false}]}}]}}");
+        CHECK(nulls.karaokeLines.count == 1 && nulls.karaokeLines[0].align == SGKaraokeAlignLeading);
+        CHECK(!nulls.karaokeLines[0].words[1].joined);
+
         // With a language chosen, a translation the API names no language for is left out of both syncs.
         sg_language = @"es";
         CHECK(!parse(@"{\"Body\":{\"Type\":\"Line\",\"Content\":[{\"Text\":\"two line\",\"StartTime\":20,\"EndTime\":23,"

@@ -54,6 +54,12 @@ static BOOL truthy(id value) {
     return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
 }
 
+// A number Musixmatch gives, 0 when it gives none: a null is NSNull, which answers no number's selector.
+static NSInteger integerOf(id value) {
+    double number;
+    return SGLyricsNumber(value, &number) ? (NSInteger)number : 0;
+}
+
 static NSInteger msOf(id seconds) {
     return [seconds respondsToSelector:@selector(doubleValue)] ? (NSInteger)llround([seconds doubleValue] * 1000) : 0;
 }
@@ -240,7 +246,7 @@ static SGLyricsResult *withTrack(SGLyricsResult *lyrics, id track) {
     if ([title isKindOfClass:NSString.class]) result.title = title;
     if ([artist isKindOfClass:NSString.class]) result.artist = artist;
     if ([album isKindOfClass:NSString.class]) result.album = album;
-    result.seconds = [track[@"track_length"] integerValue];
+    result.seconds = integerOf(track[@"track_length"]);
     result.instrumental = truthy(track[@"instrumental"]);
     return result;
 }
@@ -261,7 +267,7 @@ static void ask(NSString *trackID, NSDictionary<NSString *, NSString *> *match, 
         } mutableCopy];
         [query addEntriesFromDictionary:match];
         call(@"macro.subtitles.get", query, ^(NSDictionary *message) {
-            NSInteger status = [dig(message, @"header/status_code") integerValue];
+            NSInteger status = integerOf(dig(message, @"header/status_code"));
             if (status == 401 && renewToken) {
                 SGLog(@"musixmatch: token no longer accepted (hint %@), asking for a new one", dig(message, @"header/hint"));
                 [NSUserDefaults.standardUserDefaults removeObjectForKey:kTokenKey];
@@ -358,7 +364,7 @@ static void translationPage(NSString *token, NSString *commontrack, NSString *co
         @"comment_format": @"text", @"part": @"user", @"translation_fields_set": @"minimal",
         @"page": @(page).stringValue, @"page_size": @(kTranslationPage).stringValue,
     }, ^(NSDictionary *message) {
-        NSInteger status = [dig(message, @"header/status_code") integerValue];
+        NSInteger status = integerOf(dig(message, @"header/status_code"));
         if (status != 200) {
             done(status);
             return;
@@ -427,7 +433,7 @@ static void askTranslations(NSString *trackID, NSString *language, BOOL renewTok
         NSMutableDictionary<NSString *, NSString *> *query = [match mutableCopy];
         query[@"usertoken"] = token;
         call(@"matcher.track.get", query, ^(NSDictionary *message) {
-            NSInteger status = [dig(message, @"header/status_code") integerValue];
+            NSInteger status = integerOf(dig(message, @"header/status_code"));
             noteCommontrack(trackID, dig(message, @"body/track/commontrack_id"));
             NSString *commontrack = status == 200 ? sg_commontracks[trackID] : nil;
             if (commontrack) translate(commontrack);
