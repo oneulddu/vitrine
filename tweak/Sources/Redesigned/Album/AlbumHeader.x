@@ -40,7 +40,7 @@ static const CGFloat kMinHero = 120, kMinCover = 80;
 
 static char kHeaderKey, kCoverKey, kTitleKey, kParentKey, kMetaKey, kAddKey, kDownloadKey, kPlayKey, kShuffleKey;
 static char kHeroKey, kHeroHeightKey, kHeaderHeightKey, kInfoKey, kHeaderWatchedKey, kRetryKey;
-static char kExploreKey, kRowWatchedKey, kMoreKey, kPinnedMoreKey;
+static char kExploreKey, kRowWatchedKey, kMoreKey, kPinnedMoreKey, kPinnedDownloadKey;
 
 #pragma mark - moving Spotify's views
 
@@ -523,7 +523,10 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page) {
     UIView *shuffle = floatingIn(page, @"Components.UI.ShuffleButton", &kShuffleKey);
     UIView *add = SGRFindByIdentifier(header, @"Components.UI.AddToButton", &kAddKey);
     UIView *download = SGRFindByIdentifier(header, @"DownloadButton.Granular*", &kDownloadKey);
-    [info showAlbumShuffle:shuffle play:play download:download add:add playColor:SGRAlbumFieldColor(header)];
+    // Shuffle, Play and add, Play on the middle of the page; download beside the pinned ⋯.
+    [info showShuffle:shuffle play:play trailing:add trailingFallback:[UIImage systemImageNamed:@"plus"]
+            playColor:SGRAlbumFieldColor(header)];
+    SGRPinnedDownload(page, &kPinnedDownloadKey, download);
     // Only what the two floating buttons draw goes: a concealed layer still sends the actions the row fires.
     if (play) conceal(wrapperFor(play, page));
     if (shuffle) conceal(wrapperFor(shuffle, page));

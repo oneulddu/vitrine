@@ -8,43 +8,92 @@
 #import "Redesigned/Kit/SGRActionRow.h"
 #include <assert.h>
 
+// Download and ⋯ as one glass capsule: adjacent, level, one 88x44 shape (radius 22) under both, carried by
+// download, ⋯ drawing none, its trailing edge 16pt in from the page's.
+// The button's glass, first in its subviews; nil when it has never made one (its glyph is first then).
+static UIView *glassOf(UIView *button) {
+    UIView *glass=button.subviews.firstObject;
+    return [glass isKindOfClass:UIImageView.class] ? nil : glass;
+}
+static void assertPinnedPair(UIView *page,SGRMirrorButton *download,SGRMirrorButton *more) {
+    assert(!download.hidden && !more.hidden);
+    assert(fabs(CGRectGetMinX(more.frame)-CGRectGetMaxX(download.frame))<0.5);
+    assert(fabs(CGRectGetMinY(more.frame)-CGRectGetMinY(download.frame))<0.5 && fabs(more.frame.size.height-download.frame.size.height)<0.5);
+    assert(fabs(CGRectGetMaxX(more.frame)-(page.bounds.size.width-16))<0.5);
+    UIView *capsule=glassOf(download);
+    assert(capsule && !capsule.hidden && (!glassOf(more) || glassOf(more).hidden));
+    CGRect shape=[download convertRect:capsule.frame toView:page];
+    assert(fabs(shape.size.width-88)<0.5 && fabs(shape.size.height-44)<0.5);
+    assert(fabs(CGRectGetMinX(shape)-CGRectGetMinX(download.frame))<0.5 && fabs(CGRectGetMaxX(shape)-CGRectGetMaxX(more.frame))<0.5);
+    assert(fabs(CGRectGetMinY(shape)-CGRectGetMinY(more.frame))<0.5);
+    assert(capsule.layer.cornerRadius==0 || fabs(capsule.layer.cornerRadius-22)<0.5);
+}
+static void assertPinnedAlone(SGRMirrorButton *download,SGRMirrorButton *more) {
+    assert(download.hidden && !more.hidden);
+    UIView *circle=glassOf(more);
+    assert(circle && !circle.hidden && fabs(circle.bounds.size.width-44)<0.5 && fabs(circle.bounds.size.height-44)<0.5);
+    assert(CGPointEqualToPoint(circle.center,CGPointMake(CGRectGetMidX(more.bounds),CGRectGetMidY(more.bounds))));
+}
+
 static void verifyAlbumActions(UIView *root) {
     NSMutableArray *pending=[NSMutableArray arrayWithObject:root];SGRHeaderInfo *info=nil;
     while(pending.count){UIView *v=pending.lastObject;[pending removeLastObject];
         if([v isKindOfClass:SGRHeaderInfo.class]){info=(id)v;break;}[pending addObjectsFromArray:v.subviews];}
     assert(info);
-    SGRMirrorButton *download=[info valueForKey:@"albumDownload"];
     SGRMirrorButton *shuffle=[info valueForKey:@"shuffle"],*add=[info valueForKey:@"trailing"];
     SGRPlayCapsule *play=[info valueForKey:@"play"];
-    UIScrollView *group=[info valueForKey:@"albumControls"];
-    assert(download && !download.hidden && download.source && add.source && !add.hidden);
+    assert(add.source && !add.hidden && play.superview==info);
+    for(UIView *v in info.subviews)assert(![v isKindOfClass:UIScrollView.class]);
+    // The pinned download: on the page, just under the pinned ⋯ (the page's top subview), the two one capsule.
+    SGRMirrorButton *download=nil;[pending setArray:@[root]];
+    while(pending.count){UIView *v=pending.lastObject;[pending removeLastObject];
+        if([v.accessibilityIdentifier isEqualToString:@"Vitrine.Album.Download"]){download=(id)v;break;}[pending addObjectsFromArray:v.subviews];}
+    assert([download isKindOfClass:SGRMirrorButton.class] && !download.hidden && download.source);
+    UIView *page=download.superview;
+    SGRMirrorButton *more=page.subviews.lastObject;
+    assert([more isKindOfClass:SGRMirrorButton.class] && more!=download && !more.hidden);
+    [page layoutIfNeeded];
+    assertPinnedPair(page,download,more);
+    // Download gone: ⋯ alone, its own circle, nothing left of the capsule; back again, the capsule again.
+    UIView *nativeDownload=download.source,*row=nativeDownload.superview;NSUInteger slot=[row.subviews indexOfObject:nativeDownload];
+    // The header's pass and the page's are what draw the pinned pair, so everything from the row up lays out.
+    void (^relayout)(void)=^{for(UIView *v=row;v;v=v.superview)[v setNeedsLayout];[root layoutIfNeeded];[page layoutIfNeeded];};
+    [nativeDownload removeFromSuperview];
+    relayout();
+    assertPinnedAlone(download,more);
+    if([row isKindOfClass:UIStackView.class])[(UIStackView *)row insertArrangedSubview:nativeDownload atIndex:slot];
+    else [row insertSubview:nativeDownload atIndex:slot];
+    relayout();
+    assertPinnedPair(page,download,more);
     CGRect original=info.frame;
     for(NSNumber *width in @[@430,@390,@320]){
         CGRect frame=original;frame.size.width=width.doubleValue;info.frame=frame;
         [info setNeedsLayout];[info layoutIfNeeded];
-        assert(fabs(CGRectGetMaxX(play.frame)-(width.doubleValue-20))<1);
-        assert(CGRectGetMaxX(group.frame)+15<=CGRectGetMinX(play.frame));
-        assert(!CGRectIntersectsRect(shuffle.frame,download.frame));
-        assert(!CGRectIntersectsRect(download.frame,add.frame));
-        assert(fabs(CGRectGetMaxX(add.frame)-group.contentSize.width)<1);
-        if(width.intValue==320)assert(group.scrollEnabled);
+        // Shuffle, Play, add: Play on the middle of the page, the other two 16pt off its sides.
+        assert(fabs(CGRectGetMidX(play.frame)-width.doubleValue/2)<1);
+        assert(fabs(CGRectGetMinX(play.frame)-CGRectGetMaxX(shuffle.frame)-16)<1);
+        assert(fabs(CGRectGetMinX(add.frame)-CGRectGetMaxX(play.frame)-16)<1);
+        assert(CGRectGetMinX(shuffle.frame)>=0 && CGRectGetMaxX(add.frame)<=width.doubleValue);
     }
     info.frame=original;[info setNeedsLayout];[info layoutIfNeeded];
+    // Play's word changing ("Play" to "Shuffle Play") lays the header out again: a wider capsule, still centered.
+    CGFloat playBefore=play.bounds.size.width;NSString *word=play.source.accessibilityLabel;
+    play.source.accessibilityLabel=@"Shuffle Play";[play feedFrom:play.source];
+    [info layoutIfNeeded];
+    assert(play.bounds.size.width>playBefore+1 && fabs(CGRectGetMidX(play.frame)-info.bounds.size.width/2)<1);
+    assert(fabs(CGRectGetMinX(add.frame)-CGRectGetMaxX(play.frame)-16)<1);
+    play.source.accessibilityLabel=word;[play feedFrom:play.source];[info layoutIfNeeded];
+    assert(fabs(play.bounds.size.width-playBefore)<1);
     UIControl *source=(UIControl *)download.source;__block NSUInteger fired=0;
     UIAction *action=[UIAction actionWithTitle:@"verify" image:nil identifier:@"verify-album-download" handler:^(UIAction *a){fired++;}];
     [source addAction:action forControlEvents:UIControlEventTouchUpInside];
     [download sendActionsForControlEvents:UIControlEventTouchUpInside];
     [source removeActionForIdentifier:@"verify-album-download" forControlEvents:UIControlEventTouchUpInside];
     assert(fired==1);
-    SGRHeaderInfo *ordinary=[[SGRHeaderInfo alloc]initWithFrame:CGRectMake(0,0,430,400)];
-    [ordinary showShuffle:shuffle.source play:play.source trailing:add.source trailingFallback:nil playColor:nil];
-    [ordinary setNeedsLayout];[ordinary layoutIfNeeded];
-    UIView *ordinaryPlay=[ordinary valueForKey:@"play"];
-    assert([ordinary valueForKey:@"albumControls"]==nil && fabs(CGRectGetMidX(ordinaryPlay.frame)-215)<1);
-    NSDictionary *result=@{@"passed":@YES,@"album_download_and_add_visible":@YES,@"native_download_action_calls":@(fired),@"checked_widths":@[@430,@390,@320],@"default_layout_unchanged":@YES};
+    NSDictionary *result=@{@"passed":@YES,@"album_add_and_pinned_download_visible":@YES,@"native_download_action_calls":@(fired),@"checked_widths":@[@430,@390,@320],@"play_word_relayout":@YES};
     NSString *path=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"album-actions-verification.json"];
     [[NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted error:nil]writeToFile:path atomically:YES];
-    NSLog(@"[harness] PASS album controls: both buttons, native action once, Play right, 430/390/320 widths, default layout unchanged");
+    NSLog(@"[harness] PASS album controls: shuffle | Play | add with Play centered at 430/390/320, download and ⋯ one 88x44 glass capsule 16pt in, ⋯ its own circle without download, native action once, Play's word relays out the header");
 }
 
 #pragma mark - Spotify's classes, by name

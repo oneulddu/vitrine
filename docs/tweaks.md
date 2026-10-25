@@ -840,7 +840,8 @@ Redesigned:
     Playlist/     the playlist page (Liked Songs and one's own too, all three being the same page) the way the Music
                   app lays one out: the cover full bleed across the top dissolving into the page's field with no seam,
                   the title, the creator and the length centered under it, one row of glass controls (shuffle, a
-                  prominent Play capsule taking its glyph and its word from Spotify's own button, add), the find bar
+                  prominent Play capsule taking its glyph and its word from Spotify's own button, add; Play on the
+                  middle of the page, and download, where a playlist has both, pinned beside ⋯), the find bar
                   and the curation pills gone, and the track rows on the field with a hairline between them
                   (Playlist.h lists its files). Sort and Mix, the two of those pills the ⋯ menu does not already offer,
                   are put on that menu's own sheet instead, above Spotify's rows, and fire Spotify's own buttons.
@@ -856,8 +857,9 @@ Redesigned:
                   field (Apple Music's animated cover over it where the album has one, fading in once its first frame
                   is decoded and moving only in front of the app with Reduce Motion and Low Power Mode off and Auto-Play
                   Video Previews on), the title, the artist and the kind and date centered under it, and the same row of glass
-                  controls -- play and shuffle float over the album page outside its header, so they are concealed
-                  there and the row carries the Kit's stand-ins, which draw their glyph and fire them. A track's artist line
+                  controls, shuffle, Play and add -- play and shuffle float over the album page outside its header, so they are concealed
+                  there and the row carries the Kit's stand-ins, which draw their glyph and fire them; download is a
+                  second glass circle pinned beside ⋯ in the top corner (Kit/SGRActionRow.m). A track's artist line
                   goes where it only repeats the album's artist (with the guests the title names after "feat." and the
                   like), its explicit badge drawn after the title instead (AlbumCredits.m decides, checked on the Mac
                   by harness/album-credits/; a switch on the Albums page). Under the tracks
@@ -1160,7 +1162,7 @@ up, and a second tap goes back to that page. In the redesign (Redesigned/Navbar/
 with a preview of the glass bar, drawn by the same system UITabBar as the bar itself from the list as it
 stands, the split tabs on a bar of their own, and changing with every change on the page; then Custom tab
 bar (off, the bar is Spotify's own tabs in Spotify's order, the list kept); two picture cards for the labels,
-Icons and names or Icons only (the glass bar's names hidden, applying straight away); the tabs, each with a
+Icons and names or Icons only (the default: the glass bar's names hidden, applying straight away); the tabs, each with a
 check circle that shows or hides it, its glyph (TabBar.x draws Spotify's own off their items on the bar) and
 the drag handle, a tap on a tab of the mod's own opening the Add a Tab sheet as Edit Tab, with Save and Remove
 Tab; Add a tab and Use Spotify's tabs; and Split tabs. The redesign's split-list migration

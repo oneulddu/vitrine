@@ -71,6 +71,14 @@
 // on `page` under `key` and cheap to call again on every pass.
 SGRMirrorButton *SGRPinnedMore(UIView *page, const void *key, UIView *source);
 
+// Download, pinned the same way right inside ⋯, the two drawn as one 88x44 glass capsule the way the navigation
+// bar groups its buttons, each half keeping its own touch, press, glyph and accessibility; for the album and the
+// playlist that has both save and download, whose action row keeps only shuffle, Play and add. `source` is
+// Spotify's download button: its tap, its state and its progress are drawn as SGRMirrorButton draws a download.
+// nil hides the button, and ⋯ is its own circle again. Kept on `page` under `key`, just under ⋯, and cheap to
+// call again on every pass; call it after SGRPinnedMore.
+SGRMirrorButton *SGRPinnedDownload(UIView *page, const void *key, UIView *source);
+
 // A sheet opening within this long of a tap on a pinned ⋯ is that page's context menu.
 static const NSTimeInterval SGRPinnedMoreWindow = 3;
 // The page whose pinned ⋯ was tapped within that window, or nil: for a screen that puts rows of its own on

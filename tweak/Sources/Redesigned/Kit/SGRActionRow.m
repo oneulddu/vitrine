@@ -177,6 +177,15 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
     return dot != nil;
 }
 
+@interface SGRMirrorButton ()
+// For the pinned pair (SGRPinnedDownload): one glass capsule under download and ⋯. Positive, the button's
+// glass runs that much further toward the trailing side, under the button beside it (download carries the
+// capsule, being under ⋯ so that ⋯'s glyph is above the glass, not taken into it); negative, the button draws no
+// glass of its own (⋯, its half drawn by download's). 0, the default, is the button's own circle. While it is
+// not 0 a press scales only the glyph, so the capsule both share stays still.
+@property (nonatomic) CGFloat sgr_glassReach;
+@end
+
 @implementation SGRMirrorButton {
     UIImageView *_glyph;
     __weak UIImageView *_watchedGlyph;
@@ -214,10 +223,32 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
         ((UIView *)objc_getAssociatedObject(self, &kMirrorGlassKey)).hidden = YES;
         return;
     }
-    SGRGlassInside(self, &kMirrorGlassKey, SGRGlassCircleSize);
-    _glyph.frame = CGRectMake(round((bounds.size.width - kMirrorGlyph) / 2), round((bounds.size.height - kMirrorGlyph) / 2),
-                              kMirrorGlyph, kMirrorGlyph);
-    _download.frame = _glyph.frame;
+    CGFloat reach = self.sgr_glassReach;
+    if (reach < 0) {
+        ((UIView *)objc_getAssociatedObject(self, &kMirrorGlassKey)).hidden = YES;
+    } else {
+        CGFloat side = SGRGlassCircleSize;
+        UIView *glass = SGRGlassCapsuleInside(self, &kMirrorGlassKey, CGSizeMake(side + reach, side), NO);
+        CGPoint middle = CGPointMake(CGRectGetMidX(bounds) + reach / 2, CGRectGetMidY(bounds));
+        if (!CGPointEqualToPoint(glass.center, middle)) glass.center = middle;
+    }
+    // By bounds and center, not frame: a press scales the glyph itself while the button is paired.
+    CGRect glyph = CGRectMake(0, 0, kMirrorGlyph, kMirrorGlyph);
+    CGPoint center = CGPointMake(round((bounds.size.width - kMirrorGlyph) / 2) + kMirrorGlyph / 2,
+                                 round((bounds.size.height - kMirrorGlyph) / 2) + kMirrorGlyph / 2);
+    for (UIView *view in @[_glyph, _download ?: _glyph]) {
+        view.bounds = glyph;
+        view.center = center;
+    }
+}
+
+- (void)setSgr_glassReach:(CGFloat)reach {
+    if (_sgr_glassReach == reach) return;
+    _sgr_glassReach = reach;
+    self.transform = CGAffineTransformIdentity;
+    _glyph.transform = CGAffineTransformIdentity;
+    _download.transform = CGAffineTransformIdentity;
+    [self setNeedsLayout];
 }
 
 - (void)didMoveToWindow {
@@ -246,7 +277,9 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
         return NO;
     }
     if (!_download) {
-        _download = [[SGRDownloadGlyph alloc] initWithFrame:_glyph.frame];
+        _download = [[SGRDownloadGlyph alloc] initWithFrame:CGRectZero];
+        _download.bounds = _glyph.bounds;
+        _download.center = _glyph.center;
         [self addSubview:_download];
     }
     _download.hidden = NO;
@@ -386,12 +419,25 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
     }
 }
 
+- (void)sgr_pressed:(BOOL)pressed {
+    CGAffineTransform scale = pressed ? CGAffineTransformMakeScale(0.92, 0.92) : CGAffineTransformIdentity;
+    BOOL paired = self.sgr_glassReach != 0;
+    SGRAnimate(SGRMotionPress, ^{
+        if (!paired) {
+            self.transform = scale;
+            return;
+        }
+        self->_glyph.transform = scale;
+        self->_download.transform = scale;
+    }, nil);
+}
+
 - (void)sgr_down {
-    SGRAnimate(SGRMotionPress, ^{ self.transform = CGAffineTransformMakeScale(0.92, 0.92); }, nil);
+    [self sgr_pressed:YES];
 }
 
 - (void)sgr_up {
-    SGRAnimate(SGRMotionPress, ^{ self.transform = CGAffineTransformIdentity; }, nil);
+    [self sgr_pressed:NO];
 }
 
 - (void)sgr_tap {
@@ -464,11 +510,12 @@ static void keepOnTop(UIView *page, UIView *button) {
 // the page's own bounds and not converted from the window: the swipe back slides the page across the
 // window, and a frame converted from the window's x would hold the button still while the page left under
 // it, over the screen below, until the page was gone and took it along.
-static void placeInCorner(UIView *page, UIView *button) {
+// `along` moves the button that much further in from the trailing edge, for a second button beside ⋯.
+static void placeInCorner(UIView *page, UIView *button, CGFloat along) {
     UIWindow *window = page.window;
     UIView *space = window ?: page;
     CGFloat side = SGRGlassCircleSize;
-    CGFloat x = page.bounds.size.width - kCornerSide - side;
+    CGFloat x = page.bounds.size.width - kCornerSide - side - along;
     CGFloat y = space.safeAreaInsets.top;
     if (window) y = [page convertPoint:CGPointMake(0, y) fromView:nil].y;
     CGRect frame = CGRectMake(x, y, side, side);
@@ -493,6 +540,56 @@ SGRMirrorButton *SGRPinnedMore(UIView *page, const void *key, UIView *source) {
     keepOnTop(page, button);
     if (source) [button feedFrom:source];
     if (button.hidden != (source == nil)) button.hidden = source == nil;
-    placeInCorner(page, button);
+    placeInCorner(page, button, 0);
+    return button;
+}
+
+// Just under ⋯, which is the page's top subview once it has brought itself to the front, with nothing between
+// the two but the field's veil (SGRField.m -holdPage: lays it right under the top pinned button, so the download
+// is veiled with the header it used to sit in, and with it the capsule it carries: for the hold, at most
+// SGRFieldHoldLimit, ⋯ is its glyph alone over the veil). Moved only when out of place, as ⋯ is: a move lays the page out
+// again, and two buttons each taking the top would trade places on every pass.
+static void keepUnderMore(UIView *page, UIView *button) {
+    NSArray<UIView *> *subviews = page.subviews;
+    UIView *top = subviews.lastObject;
+    if (top == button || ![top isKindOfClass:SGRMirrorButton.class]) {
+        keepOnTop(page, button);
+        return;
+    }
+    static Class veil;
+    if (!veil) veil = NSClassFromString(@"SGRFieldVeil");
+    NSUInteger index = [subviews indexOfObjectIdenticalTo:button];
+    BOOL placed = index != NSNotFound;
+    for (NSUInteger i = index + 1; placed && i + 1 < subviews.count; i++) {
+        if (!veil || ![subviews[i] isKindOfClass:veil]) placed = NO;
+    }
+    if (!placed) [page insertSubview:button belowSubview:top];
+}
+
+SGRMirrorButton *SGRPinnedDownload(UIView *page, const void *key, UIView *source) {
+    if (!page) return nil;
+    SGRMirrorButton *button = objc_getAssociatedObject(page, key);
+    if (!button) {
+        button = [[SGRMirrorButton alloc] initWithFrame:CGRectZero];
+        button.fallbackGlyph = [UIImage systemImageNamed:@"arrow.down"];
+        button.accessibilityIdentifier = @"Vitrine.Album.Download";
+        objc_setAssociatedObject(page, key, button, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    keepUnderMore(page, button);
+    if (source) [button feedFrom:source];
+    if (button.hidden != (source == nil)) button.hidden = source == nil;
+    // Right beside ⋯, the two one capsule as the navigation bar groups its buttons: download carries the glass
+    // for both, ⋯ none, and each keeps its own touch, press and glyph. Without download, ⋯ is its circle again.
+    SGRMirrorButton *more = nil;
+    for (UIView *view in page.subviews.reverseObjectEnumerator) {
+        if ([view isKindOfClass:SGRMirrorButton.class] && objc_getAssociatedObject(view, &kRecorderKey)) {
+            more = (SGRMirrorButton *)view;
+            break;
+        }
+    }
+    BOOL paired = more && !more.hidden && !button.hidden;
+    button.sgr_glassReach = paired ? SGRGlassCircleSize : 0;
+    more.sgr_glassReach = paired ? -1 : 0;
+    placeInCorner(page, button, SGRGlassCircleSize);
     return button;
 }

@@ -89,8 +89,8 @@ def main():
     if vitrine:
         run("codesign", "--verify", "--strict", vitrine)
         run("xcrun", "dyld_info", "-validate_only", vitrine)
-        if b"showAlbumShuffle:play:download:add:playColor:" not in vitrine.read_bytes():
-            raise RuntimeError("The rebuilt Vitrine lacks the album action row")
+        if b"Vitrine.Album.Download" not in vitrine.read_bytes():
+            raise RuntimeError("The rebuilt Vitrine lacks the album download button")
     if (ROOT / "src/NativeRestrictionsPatch.h").read_text() != guard_header():
         raise RuntimeError("Native restriction header is out of sync")
     if (ROOT / "src/OfflineLimits.h").read_text() != limits_header():

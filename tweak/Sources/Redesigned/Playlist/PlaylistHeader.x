@@ -46,7 +46,7 @@ static BOOL sg_coverViewer;
 
 static char kCoverKey, kMetaKey, kPlayKey, kLayoutKey, kToolbarKey, kScrimKey, kBarScrimKey;
 static char kShuffleKey, kAddKey, kDownloadKey, kPlainDownloadKey, kInfoKey, kBlockHeightKey, kBlockWatchedKey;
-static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kSortKey, kTitleKey;
+static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kPinnedDownloadKey, kSortKey, kTitleKey;
 static char kIndependentActionsKey;
 
 #pragma mark - finding things
@@ -416,12 +416,10 @@ static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id mo
         independent = YES;
         objc_setAssociatedObject(info, &kIndependentActionsKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    if (independent) {
-        [info showAlbumShuffle:shuffle play:play download:download add:save playColor:SGRPlaylistFieldColor(info)];
-    } else {
-        [info showShuffle:shuffle play:play trailing:save ?: download
-         trailingFallback:[UIImage systemImageNamed:save ? @"plus" : @"arrow.down"] playColor:SGRPlaylistFieldColor(info)];
-    }
+    // Download then goes beside the pinned ⋯ (below), and the row is shuffle, Play and save as an album's.
+    [info showShuffle:shuffle play:play trailing:independent ? save : save ?: download
+     trailingFallback:[UIImage systemImageNamed:independent || save ? @"plus" : @"arrow.down"]
+            playColor:SGRPlaylistFieldColor(info)];
     // Only what the button draws goes: a concealed layer still sends the actions the capsule fires.
     conceal(play);
 
@@ -437,6 +435,7 @@ static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id mo
     // Spotify's own Sort, from the find-on-page toolbar this header conceals, for the ⋯ sheet to fire.
     UIView *page = SGRPlaylistPageOf(root);
     SGRPinnedMore(page, &kPinnedMoreKey, SGRFindByIdentifier(block, @"Components.UI.ContextMenuButton*", &kMoreKey));
+    SGRPinnedDownload(page, &kPinnedDownloadKey, independent ? download : nil);
     SGRPlaylistTakeSort(page, SGRFindByIdentifier(root, @"Components.Header.UI.Toolbar.Button", &kSortKey));
 
     static BOOL logged;

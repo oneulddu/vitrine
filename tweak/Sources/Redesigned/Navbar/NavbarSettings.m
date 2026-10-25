@@ -370,7 +370,7 @@ static NSArray<UITabBarItem *> *itemsFor(NSArray<NSDictionary *> *entries, BOOL 
 
 // What Navbar.x composes from the same list: with nothing left shown, Spotify's own tabs come back.
 - (void)showEntries:(NSArray<NSDictionary *> *)entries {
-    BOOL custom = SGEnabled(SGRKeyNavbar), names = !SGHidden(SGRKeyNavbarHideLabels);
+    BOOL custom = SGEnabled(SGRKeyNavbar), names = !SGEnabled(SGRKeyNavbarHideLabels);
     NSMutableArray<NSDictionary *> *shown = [NSMutableArray array];
     if (custom) for (NSDictionary *entry in entries) if (![entry[SGRNavbarHidden] boolValue]) [shown addObject:entry];
     if (!shown.count) [shown addObjectsFromArray:stockEntries()];
@@ -627,7 +627,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     [_preview showEntries:_entries];
     NSMutableArray<NSDictionary *> *shown = [NSMutableArray array];
     for (NSDictionary *entry in _entries) if (![entry[SGRNavbarHidden] boolValue]) [shown addObject:entry];
-    BOOL names = !SGHidden(SGRKeyNavbarHideLabels);
+    BOOL names = !SGEnabled(SGRKeyNavbarHideLabels);
     for (SGRLabelCard *card in @[_withNames, _iconsOnly]) {
         [card showEntries:shown.count ? shown : (NSArray *)_entries];
         card.selected = card.names == names;

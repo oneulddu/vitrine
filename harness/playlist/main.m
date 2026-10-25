@@ -17,22 +17,46 @@ static void verifyMixActions(UIView *root, BOOL independent) {
         [pending addObjectsFromArray:view.subviews];
     }
     assert(info);
-    UIScrollView *group = [info valueForKey:@"albumControls"];
     SGRPlayCapsule *play = [info valueForKey:@"play"];
+    SGRMirrorButton *trailing = [info valueForKey:@"trailing"];
+    // Shuffle, Play and save or download, Play on the middle of the page, whichever row it is.
+    assert(play.superview == info && fabs(CGRectGetMidX(play.frame) - info.bounds.size.width / 2) < 1);
+    // The pinned download, shown only beside a save in the row, and the pinned ⋯: a button outside the header
+    // that is its page's top subview.
+    SGRMirrorButton *download = nil, *more = nil;
+    [pending setArray:@[root]];
+    while (pending.count) {
+        UIView *view = pending.lastObject;
+        [pending removeLastObject];
+        if ([view.accessibilityIdentifier isEqualToString:@"Vitrine.Album.Download"]) download = (id)view;
+        else if ([view isKindOfClass:SGRMirrorButton.class] && view.superview.subviews.lastObject == view
+                 && ![view isDescendantOfView:info]) more = (id)view;
+        [pending addObjectsFromArray:view.subviews];
+    }
+    assert(more && !more.hidden);
+    [more.superview layoutIfNeeded];
+    // A button's glass is first in its subviews; its glyph is first when it has never made one.
+    UIView *(^glassOf)(UIView *) = ^UIView *(UIView *button) {
+        UIView *glass = button.subviews.firstObject;
+        return [glass isKindOfClass:UIImageView.class] ? nil : glass;
+    };
     if (independent) {
-        SGRMirrorButton *download = [info valueForKey:@"albumDownload"];
-        SGRMirrorButton *save = [info valueForKey:@"trailing"];
-        assert(group && download.source && !download.hidden && save.source && !save.hidden);
-        CGRect original = info.frame;
-        for (NSNumber *width in @[@430, @390, @320]) {
-            CGRect frame = original; frame.size.width = width.doubleValue; info.frame = frame;
-            [info setNeedsLayout]; [info layoutIfNeeded];
-            assert(fabs(CGRectGetMaxX(play.frame) - (width.doubleValue - 20)) < 1);
-            assert(CGRectGetMaxX(group.frame) + 15 <= CGRectGetMinX(play.frame));
-            assert(!CGRectIntersectsRect(download.frame, save.frame));
-            if (width.intValue == 320) assert(group.scrollEnabled);
-        }
-        info.frame = original; [info setNeedsLayout]; [info layoutIfNeeded];
+        assert(trailing.source && !trailing.hidden && download.source && !download.hidden && download.source != trailing.source);
+        // Download and ⋯ one glass capsule: adjacent, level, one 88x44 shape under both carried by download,
+        // ⋯ drawing none, the trailing edge 16pt in from the page's.
+        UIView *page = more.superview;
+        assert(download.superview == page && [page.subviews indexOfObject:download] < page.subviews.count - 1);
+        assert(fabs(CGRectGetMinX(more.frame) - CGRectGetMaxX(download.frame)) < 0.5);
+        assert(fabs(CGRectGetMinY(more.frame) - CGRectGetMinY(download.frame)) < 0.5);
+        assert(fabs(more.frame.size.height - download.frame.size.height) < 0.5);
+        assert(fabs(CGRectGetMaxX(more.frame) - (page.bounds.size.width - 16)) < 0.5);
+        UIView *capsule = glassOf(download);
+        assert(capsule && !capsule.hidden && (!glassOf(more) || glassOf(more).hidden));
+        CGRect shape = [download convertRect:capsule.frame toView:page];
+        assert(fabs(shape.size.width - 88) < 0.5 && fabs(shape.size.height - 44) < 0.5);
+        assert(fabs(CGRectGetMinX(shape) - CGRectGetMinX(download.frame)) < 0.5);
+        assert(fabs(CGRectGetMaxX(shape) - CGRectGetMaxX(more.frame)) < 0.5 && fabs(CGRectGetMinY(shape) - CGRectGetMinY(more.frame)) < 0.5);
+        assert(capsule.layer.cornerRadius == 0 || fabs(capsule.layer.cornerRadius - 22) < 0.5);
         UIControl *source = (id)download.source;
         __block NSUInteger fired = 0;
         [source addAction:[UIAction actionWithHandler:^(UIAction *action) { fired++; }]
@@ -40,7 +64,11 @@ static void verifyMixActions(UIView *root, BOOL independent) {
         [download sendActionsForControlEvents:UIControlEventTouchUpInside];
         assert(fired == 1);
     } else {
-        assert(!group && fabs(CGRectGetMidX(play.frame) - info.bounds.size.width / 2) < 1);
+        // No download pinned: ⋯ alone, its own 44pt circle.
+        assert(!download || download.hidden);
+        UIView *circle = glassOf(more);
+        assert(circle && !circle.hidden && fabs(circle.bounds.size.width - 44) < 0.5 && fabs(circle.bounds.size.height - 44) < 0.5);
+        assert(CGPointEqualToPoint(circle.center, CGPointMake(CGRectGetMidX(more.bounds), CGRectGetMidY(more.bounds))));
     }
     NSDictionary *result = @{@"passed": @YES, @"independent_actions": @(independent), @"native_action_and_layout_verified": @YES};
     NSString *path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject

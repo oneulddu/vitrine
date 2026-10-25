@@ -527,7 +527,7 @@ static void syncBar(UIView *stockBar) {
     NSArray<UIView *> *sources = tabItems(stockBar);
     if (!sources.count) return;
     // An item with no title is drawn by UIKit as its glyph alone, centered, on a bar of the same height.
-    BOOL hideLabels = SGHidden(SGRKeyNavbarHideLabels);
+    BOOL hideLabels = SGEnabled(SGRKeyNavbarHideLabels);
     SGRSystemTabBar *apartBar = objc_getAssociatedObject(stockBar, &kApartBarKey);
     UIView *active = SGRNavbarLitTab();
     if (![sources containsObject:active]) active = nil;
