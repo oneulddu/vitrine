@@ -631,6 +631,8 @@
 "settings.home.top_picks.subtitle" = "Home's first shelf above the shortcuts, as large cards in their covers' colors";
 "settings.home.top_picks.title" = "Top picks";
 "settings.home.top_picks_color.title" = "Color behind Top picks";
+"settings.home.top_picks_heading.title" = "Show Top picks heading";
+"settings.home.top_picks_heading.subtitle" = "The shelf's own heading over its cards";
 "settings.home.top_picks_missing.note" = "A shelf Home does not show today leaves Top picks off until it is back.";
 
 "settings.karaoke.advanced.footer" = "Karaoke turns a song's vocals down to sing over, or the rest down to hear the vocals alone, with a voice model that runs only on this iPhone: no audio leaves it. It listens a few seconds ahead of what plays, so the vocals change a few seconds after a song starts or after a seek.";

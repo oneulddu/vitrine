@@ -20,13 +20,15 @@ UIViewController *SGRHomeSettingsPage(void) {
     from.waitsOn = SGRKeyHomeTopPicks;
     SGModRow *colour = SGSwitchRow(SGL(@"settings.home.top_picks_color.title", @"Color behind Top picks"), nil, SGRKeyHomeTopPicksColour);
     colour.waitsOn = SGRKeyHomeTopPicks;
+    SGModRow *heading = SGOptionRow(SGL(@"settings.home.top_picks_heading.title", @"Show Top picks heading"), SGL(@"settings.home.top_picks_heading.subtitle", @"The shelf's own heading over its cards"), SGRKeyHomeTopPicksHeading);
+    heading.waitsOn = SGRKeyHomeTopPicks;
 
     NSMutableArray<SGModRow *> *rows = [NSMutableArray array];
     for (NSString *identity in shelves) [rows addObject:SGShownRow(identity, nil, SGRHomeShelfHideKey(identity))];
     if (!rows.count) [rows addObject:SGStatRow(SGL(@"settings.home.shelves.none", @"None seen yet"), ^NSString *{ return @""; })];
 
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.home.title", @"Home") intro:SGRestartNote sections:@[
-        SGNotedSection(nil, @[look, topPicks, from, colour],
+        SGNotedSection(nil, @[look, topPicks, from, colour, heading],
                        SGL(@"settings.home.top_picks_missing.note", @"A shelf Home does not show today leaves Top picks off until it is back.")),
         SGSection(SGL(@"settings.home.on_home.header", @"On Home"), @[
             SGShownRow(SGL(@"settings.home.shortcuts.title", @"Shortcuts"), nil, SGRKeyHomeHideShortcuts),
