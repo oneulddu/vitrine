@@ -634,6 +634,8 @@
 "settings.home.top_picks.title" = "Top picks";
 "settings.home.top_picks_color.title" = "Color behind Top picks";
 "settings.home.top_picks_heading.title" = "Show Top picks heading";
+"settings.home.keep_title.title" = "Title stays on scroll";
+"settings.home.keep_title.subtitle" = "The title, the avatar and the pill stay at the top as Home scrolls under them";
 "settings.home.top_picks_heading.subtitle" = "The shelf's own heading over its cards";
 "settings.home.top_picks_missing.note" = "A shelf Home does not show today leaves Top picks off until it is back.";
 

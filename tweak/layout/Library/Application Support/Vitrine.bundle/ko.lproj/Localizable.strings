@@ -693,6 +693,8 @@
 "settings.home.top_picks.title" = "추천 항목";
 "settings.home.top_picks_color.title" = "추천 항목 배경 색상";
 "settings.home.top_picks_heading.title" = "추천 항목 제목 표시";
+"settings.home.keep_title.title" = "스크롤할 때 제목 고정";
+"settings.home.keep_title.subtitle" = "홈을 스크롤해도 제목, 프로필 사진, 캡슐을 상단에 유지합니다";
 "settings.home.top_picks_heading.subtitle" = "카드 위에 선반의 원래 제목 표시";
 "settings.home.top_picks_missing.note" = "현재 홈에 표시되지 않는 선반을 선택하면 해당 선반이 다시 나타날 때까지 추천 항목이 꺼집니다.";
 "settings.karaoke.advanced.footer" = "노래방 기능은 이 iPhone에서만 실행되는 음성 모델을 통해 따라 부를 수 있도록 노래의 보컬을 줄이거나, 보컬만 들을 수 있도록 반주를 줄입니다. 어떤 오디오도 외부로 전송되지 않습니다. 재생 위치보다 몇 초 앞서 오디오를 분석하므로 노래 시작 또는 탐색 후 몇 초가 지나야 보컬 볼륨이 변경됩니다.";

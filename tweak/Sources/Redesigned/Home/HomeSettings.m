@@ -33,6 +33,7 @@ UIViewController *SGRHomeSettingsPage(void) {
         SGSection(SGL(@"settings.home.on_home.header", @"On Home"), @[
             SGShownRow(SGL(@"settings.home.shortcuts.title", @"Shortcuts"), nil, SGRKeyHomeHideShortcuts),
             SGShownRow(SGL(@"settings.home.dj.title", @"DJ"), nil, SGRKeyHomeHideDJ),
+            SGOptionRow(SGL(@"settings.home.keep_title.title", @"Title stays on scroll"), SGL(@"settings.home.keep_title.subtitle", @"The title, the avatar and the pill stay at the top as Home scrolls under them"), SGRKeyHomeKeepTitle),
             SGOptionRow(SGL(@"settings.home.song_suggestions.title", @"Song suggestions"), SGL(@"settings.home.song_suggestions.subtitle", @"Spotify's carousel of songs to try, when Home offers one"), SGRKeyHomeSongSuggestions),
             SGOptionRow(SGL(@"settings.home.previews.title", @"Video and playlist previews"), SGL(@"settings.home.previews.subtitle", @"The cards that play as Home scrolls"), SGRKeyHomePreviews),
         ]),
