@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.0.0-beta.22](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.21...v1.0.0-beta.22) (2026-10-25)
+
+
+### Features
+
+* a 20th Anniversary app icon to pick in Appearance ([#69](https://github.com/oneulddu/vitrine/issues/69)) ([bd88494](https://github.com/oneulddu/vitrine/commit/bd8849475541cf8b01ed164de5a92805be295b5b))
+* a Full bleed covers switch for album and playlist pages ([#123](https://github.com/oneulddu/vitrine/issues/123)) ([aead201](https://github.com/oneulddu/vitrine/commit/aead201b043ee8a6ed70b08a0f6727e322dc6ef9))
+* a switch shows the Top picks heading on the redesigned Home ([#129](https://github.com/oneulddu/vitrine/issues/129)) ([7b40843](https://github.com/oneulddu/vitrine/commit/7b40843cbdc6b06fdc2ee05f36eeb8e089881e19))
+* Hide the controls can keep the title over the lyrics ([#133](https://github.com/oneulddu/vitrine/issues/133)) ([68c5aaf](https://github.com/oneulddu/vitrine/commit/68c5aafd5bb1896ea8cce51079ae7768d88d6c80))
+* Hide upsells and Hide ads cover the flags new in 9.1.94 ([b2409e9](https://github.com/oneulddu/vitrine/commit/b2409e9e5c9143bbe412af698ab7fa99c21a3195))
+* Labs shows only the flags this Spotify has, and adds the agent button ([e0791fb](https://github.com/oneulddu/vitrine/commit/e0791fb8ccd4b0b57f9350b5338745a4aebc89e4))
+* lock screen lyrics can show the line's translation ([#130](https://github.com/oneulddu/vitrine/issues/130)) ([0dc24ae](https://github.com/oneulddu/vitrine/commit/0dc24aed7df91776c1f84037818b4bf5e83c098c))
+* **lyrics:** bump Gemini to 3.8 Flash and add thinking and timeout settings ([#102](https://github.com/oneulddu/vitrine/issues/102)) ([067d3bf](https://github.com/oneulddu/vitrine/commit/067d3bfa61749c8c46de1f74a606ade217e79cf6))
+* prompt to download missing languages with native sheet and Translate settings fallback ([#105](https://github.com/oneulddu/vitrine/issues/105)) ([11de324](https://github.com/oneulddu/vitrine/commit/11de3249b0f9d792d7253c0a84dfdad912070590))
+* Spoof Premium adds shuffle settings, smart shuffle in Jams and Automix ([0482bf6](https://github.com/oneulddu/vitrine/commit/0482bf6d5fc57e709430633da112436f39af8598))
+* Spoof Premium drops more of Free's limits, Hide upsells hides 4 more ([a93fd9e](https://github.com/oneulddu/vitrine/commit/a93fd9ef16cd316826511002c5f0511d8033e1dc))
+* Spoof Premium shows the DJ in more countries (experiment) ([259074d](https://github.com/oneulddu/vitrine/commit/259074dbbf230c51bdf4ec6aa99fee87986881ee))
+* Spoof Premium turns off the DJ's Premium-only flag, Labs adds auto mix ([d556d38](https://github.com/oneulddu/vitrine/commit/d556d3899a22749fca5d99a68070ca8942468601))
+* switches to hide shuffle and repeat on the redesigned player ([#120](https://github.com/oneulddu/vitrine/issues/120)) ([14da2d2](https://github.com/oneulddu/vitrine/commit/14da2d286c390d179d964aaad6286fbad08180ea))
+* the player footer uses the Music app's AirPlay and queue glyphs ([#125](https://github.com/oneulddu/vitrine/issues/125)) ([0524388](https://github.com/oneulddu/vitrine/commit/05243887151ceb3f9530533480fd078254618c9f))
+* the redesigned Home title can stay at the top as Home scrolls ([#121](https://github.com/oneulddu/vitrine/issues/121)) ([ed3d94e](https://github.com/oneulddu/vitrine/commit/ed3d94ee1566c0a1a5e256b79ea5a6e3ee64f501))
+* 가사에서 부르는 줄 바로 옆 줄은 선명하게 두고 두 줄부터 흐림 ([765ff56](https://github.com/oneulddu/vitrine/commit/765ff565838573475f512f4cf378cdf49d9ca51a))
+* 앨범 버튼 줄 가운데 정렬과 다운로드·⋯ 유리 캡슐, 탭바 아이콘만 기본값 ([e86d350](https://github.com/oneulddu/vitrine/commit/e86d35074879bf329f74cff9cb1b2342282d9a32))
+* 움직이는 아트워크 위 잠금화면 가사를 밝은 영상에서도 읽히게 개선 ([9f8c034](https://github.com/oneulddu/vitrine/commit/9f8c0347e7b49a0db02f00a45eab3fb06292a25b))
+* 잠금화면 가사 레이아웃 선택, 긴 가사 넘침 방지, 움직이는 아트워크 어둡기를 여러 프레임 기준으로 ([ed7987f](https://github.com/oneulddu/vitrine/commit/ed7987f9b2068433a1454c54a3ba2e62a1cf6f27))
+* 잠금화면 가사를 흐린 커버 배경과 왼쪽 정렬 레이아웃으로 변경 ([51978ca](https://github.com/oneulddu/vitrine/commit/51978ca6a737d4d3f42c6c760a07c2fd20afe2bc))
+
+
+### Fixes
+
+* an imported LRC file stays the song's lyrics with word timing preferred ([#119](https://github.com/oneulddu/vitrine/issues/119)) ([83ac863](https://github.com/oneulddu/vitrine/commit/83ac863ec107b5fa1da7013d1c193fadd7606b0c))
+* crossfade and AutoMix reach the player under Spoof Premium ([#127](https://github.com/oneulddu/vitrine/issues/127)) ([674e6b6](https://github.com/oneulddu/vitrine/commit/674e6b691795d17fb349e6ce278f7e6bd1cc81b4))
+* cut the work hooks do on every frame, layout pass and player report ([#96](https://github.com/oneulddu/vitrine/issues/96)) ([ae17609](https://github.com/oneulddu/vitrine/commit/ae17609936010764ba57da746dfb1745fc180059))
+* Fluid keeps a dark cover's colors, and the lyrics blur is not gray ([#124](https://github.com/oneulddu/vitrine/issues/124)) ([9ceef37](https://github.com/oneulddu/vitrine/commit/9ceef370981b63e2566d635b1cd050bcb1f0b79c))
+* Gemini 발음·설명 작업에 고른 타임아웃과 thinking 설정 적용, 잠금화면 가사 지연값 동시 접근 수정 ([8aa8b88](https://github.com/oneulddu/vitrine/commit/8aa8b88cba7d1ad12ccee0a0b359c268873a7005))
+* keep Canvas in shared stories while the redesign hides it ([#131](https://github.com/oneulddu/vitrine/issues/131)) ([722e908](https://github.com/oneulddu/vitrine/commit/722e9083ba458b77537c4df022b265a56531d752))
+* let Siri read the login in sideloaded builds ([#143](https://github.com/oneulddu/vitrine/issues/143)) ([44b285e](https://github.com/oneulddu/vitrine/commit/44b285e2697e1f3f3ac41c930d81cc1325b0082b))
+* Make audio hook features work in LiveContainer ([#59](https://github.com/oneulddu/vitrine/issues/59)) ([81dd6f5](https://github.com/oneulddu/vitrine/commit/81dd6f52c247ba067433b9cda475953bc270096c))
+* Sing 화면 소리 크기가 창 경계에서 빠지지 않게 수정 ([cbf1fe5](https://github.com/oneulddu/vitrine/commit/cbf1fe59c84ef0b07cac7ee8f0c477f3a6df603f))
+* **speed:** recover from buffer starvation during high-speed playback ([#103](https://github.com/oneulddu/vitrine/issues/103)) ([0d75bf0](https://github.com/oneulddu/vitrine/commit/0d75bf0a2ae36ad0afc42c2291d0658afb7bad06))
+* the animated cover is dimmed only where text sits ([#132](https://github.com/oneulddu/vitrine/issues/132)) ([99ed3a4](https://github.com/oneulddu/vitrine/commit/99ed3a4345599e4bca3342ff077a54f32a17d607))
+* the player opens without a flash and closes onto its mini player ([#122](https://github.com/oneulddu/vitrine/issues/122)) ([e4baa5b](https://github.com/oneulddu/vitrine/commit/e4baa5be06a53a8ff631a3dd587ec7ec24df325b))
+* 가사 소스가 null 길이·플래그에서 죽지 않게 ([78cb34b](https://github.com/oneulddu/vitrine/commit/78cb34ba09f813f01d5522744ed672b863d85b6a))
+* 백그라운드에서 넘긴 곡의 가사가 돌아왔을 때 사라지지 않게 ([2600f6d](https://github.com/oneulddu/vitrine/commit/2600f6d52a4614481d39ecd8e2d6e17cd973ed04))
+* 앨범 페이지가 나타날 때 ⋯가 맨 글자로 보이지 않게, RTL에서 캡슐을 왼쪽에 ([d0d26d6](https://github.com/oneulddu/vitrine/commit/d0d26d6bb6dda171fbac7e1ab62cf1626d013367))
+* 앨범 하단 섹션이 높이를 계속 다시 재며 멈추지 않게 ([e586595](https://github.com/oneulddu/vitrine/commit/e586595d4bf7db471ccbfee323e884209b07f50d))
+* 업스트림 이식 후 빌드·하네스 정리 ([4c3c33b](https://github.com/oneulddu/vitrine/commit/4c3c33b3173ed6abe48e3b12ec74685b7d67fff1))
+* 잠금화면 가사 설정 변경 감지를 여러 스레드에서 동시에 받아도 안전하게 ([8ed9e38](https://github.com/oneulddu/vitrine/commit/8ed9e38f3e8cf5987c161be8fa5423223ee6c0bd))
+* 차단 카운터가 요청 훅에서 설정을 쓰지 않게 ([821cfed](https://github.com/oneulddu/vitrine/commit/821cfed271f1ddef42cca67ce702e7840ad2e17f))
+* 플레이어 배경 미리보기 연타 크래시와 볼륨 줄 깜빡임 수정 ([f6ed07c](https://github.com/oneulddu/vitrine/commit/f6ed07c75e9d8a434351d8bee76a4d7131045cc0))
+
 ## [1.0.0-beta.21](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.20...v1.0.0-beta.21) (2026-10-24)
 
 
