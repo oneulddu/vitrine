@@ -39,6 +39,11 @@ NSDictionary<NSString *, id> *SGLocalFileEditFor(NSString *uri);
 // own) and a new cover when `cover` is set; `keepCover` NO drops the stored one. The file's own names
 // with no cover remove the edit. Main thread.
 void SGLocalFileSaveEdit(NSString *uri, NSDictionary<NSString *, NSString *> *names, UIImage *cover, BOOL keepCover);
+// Off main: decode an oriented thumbnail directly from a picked file, at the cover's save size.
+// Balances security-scoped access; nil for an unreadable/non-image file.
+UIImage *SGLocalFileReadCover(NSURL *url);
+// Off main for a Photos image without a file URL: bound its size and apply imageOrientation.
+UIImage *SGLocalFileThumbnail(UIImage *image);
 // Where the stored covers are, and the one an edit names; nil when it names none.
 NSString *SGLocalFileCoversDirectory(void);
 NSString *SGLocalFileCoverPath(NSDictionary<NSString *, id> *edit);

@@ -1,5 +1,5 @@
 // ListeningStats.h says what Listening stats is. This is the recording: PlayerState's observer is told
-// when the track or playing changes, never the position, so a play's length is the wall-clock time it
+// when the track or playing changes, never the position, so a play's length is the continuous time it
 // spent playing, and it is written down when the next track takes over.
 //
 // ponytail: a track on repeat one never changes the state's track, so its replays are not counted, and a
@@ -8,6 +8,14 @@
 #import "Shared/Player/PlayerState.h"
 #import "ListeningStats.h"
 #import "SGPlayLog.h"
+#import <mach/mach_time.h>
+
+static NSTimeInterval continuousSeconds(void) {
+    static mach_timebase_info_data_t timebase;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ mach_timebase_info(&timebase); });
+    return (double)mach_continuous_time() * timebase.numer / timebase.denom / NSEC_PER_SEC;
+}
 
 SGPlayLog *SGListeningLog(void) {
     static SGPlayLog *log;
@@ -57,7 +65,8 @@ static BOOL isMusic(NSString *uri) {
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     NSTimeInterval now = NSDate.date.timeIntervalSince1970;
-    [_clock setPlaying:NO at:now];
+    NSTimeInterval elapsed = continuousSeconds();
+    [_clock setPlaying:NO elapsed:elapsed at:now];
     NSString *uri = SGURIString(state.track.URI);
     if (![uri isEqualToString:_play.uri]) {
         [self finish];
@@ -71,11 +80,11 @@ static BOOL isMusic(NSString *uri) {
     if (!_play) return;
     [self fill:state];
     BOOL loading = [state respondsToSelector:@selector(isLoading)] && state.isLoading;
-    [_clock setPlaying:state.isPlaying && !state.isPaused && !loading at:now];
+    [_clock setPlaying:state.isPlaying && !state.isPaused && !loading elapsed:elapsed at:now];
 }
 
 - (void)terminate {
-    [_clock setPlaying:NO at:NSDate.date.timeIntervalSince1970];
+    [_clock setPlaying:NO elapsed:continuousSeconds() at:NSDate.date.timeIntervalSince1970];
     [self finish];
     if (![SGListeningLog() drainForTermination])
         NSLog(@"[spotifyglass] history: final recorder write not confirmed before termination");

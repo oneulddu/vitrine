@@ -3,6 +3,7 @@
 // Runs in its own defaults domain and Application Support, so nothing of the Mac's is touched. Exits
 // non-zero on the first wrong answer.
 #import <UIKit/UIKit.h>
+#import <ImageIO/ImageIO.h>
 #import "Shared/LocalFiles/LocalFiles.h"
 
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
@@ -14,8 +15,59 @@ static UIImage *square(void) {
     }];
 }
 
+static void coverImportChecks(void) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = YES;
+    UIImage *large = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(2400, 1200) format:format]
+        imageWithActions:^(UIGraphicsImageRendererContext *context) {
+            [UIColor.redColor setFill]; UIRectFill(CGRectMake(0, 0, 2400, 1200));
+            [UIColor.blueColor setFill]; UIRectFill(CGRectMake(1200, 0, 1200, 1200));
+        }];
+    for (NSNumber *orientation in @[@(UIImageOrientationUp), @(UIImageOrientationUpMirrored),
+                                    @(UIImageOrientationRight), @(UIImageOrientationLeft)]) {
+        UIImage *original = [UIImage imageWithCGImage:large.CGImage scale:1 orientation:orientation.integerValue];
+        __block UIImage *thumbnail;
+        dispatch_sync(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            thumbnail = SGLocalFileThumbnail(original);
+        });
+        BOOL rotated = orientation.integerValue == UIImageOrientationRight || orientation.integerValue == UIImageOrientationLeft;
+        CHECK(thumbnail && CGImageGetWidth(thumbnail.CGImage) == (rotated ? 600 : 1200));
+        CHECK(CGImageGetHeight(thumbnail.CGImage) == (rotated ? 1200 : 600));
+        CHECK(thumbnail.imageOrientation == UIImageOrientationUp);
+        if (!rotated) {
+            // Sample the left quarter in an explicitly RGBA bitmap: mirroring must change red to blue.
+            uint8_t pixel[4] = {0};
+            CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+            CGContextRef context = CGBitmapContextCreate(pixel, 1, 1, 8, 4, space, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+            CHECK(context);
+            CGContextDrawImage(context, CGRectMake(-300, -300, 1200, 600), thumbnail.CGImage);
+            CGContextRelease(context);
+            CGColorSpaceRelease(space);
+            if (orientation.integerValue == UIImageOrientationUpMirrored) CHECK(pixel[0] == 0 && pixel[2] == 255);
+            else CHECK(pixel[0] == 255 && pixel[2] == 0);
+        }
+    }
+    NSURL *url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:
+        [NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"jpg"]]];
+    CGImageDestinationRef destination = CGImageDestinationCreateWithURL((__bridge CFURLRef)url, CFSTR("public.jpeg"), 1, NULL);
+    CHECK(destination);
+    CGImageDestinationAddImage(destination, large.CGImage, (__bridge CFDictionaryRef)@{(id)kCGImagePropertyOrientation: @6});
+    CHECK(CGImageDestinationFinalize(destination));
+    CFRelease(destination);
+    __block UIImage *preview;
+    dispatch_sync(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ preview = SGLocalFileReadCover(url); });
+    CHECK(preview && CGImageGetWidth(preview.CGImage) == 600 && CGImageGetHeight(preview.CGImage) == 1200);
+    CHECK(preview.imageOrientation == UIImageOrientationUp);
+    CHECK([@"not an image" writeToURL:url atomically:YES encoding:NSUTF8StringEncoding error:nil]);
+    dispatch_sync(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ preview = SGLocalFileReadCover(url); });
+    CHECK(!preview);
+    CHECK([NSFileManager.defaultManager removeItemAtURL:url error:nil]);
+}
+
 int main(void) {
     @autoreleasepool {
+        coverImportChecks();
         [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLocalFileEdits];
         NSString *uri = @"spotify:local:Daft+Punk:Discovery:One+More+Time%3A+Remix:320";
 

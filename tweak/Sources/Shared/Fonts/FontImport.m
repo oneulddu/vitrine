@@ -100,7 +100,9 @@ static void tell(NSString *title, NSString *message, BOOL restart) {
 
 // The files are checked and copied aside before the ones in use are touched, so files Core Text will not read,
 // of more than one family, or that fail to copy change nothing.
-static void import(NSArray<NSURL *> *picked) {
+static BOOL sg_importing;
+static void import(NSArray<NSURL *> *picked, dispatch_block_t done) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
     NSMutableArray<NSURL *> *scoped = [NSMutableArray array];
     NSMutableArray<NSString *> *families = [NSMutableArray array];
     BOOL fonts = YES;
@@ -123,6 +125,8 @@ static void import(NSArray<NSURL *> *picked) {
         }
     }
     for (NSURL *url in scoped) [url stopAccessingSecurityScopedResource];
+    // Only the small commit, preferences, registration and presentation return to main.
+    dispatch_async(dispatch_get_main_queue(), ^{
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     if (family && copied.count == picked.count) {
         removeImported();
@@ -137,6 +141,7 @@ static void import(NSArray<NSURL *> *picked) {
         if (SGRegisterCustomFont()) {
             SGSetInt(SGKeyAppFont, SGAppFontCustom);
             tell(SGL(@"settings.font.imported.alert.title", @"Font imported"), [NSString stringWithFormat:SGL(@"settings.font.imported.alert.message", @"%@ becomes the app's font when Spotify starts again."), family], YES);
+            done();
             return;
         }
     }
@@ -144,6 +149,9 @@ static void import(NSArray<NSURL *> *picked) {
     if (family && copied.count == picked.count) removeImported();   // copied in but Core Text took none of it
     tell(SGL(@"settings.font.failed.alert.title", @"Font not imported"), fonts && !family ? SGL(@"settings.font.failed.multiple_families.alert.message", @"These files are more than one family. Pick the files of one family together.")
                                                : SGL(@"settings.font.failed.invalid_files.alert.message", @"Choose valid .ttf, .otf, .ttc or .otc font files."), NO);
+    done();
+    });
+    });
 }
 
 @interface SGFontPicker : NSObject <UIDocumentPickerDelegate>
@@ -153,16 +161,20 @@ static void import(NSArray<NSURL *> *picked) {
 @implementation SGFontPicker
 
 - (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    // The alert waits for the picker to be gone, or it has nothing to present over.
-    dispatch_async(dispatch_get_main_queue(), ^{
-        if (urls.count) import(urls);
-        if (self.done) self.done();
+    if (sg_importing) return;
+    dispatch_block_t done = [self.done copy];
+    if (!urls.count) { if (done) done(); return; }
+    sg_importing = YES;
+    import(urls, ^{
+        sg_importing = NO;
+        if (done) done();
     });
 }
 
 @end
 
 static void pickFont(void (^done)(void)) {
+    if (sg_importing) return; // the staging directory belongs to the in-flight import
     static SGFontPicker *delegate;
     if (!delegate) delegate = [SGFontPicker new];
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeFont] asCopy:YES];

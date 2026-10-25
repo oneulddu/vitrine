@@ -65,6 +65,8 @@ static NSString *trimmed(NSString *text) {
     UIImage *_cover;            // the cover the row shows: the stored one, or the one just picked
     SGCoverChange _coverChange;
     BOOL _hasStoredCover;
+    BOOL _coverLoading;
+    NSUInteger _coverRequest;
 }
 
 - (instancetype)initWithURI:(NSString *)uri {
@@ -183,9 +185,10 @@ static NSString *trimmed(NSString *text) {
 
 - (void)changed {
     BOOL dirty = self.isDirty;
-    self.navigationItem.rightBarButtonItem.enabled = dirty;
+    self.navigationItem.rightBarButtonItem.enabled = dirty && !_coverLoading;
+    _coverButton.enabled = !_coverLoading;
     // A swipe down then asks before the changes go (presentationControllerDidAttemptToDismiss:).
-    self.modalInPresentation = dirty;
+    self.modalInPresentation = dirty || _coverLoading;
     BOOL restorable = self.differsFromFile;
     UIListContentConfiguration *content = [UIListContentConfiguration cellConfiguration];
     content.text = @"Restore file's info";
@@ -231,6 +234,8 @@ static NSString *trimmed(NSString *text) {
 
 // nil removes the cover: the stored one goes on Save, a picked one goes at once.
 - (void)useCover:(UIImage *)image {
+    _coverRequest++;
+    _coverLoading = NO;
     _cover = image;
     _coverChange = image ? SGCoverPicked : _hasStoredCover ? SGCoverRemoved : SGCoverKept;
     [self showCover];
@@ -246,6 +251,8 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (void)save {
+    if (_coverLoading) return;
+    _coverRequest++;
     [self.view endEditing:YES];
     SGLocalFileSaveEdit(_uri, self.names, _coverChange == SGCoverPicked ? _cover : nil, _coverChange != SGCoverRemoved);
     [self dismissViewControllerAnimated:YES completion:nil];
@@ -253,12 +260,16 @@ static NSString *trimmed(NSString *text) {
 
 - (void)cancel {
     if (self.isDirty) [self confirmDiscard];
-    else [self dismissViewControllerAnimated:YES completion:nil];
+    else {
+        _coverRequest++;
+        [self dismissViewControllerAnimated:YES completion:nil];
+    }
 }
 
 - (void)confirmDiscard {
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Discard changes" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        self->_coverRequest++;
         [self dismissViewControllerAnimated:YES completion:nil];
     }]];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Keep editing" style:UIAlertActionStyleCancel handler:nil]];
@@ -289,8 +300,8 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey, id> *)info {
-    UIImage *image = info[UIImagePickerControllerOriginalImage];
-    if (image) [self useCover:image];
+    NSURL *url = info[UIImagePickerControllerImageURL];
+    [self loadCoverFromURL:url image:url ? nil : info[UIImagePickerControllerOriginalImage]];
     [picker dismissViewControllerAnimated:YES completion:nil];
 }
 
@@ -299,17 +310,32 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
-    NSData *data = urls.firstObject ? [NSData dataWithContentsOfURL:urls.firstObject] : nil;
-    UIImage *image = data ? [UIImage imageWithData:data] : nil;
-    if (image) {
-        [self useCover:image];
-        return;
-    }
-    SGLog(@"local files: %@ is not an image", urls.firstObject.lastPathComponent);
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Not an image" message:@"Pick a JPEG, PNG or HEIC file."
-                                                            preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [self loadCoverFromURL:urls.firstObject image:nil];
+}
+
+- (void)loadCoverFromURL:(NSURL *)url image:(UIImage *)original {
+    NSUInteger request = ++_coverRequest;
+    _coverLoading = YES;
+    [self changed];
+    __weak SGLocalFileEditor *weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        UIImage *image = url ? SGLocalFileReadCover(url) : SGLocalFileThumbnail(original);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SGLocalFileEditor *editor = weakSelf;
+            if (!editor || request != editor->_coverRequest) return;
+            editor->_coverLoading = NO;
+            if (image) {
+                [editor useCover:image];
+                return;
+            }
+            [editor changed];
+            SGLog(@"local files: %@ is not an image", url.lastPathComponent);
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Not an image" message:@"Pick a JPEG, PNG or HEIC file."
+                                                                    preferredStyle:UIAlertControllerStyleAlert];
+            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [editor presentViewController:alert animated:YES completion:nil];
+        });
+    });
 }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)field {

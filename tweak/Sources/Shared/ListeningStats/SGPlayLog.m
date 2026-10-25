@@ -94,13 +94,13 @@ BOOL SGPlayCounts(double listened, double duration) {
     BOOL _playing;
     NSTimeInterval _since;
 }
-- (void)setPlaying:(BOOL)playing at:(NSTimeInterval)unixSeconds {
+- (void)setPlaying:(BOOL)playing elapsed:(NSTimeInterval)elapsedSeconds at:(NSTimeInterval)unixSeconds {
     if (_playing) {
-        _listenedSeconds += unixSeconds - _since;
+        _listenedSeconds += elapsedSeconds - _since;
         _endedAt = unixSeconds;
     }
     _playing = playing;
-    _since = unixSeconds;
+    _since = elapsedSeconds;
 }
 @end
 

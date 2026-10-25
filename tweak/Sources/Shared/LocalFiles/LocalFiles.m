@@ -3,6 +3,7 @@
 // Threading: the edits are read on whatever thread Spotify reads a track's metadata on, so the table is
 // swapped whole under a lock; they are written on the main thread.
 #import <os/lock.h>
+#import <ImageIO/ImageIO.h>
 #import "Core/SGCore.h"
 #import "LocalFiles.h"
 
@@ -130,16 +131,43 @@ NSString *SGLocalFileCoverInURL(NSString *url) {
     return path;
 }
 
-static NSString *writeCover(UIImage *image) {
+UIImage *SGLocalFileReadCover(NSURL *url) {
+    if (!url) return nil;
+    BOOL scoped = [url startAccessingSecurityScopedResource];
+    @try {
+        CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url,
+            (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache: @NO});
+        if (!source) return nil;
+        CGImageRef thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)@{
+            (id)kCGImageSourceCreateThumbnailFromImageAlways: @YES,
+            (id)kCGImageSourceCreateThumbnailWithTransform: @YES,
+            (id)kCGImageSourceThumbnailMaxPixelSize: @(kCoverSide),
+            (id)kCGImageSourceShouldCacheImmediately: @YES,
+        });
+        CFRelease(source);
+        if (!thumbnail) return nil;
+        UIImage *image = [UIImage imageWithCGImage:thumbnail];
+        CGImageRelease(thumbnail);
+        return image;
+    } @finally {
+        if (scoped) [url stopAccessingSecurityScopedResource];
+    }
+}
+
+UIImage *SGLocalFileThumbnail(UIImage *image) {
+    if (!image || image.size.width <= 0 || image.size.height <= 0) return nil;
     CGFloat scale = MIN(1, kCoverSide / MAX(image.size.width, image.size.height));
     CGSize size = CGSizeMake(round(image.size.width * scale), round(image.size.height * scale));
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
     format.scale = 1;
     format.opaque = YES;
-    UIImage *drawn = [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+    return [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
         [image drawInRect:(CGRect){CGPointZero, size}];
     }];
-    NSData *data = UIImageJPEGRepresentation(drawn, 0.9);
+}
+
+static NSString *writeCover(UIImage *image) {
+    NSData *data = UIImageJPEGRepresentation(SGLocalFileThumbnail(image), 0.9);
     NSString *name = [NSUUID.UUID.UUIDString stringByAppendingPathExtension:@"jpg"];
     NSError *error = nil;
     [NSFileManager.defaultManager createDirectoryAtPath:SGLocalFileCoversDirectory() withIntermediateDirectories:YES attributes:nil error:&error];

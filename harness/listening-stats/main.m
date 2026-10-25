@@ -505,16 +505,29 @@ static void persistenceChecks(NSString *dir) {
 
 static void recorderClockChecks(void) {
     SGPlayClock *clock = [SGPlayClock new];
-    [clock setPlaying:YES at:1000];
-    [clock setPlaying:NO at:1035];
-    [clock setPlaying:NO at:86400];
+    [clock setPlaying:YES elapsed:1000 at:1000];
+    [clock setPlaying:NO elapsed:1035 at:1035];
+    [clock setPlaying:NO elapsed:86400 at:86400];
     CHECK(clock.listenedSeconds == 35 && clock.endedAt == 1035,
           "a paused play ends at its last listened instant, not the next day's track switch");
-    [clock setPlaying:YES at:86400];
-    [clock setPlaying:NO at:86410];
-    [clock setPlaying:NO at:90000];
+    [clock setPlaying:YES elapsed:86400 at:86400];
+    [clock setPlaying:NO elapsed:86410 at:86410];
+    [clock setPlaying:NO elapsed:90000 at:90000];
     CHECK(clock.listenedSeconds == 45 && clock.endedAt == 86410,
           "resuming adds only the new playing interval and preserves its end through termination");
+    SGPlayClock *backward = [SGPlayClock new];
+    [backward setPlaying:YES elapsed:100 at:10000];
+    [backward setPlaying:NO elapsed:130 at:6430]; // calendar moved back an hour
+    [backward setPlaying:YES elapsed:190 at:6490]; // a minute paused
+    [backward setPlaying:NO elapsed:220 at:6520];
+    [backward setPlaying:NO elapsed:999 at:20000];
+    CHECK(backward.listenedSeconds == 60 && backward.endedAt == 6520,
+          "a backward calendar jump and pause preserve sixty seconds of listening and its last end date");
+    SGPlayClock *forward = [SGPlayClock new];
+    [forward setPlaying:YES elapsed:500 at:10000];
+    [forward setPlaying:NO elapsed:560 at:13660]; // calendar moved forward an hour
+    CHECK(forward.listenedSeconds == 60 && forward.endedAt == 13660,
+          "a forward calendar jump does not add an hour to a sixty-second play");
 }
 
 // An import blocked while serializing its staged row. Neither the main-thread recorder nor

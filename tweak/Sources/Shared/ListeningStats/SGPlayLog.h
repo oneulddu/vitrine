@@ -26,10 +26,11 @@ FOUNDATION_EXPORT NSNotificationName const SGPlayLogDidChangeNotification;
 enum { SGPlayMinimumMs = 30000 };
 BOOL SGPlayCounts(double listenedSeconds, double durationSeconds);
 
-// One play's wall-clock listening intervals. A pause preserves the last listened instant.
+// One play's continuous-clock listening intervals; Unix time is only its calendar end date.
+// A pause preserves the last listened instant. Elapsed time must include device sleep.
 @interface SGPlayClock : NSObject
 @property (nonatomic, readonly) NSTimeInterval listenedSeconds, endedAt;
-- (void)setPlaying:(BOOL)playing at:(NSTimeInterval)unixSeconds;
+- (void)setPlaying:(BOOL)playing elapsed:(NSTimeInterval)elapsedSeconds at:(NSTimeInterval)unixSeconds;
 @end
 
 // Vitrine's versioned history object, or either Spotify shape: StreamingHistory_music_*.json (endTime,
