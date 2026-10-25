@@ -13,6 +13,7 @@
 // checkmark), close (the sheet dismissed without it), import=<path,path> (those files handed to the font import as
 // Files would), dismiss (whatever is presented goes), dump (the stored keys and every row with what it reads).
 #import <UIKit/UIKit.h>
+#import "../harness-fail.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
@@ -51,11 +52,11 @@ static NSInteger hex(NSString *text) {
     NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     // The family grouping the font import goes by: one shared name passes, a mix, a missing name or no face does not.
-    NSCAssert([SGFontSingleFamily(@[@"Inter", @"Inter", @"Inter"]) isEqualToString:@"Inter"], @"one family");
-    NSCAssert([SGFontSingleFamily(@[@"Inter"]) isEqualToString:@"Inter"], @"one face");
-    NSCAssert(!SGFontSingleFamily(@[@"Inter", @"Lato"]), @"two families");
-    NSCAssert(!SGFontSingleFamily(@[@"Inter", @""]), @"a face without a family");
-    NSCAssert(!SGFontSingleFamily(@[]), @"no faces");
+    if (![SGFontSingleFamily(@[@"Inter", @"Inter", @"Inter"]) isEqualToString:@"Inter"]) HARNESS_FAIL(@"one family");
+    if (![SGFontSingleFamily(@[@"Inter"]) isEqualToString:@"Inter"]) HARNESS_FAIL(@"one face");
+    if (SGFontSingleFamily(@[@"Inter", @"Lato"])) HARNESS_FAIL(@"two families");
+    if (SGFontSingleFamily(@[@"Inter", @""])) HARNESS_FAIL(@"a face without a family");
+    if (SGFontSingleFamily(@[])) HARNESS_FAIL(@"no faces");
     NSLog(@"[harness] family grouping ok");
     if (![args containsObject:@"keep"]) {
         for (NSString *key in store.dictionaryRepresentation.allKeys) {

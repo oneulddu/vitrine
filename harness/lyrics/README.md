@@ -49,8 +49,8 @@ A real file goes in with `-file /path/song.ttml`: the simulator reads the Mac's 
 
 `-perf LABEL` logs the view's per frame cost (its display link's `tick`) every 240 frames; run with
 `simctl launch --console` to read it. `-dump 1` prints the lines as read, with their pronunciations,
-translations and romanized readings, and quits. `-romanise 1` asserts the romanized readings
-(`Shared/Lyrics/Romanise.m`) and quits with the number that failed. `-openMenu 3` opens the pronunciation and translation menu three seconds in,
+translations and romanized readings, and quits. `-romanise 1` checks the romanized readings
+(`Shared/Lyrics/Romanise.m`) and logs then exits nonzero if any failed. `-openMenu 3` opens the pronunciation and translation menu three seconds in,
 `-toggleAt 3` switches both over as the menu would, and `-light 1` puts the window in light mode.
 
 A screen recording catches the motion: `simctl io <udid> recordVideo -f run.mp4`, then e.g.

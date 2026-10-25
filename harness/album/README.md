@@ -73,7 +73,7 @@ log says where the redesign drew it: a round picture a line high just before the
 The pinned download and ⋯ are watched from the first frame the page draws: after every Core Animation commit while the
 field's veil is up and a second past it, ⋯ must have glass behind it, its own or download's capsule with download
 right under ⋯ in the page, nothing (the veil) between the two. "PASS pinned hold: N frames, M under the veil" or
-"FAIL pinned hold" with the page's top subviews at the first bare frame; `verify-actions` asserts it. `rtl` lays the page
+"FAIL pinned hold" with the page's top subviews at the first bare frame; `verify-actions` checks it and logs then exits nonzero on failure. `rtl` lays the page
 out right to left (its `semanticContentAttribute`), and `verify-actions` then expects ⋯ 16pt in from the left edge,
 download on its right, the 88x44 capsule the left-to-right one mirrored ("pinned frames rtl" against "pinned frames
 ltr"). `freeze` pauses the veil's fade and holds the main thread 4 s on the first frame under the veil, for a

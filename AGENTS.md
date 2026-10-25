@@ -59,6 +59,8 @@ Rules:
 
 ## Working on it
 
+- Simulator/GUI harness apps report failures through `harness/harness-fail.h` (log + nonzero exit), never `assert`, `abort`, `NSAssert`/`NSCAssert` or `__builtin_trap`, so failed checks do not raise crash dialogs or crash reports.
+
 - Lossless (`Shared/Lossless/`, `SGLossless.h`; off unless `spotifyglass.lossless` is set): a local FLAC or ALAC of
   the same recording plays in place of Spotify's sound. The anchor comes from cross-correlating 4 s of Spotify's
   output with the file, never from Spotify's position reports, and every seek, skip, pause or route change drops it

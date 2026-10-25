@@ -71,7 +71,7 @@ the name, the two centered together. "none" means the late image was missed.
 
 "pinned hold" lines, in every mode with a ⋯: after every Core Animation commit from the first frame until a second past
 the veil, ⋯ has glass behind it, its own or download's capsule with download right under ⋯ in the page and the veil
-under both; `verify-actions` asserts it. `rtl` lays the page out right to left, and `verify-actions` then expects ⋯
+under both; `verify-actions` checks it and logs then exits nonzero on failure. `rtl` lays the page out right to left, and `verify-actions` then expects ⋯
 16pt in from the left edge and, with download pinned (`other`, `mix`), the 88x44 capsule the left-to-right one
 mirrored. `freeze` pauses the veil's fade and holds the first frame under it 4 s, for a screenshot.
 

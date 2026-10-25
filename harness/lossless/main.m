@@ -1,5 +1,6 @@
 // Native decoder capability probe. Generated fixtures only; no Spotify hooks or credentials.
 #import <UIKit/UIKit.h>
+#import "../harness-fail.h"
 #import <AVFoundation/AVFoundation.h>
 #import <AudioToolbox/AudioToolbox.h>
 #include <math.h>
@@ -210,7 +211,7 @@ static void reader(NSURL *url) {
         }
     });
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 60*NSEC_PER_SEC), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        report(@{@"test":@"watchdog-timeout"}); exit(124);
+        report(@{@"test":@"watchdog-timeout"}); HARNESS_FAIL(@"watchdog-timeout");
     });
     return YES;
 }

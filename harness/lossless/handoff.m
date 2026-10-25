@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "../harness-fail.h"
 #import <AVFoundation/AVFoundation.h>
 #import <stdatomic.h>
 #import "Shared/Lossless/SGPCMReplacement.h"
@@ -107,7 +108,7 @@ static void directTests(void) {
     SGPCMDecodeCancellation *token=[SGPCMDecodeCancellation new];
     asset=[SGPreparedPCM prepareURL:url sampleRate:44100 maxBytes:8*1024*1024 cancellation:token error:&error];
     expect(asset && !error && asset.frameCount==529200,"native FLAC -> complete planar PCM");
-    if(!asset) exit(1);
+    if(!asset) HARNESS_FAIL(@"native FLAC -> complete planar PCM");
     double maxError=0;
     for(uint64_t i=0;i<asset.frameCount;++i) {
         maxError=fmax(maxError,fabs(asset.left[i]-0.08*sin(2*M_PI*440*i/44100.0)));
@@ -255,7 +256,9 @@ static void realTests(void) {
         AudioOutputUnitStop(output); AudioComponentInstanceDispose(output); AudioComponentInstanceDispose(converter);
         printf("RESULT failures=%d nativeFrames=%llu replacementFrames=%llu stageFrames=%llu\n",failures,
             (unsigned long long)atomic_load(&decoded),(unsigned long long)atomic_load(&selected),
-            (unsigned long long)atomic_load(&stageFrames)); fflush(stdout); exit(failures?1:0);
+            (unsigned long long)atomic_load(&stageFrames)); fflush(stdout);
+        if (failures) HARNESS_FAIL(@"RESULT failures=%d", failures);
+        exit(0);
     });
 }
 @interface LosslessHandoff : UIResponder <UIApplicationDelegate>
@@ -268,7 +271,7 @@ static void realTests(void) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
         directTests(); dispatch_async(dispatch_get_main_queue(),^{realTests();});
     });
-    later(30,^{printf("FAIL watchdog\n"); fflush(stdout); exit(124);});
+    later(30,^{HARNESS_FAIL(@"FAIL watchdog");});
     return YES;
 }
 @end

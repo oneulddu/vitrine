@@ -6,7 +6,7 @@
 #import "../download-mock.h"
 #import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Redesigned/Kit/SGRActionRow.h"
-#include <assert.h>
+#import "../harness-fail.h"
 
 // Download and ⋯ as one glass capsule: adjacent, level, one 88x44 shape (radius 22) under both, carried by
 // download, ⋯ drawing none, its trailing edge 16pt in from the page's.
@@ -18,22 +18,22 @@ static UIView *glassOf(UIView *button) {
 // `rtl`: the page laid out right to left, where the pair is mirrored: ⋯ 16pt in from the left edge, download on its
 // right, the capsule the left-to-right one reflected across the page.
 static void assertPinnedPair(UIView *page,SGRMirrorButton *download,SGRMirrorButton *more,BOOL rtl) {
-    assert(!download.hidden && !more.hidden);
+    HARNESS_CHECK(!download.hidden && !more.hidden);
     CGFloat W=page.bounds.size.width;
-    assert(fabs(rtl ? CGRectGetMinX(download.frame)-CGRectGetMaxX(more.frame) : CGRectGetMinX(more.frame)-CGRectGetMaxX(download.frame))<0.5);
-    assert(fabs(CGRectGetMinY(more.frame)-CGRectGetMinY(download.frame))<0.5 && fabs(more.frame.size.height-download.frame.size.height)<0.5);
-    assert(rtl ? fabs(CGRectGetMinX(more.frame)-16)<0.5 : fabs(CGRectGetMaxX(more.frame)-(W-16))<0.5);
+    HARNESS_CHECK(fabs(rtl ? CGRectGetMinX(download.frame)-CGRectGetMaxX(more.frame) : CGRectGetMinX(more.frame)-CGRectGetMaxX(download.frame))<0.5);
+    HARNESS_CHECK(fabs(CGRectGetMinY(more.frame)-CGRectGetMinY(download.frame))<0.5 && fabs(more.frame.size.height-download.frame.size.height)<0.5);
+    HARNESS_CHECK(rtl ? fabs(CGRectGetMinX(more.frame)-16)<0.5 : fabs(CGRectGetMaxX(more.frame)-(W-16))<0.5);
     UIView *capsule=glassOf(download);
-    assert(capsule && !capsule.hidden && (!glassOf(more) || glassOf(more).hidden));
+    HARNESS_CHECK(capsule && !capsule.hidden && (!glassOf(more) || glassOf(more).hidden));
     CGRect shape=[download convertRect:capsule.frame toView:page];
-    assert(fabs(shape.size.width-88)<0.5 && fabs(shape.size.height-44)<0.5);
-    assert(fabs(CGRectGetMinX(shape)-CGRectGetMinX(rtl ? more.frame : download.frame))<0.5);
-    assert(fabs(CGRectGetMaxX(shape)-CGRectGetMaxX(rtl ? download.frame : more.frame))<0.5);
-    assert(fabs(CGRectGetMinY(shape)-CGRectGetMinY(more.frame))<0.5);
+    HARNESS_CHECK(fabs(shape.size.width-88)<0.5 && fabs(shape.size.height-44)<0.5);
+    HARNESS_CHECK(fabs(CGRectGetMinX(shape)-CGRectGetMinX(rtl ? more.frame : download.frame))<0.5);
+    HARNESS_CHECK(fabs(CGRectGetMaxX(shape)-CGRectGetMaxX(rtl ? download.frame : more.frame))<0.5);
+    HARNESS_CHECK(fabs(CGRectGetMinY(shape)-CGRectGetMinY(more.frame))<0.5);
     CGRect ltr=CGRectMake(W-16-88,CGRectGetMinY(more.frame),88,44);
     CGRect expected=rtl ? CGRectMake(W-CGRectGetMaxX(ltr),ltr.origin.y,88,44) : ltr;
-    assert(fabs(shape.origin.x-expected.origin.x)<0.5 && fabs(shape.origin.y-expected.origin.y)<0.5);
-    assert(capsule.layer.cornerRadius==0 || fabs(capsule.layer.cornerRadius-22)<0.5);
+    HARNESS_CHECK(fabs(shape.origin.x-expected.origin.x)<0.5 && fabs(shape.origin.y-expected.origin.y)<0.5);
+    HARNESS_CHECK(capsule.layer.cornerRadius==0 || fabs(capsule.layer.cornerRadius-22)<0.5);
 }
 
 // The pinned pair on `page`: download by its identifier, ⋯ the other mirror button the page holds.
@@ -112,36 +112,36 @@ static void watchPinnedHold(UIView *page,BOOL freeze) {
     CFRelease(observer);
 }
 static void assertPinnedAlone(SGRMirrorButton *download,SGRMirrorButton *more) {
-    assert(download.hidden && !more.hidden);
+    HARNESS_CHECK(download.hidden && !more.hidden);
     UIView *circle=glassOf(more);
-    assert(circle && !circle.hidden && fabs(circle.bounds.size.width-44)<0.5 && fabs(circle.bounds.size.height-44)<0.5);
-    assert(CGPointEqualToPoint(circle.center,CGPointMake(CGRectGetMidX(more.bounds),CGRectGetMidY(more.bounds))));
+    HARNESS_CHECK(circle && !circle.hidden && fabs(circle.bounds.size.width-44)<0.5 && fabs(circle.bounds.size.height-44)<0.5);
+    HARNESS_CHECK(CGPointEqualToPoint(circle.center,CGPointMake(CGRectGetMidX(more.bounds),CGRectGetMidY(more.bounds))));
 }
 
 static void verifyAlbumActions(UIView *root) {
     NSMutableArray *pending=[NSMutableArray arrayWithObject:root];SGRHeaderInfo *info=nil;
     while(pending.count){UIView *v=pending.lastObject;[pending removeLastObject];
         if([v isKindOfClass:SGRHeaderInfo.class]){info=(id)v;break;}[pending addObjectsFromArray:v.subviews];}
-    assert(info);
+    HARNESS_CHECK(info);
     SGRMirrorButton *shuffle=[info valueForKey:@"shuffle"],*add=[info valueForKey:@"trailing"];
     SGRPlayCapsule *play=[info valueForKey:@"play"];
-    assert(add.source && !add.hidden && play.superview==info);
-    for(UIView *v in info.subviews)assert(![v isKindOfClass:UIScrollView.class]);
+    HARNESS_CHECK(add.source && !add.hidden && play.superview==info);
+    for(UIView *v in info.subviews)HARNESS_CHECK(![v isKindOfClass:UIScrollView.class]);
     // The pinned download: on the page, just under the pinned ⋯ (the page's top subview), the two one capsule.
     SGRMirrorButton *download=nil;[pending setArray:@[root]];
     while(pending.count){UIView *v=pending.lastObject;[pending removeLastObject];
         if([v.accessibilityIdentifier isEqualToString:@"Vitrine.Album.Download"]){download=(id)v;break;}[pending addObjectsFromArray:v.subviews];}
-    assert([download isKindOfClass:SGRMirrorButton.class] && !download.hidden && download.source);
+    HARNESS_CHECK([download isKindOfClass:SGRMirrorButton.class] && !download.hidden && download.source);
     UIView *page=download.superview;
     SGRMirrorButton *more=page.subviews.lastObject;
-    assert([more isKindOfClass:SGRMirrorButton.class] && more!=download && !more.hidden);
+    HARNESS_CHECK([more isKindOfClass:SGRMirrorButton.class] && more!=download && !more.hidden);
     [page layoutIfNeeded];
     BOOL rtl=[NSProcessInfo.processInfo.arguments containsObject:@"rtl"];
     UIView *shapeView=glassOf(download);
     NSLog(@"[harness] pinned frames %@: download %@, more %@, capsule %@",rtl?@"rtl":@"ltr",NSStringFromCGRect(download.frame),
           NSStringFromCGRect(more.frame),shapeView?NSStringFromCGRect([download convertRect:shapeView.frame toView:page]):@"none");
-    assert((page.effectiveUserInterfaceLayoutDirection==UIUserInterfaceLayoutDirectionRightToLeft)==rtl);
-    assert(sg_holdChecked && sg_holdPassed);
+    HARNESS_CHECK((page.effectiveUserInterfaceLayoutDirection==UIUserInterfaceLayoutDirectionRightToLeft)==rtl);
+    HARNESS_CHECK(sg_holdChecked && sg_holdPassed);
     assertPinnedPair(page,download,more,rtl);
     NSLog(@"[harness] PASS pinned capsule %@: 88x44 at %@, 16pt in from the %@ edge%@",rtl?@"rtl":@"ltr",
           NSStringFromCGRect([download convertRect:shapeView.frame toView:page]),rtl?@"left":@"right",rtl?@", the left-to-right frame mirrored":@"");
@@ -161,26 +161,26 @@ static void verifyAlbumActions(UIView *root) {
         CGRect frame=original;frame.size.width=width.doubleValue;info.frame=frame;
         [info setNeedsLayout];[info layoutIfNeeded];
         // Shuffle, Play, add: Play on the middle of the page, the other two 16pt off its sides.
-        assert(fabs(CGRectGetMidX(play.frame)-width.doubleValue/2)<1);
-        assert(fabs(CGRectGetMinX(play.frame)-CGRectGetMaxX(shuffle.frame)-16)<1);
-        assert(fabs(CGRectGetMinX(add.frame)-CGRectGetMaxX(play.frame)-16)<1);
-        assert(CGRectGetMinX(shuffle.frame)>=0 && CGRectGetMaxX(add.frame)<=width.doubleValue);
+        HARNESS_CHECK(fabs(CGRectGetMidX(play.frame)-width.doubleValue/2)<1);
+        HARNESS_CHECK(fabs(CGRectGetMinX(play.frame)-CGRectGetMaxX(shuffle.frame)-16)<1);
+        HARNESS_CHECK(fabs(CGRectGetMinX(add.frame)-CGRectGetMaxX(play.frame)-16)<1);
+        HARNESS_CHECK(CGRectGetMinX(shuffle.frame)>=0 && CGRectGetMaxX(add.frame)<=width.doubleValue);
     }
     info.frame=original;[info setNeedsLayout];[info layoutIfNeeded];
     // Play's word changing ("Play" to "Shuffle Play") lays the header out again: a wider capsule, still centered.
     CGFloat playBefore=play.bounds.size.width;NSString *word=play.source.accessibilityLabel;
     play.source.accessibilityLabel=@"Shuffle Play";[play feedFrom:play.source];
     [info layoutIfNeeded];
-    assert(play.bounds.size.width>playBefore+1 && fabs(CGRectGetMidX(play.frame)-info.bounds.size.width/2)<1);
-    assert(fabs(CGRectGetMinX(add.frame)-CGRectGetMaxX(play.frame)-16)<1);
+    HARNESS_CHECK(play.bounds.size.width>playBefore+1 && fabs(CGRectGetMidX(play.frame)-info.bounds.size.width/2)<1);
+    HARNESS_CHECK(fabs(CGRectGetMinX(add.frame)-CGRectGetMaxX(play.frame)-16)<1);
     play.source.accessibilityLabel=word;[play feedFrom:play.source];[info layoutIfNeeded];
-    assert(fabs(play.bounds.size.width-playBefore)<1);
+    HARNESS_CHECK(fabs(play.bounds.size.width-playBefore)<1);
     UIControl *source=(UIControl *)download.source;__block NSUInteger fired=0;
     UIAction *action=[UIAction actionWithTitle:@"verify" image:nil identifier:@"verify-album-download" handler:^(UIAction *a){fired++;}];
     [source addAction:action forControlEvents:UIControlEventTouchUpInside];
     [download sendActionsForControlEvents:UIControlEventTouchUpInside];
     [source removeActionForIdentifier:@"verify-album-download" forControlEvents:UIControlEventTouchUpInside];
-    assert(fired==1);
+    HARNESS_CHECK(fired==1);
     NSDictionary *result=@{@"passed":@YES,@"album_add_and_pinned_download_visible":@YES,@"native_download_action_calls":@(fired),@"checked_widths":@[@430,@390,@320],@"play_word_relayout":@YES};
     NSString *path=[NSSearchPathForDirectoriesInDomains(NSDocumentDirectory,NSUserDomainMask,YES).firstObject stringByAppendingPathComponent:@"album-actions-verification.json"];
     [[NSJSONSerialization dataWithJSONObject:result options:NSJSONWritingPrettyPrinted error:nil]writeToFile:path atomically:YES];
@@ -876,7 +876,7 @@ static NSString *trailingLabel(UIView *root) {
         [cell layoutIfNeeded];
         CGSize again = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
         CGSize onceMore = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
-        assert(fabs(again.height - answer.size.height) < 0.5 && fabs(onceMore.height - answer.size.height) < 0.5);
+        HARNESS_CHECK(fabs(again.height - answer.size.height) < 0.5 && fabs(onceMore.height - answer.size.height) < 0.5);
         if (answer.size.height > 0) steady++;
         y += answer.size.height;
     }
@@ -907,11 +907,11 @@ static NSString *trailingLabel(UIView *root) {
             break;
         }
     }
-    assert(cell && path);
+    HARNESS_CHECK(cell && path);
     UICollectionViewLayoutAttributes *attributes = [UICollectionViewLayoutAttributes layoutAttributesForCellWithIndexPath:path];
     attributes.frame = cell.frame;
     CGFloat before = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
-    assert(before == 0);
+    HARNESS_CHECK(before == 0);
 
     // The same cell at the same width, now holding the album's own line: kept, and taller by the lead over it.
     UIView *content = cell.contentView.subviews.firstObject;
@@ -919,13 +919,13 @@ static NSString *trailingLabel(UIView *root) {
     label(line, CGRectMake(16, 0, width - 32, 15.33), @"22 songs • 1hr 24min", 11, UIColor.whiteColor, @"Encore.Label");
     CGFloat flipped = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
     CGFloat kept = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
-    assert(flipped > 0 && fabs(kept - flipped) < 0.5);
+    HARNESS_CHECK(flipped > 0 && fabs(kept - flipped) < 0.5);
 
     // And back: the line gone, the cell dropped again, 0 again, and asked again still 0.
     [line removeFromSuperview];
     CGFloat dropped = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
     CGFloat stillDropped = [cell preferredLayoutAttributesFittingAttributes:attributes].size.height;
-    assert(dropped == 0 && stillDropped == 0);
+    HARNESS_CHECK(dropped == 0 && stillDropped == 0);
     NSLog(@"[harness] PASS footer refit: a dropped cell answered 0, %.2fpt once it held the album's line, then 0 again, each kept on the asks after it", flipped);
     [self refitTextSizeOfCell:1 at:width];
 }
@@ -938,14 +938,14 @@ static NSString *trailingLabel(UIView *root) {
                                                     [NSIndexPath indexPathForItem:item inSection:0]];
     attributes.frame = cell.frame;
     CGSize same = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
-    assert(fabs(same.height - cell.bounds.size.height) < 0.5);
+    HARNESS_CHECK(fabs(same.height - cell.bounds.size.height) < 0.5);
 
     [cell sg_setTextSize:UIContentSizeCategoryAccessibilityLarge];
     CGSize big = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
     CGSize kept = [cell preferredLayoutAttributesFittingAttributes:attributes].size;
     // The mock's content measures by its own bounds, so the bigger text size alone has to move the answer.
-    assert(big.height > same.height + 0.5);
-    assert(fabs(kept.height - big.height) < 0.5);
+    HARNESS_CHECK(big.height > same.height + 0.5);
+    HARNESS_CHECK(fabs(kept.height - big.height) < 0.5);
     NSLog(@"[harness] PASS footer text size: settled at %.2fpt, %.2fpt once the text size changed at the same width, and kept on the asks after it",
           same.height, big.height);
     [cell sg_setTextSize:nil];

@@ -5,7 +5,7 @@
 #import "../download-mock.h"
 #import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Redesigned/Kit/SGRActionRow.h"
-#include <assert.h>
+#import "../harness-fail.h"
 
 // A button's glass is first in its subviews; its glyph is first when it has never made one.
 static UIView *glassOf(UIView *button) {
@@ -108,11 +108,11 @@ static void verifyMixActions(UIView *root, BOOL independent) {
         if ([view isKindOfClass:SGRHeaderInfo.class]) { info = (id)view; break; }
         [pending addObjectsFromArray:view.subviews];
     }
-    assert(info);
+    HARNESS_CHECK(info);
     SGRPlayCapsule *play = [info valueForKey:@"play"];
     SGRMirrorButton *trailing = [info valueForKey:@"trailing"];
     // Shuffle, Play and save or download, Play on the middle of the page, whichever row it is.
-    assert(play.superview == info && fabs(CGRectGetMidX(play.frame) - info.bounds.size.width / 2) < 1);
+    HARNESS_CHECK(play.superview == info && fabs(CGRectGetMidX(play.frame) - info.bounds.size.width / 2) < 1);
     // The pinned download, shown only beside a save in the row, and the pinned ⋯: a button outside the header
     // that is its page's top subview.
     SGRMirrorButton *download = nil, *more = nil;
@@ -125,7 +125,7 @@ static void verifyMixActions(UIView *root, BOOL independent) {
                  && ![view isDescendantOfView:info]) more = (id)view;
         [pending addObjectsFromArray:view.subviews];
     }
-    assert(more && !more.hidden);
+    HARNESS_CHECK(more && !more.hidden);
     [more.superview layoutIfNeeded];
     // `rtl`: the page laid out right to left, where the pair is mirrored.
     BOOL rtl = [NSProcessInfo.processInfo.arguments containsObject:@"rtl"];
@@ -135,28 +135,28 @@ static void verifyMixActions(UIView *root, BOOL independent) {
           download && !download.hidden ? NSStringFromCGRect(download.frame) : @"none", NSStringFromCGRect(more.frame),
           download && !download.hidden && glassOf(download) && !glassOf(download).hidden ? NSStringFromCGRect([download convertRect:glassOf(download).frame toView:page]) : @"none",
           glassOf(more) && !glassOf(more).hidden ? NSStringFromCGRect([more convertRect:glassOf(more).frame toView:page]) : @"none");
-    assert((page.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft) == rtl);
-    assert(sg_holdChecked && sg_holdPassed);
+    HARNESS_CHECK((page.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft) == rtl);
+    HARNESS_CHECK(sg_holdChecked && sg_holdPassed);
     // ⋯ 16pt in from the page's right edge, or from its left one right to left.
-    assert(rtl ? fabs(CGRectGetMinX(more.frame) - 16) < 0.5 : fabs(CGRectGetMaxX(more.frame) - (W - 16)) < 0.5);
+    HARNESS_CHECK(rtl ? fabs(CGRectGetMinX(more.frame) - 16) < 0.5 : fabs(CGRectGetMaxX(more.frame) - (W - 16)) < 0.5);
     if (independent) {
-        assert(trailing.source && !trailing.hidden && download.source && !download.hidden && download.source != trailing.source);
+        HARNESS_CHECK(trailing.source && !trailing.hidden && download.source && !download.hidden && download.source != trailing.source);
         // Download and ⋯ one glass capsule: adjacent, level, one 88x44 shape under both carried by download,
         // ⋯ drawing none, ⋯ outermost; right to left the left-to-right capsule reflected across the page.
-        assert(download.superview == page && [page.subviews indexOfObject:download] < page.subviews.count - 1);
-        assert(fabs(rtl ? CGRectGetMinX(download.frame) - CGRectGetMaxX(more.frame) : CGRectGetMinX(more.frame) - CGRectGetMaxX(download.frame)) < 0.5);
-        assert(fabs(CGRectGetMinY(more.frame) - CGRectGetMinY(download.frame)) < 0.5);
-        assert(fabs(more.frame.size.height - download.frame.size.height) < 0.5);
+        HARNESS_CHECK(download.superview == page && [page.subviews indexOfObject:download] < page.subviews.count - 1);
+        HARNESS_CHECK(fabs(rtl ? CGRectGetMinX(download.frame) - CGRectGetMaxX(more.frame) : CGRectGetMinX(more.frame) - CGRectGetMaxX(download.frame)) < 0.5);
+        HARNESS_CHECK(fabs(CGRectGetMinY(more.frame) - CGRectGetMinY(download.frame)) < 0.5);
+        HARNESS_CHECK(fabs(more.frame.size.height - download.frame.size.height) < 0.5);
         UIView *capsule = glassOf(download);
-        assert(capsule && !capsule.hidden && (!glassOf(more) || glassOf(more).hidden));
+        HARNESS_CHECK(capsule && !capsule.hidden && (!glassOf(more) || glassOf(more).hidden));
         CGRect shape = [download convertRect:capsule.frame toView:page];
-        assert(fabs(shape.size.width - 88) < 0.5 && fabs(shape.size.height - 44) < 0.5);
-        assert(fabs(CGRectGetMinX(shape) - CGRectGetMinX(rtl ? more.frame : download.frame)) < 0.5);
-        assert(fabs(CGRectGetMaxX(shape) - CGRectGetMaxX(rtl ? download.frame : more.frame)) < 0.5 && fabs(CGRectGetMinY(shape) - CGRectGetMinY(more.frame)) < 0.5);
+        HARNESS_CHECK(fabs(shape.size.width - 88) < 0.5 && fabs(shape.size.height - 44) < 0.5);
+        HARNESS_CHECK(fabs(CGRectGetMinX(shape) - CGRectGetMinX(rtl ? more.frame : download.frame)) < 0.5);
+        HARNESS_CHECK(fabs(CGRectGetMaxX(shape) - CGRectGetMaxX(rtl ? download.frame : more.frame)) < 0.5 && fabs(CGRectGetMinY(shape) - CGRectGetMinY(more.frame)) < 0.5);
         CGRect ltr = CGRectMake(W - 16 - 88, CGRectGetMinY(more.frame), 88, 44);
         CGFloat expected = rtl ? W - CGRectGetMaxX(ltr) : ltr.origin.x;
-        assert(fabs(shape.origin.x - expected) < 0.5);
-        assert(capsule.layer.cornerRadius == 0 || fabs(capsule.layer.cornerRadius - 22) < 0.5);
+        HARNESS_CHECK(fabs(shape.origin.x - expected) < 0.5);
+        HARNESS_CHECK(capsule.layer.cornerRadius == 0 || fabs(capsule.layer.cornerRadius - 22) < 0.5);
         NSLog(@"[harness] PASS pinned capsule %@: 88x44 at %@, 16pt in from the %@ edge%@", rtl ? @"rtl" : @"ltr",
               NSStringFromCGRect(shape), rtl ? @"left" : @"right", rtl ? @", the left-to-right frame mirrored" : @"");
         UIControl *source = (id)download.source;
@@ -164,13 +164,13 @@ static void verifyMixActions(UIView *root, BOOL independent) {
         [source addAction:[UIAction actionWithHandler:^(UIAction *action) { fired++; }]
             forControlEvents:UIControlEventTouchUpInside];
         [download sendActionsForControlEvents:UIControlEventTouchUpInside];
-        assert(fired == 1);
+        HARNESS_CHECK(fired == 1);
     } else {
         // No download pinned: ⋯ alone, its own 44pt circle.
-        assert(!download || download.hidden);
+        HARNESS_CHECK(!download || download.hidden);
         UIView *circle = glassOf(more);
-        assert(circle && !circle.hidden && fabs(circle.bounds.size.width - 44) < 0.5 && fabs(circle.bounds.size.height - 44) < 0.5);
-        assert(CGPointEqualToPoint(circle.center, CGPointMake(CGRectGetMidX(more.bounds), CGRectGetMidY(more.bounds))));
+        HARNESS_CHECK(circle && !circle.hidden && fabs(circle.bounds.size.width - 44) < 0.5 && fabs(circle.bounds.size.height - 44) < 0.5);
+        HARNESS_CHECK(CGPointEqualToPoint(circle.center, CGPointMake(CGRectGetMidX(more.bounds), CGRectGetMidY(more.bounds))));
     }
     NSDictionary *result = @{@"passed": @YES, @"independent_actions": @(independent), @"native_action_and_layout_verified": @YES};
     NSString *path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject

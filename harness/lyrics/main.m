@@ -16,7 +16,7 @@
 //   -perf LABEL    logs the cost of the view's frames every 240 of them, under LABEL
 //   -dump 1        prints the lines as read, with their pronunciations and translations, and quits
 //   -romanise 1    asserts romanized lyrics' readings (Shared/Lyrics/Romanise.m), prints PASS and FAIL
-//                  lines and quits with the number of failures
+//                  lines and exits nonzero if any failed
 //   -openMenu S    opens the pronunciation and translation menu S seconds in, as a tap on its button would
 //   -toggleAt S    switches the pronunciation and the translation over S seconds in, as the menu would
 //   -askAI S       asks the AI service for the pronunciation and the cultural notes S seconds in, as the menu would
@@ -28,13 +28,14 @@
 //   -onDevice 1    Translate on iPhone is offered (stubs.m answers it)
 //   -intelligence 1 Translate with Apple Intelligence is offered (stubs.m answers it)
 //   -seekLag S     the player reports a seek S seconds after it is asked for (stubs.m)
-//   -check 1       asserts the view's fixes (see runChecks), prints PASS and FAIL lines and quits with the
-//                  number of failures; run it with -song duet -at 20000 -gemini 1 -geminiDelay 1 -seekLag 0.4
+//   -check 1       checks the view's fixes (see runChecks), prints PASS and FAIL lines and exits nonzero
+//                  if any failed; run it with -song duet -at 20000 -gemini 1 -geminiDelay 1 -seekLag 0.4
 //   -translationCheck 1 asserts the menu's translations (translation-check.m) and quits with the number of failures
 // and the lyrics' own settings by their keys: -spotifyglass.lyricsSimulateWords 1 (sweep line timed
 // lines on the estimate), -spotifyglass.redesign.lyricsPronunciation 1,
 // -spotifyglass.redesign.lyricsTranslation 1, -spotifyglass.lyricsRomanised 1, -spotifyglass.redesign.lyricsTextOrder '(translation, lyrics, pronunciation)'.
 #import <UIKit/UIKit.h>
+#import "../harness-fail.h"
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <mach/mach_time.h>
@@ -528,7 +529,8 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
                     checkDelay(karaoke, ^{
                         printf("%d failed\n", sg_failures);
                         fflush(stdout);
-                        exit(sg_failures);
+                        if (sg_failures) HARNESS_FAIL(@"%d failed", sg_failures);
+                        exit(0);
                     });
                 });
             });
@@ -550,7 +552,11 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
     for (NSString *key in @[SGRKeyLyricsPronunciation, SGRKeyLyricsTranslation, SGRKeyLyricsTextOrder]) [args removeObjectForKey:key];
 #endif
 #ifdef SGKeyLyricsRomanised
-    if ([args boolForKey:@"romanise"]) exit(checkRomanised());
+    if ([args boolForKey:@"romanise"]) {
+        int failures = checkRomanised();
+        if (failures) HARNESS_FAIL(@"%d failed", failures);
+        exit(0);
+    }
 #endif
     NSString *song = [args stringForKey:@"song"] ?: @"duet";
     SGKaraokeKeepLines(@"harness", songNamed(song, [args stringForKey:@"file"]));
