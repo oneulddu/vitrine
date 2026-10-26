@@ -30,6 +30,14 @@ python3 scripts/harness-plan.py explain tweak/Sources/Shared/LockScreenLyrics/SG
 python3 scripts/harness-plan.py run --names "Pitch" "Palette"
 ```
 
+The runner locks each harness directory and shared preferences domains for the
+whole build and run, printing a waiting line on contention while unrelated
+harnesses can run in parallel. Invoking a `build.sh` or check script directly
+bypasses these locks.
+SIGINT/SIGTERM stop and reap the harness process group before unlocking;
+SIGKILL cannot be handled and may leave children running after the kernel
+releases the runner's locks.
+
 `plan --changed-from <file|->` prints the selection, shards and matrix JSON.
 No simulator, phone, Spotify installation, API credentials or visual review is
 used.

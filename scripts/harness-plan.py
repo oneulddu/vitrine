@@ -14,13 +14,18 @@ Python 3 standard library only: the plan job runs on ubuntu with no Apple SDK.
 """
 
 import argparse
+import fcntl
 import json
 import os
 import posixpath
 import re
+import shlex
+import signal
+import stat
 import subprocess
 import sys
 import time
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -115,6 +120,22 @@ HARNESSES = [
 
 SOURCE_SUFFIXES = {".m", ".mm", ".h", ".x", ".inc", ".c", ".cc", ".cpp"}
 SKIP_PARTS = {"build", ".build"}
+
+# Cross-directory executable-name collisions in the host build/check scripts.
+# Bundled Catalyst checks have distinct CFBundleIdentifiers; bare executables
+# use their process name even when CFFIXED_USER_HOME points somewhere else.
+SHARED_PREFERENCE_DOMAINS = {
+    "check": {
+        "driver", "genius-lyrics", "local-files", "lyrics-sources",
+        "lyrics-translation", "lyrics-walk", "native-declutter", "player",
+        "prefs", "radio-modes", "spicy-lyrics", "update",
+    },
+    "now-playing": {"local-files", "now-playing"},
+    "state-check": {"lyrics-sources", "motion"},
+}
+
+HARNESS_TERMINATION_GRACE_SECONDS = 2.0
+HARNESS_GROUP_POLL_SECONDS = 0.05
 
 IMPORT_RE = re.compile(r'^\s*#\s*(?:import|include)\s+"([^"]+)"', re.MULTILINE)
 
@@ -594,6 +615,188 @@ def find_harness(token, index):
     return None
 
 
+def script_preference_domains(script_rel):
+    """Audit the output syntax used by host scripts, refusing unknown names.
+
+    The dependency parser deliberately excludes build outputs and does not
+    evaluate shell branches, so it cannot derive these lock domains itself.
+    Audit every output branch, using default output names, instead.
+    """
+    text = (REPO / script_rel).read_text()
+    commands = []
+    for line in text.replace("\\\n", "").splitlines():
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
+        lexer.whitespace_split = True
+        lexer.commenters = "#"
+        commands.append(list(lexer))
+    text = "\n".join(" ".join(words) for words in commands)
+    bundles = re.findall(r"<key>CFBundleIdentifier</key>\s*<string>([^<]+)</string>", text)
+    if "CFBundleIdentifier" in text and not bundles:
+        raise ValueError("unrecognized bundle identifier syntax in " + script_rel)
+
+    def basenames(word, resolving=()):
+        word = word.replace('"', "").replace("'", "")
+        word = re.sub(r"\$\{\w+:\+[^{}]*\}", "", word)
+        word = re.sub(r"\$\{\w+:-([^{}]+)\}", r"\1", word)
+        name = posixpath.basename(word)
+        variable = re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))", name)
+        if variable:
+            variable = variable.group(1) or variable.group(2)
+            if variable in resolving:
+                raise ValueError("cyclic output variable in " + script_rel)
+            assignments = re.findall(r"^\s*" + variable + r"=(.+)$", text, re.M)
+            # A script may canonicalize an already assigned output directory.
+            assignments = [value for value in assignments if not value.startswith("$(cd ")]
+            if assignments:
+                return set().union(*(basenames(value, resolving + (variable,)) for value in assignments))
+        if not name or any(char in name for char in "$*?{}"):
+            raise ValueError("unresolved output name %r in %s" % (word, script_rel))
+        return {name}
+
+    outputs = []
+    for words in commands:
+        words = iter(words)
+        for word in words:
+            if word == "-o":
+                output = next(words, None)
+                if not output or output.startswith("-") or re.fullmatch(r"[;&|]+", output):
+                    raise ValueError("missing output path after -o in " + script_rel)
+                outputs.append(output)
+            elif word.startswith("-o"):
+                outputs.append(word[2:])
+
+    domains = set()
+    for output in outputs:
+        names = {name for name in basenames(output) if not name.endswith(".o")}
+        if bundles and names:
+            if not any(marker in output for marker in (".app/", "$APP/", "${APP}/")):
+                raise ValueError("cannot associate output %s with its bundle in %s" % (output, script_rel))
+            if any("$" in bundle for bundle in bundles):
+                raise ValueError("unresolved bundle identifier in " + script_rel)
+            domains.update(bundles)
+        else:
+            domains.update(names)
+    return domains
+
+
+def check_preference_lock_coverage():
+    domains = {}
+    scripts = {}
+    for harness in HARNESSES:
+        for script in re.findall(r"[\w./-]+\.sh", harness["run"]):
+            if script not in scripts:
+                scripts[script] = script_preference_domains(script)
+            for domain in scripts[script]:
+                domains.setdefault(domain, set()).add(harness["dir"])
+    for domain, directories in sorted(domains.items()):
+        if len(directories) > 1 and not directories <= SHARED_PREFERENCE_DOMAINS.get(domain, set()):
+            raise ValueError("uncovered preference domain %r shared by %s; update SHARED_PREFERENCE_DOMAINS"
+                             % (domain, ", ".join(sorted(directories))))
+
+
+@contextmanager
+def harness_locks(harness):
+    resources = ["dir-" + harness["dir"]]
+    resources.extend("prefs-" + domain for domain, directories in SHARED_PREFERENCE_DOMAINS.items()
+                     if harness["dir"] in directories)
+    waiting = False
+    with ExitStack() as stack:
+        directory = Path("/tmp") / ("vitrine-harness-%s" % os.getuid())
+        directory.mkdir(mode=0o700, exist_ok=True)
+        directory_fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        stack.callback(os.close, directory_fd)
+        info = os.fstat(directory_fd)
+        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+            raise ValueError("unsafe lock directory %s: requires current uid and mode 0700" % directory)
+        # Keep lock files: unlinking lets a new runner lock a different inode
+        # while an existing waiter still holds the old one. Use /tmp rather
+        # than caller-specific TMPDIR so runners agree on the same resources.
+        for resource in sorted(resources):
+            fd = os.open(resource + ".lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW,
+                         0o600, dir_fd=directory_fd)
+            lock = stack.enter_context(os.fdopen(fd, "a"))
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                if not waiting:
+                    print("=== %s: waiting for shared harness resources" % harness["name"], flush=True)
+                    waiting = True
+                fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+class HarnessInterrupted(KeyboardInterrupt):
+    def __init__(self, signum):
+        self.signum = signum
+
+
+def harness_group_exists(process):
+    process.poll()
+    try:
+        os.killpg(process.pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def terminate_harness(process):
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        process.wait()
+        return
+    deadline = time.monotonic() + HARNESS_TERMINATION_GRACE_SECONDS
+    while harness_group_exists(process):
+        if time.monotonic() >= deadline:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            break
+        time.sleep(HARNESS_GROUP_POLL_SECONDS)
+    process.wait()
+    # Grandchildren are reaped by their parent (or the OS after reparenting).
+    # Do not release shared resources while any member of the group remains.
+    while harness_group_exists(process):
+        time.sleep(HARNESS_GROUP_POLL_SECONDS)
+
+
+def run_harness(command):
+    process = None
+    pending_signal = None
+    returncode = None
+
+    def interrupted(signum, frame):
+        nonlocal pending_signal
+        # Never raise asynchronously: cancellation during Popen or cleanup
+        # must not escape before we own (or have reaped) the entire group.
+        pending_signal = signum
+
+    previous = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        process = subprocess.Popen(command, shell=True, executable="/bin/bash",
+                                   cwd=REPO, start_new_session=True)
+        while pending_signal is None:
+            try:
+                returncode = process.wait(timeout=HARNESS_GROUP_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        if pending_signal is not None:
+            raise HarnessInterrupted(pending_signal)
+        return returncode
+    except BaseException:
+        returncode = None
+        raise
+    finally:
+        try:
+            if process is not None and returncode != 0:
+                terminate_harness(process)
+        finally:
+            for sig, handler in previous.items():
+                signal.signal(sig, handler)
+
+
 def cmd_run(args):
     index = build_index()
     tokens = []
@@ -614,16 +817,29 @@ def cmd_run(args):
         if harness not in chosen:
             chosen.append(harness)
 
+    try:
+        check_preference_lock_coverage()
+    except (OSError, ValueError) as error:
+        print("error: %s" % error, file=sys.stderr)
+        return 2
+
     label = args.shard or "local"
     results = []
     for harness in chosen:
         start = time.monotonic()
-        print("=== %s: %s" % (harness["name"], harness["run"]), flush=True)
-        completed = subprocess.run(harness["run"], shell=True, executable="/bin/bash",
-                                   cwd=REPO)
+        try:
+            with harness_locks(harness):
+                print("=== %s: %s" % (harness["name"], harness["run"]), flush=True)
+                returncode = run_harness(harness["run"])
+        except HarnessInterrupted as error:
+            print("error: interrupted by %s" % signal.Signals(error.signum).name, file=sys.stderr)
+            return 128 + error.signum
+        except (OSError, ValueError) as error:
+            print("error: %s" % error, file=sys.stderr)
+            return 2
         seconds = time.monotonic() - start
-        results.append((harness["name"], completed.returncode == 0, seconds))
-        print("=== %s: %s (%.1fs)" % (harness["name"], "PASS" if completed.returncode == 0 else "FAIL", seconds),
+        results.append((harness["name"], returncode == 0, seconds))
+        print("=== %s: %s (%.1fs)" % (harness["name"], "PASS" if returncode == 0 else "FAIL", seconds),
               flush=True)
 
     lines = ["", "| Harness | Result | Seconds |", "| --- | --- | --- |"]
