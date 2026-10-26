@@ -486,16 +486,6 @@ void SGLocalFilePresentEditor(UIViewController *presenter, NSString *uri) {
 
 #pragma mark - the menu
 
-static UITableView *findTable(UIView *root, int depth) {
-    if ([root isKindOfClass:UITableView.class]) return (UITableView *)root;
-    if (depth > 5) return nil;
-    for (UIView *child in root.subviews) {
-        UITableView *table = findTable(child, depth + 1);
-        if (table) return table;
-    }
-    return nil;
-}
-
 static BOOL freeSlot(UIView *view) {
     return !view || view.bounds.size.height < 1;
 }
@@ -507,7 +497,7 @@ static void decide(UIViewController *menu, BOOL offered) {
 static void install(UIViewController *menu) {
     UIView *root = menu.viewIfLoaded;
     if (!root || [objc_getAssociatedObject(menu, &kDecidedKey) isEqual:@NO]) return;
-    UITableView *table = findTable(root, 0);
+    UITableView *table = SGTableIn(root, 5);
     CGFloat width = table.bounds.size.width;
     if (width <= 0) return;
     SGEditInfoRow *row = objc_getAssociatedObject(menu, &kRowKey);

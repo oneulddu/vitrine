@@ -16,6 +16,8 @@
 // `animated` offers the redesign's Animated artwork switch: it is flipped, then the block opened and
 // closed, and where the switch's row sits is reported each time.
 #import <UIKit/UIKit.h>
+#import "Core/SGViewTree.h"
+#import "../harness-fail.h"
 #import "Shared/LyricsPiP/LyricsPiP.h"
 
 #pragma mark - what SpeedPitchMenu.x calls
@@ -61,6 +63,7 @@ static BOOL argument(NSString *name) {
 
 static void check(BOOL ok, NSString *what) {
     NSLog(@"[harness] %@ %@", ok ? @"PASS" : @"FAIL", what);
+    if (!ok) exit(1);
 }
 
 static NSArray<NSArray<NSString *> *> *spotifyRows(void) {
@@ -364,6 +367,27 @@ static void checkMinute(UIWindow *window) {
 
 #pragma mark - the run
 
+static void checkTableSearch(void) {
+    UITableView *table = [UITableView new];
+    HARNESS_CHECK(SGTableIn(table, -1) == table);
+    HARNESS_CHECK(SGTableIn(nil, 5) == nil);
+    UIView *root = table;
+    for (NSInteger depth = 0; depth < 6; depth++) {
+        UIView *parent = [UIView new];
+        [parent addSubview:root];
+        root = parent;
+    }
+    HARNESS_CHECK(SGTableIn(root, 5) == table); // match at depth 6 precedes cutoff
+    UIView *seventh = [UIView new];
+    [seventh addSubview:root];
+    HARNESS_CHECK(SGTableIn(seventh, 5) == nil);
+    HARNESS_CHECK(SGTableIn(seventh, 6) == table); // AlbumQueue's distinct limit
+    UITableView *later = [UITableView new];
+    [root addSubview:later];
+    HARNESS_CHECK(SGTableIn(root, 5) == table); // depth first, not nearest table
+    NSLog(@"[harness] PASS bounded table search");
+}
+
 @interface SGHarnessApp : UIResponder <UIApplicationDelegate>
 @end
 
@@ -391,6 +415,12 @@ static void tapRow(UIViewController *menu) {
     NowPlayingHarnessViewController *player = [NowPlayingHarnessViewController new];
     self.window.rootViewController = player;
     [self.window makeKeyAndVisible];
+
+    if (argument(@"table-search")) {
+        checkTableSearch();
+        exit(0);
+    }
+    if (argument(@"check-run")) after(9, ^{ exit(0); });
 
     static SGHarnessFrameWatch *watch;
     __block _TtC24ContextMenu_InternalImpl25ContextMenuViewController *menu;

@@ -5,10 +5,11 @@
 set -e
 cd "$(dirname "$0")"
 SRC=../../../tweak/Sources
-mkdir -p ../build
+OUT=${OUT:-../build}
+mkdir -p "$OUT"
 xcrun clang -fobjc-arc -O1 -g -Wall -Werror -target arm64-apple-ios18.0-macabi \
     -isysroot "$(xcrun --sdk macosx --show-sdk-path)" \
     -iframework "$(xcrun --sdk macosx --show-sdk-path)/System/iOSSupport/System/Library/Frameworks" \
-    -I shim -I "$SRC" main.m "$SRC/Shared/Sing/SGSingModel.m" \
-    -framework Foundation -o ../build/download
-echo "built ../build/download"
+    -I shim -I "$SRC" main.m "$SRC/Shared/Sing/SGSingModel.m" "$SRC/Core/SGFileHash.m" "$SRC/Core/SGLocalize.m" \
+    -framework Foundation -o "$OUT/download"
+echo "built $OUT/download"

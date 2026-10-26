@@ -45,16 +45,6 @@ void SGAlbumQueueMarkSource(UIView *view) {
     sg_markedAt = CACurrentMediaTime();
 }
 
-static UITableView *tableIn(UIView *view, NSUInteger depth) {
-    if ([view isKindOfClass:UITableView.class]) return (UITableView *)view;
-    if (depth > 6) return nil;
-    for (UIView *child in view.subviews) {
-        UITableView *table = tableIn(child, depth + 1);
-        if (table) return table;
-    }
-    return nil;
-}
-
 // Spotify's item number "11" first, so another language still matches, then the English title, as
 // Redesigned/ContextMenu's quickItems() does for a sheet without the number.
 static BOOL isNativeQueueView(UIView *view) {
@@ -265,7 +255,7 @@ static __weak SGAlbumQueueNotice *sg_notice;
 void SGAlbumQueueInstall(UIViewController *menu) {
     NSString *uri = objc_getAssociatedObject(menu, &kURIKey);
     if (!uri) return;
-    UITableView *table = tableIn(menu.viewIfLoaded, 0);
+    UITableView *table = SGTableIn(menu.viewIfLoaded, 6);
     if (table.bounds.size.width <= 0) return;
     NSInteger rows = 0;
     for (NSInteger section = 0; section < table.numberOfSections; section++) rows += [table numberOfRowsInSection:section];

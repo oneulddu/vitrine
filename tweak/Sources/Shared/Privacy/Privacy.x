@@ -11,6 +11,7 @@
 // session, so both session configurations are given it as well: that is what the SDKs build their
 // sessions from. What the core sends over its own sockets is out of reach either way.
 #import "Core/SGCore.h"
+#import "Core/SGCounterStore.h"
 #import "Privacy.h"
 
 typedef struct { const char *host, *path, *label; } SGBlockRule;
@@ -33,63 +34,23 @@ static const SGBlockRule kRules[] = {
 static const size_t kRuleCount = sizeof(kRules) / sizeof(kRules[0]);
 
 static NSString *const kCounts = @"spotifyglass.privacy.counts";
-static NSMutableDictionary<NSString *, NSNumber *> *sg_counts;
-static BOOL sg_unsaved;
-static BOOL sg_saveScheduled;
-
 @interface SGBlockProtocol : NSURLProtocol
 @end
 
-// Main queue only. Defaults notifies observers synchronously: never write while holding
-// the counter lock, or on a request thread. Take the snapshot when the write runs, not
-// when it is scheduled, so a pending timer cannot restore counts from before a reset.
-static void saveCountsOnMain(void) {
-    NSDictionary *snapshot;
-    @synchronized (SGBlockProtocol.class) {
-        if (!sg_unsaved) return;
-        snapshot = [sg_counts copy];
-        sg_unsaved = NO;
-    }
-    if (snapshot.count) [NSUserDefaults.standardUserDefaults setObject:snapshot forKey:kCounts];
-    else [NSUserDefaults.standardUserDefaults removeObjectForKey:kCounts];
-}
-
-// Called under the lock. One timer covers all counts in the next 30 seconds.
-static void scheduleSaveLocked(void) {
-    sg_unsaved = YES;
-    if (sg_saveScheduled) return;
-    sg_saveScheduled = YES;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        @synchronized (SGBlockProtocol.class) { sg_saveScheduled = NO; }
-        saveCountsOnMain();
+static SGCounterStore *counter(void) {
+    static SGCounterStore *store;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        store = [[SGCounterStore alloc] initWithKey:kCounts prepare:^BOOL(NSMutableDictionary *counts) {
+            // Drop obsolete labels in memory so the total adds up to the rows the page shows.
+            NSSet<NSString *> *current = [NSSet setWithArray:SGBlockedLabels()];
+            for (NSString *label in counts.allKeys) {
+                if (![current containsObject:label]) counts[label] = nil;
+            }
+            return NO;
+        }];
     });
-}
-
-static void flushCounts(void) {
-    if (NSThread.isMainThread) saveCountsOnMain();
-    else dispatch_async(dispatch_get_main_queue(), ^{ saveCountsOnMain(); });
-}
-
-// The class object stands in for a lock: counting happens on whichever thread the request was made
-// on, the Privacy page reads on the main one. A count stored under a label no rule has any more is
-// dropped as it loads, so the total adds up to the rows the page shows.
-static NSMutableDictionary<NSString *, NSNumber *> *countsLocked(void) {
-    if (!sg_counts) {
-        sg_counts = [[NSUserDefaults.standardUserDefaults dictionaryForKey:kCounts] mutableCopy] ?: [NSMutableDictionary dictionary];
-        NSSet<NSString *> *current = [NSSet setWithArray:SGBlockedLabels()];
-        for (NSString *label in sg_counts.allKeys) {
-            if (![current containsObject:label]) sg_counts[label] = nil;
-        }
-    }
-    return sg_counts;
-}
-
-static void countOne(NSString *label) {
-    @synchronized (SGBlockProtocol.class) {
-        NSMutableDictionary<NSString *, NSNumber *> *counts = countsLocked();
-        counts[label] = @(counts[label].unsignedIntegerValue + 1);
-        scheduleSaveLocked();
-    }
+    return store;
 }
 
 static NSString *labelFor(NSURL *url) {
@@ -127,23 +88,15 @@ NSArray<NSString *> *SGBlockedLabels(void) {
 }
 
 NSUInteger SGBlockedCount(NSString *label) {
-    @synchronized (SGBlockProtocol.class) {
-        NSDictionary<NSString *, NSNumber *> *counts = countsLocked();
-        if (label) return counts[label].unsignedIntegerValue;
-        NSUInteger total = 0;
-        for (NSNumber *count in counts.allValues) total += count.unsignedIntegerValue;
-        return total;
-    }
+    NSDictionary<NSString *, NSNumber *> *counts = counter().counts;
+    if (label) return counts[label].unsignedIntegerValue;
+    NSUInteger total = 0;
+    for (NSNumber *count in counts.allValues) total += count.unsignedIntegerValue;
+    return total;
 }
 
 void SGResetBlocked(void) {
-    @synchronized (SGBlockProtocol.class) {
-        sg_counts = [NSMutableDictionary dictionary];
-        sg_unsaved = YES;
-    }
-    // Keep any timer: it will see only current memory. An off-main reset queues its
-    // flush behind any in-flight main-queue write, so that write cannot win the race.
-    flushCounts();
+    [counter() reset];
 }
 
 @implementation SGBlockProtocol
@@ -158,7 +111,7 @@ void SGResetBlocked(void) {
 
 - (void)startLoading {
     NSString *label = labelFor(self.request.URL);
-    if (label) countOne(label);
+    if (label) [counter() increment:label];
     // 204 rather than an error: the sender takes it for delivered and queues no retry behind it.
     NSHTTPURLResponse *answer = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:204 HTTPVersion:@"HTTP/1.1" headerFields:@{}];
     [self.client URLProtocol:self didReceiveResponse:answer cacheStoragePolicy:NSURLCacheStorageNotAllowed];
@@ -195,7 +148,7 @@ static NSURLSessionConfiguration *carryingProtocol(NSURLSessionConfiguration *co
 %ctor {
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {
-        flushCounts();
+        [counter() flush];
     }];
     if (SGEnabled(SGKeyBlockTelemetry)) {
         [NSURLProtocol registerClass:SGBlockProtocol.class];

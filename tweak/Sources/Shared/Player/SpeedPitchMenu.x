@@ -696,17 +696,7 @@ static void logStructure(UIView *view, int depth, NSMutableString *out) {
     }
 }
 
-static UITableView *findTable(UIView *root, int depth) {
-    if ([root isKindOfClass:UITableView.class]) return (UITableView *)root;
-    if (depth > 5) return nil;
-    for (UIView *child in root.subviews) {
-        UITableView *table = findTable(child, depth + 1);
-        if (table) return table;
-    }
-    return nil;
-}
-
-static BOOL isPlayerMenu(UIViewController *menu) {
+BOOL SGPlayerMenuIsPlayers(UIViewController *menu) {
     NSNumber *decided = objc_getAssociatedObject(menu, &kDecidedKey);
     if (decided) return decided.boolValue;
     // The tap is used up by the menu it opened, so a sheet that menu opens in turn is not taken for it.
@@ -721,10 +711,6 @@ static BOOL isPlayerMenu(UIViewController *menu) {
 
 void SGPlayerMenuMarkPlayers(void) {
     sg_moreTappedAt = CACurrentMediaTime();
-}
-
-BOOL SGPlayerMenuIsPlayers(UIViewController *menu) {
-    return isPlayerMenu(menu);
 }
 
 #pragma mark - Spotify's rows
@@ -763,7 +749,7 @@ static void noteRows(UIViewController *menu, UITableView *table) {
 static void watchRows(UIViewController *menu) {
     if (objc_getAssociatedObject(menu, &kShownAtKey)) return;
     objc_setAssociatedObject(menu, &kShownAtKey, @(CACurrentMediaTime()), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    UITableView *table = findTable(menu.view, 0);
+    UITableView *table = SGTableIn(menu.view, 5);
     if (table && rowCount(table)) {
         objc_setAssociatedObject(menu, &kRowsInKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         return;
@@ -774,7 +760,7 @@ static void watchRows(UIViewController *menu) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             UIViewController *shown = weakMenu;
             if (!shown.viewIfLoaded.window || objc_getAssociatedObject(shown, &kRowsInKey)) return;
-            UITableView *rows = findTable(shown.view, 0);
+            UITableView *rows = SGTableIn(shown.view, 5);
             noteRows(shown, rows);
             if (objc_getAssociatedObject(shown, &kRowsInKey)) return;
             SGLog(@"speed and pitch: no rows of Spotify's %@ s after the menu appeared (this check ran %.2f s late), spinner %@, table %.0fx%.0f holding %.0f",
@@ -786,10 +772,10 @@ static void watchRows(UIViewController *menu) {
 
 static void install(UIViewController *menu) {
     UIView *root = menu.viewIfLoaded;
-    if (!root || !isPlayerMenu(menu)) return;
+    if (!root || !SGPlayerMenuIsPlayers(menu)) return;
     // Shown as the system menu, whose own items are speed, pitch and reverb.
     if (SGPlayerMenuReplaced(menu)) return;
-    UITableView *table = findTable(root, 0);
+    UITableView *table = SGTableIn(root, 5);
     SGSpeedPitchView *block = objc_getAssociatedObject(menu, &kBlockKey);
     if (!table) {
         static int logged;

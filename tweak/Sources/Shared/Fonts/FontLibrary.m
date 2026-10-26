@@ -1,6 +1,6 @@
 // FontLibrary.h says what this is. The catalog below was read from github.com/google/fonts at the commit kCommit
 // names: every file's size and SHA-256, and each family's OFL.txt. A file that differs from its line is refused.
-#import <CommonCrypto/CommonDigest.h>
+#import "Core/SGFileHash.h"
 #import <CoreText/CoreText.h>
 #import <UIKit/UIKit.h>
 #import "Core/SGCore.h"
@@ -258,27 +258,6 @@ void SGFontLibraryRemove(NSString *identifier) {
 
 #pragma mark - downloading
 
-// The SHA-256 of a file read a megabyte at a time, lowercase hex; nil when it cannot be read.
-static NSString *sha256Of(NSURL *url) {
-    NSFileHandle *handle = [NSFileHandle fileHandleForReadingFromURL:url error:nil];
-    if (!handle) return nil;
-    CC_SHA256_CTX context;
-    CC_SHA256_Init(&context);
-    while (YES) {
-        @autoreleasepool {
-            NSData *chunk = [handle readDataUpToLength:1 << 20 error:nil];
-            if (!chunk.length) break;
-            CC_SHA256_Update(&context, chunk.bytes, (CC_LONG)chunk.length);
-        }
-    }
-    [handle closeFile];
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256_Final(digest, &context);
-    NSMutableString *hex = [NSMutableString stringWithCapacity:2 * CC_SHA256_DIGEST_LENGTH];
-    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [hex appendFormat:@"%02x", digest[i]];
-    return hex;
-}
-
 // One family's files, one after the other, into a folder of its own beside the library's families, moved into
 // place once every one has checked out. Its delegate queue is serial and off main; what the page reads is set
 // on main.
@@ -416,7 +395,7 @@ static double sg_progress;            // main thread
         return;
     }
     const SGFontFileLine *line = self.current;
-    if (sizeOf(location) != line->size || ![sha256Of(location) isEqualToString:line->sha256]) {
+    if (sizeOf(location) != line->size || ![SGFileSHA256(location) isEqualToString:line->sha256]) {
         [self fail:SGL(@"settings.font.library.error.damaged", @"A file did not arrive intact. Try again.")];
         return;
     }

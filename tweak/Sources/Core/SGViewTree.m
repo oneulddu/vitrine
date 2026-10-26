@@ -10,6 +10,16 @@ CGRect SGFrameIn(UIView *view, UIView *target) {
     return [view.superview convertRect:view.frame toView:target];
 }
 
+UITableView *SGTableIn(UIView *view, NSInteger remainingDepth) {
+    if ([view isKindOfClass:UITableView.class]) return (UITableView *)view;
+    if (remainingDepth < 0) return nil;
+    for (UIView *child in view.subviews) {
+        UITableView *table = SGTableIn(child, remainingDepth - 1);
+        if (table) return table;
+    }
+    return nil;
+}
+
 BOOL SGIsInside(UIView *view, UIView *root) {
     if (!root) return NO;
     for (UIView *v = view; v; v = v.superview) {

@@ -2,6 +2,9 @@
 #import <UIKit/UIKit.h>
 
 void SGForEachView(UIView *view, void (^fn)(UIView *));
+// First table in depth-first order, testing the view before the cutoff. A limit of 5
+// descends from depths 0...5 and can therefore match a table at depth 6.
+UITableView *SGTableIn(UIView *view, NSInteger remainingDepth);
 CGRect SGFrameIn(UIView *view, UIView *target);
 // Whether `view` sits under `root`, stopping at a visual effect view on the way up.
 BOOL SGIsInside(UIView *view, UIView *root);

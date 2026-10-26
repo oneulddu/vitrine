@@ -16,7 +16,7 @@
 //
 // Threading: main thread, but for SGSingRemoveOldModel; the session's delegate runs on a queue of its own and hands
 // back to the main thread.
-#import <CommonCrypto/CommonDigest.h>
+#import "Core/SGFileHash.h"
 #import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "Sing.h"
@@ -137,27 +137,6 @@ static BOOL complete(const SGSingModelFiles *model) {
 
 static BOOL oldComplete(void) {
     return completeWith(oldFolder(), kOldFiles, sizeof kOldFiles / sizeof kOldFiles[0]);
-}
-
-// The file's SHA-256, read a megabyte at a time: the weights are too big to read whole.
-static NSString *sha256Of(NSURL *url) {
-    NSFileHandle *handle = [NSFileHandle fileHandleForReadingFromURL:url error:nil];
-    if (!handle) return nil;
-    CC_SHA256_CTX context;
-    CC_SHA256_Init(&context);
-    for (;;) {
-        @autoreleasepool {
-            NSData *chunk = [handle readDataUpToLength:1 << 20 error:nil];
-            if (!chunk.length) break;
-            CC_SHA256_Update(&context, chunk.bytes, (CC_LONG)chunk.length);
-        }
-    }
-    [handle closeFile];
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256_Final(digest, &context);
-    NSMutableString *hex = [NSMutableString stringWithCapacity:2 * CC_SHA256_DIGEST_LENGTH];
-    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [hex appendFormat:@"%02x", digest[i]];
-    return hex;
 }
 
 static void announce(void) {
@@ -356,7 +335,7 @@ static NSUInteger sg_removals[2];
     long long size = sizeOf(location);
     BOOL big = file.size > 1000 * 1000;
     if (big) dispatch_async(dispatch_get_main_queue(), ^{ if (sg_downloader == self) { sg_checking = YES; announce(); } });
-    NSString *hash = size == file.size ? sha256Of(location) : nil;
+    NSString *hash = size == file.size ? SGFileSHA256(location) : nil;
     if (big) dispatch_async(dispatch_get_main_queue(), ^{ if (sg_downloader == self) { sg_checking = NO; announce(); } });
     SGLog(@"sing: %@ came in, %ld, %lld bytes", file.path, (long)status, size);
     if (!answered || size != file.size || ![hash isEqualToString:@(file.sha256)]) {

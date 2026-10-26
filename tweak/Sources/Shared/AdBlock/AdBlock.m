@@ -1,4 +1,5 @@
 #import "Core/SGCore.h"
+#import "Core/SGCounterStore.h"
 #import "AdBlock.h"
 
 #pragma mark - flags
@@ -132,40 +133,6 @@ static NSString *const kCounts = @"spotifyglass.adblock.counts";
 static NSString *const labels[] = {
     @"Ad services", @"Upsell services", @"Popups", @"Page components", @"Feed sections", @"Requests", @"Config rewrites",
 };
-static NSMutableDictionary<NSString *, NSNumber *> *sg_counts;
-static BOOL sg_unsaved;   // stops or checks counted since the counts were last written
-static BOOL sg_saveScheduled;
-
-// Main queue only. Defaults notifies observers synchronously: never write while holding
-// the counter lock, or on a request thread. Take the snapshot when the write runs, not
-// when it is scheduled, so a pending timer cannot restore counts from before a reset.
-static void saveCountsOnMain(void) {
-    NSDictionary *snapshot;
-    @synchronized (kCounts) {
-        if (!sg_unsaved) return;
-        snapshot = [sg_counts copy];
-        sg_unsaved = NO;
-    }
-    if (snapshot.count) [NSUserDefaults.standardUserDefaults setObject:snapshot forKey:kCounts];
-    else [NSUserDefaults.standardUserDefaults removeObjectForKey:kCounts];
-}
-
-// Called under the lock. One timer covers all counts in the next 30 seconds.
-static void scheduleSaveLocked(void) {
-    sg_unsaved = YES;
-    if (sg_saveScheduled) return;
-    sg_saveScheduled = YES;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-        @synchronized (kCounts) { sg_saveScheduled = NO; }
-        saveCountsOnMain();
-    });
-}
-
-static void flushCounts(void) {
-    if (NSThread.isMainThread) saveCountsOnMain();
-    else dispatch_async(dispatch_get_main_queue(), ^{ saveCountsOnMain(); });
-}
-
 // Made once per label: the hooks count on every request and page component.
 static NSString *checkedKey(NSString *label) {
     static NSDictionary<NSString *, NSString *> *keys;
@@ -185,48 +152,38 @@ static BOOL countsChecks(NSString *label) {
     return listed(label, checkedLabels, sizeof(checkedLabels) / sizeof(checkedLabels[0]));
 }
 
-// Counting happens on whichever thread the hook ran on, the page reads on the main one.
-static NSMutableDictionary<NSString *, NSNumber *> *countsLocked(void) {
-    if (!sg_counts) {
-        sg_counts = [[NSUserDefaults.standardUserDefaults dictionaryForKey:kCounts] mutableCopy] ?: [NSMutableDictionary dictionary];
+static SGCounterStore *counter(void) {
+    static SGCounterStore *store;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        store = [[SGCounterStore alloc] initWithKey:kCounts prepare:^BOOL(NSMutableDictionary *counts) {
         // Counts kept before checks were counted start again, so "stopped of checked" counts both from one moment.
-        if (sg_counts.count && !sg_counts[checkedKey(@"Requests")]) {
-            [sg_counts removeAllObjects];
-            sg_counts[checkedKey(@"Requests")] = @0;
-            scheduleSaveLocked();
-        }
-    }
-    return sg_counts;
+            if (!counts.count || counts[checkedKey(@"Requests")]) return NO;
+            [counts removeAllObjects];
+            counts[checkedKey(@"Requests")] = @0;
+            return YES;
+        }];
+    });
+    return store;
 }
 
 void SGAdBlockCountOne(NSString *label) {
-    @synchronized (kCounts) {
-        NSMutableDictionary<NSString *, NSNumber *> *counts = countsLocked();
-        counts[label] = @(counts[label].unsignedIntegerValue + 1);
-        scheduleSaveLocked();
-    }
+    [counter() increment:label];
 }
 
 void SGAdBlockSawOne(NSString *label) {
-    @synchronized (kCounts) {
-        NSMutableDictionary<NSString *, NSNumber *> *counts = countsLocked();
-        NSString *key = checkedKey(label);
-        counts[key] = @(counts[key].unsignedIntegerValue + 1);
-        scheduleSaveLocked();
-    }
+    [counter() increment:checkedKey(label)];
 }
 
 NSUInteger SGAdBlockChecked(NSString *label) {
-    @synchronized (kCounts) {
-        return countsChecks(label) ? countsLocked()[checkedKey(label)].unsignedIntegerValue : NSNotFound;
-    }
+    return countsChecks(label) ? counter().counts[checkedKey(label)].unsignedIntegerValue : NSNotFound;
 }
 
 // Spotify leaving the screen writes what was counted since the last write.
 __attribute__((constructor)) static void saveChecksOnLeaving(void) {
     [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {
-        flushCounts();
+        [counter() flush];
     }];
 }
 
@@ -235,21 +192,13 @@ NSArray<NSString *> *SGAdBlockLabels(void) {
 }
 
 NSUInteger SGAdBlockCount(NSString *label) {
-    @synchronized (kCounts) {
-        NSDictionary<NSString *, NSNumber *> *counts = countsLocked();
-        if (label) return counts[label].unsignedIntegerValue;
-        NSUInteger total = 0;
-        for (NSString *each in SGAdBlockLabels()) total += counts[each].unsignedIntegerValue;
-        return total;
-    }
+    NSDictionary<NSString *, NSNumber *> *counts = counter().counts;
+    if (label) return counts[label].unsignedIntegerValue;
+    NSUInteger total = 0;
+    for (NSString *each in SGAdBlockLabels()) total += counts[each].unsignedIntegerValue;
+    return total;
 }
 
 void SGResetAdBlock(void) {
-    @synchronized (kCounts) {
-        sg_counts = [NSMutableDictionary dictionary];
-        sg_unsaved = YES;
-    }
-    // Keep any timer: it will see only current memory. An off-main reset queues its
-    // flush behind any in-flight main-queue write, so that write cannot win the race.
-    flushCounts();
+    [counter() reset];
 }

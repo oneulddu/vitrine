@@ -3,7 +3,7 @@
 # Spotify's context menu sheet.
 set -e
 SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)
-OUT=$(dirname "$0")/build
+OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/MenuHarness.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/Player/SpeedPitchMenu.x" > "$OUT/gen/SpeedPitchMenu.m"
 "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/Player/MinuteLabel.x" > "$OUT/gen/MinuteLabel.m"
