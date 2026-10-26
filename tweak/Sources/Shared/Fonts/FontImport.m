@@ -275,14 +275,9 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     [self.tableView reloadData];
 }
 
-// The imported family, while there is one, then the row that adds one.
-- (NSString *)importedName {
-    return importedFamily();
-}
-
 // How many faces the imported family has on this iPhone.
 - (NSUInteger)styleCount {
-    NSString *name = self.importedName;
+    NSString *name = importedFamily();
     return name ? [UIFont fontNamesForFamilyName:name].count : 0;
 }
 
@@ -294,7 +289,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     if (section == SGFontBuiltIn) return (NSInteger)SGAppFontNames().count;
     if (section == SGFontMore) return (NSInteger)_families.count;
     if (section == SGFontFree) return (NSInteger)_free.count + 1;
-    return self.importedName.length ? 2 : 1;
+    return importedFamily().length ? 2 : 1;
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
@@ -335,8 +330,8 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
         cell.accessibilityTraits = UIAccessibilityTraitButton;
         return cell;
-    } else if (path.row == 0 && self.importedName.length) {
-        title = self.importedName;
+    } else if (path.row == 0 && importedFamily().length) {
+        title = importedFamily();
         font = previewFont(title, YES, size);
         selected = chosen == SGAppFontCustom;
         subtitle = [NSString stringWithFormat:SGL(@"settings.font.style_count.format", @"%lu style%@"), (unsigned long)self.styleCount, self.styleCount == 1 ? @"" : @"s"];
@@ -373,7 +368,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     } else if (path.section == SGFontFree) {
         SGShowPage(self, SGFontLibraryPage());
         return;
-    } else if (path.row == 0 && self.importedName.length) {
+    } else if (path.row == 0 && importedFamily().length) {
         SGSetInt(SGKeyAppFont, SGAppFontCustom);
     } else {
         __weak SGFontPage *page = self;
@@ -385,7 +380,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
 
 // Swiping the imported family away deletes its files; Default comes back if it was the choice.
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)table trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)path {
-    if (path.section != SGFontYours || path.row != 0 || !self.importedName.length) return nil;
+    if (path.section != SGFontYours || path.row != 0 || !importedFamily().length) return nil;
     UIContextualAction *delete = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:SGL(@"common.delete", @"Delete")
         handler:^(UIContextualAction *action, UIView *view, void (^done)(BOOL)) {
             removeImported(YES);
