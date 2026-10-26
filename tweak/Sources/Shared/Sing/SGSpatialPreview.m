@@ -79,18 +79,17 @@ static const double kStillStep = 15 * M_PI / 180;
 
 #pragma mark - the picture
 
-// A point of the floor, in points from the disc's middle (y negative ahead) and `height` over it, where the
-// camera sees it with the disc turned by `turn`, from the stage's middle; `scale` how much nearer it is.
-- (CGPoint)project:(CGPoint)point height:(CGFloat)height turn:(double)turn scale:(CGFloat *)scale {
+// A point of the floor, in points from the disc's middle (y negative ahead) and kVoiceHeight over it, where the
+// camera sees it with the disc turned by `turn`, from the stage's middle.
+- (CGPoint)project:(CGPoint)point turn:(double)turn {
     CGFloat x = point.x * cos(turn) - point.y * sin(turn), y = point.x * sin(turn) + point.y * cos(turn);
-    CGFloat down = y * cos(kTilt) - height * sin(kTilt), near = y * sin(kTilt) + height * cos(kTilt);
+    CGFloat down = y * cos(kTilt) - kVoiceHeight * sin(kTilt), near = y * sin(kTilt) + kVoiceHeight * cos(kTilt);
     CGFloat w = 1 - near / kDistance;
-    if (scale) *scale = 1 / w;
     return CGPointMake(x / w, down / w);
 }
 
 - (CGPoint)voiceAt:(double)turn {
-    CGPoint at = [self project:CGPointMake(0, -kVoiceRing * _radius) height:kVoiceHeight turn:turn scale:NULL];
+    CGPoint at = [self project:CGPointMake(0, -kVoiceRing * _radius) turn:turn];
     return CGPointMake(_stage.bounds.size.width / 2 + at.x, _stage.bounds.size.height * kMiddle + at.y);
 }
 
@@ -185,7 +184,7 @@ static CAGradientLayer *floorLight(CGPoint at, CGFloat size, UIColor *color, CGF
 
     _listener = glowDot(8, [UIColor colorWithWhite:1 alpha:0.95]);
     _listener.shadowOpacity = 0.5;
-    CGPoint head = [self project:CGPointZero height:kVoiceHeight turn:0 scale:NULL];
+    CGPoint head = [self project:CGPointZero turn:0];
     _listener.position = CGPointMake(middle.x + head.x, middle.y + head.y);
     [_stage addSublayer:_listener];
     _voice = glowDot(10, accent);

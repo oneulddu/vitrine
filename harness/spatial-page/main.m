@@ -20,6 +20,7 @@
 #import <CoreMotion/CoreMotion.h>
 #import <objc/runtime.h>
 #import <UIKit/UIKit.h>
+#import <stdlib.h>
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Shared/Player/SGLastTrack.h"
@@ -194,7 +195,22 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     NSString *verb = parts.firstObject, *value = parts.count > 1 ? parts[1] : @"";
     UITableView *table = self.table;
     if ([verb isEqualToString:@"spatial"]) {
-        [table.delegate tableView:table didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:1]];
+        NSString *title = SGL(@"settings.spatial.title", @"Spatial voice");
+        for (NSInteger section = 0; section < table.numberOfSections; section++) {
+            for (NSInteger row = 0; row < [table numberOfRowsInSection:section]; row++) {
+                NSIndexPath *path = [NSIndexPath indexPathForRow:row inSection:section];
+                UITableViewCell *cell = [table.dataSource tableView:table cellForRowAtIndexPath:path];
+                NSMutableArray<UILabel *> *labels = [NSMutableArray array];
+                findViews(cell.contentView, UILabel.class, labels);
+                for (UILabel *label in labels) {
+                    if (![label.text isEqualToString:title]) continue;
+                    [table.delegate tableView:table didSelectRowAtIndexPath:path];
+                    return;
+                }
+            }
+        }
+        NSLog(@"[harness] FAIL: Spatial voice row not found");
+        exit(EXIT_FAILURE);
     } else if ([verb isEqualToString:@"toggle"]) {
         NSArray<NSString *> *at = [value componentsSeparatedByString:@"."];
         UITableViewCell *cell = [table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:at[1].integerValue inSection:at[0].integerValue]];
