@@ -8,8 +8,7 @@ static const size_t kEdgeRows = 10;    // the bottom rows of it averaged into th
 static const CGFloat kMaxSaturation = 0.55;
 static const CGFloat kMaxLuminance = 0.07, kMaxLuminanceContrast = 0.04;
 static const CGFloat kBackdropWidth = 160, kBackdropMaxHeight = 400, kBackdropSigma = 12;
-static const CGFloat kDissolveWidth = 96, kDissolveSigma = 5;
-static const CGFloat kFadeFrom = 0.55, kDissolveOpaque = 0.85;
+static const CGFloat kFadeFrom = 0.55;
 // A tint: the artwork's dominant color, its saturation lifted by kTintSaturationLift up to kTintSaturationMax,
 // brought down to kTintLuminance, then kTintShare of it mixed into the surface it tints. Measured off the
 // reference's Home (IMG_4025, 2026-10-11): its card and tile surfaces sit at a luminance of 0.03 to 0.04 with the
@@ -25,10 +24,8 @@ static const CGFloat kFlowLuminanceMin = 0.03, kFlowLuminanceMax = 0.13;
 static const CGFloat kFlowSaturationLift = 1.25, kFlowSaturationMax = 0.9, kFlowMaxLift = 4;
 
 @interface SGRPalette ()
-@property (nonatomic, readwrite) UIColor *edgeColor;
 @property (nonatomic, readwrite) UIColor *fieldColor;
 @property (nonatomic, readwrite) UIImage *backdrop;
-@property (nonatomic, readwrite) UIImage *dissolve;
 @property (nonatomic, readwrite) NSArray<UIColor *> *flowColors;
 @end
 
@@ -152,7 +149,7 @@ static void drawRamp(CGContextRef context, size_t height, CGFloat y0, CGFloat a0
     CGGradientRelease(gradient);
 }
 
-static UIImage *finished(CGImageRef blurred, BOOL dim, CGFloat dimBottom, CGFloat rampFrom, CGFloat alphaFrom, CGFloat rampTo, CGFloat alphaTo) {
+static UIImage *finished(CGImageRef blurred) {
     size_t width = CGImageGetWidth(blurred), height = CGImageGetHeight(blurred);
     CGContextRef context = newBitmap(width, height);
     if (!context) return nil;
@@ -160,8 +157,8 @@ static UIImage *finished(CGImageRef blurred, BOOL dim, CGFloat dimBottom, CGFloa
     // Top down from here on.
     CGContextTranslateCTM(context, 0, height);
     CGContextScaleCTM(context, 1, -1);
-    if (dim) drawRamp(context, height, 0, 0.25, kFadeFrom, dimBottom, kCGBlendModeNormal);
-    drawRamp(context, height, rampFrom, alphaFrom, rampTo, alphaTo, kCGBlendModeDestinationIn);
+    drawRamp(context, height, 0, 0.25, kFadeFrom, 0.55, kCGBlendModeNormal);
+    drawRamp(context, height, kFadeFrom, 1, 1, 0, kCGBlendModeDestinationIn);
     CGImageRef result = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
     UIImage *image = result ? [UIImage imageWithCGImage:result scale:1 orientation:UIImageOrientationUp] : nil;
@@ -299,7 +296,6 @@ static UIColor *tintOf(CGImageRef image, UIColor *surface, BOOL strong) {
         if (edge) {
             CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
             palette = [SGRPalette new];
-            palette.edgeColor = edge;
             CGFloat main[3];
             UIColor *base = request.mainColor && dominantColorOf(cg, main)
                 ? [UIColor colorWithRed:toEncoded(main[0]) green:toEncoded(main[1]) blue:toEncoded(main[2]) alpha:1] : edge;
@@ -308,17 +304,10 @@ static UIColor *tintOf(CGImageRef image, UIColor *surface, BOOL strong) {
             if (area.width > 0 && area.height > 0) {
                 size_t width = (size_t)kBackdropWidth, height = (size_t)MIN(kBackdropMaxHeight, round(kBackdropWidth * area.height / area.width));
                 CGImageRef blurred = newBlurred(cg, width, MAX(height, 1), kBackdropSigma);
-                if (blurred) palette.backdrop = finished(blurred, YES, request.amoled ? 0.55 : 0.45, kFadeFrom, 1, 1, 0);
+                if (blurred) palette.backdrop = finished(blurred);
                 CGImageRelease(blurred);
             }
             if (request.flow) palette.flowColors = flowColorsOf(cg, flowCeiling);
-            if (request.dissolve) {
-                CGFloat aspect = (CGFloat)CGImageGetHeight(cg) / CGImageGetWidth(cg);
-                size_t height = (size_t)MIN(kDissolveWidth * 2, MAX(kDissolveWidth / 2, round(kDissolveWidth * aspect)));
-                CGImageRef blurred = newBlurred(cg, (size_t)kDissolveWidth, height, kDissolveSigma);
-                if (blurred) palette.dissolve = finished(blurred, NO, 0, kFadeFrom, 0, kDissolveOpaque, 1);
-                CGImageRelease(blurred);
-            }
             static dispatch_once_t once;
             double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000;
             dispatch_once(&once, ^{ SGLog(@"redesign kit: first palette %@ from %zux%zu in %.1f ms", palette.fieldColor, CGImageGetWidth(cg), CGImageGetHeight(cg), ms); });

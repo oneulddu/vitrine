@@ -297,7 +297,7 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
 - (void)readPaletteAnimated:(BOOL)animated {
     NSUInteger generation = ++_generation;
     if (!_image) return;
-    SGRPaletteRequest request = {CGSizeZero, NO, YES, _flows, _mainColor};
+    SGRPaletteRequest request = {.flow = _flows, .mainColor = _mainColor};
     if (_showsBackdrop && !_flows && !_fluid) request.backdropSize = CGSizeMake(self.bounds.size.width > 0 ? self.bounds.size.width : 402, [self backdropHeightNow]);
     __weak SGRArtworkField *weakSelf = self;
     [SGRPalette paletteForImage:_image request:request completion:^(SGRPalette *palette) {

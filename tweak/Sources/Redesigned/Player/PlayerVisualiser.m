@@ -340,7 +340,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     // Hills draws the cover's palette; Lyrics draws the same hills, so it reads the cover too.
     if (_style != SGRHills && _style != SGRLyricsStyle) image = recordImage;
     if (!image) return;
-    SGRPaletteRequest request = {CGSizeZero, NO, YES, YES, NO};
+    SGRPaletteRequest request = {.flow = YES};
     __weak SGRVisualiserView *weakSelf = self;
     [SGRPalette paletteForImage:image request:request completion:^(SGRPalette *palette) {
         SGRVisualiserView *view = weakSelf;
