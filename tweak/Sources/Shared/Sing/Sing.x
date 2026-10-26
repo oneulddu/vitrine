@@ -256,10 +256,6 @@ static void announce(void) {
 static NSString *const kNeuralReadyOn = @"spotifyglass.sing.neuralReadyOn";
 static NSString *sg_neuralFailed;   // why the Neural Engine copy is not used for the rest of this launch
 
-static NSString *osBuild(void) {
-    return NSProcessInfo.processInfo.operatingSystemVersionString;
-}
-
 static NSInteger runsOn(void) {
     return SGInt(SGKeySingComputeUnits, 0);
 }
@@ -289,7 +285,7 @@ static BOOL neuralWanted(void) {
 
 // What Core ML keeps the compiled model for: this iOS, this install and the model's folder.
 static NSString *neuralCompiled(void) {
-    return [NSString stringWithFormat:@"%@ %@ %@", osBuild(), NSBundle.mainBundle.bundlePath, SGSingModelURL().path];
+    return [NSString stringWithFormat:@"%@ %@ %@", NSProcessInfo.processInfo.operatingSystemVersionString, NSBundle.mainBundle.bundlePath, SGSingModelURL().path];
 }
 
 static void wantModel(void) {
