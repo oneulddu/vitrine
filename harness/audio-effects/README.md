@@ -30,6 +30,19 @@ and 471 in turn, 512, and a mix down to single frames), and each check prints a 
     ./build.sh thread && build/audio-effects-thread <song> <out dir>
     ./build.sh address && build/audio-effects-address <song> <out dir>
 
+The decoded song must contain at least **20 seconds** for the full checks, or
+**5 seconds** with the final `stress` argument, measured at 48 kHz after decoding.
+Shorter inputs exit 2 with the required and decoded frame counts, before creating
+the output directory or running checks. The limiter retains its 20-second window;
+the convolver retains its 5-second window, and the bypass/restart/rate-change
+windows remain unchanged. Inputs are still capped at 60 seconds (12 in `stress`).
+
+`python3 harness/audio-effects/check-input.py <absolute executable path>` from
+the repo root checks short-input rejection, including one frame below each
+minimum. Run it under the host harness lock. The engine/song mode is not in CI;
+`scripts/harness-plan.py` selects only `route`, `format`, and `presets`, whose
+inputs and checks are unchanged.
+
 `./build.sh route && build/route-check` checks the corrections remembered per output (AutoEq.m) through the real
 settings, a route change being a direct call: the speaker, a pair remembered with a pick, another with None, a pick
 made with nothing remembered, a hand-made curve, the effects left off, forgetting and renaming.

@@ -30,6 +30,9 @@
 #import "Shared/AudioEffects/SGDSPFilters.h"
 
 static const double kRate = 48000;
+// Keep the fixed song windows: shortening them changes the checks' coverage.
+static const double kLimiterSongSeconds = 20;
+static const double kConvolverSongSeconds = 5;
 static int sg_failures;
 static NSString *sg_outDir;
 
@@ -370,7 +373,7 @@ static void checkOutput(Audio song) {
         SGDSPEngineSetOutput(engine, 12, thresholds[t], 60);
         SGDSPEngineRestart(engine);
         Audio loud = copyAudio(song);
-        loud.frames = (size_t)kRate * 20;
+        loud.frames = (size_t)(kRate * kLimiterSongSeconds);
         run(engine, loud, kPatternMixed);
         float peak = 0, ceiling = (float)pow(10, thresholds[t] / 20);
         bool fine = finiteAndBounded(loud, ceiling * 1.000001f, &peak);
@@ -523,7 +526,7 @@ static void checkConvolver(Audio song) {
     writeImpulse(@"dirac-4.wav", kAudioFileWAVEType, dirac, 4, 64, kRate, 32);
     const char *names[] = {"dirac-mono.wav", "dirac-stereo.wav", "dirac-4.wav"};
     Audio input = copyAudio(song);
-    input.frames = (size_t)kRate * 5;
+    input.frames = (size_t)(kRate * kConvolverSongSeconds);
     scaleAudio(input, 0.5f);
     SGDSPEngineSetOutput(engine, 0, -0.1, 60);
     for (int n = 0; n < 3; n++) {
@@ -1066,11 +1069,11 @@ static void checkRateAndReset(Audio song) {
 }
 
 static void checkCost(Audio song) {
-    printf("\ncost per 1024-frame block at 48 kHz (21.33 ms of sound), 20 s of the song\n");
+    printf("\ncost per 1024-frame block at 48 kHz (21.33 ms of sound), %.0f s of the song\n", kLimiterSongSeconds);
     SGDSPEngine *engine = SGDSPEngineCreate(kRate);
     allOff(engine);
     Audio clip = copyAudio(song);
-    clip.frames = MIN(clip.frames, (size_t)kRate * 20);
+    clip.frames = MIN(clip.frames, (size_t)(kRate * kLimiterSongSeconds));
     double blockMS = kSGDSPEngineBlock / kRate * 1000;
     for (int e = -1; e <= kEffectCount; e++) {
         const char *name = e < 0 ? "every effect off" : e == kEffectCount ? "every effect on" : kEffectNames[e];
@@ -1197,11 +1200,21 @@ int main(int argc, const char *argv[]) {
         }
         sg_outDir = @(argv[2]);
         bool stressOnly = argc > 3 && !strcmp(argv[3], "stress");
+        Audio song = decode(@(argv[1]), kRate, stressOnly ? 12 : 60);
+        // These are the longest fixed windows in each mode. The other song
+        // windows need at most 4 s at kRate (including 2 s at 96 kHz).
+        double requiredSeconds = stressOnly ? kConvolverSongSeconds : kLimiterSongSeconds;
+        size_t requiredFrames = (size_t)(kRate * requiredSeconds);
+        if (song.frames < requiredFrames) {
+            fprintf(stderr, "input too short: %s checks require at least %.0f s (%zu frames at %.0f Hz); decoded %zu frames (%.6f s)\n",
+                    stressOnly ? "stress" : "full", requiredSeconds, requiredFrames, kRate, song.frames, song.frames / kRate);
+            freeAudio(song);
+            return 2;
+        }
         [NSFileManager.defaultManager createDirectoryAtPath:sg_outDir withIntermediateDirectories:YES attributes:nil error:nil];
 #if SG_COUNTS_ALLOCATIONS
         malloc_logger = countAllocation;
 #endif
-        Audio song = decode(@(argv[1]), kRate, stressOnly ? 12 : 60);
         printf("song: %.1f s at %.0f Hz\n", song.frames / kRate, kRate);
         makeRoom();
         if (stressOnly) {
