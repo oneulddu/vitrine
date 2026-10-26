@@ -64,7 +64,8 @@ static OSStatus emptySpicyKey(CFDictionaryRef query, CFTypeRef *data) { return e
 
 // The rest of the app has no work in this check. The one enabled provider holds its answer.
 static void (^sg_providerReply)(SGLyricsResult *);
-SGLyricsAsk SGMusixmatchAsk = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { sg_providerReply = done; };
+static NSString *sg_providerTrack;
+SGLyricsAsk SGMusixmatchAsk = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { sg_providerReply = done; sg_providerTrack = q.trackID; };
 SGLyricsAsk SGBiniLyricsAsk, SGUnisonAsk, SGNetEaseAsk, SGQQMusicAsk, SGKuGouAsk;
 SGLyricsAsk SGBugsAsk, SGGenieAsk, SGLyricsPlusAsk, SGDeezerAsk, SGImportedLRCAsk, SGGeniusAsk;
 NSString *const SGImportedLRCKey = @"importedlrc";
@@ -1496,12 +1497,13 @@ int main(void) {
         CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"After unpin"]);
         CHECK(SGLyricsPin(@"fallback", record));
         [sg_kept removeObjectForKey:@"fallback"];
-        sg_pinnedReply = nil; sg_providerReply = nil; answer = nil;
+        sg_pinnedReply = nil; sg_providerReply = nil; sg_providerTrack = nil; answer = nil;
         SGLyricsFetch(@"fallback", ^(SGLyricsResult *result) { answer = result; });
         pumpUntil(^BOOL { return sg_pinnedReply != nil; });
-        CHECK(!sg_providerReply);
+        // A slow run lets "song"'s later work reach the provider meanwhile; only this track must wait for its stored id.
+        CHECK(![sg_providerTrack isEqualToString:@"fallback"]);
         sg_pinnedReply(nil);
-        CHECK(sg_providerReply != nil);
+        CHECK(sg_providerReply != nil && [sg_providerTrack isEqualToString:@"fallback"]);
         sg_providerReply(SGLrcLibRecordResult(@{@"plainLyrics": @"Fallback words"}));
         CHECK([SGKaraokeLineText(answer.karaokeLines.firstObject) isEqual:@"Fallback words"]);
         CHECK(SGLyricsPin(@"instrumental", @{@"id": @9, @"instrumental": @YES}));
