@@ -1,10 +1,10 @@
 # Mod Settings harness
 
 Mod Settings' main page as `App/ModSettings.x` builds it, opened through `SGOpenModSettings` and pushed onto a
-navigation stack as on the phone, with the real `App/Pages.m` behind the Redesigned UI switch and the real
-`Settings/` framework. `build.sh` runs `ModSettings.x` through `logos.pl -c generator=internal`; its hooks on
-Spotify's settings list and side drawer find no class here and do nothing. `stubs.m` stands in for every page a
-row opens (an empty page of that name), the values beside the chevrons (Off) and the update and signing checks.
+navigation stack as on the phone, with the real `App/Pages.m` behind the Redesigned UI switch, the real Mod
+page in `App/About/AboutSettings.m`, and the real `Settings/` framework. `build.sh` runs `ModSettings.x` through `logos.pl -c generator=internal`; its hooks on
+Spotify's settings list and side drawer find no class here and do nothing. `stubs.m` stands in for other pages
+rows open (an empty page of that name), feature values beside the chevrons (Off) and update checks.
 
     THEOS=$HOME/theos ./build.sh
     xcrun simctl install <udid> build/ModSettingsHarness.app
@@ -51,5 +51,9 @@ Library for Albums and Artists in place.
 parser takes a plain XML plist as well as a signed one, so one written by hand will do (copy it in after
 `build.sh`, before `simctl install`).
 
-What it does not cover: the pages the rows open, the row the mod adds to Spotify's settings list and side drawer
+What it does not cover: other feature pages, the row the mod adds to Spotify's settings list and side drawer
 in Spotify's real lists (`rows` uses stand-ins of the same names), and iOS below 26, where the switch warns first.
+
+`refactor-check` runs offline and exits: the real About page's Reset row keeps its trash symbol, opening
+Mod Settings finds a navigation controller through the source's parents, and a deeper first-child stack
+wins over a shallower later sibling. About's external actions remain stubs.

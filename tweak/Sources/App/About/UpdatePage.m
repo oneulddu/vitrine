@@ -21,7 +21,6 @@
 
 @interface SGUpdateGroup : NSObject
 @property (nonatomic, copy) NSString *title;
-@property (nonatomic, copy) NSString *footer;
 @property (nonatomic, copy) NSArray<SGUpdateRow *> *rows;
 @end
 
@@ -259,13 +258,11 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 }
 
 - (UIView *)tableView:(UITableView *)table viewForFooterInSection:(NSInteger)section {
-    NSString *footer = _groups[(NSUInteger)section].footer;
-    return footer ? SGSectionFooter(table, footer) : nil;
+    return nil;
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
-    NSString *footer = _groups[(NSUInteger)section].footer;
-    return footer ? SGSectionFooterHeight(table, footer) : CGFLOAT_MIN;
+    return CGFLOAT_MIN;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {

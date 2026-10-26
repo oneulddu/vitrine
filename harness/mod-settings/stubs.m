@@ -5,6 +5,7 @@
 #import "Settings/SGModPage.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/Fonts/Fonts.h"
+#import "App/About/About.h"
 
 extern BOOL SGHarnessWarning;
 
@@ -13,7 +14,7 @@ static UIViewController *blank(NSString *title) {
 }
 
 #define PAGE(name) UIViewController *name(void) { return blank(@#name); }
-PAGE(SGAboutPage) PAGE(SGAdsSettingsPage) PAGE(SGAllFlagsPage) PAGE(SGArtistBlockSettingsPage) PAGE(SGDSPSettingsPage) PAGE(SGAutoMixSettingsPage)
+PAGE(SGAdsSettingsPage) PAGE(SGAllFlagsPage) PAGE(SGArtistBlockSettingsPage) PAGE(SGDSPSettingsPage) PAGE(SGAutoMixSettingsPage)
 PAGE(SGGesturesSettingsPage) PAGE(SGHeadGesturesSettingsPage) PAGE(SGHomeSettingsPage) PAGE(SGLabsPage)
 PAGE(SGListeningStatsPage) PAGE(SGLiveActivitySettingsPage) PAGE(SGLockScreenWidgetPage) PAGE(SGNavbarSettingsPage)
 PAGE(SGNowPlayingBarSettingsPage) PAGE(SGQueueSettingsPage) PAGE(SGRAlbumSettingsPage) PAGE(SGRArtistSettingsPage)
@@ -26,6 +27,29 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) { return blank(@"SGRPlaye
 UIViewController *SGRLyricsSettingsPage(NSString *title, NSString *intro, NSArray<SGModSection *> *sections) { return blank(title); }
 // Redesigned/Lyrics/LyricsStylesSettings.m, whose cards play the real karaoke view: a blank page here.
 PAGE(SGRLyricsStylesSettingsPage)
+PAGE(SGLicensesPage) PAGE(SGUpdatePage) PAGE(SGReportListPage)
+
+// AboutSettings.m builds the real Mod rows; their external actions stay offline here.
+NSString *SGSpotifyVersion(void) { return @"9.1.90"; }
+NSString *SGUpdateStatus(void) { return @"up to date"; }
+BOOL SGBuildIsBeta(void) { return NO; }
+NSArray<SGUpdateChange *> *SGWhatsNewChanges(void) { return @[]; }
+void SGShowOnboarding(void) {}
+void SGShowWhatsNew(void) {}
+void SGExportSettings(void) {}
+void SGImportSettings(UIViewController *presenter) {}
+void SGShareDiagnostics(UIViewController *presenter) {}
+void SGAutoMixApply(BOOL on) {}
+void SGLosslessLowerQuality(BOOL lower) {}
+void SGGeminiForgetKey(void) {}
+void SGClaudeForgetKey(void) {}
+void SGOpenAIForgetKeys(void) {}
+void SGDeepLForgetKey(void) {}
+void SGSpicyLyricsForgetKey(void) {}
+void SGDeezerForgetKey(void) {}
+void SGLyricsTranslationServiceSettingsChanged(void) {}
+NSString *SGKaraokePlayingTrack(void) { return nil; }
+NSNotificationName const SGLyricsDidReloadNotification = @"harness.lyrics.reload";
 
 #define ROW(name) SGModRow *name(void) { return SGPageRow(@#name, ^UIViewController *{ return nil; }); }
 ROW(SGAppIconRow) ROW(SGGeminiKeyRow) ROW(SGGlassLyricsRow) ROW(SGLockScreenLyricsRow) ROW(SGLyricsMeaningsRow)
@@ -34,6 +58,7 @@ ROW(SGBingTranslateRow) ROW(SGDeepLKeyRow) ROW(SGGoogleTranslateRow) ROW(SGLyric
 ROW(SGLyricsFuriganaRow) ROW(SGLyricsJapaneseReadingRow) ROW(SGLyricsLanguageRulesRow) ROW(SGLyricsPiPRow)
 ROW(SGLyricsPronunciationNotationRow) ROW(SGRAutoTranslationOrderRow) ROW(SGRAutoTranslationRow)
 ROW(SGRLyricsKeepAwakeRow) ROW(SGSavedTranslationsRow) ROW(SGSimplifyTitlesRow) ROW(SGTranslateEverySongRow)
+ROW(SGRLyricsHideRow)
 ROW(SGTranslateTitlesRow)
 NSString *SGLyricsAIName(SGLyricsAI service) { return @[@"Gemini", @"Claude", @"OpenAI"][service]; }
 SGModRow *SGLyricsAIServiceRow(SGLyricsAI service) { return SGPageRow(SGLyricsAIName(service), ^UIViewController *{ return nil; }); }

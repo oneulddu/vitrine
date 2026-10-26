@@ -1,6 +1,6 @@
 // Mod Settings' main page as App/ModSettings.x builds it, opened the way holding Home opens it
 // (SGOpenModSettings), with the real App/Pages.m behind its Redesigned UI switch and the real Settings/
-// framework; stubs.m stands in for every page a row opens. The launch line sets the look up and then plays
+// framework and About page; stubs.m stands in for other pages and actions. The launch line sets the look up and then plays
 // actions, one every 0.9 s from 1 s in; screenshot after.
 //
 //     THEOS=$HOME/theos ./build.sh && xcrun simctl install <udid> build/ModSettingsHarness.app
@@ -22,6 +22,8 @@
 #import "Settings/SGPage.h"
 #import "Settings/SGModPage.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "App/About/About.h"
+#import "../harness-fail.h"
 
 // Spotify's page protocol, so SGRegisterPages finds one and the page is pushed as on the phone.
 @protocol SPTPageController <NSObject>
@@ -74,6 +76,38 @@ static NSUInteger searchChecks(void) {
 
 BOOL SGHarnessWarning;
 
+static void refactorChecks(void) {
+    // The Mod page keeps its action's symbol when row decoration is shared with Settings.
+    SGModPage *about = (SGModPage *)SGAboutPage();
+    SGModRow *reset = nil;
+    for (SGModSection *section in about.sections) {
+        for (SGModRow *row in section.rows) {
+            if ([row.title isEqualToString:@"Reset all settings"]) reset = row;
+        }
+    }
+    HARNESS_CHECK([reset.symbol isEqualToString:@"trash"]);
+
+    // A navigation controller reached through the source's parents includes itself in the search.
+    UIViewController *home = [UIViewController new];
+    UINavigationController *root = [[UINavigationController alloc] initWithRootViewController:home];
+    SGOpenModSettings(home.view);
+    HARNESS_CHECK([root.topViewController.title isEqualToString:@"Vitrine"]);
+
+    // A deeper stack in the first child's subtree wins over a shallower later sibling.
+    UIViewController *container = [UIViewController new], *wrapper = [UIViewController new];
+    UINavigationController *first = [[UINavigationController alloc] initWithRootViewController:[UIViewController new]];
+    UINavigationController *later = [[UINavigationController alloc] initWithRootViewController:[UIViewController new]];
+    [container addChildViewController:wrapper];
+    [wrapper didMoveToParentViewController:container];
+    [wrapper addChildViewController:first];
+    [first didMoveToParentViewController:wrapper];
+    [container addChildViewController:later];
+    [later didMoveToParentViewController:container];
+    SGOpenModSettings(container.view);
+    HARNESS_CHECK([first.topViewController.title isEqualToString:@"Vitrine"]);
+    NSLog(@"[harness] refactor checks PASS");
+}
+
 static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     if ([root isKindOfClass:kind]) [found addObject:root];
     for (UIView *sub in root.subviews) findViews(sub, kind, found);
@@ -121,6 +155,10 @@ static UIViewController *gatedPage(void) {
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"refactor-check"]) {
+        refactorChecks();
+        exit(0);
+    }
     if ([NSProcessInfo.processInfo.arguments containsObject:@"search"]) {
         NSUInteger failures = searchChecks();
         NSLog(@"[harness] search %@", failures ? @"failed" : @"passed");

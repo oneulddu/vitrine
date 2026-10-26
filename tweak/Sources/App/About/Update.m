@@ -61,10 +61,6 @@ BOOL SGVersionIsNewer(NSString *candidate, NSString *current) {
     return partsA.count > partsB.count;
 }
 
-static BOOL isNewer(NSString *candidate, NSString *current) {
-    return SGVersionIsNewer(candidate, current);
-}
-
 static NSString *stringOr(id value, NSString *fallback) {
     return [value isKindOfClass:NSString.class] ? value : fallback;
 }
@@ -184,7 +180,7 @@ SGUpdateRelease *SGUpdateNewestRelease(void) {
 }
 
 BOOL SGUpdateIsNewer(NSString *version) {
-    return version.length && isNewer(version, @(SG_VERSION));
+    return version.length && SGVersionIsNewer(version, @(SG_VERSION));
 }
 
 BOOL SGUpdateChecked(void) {
@@ -240,7 +236,7 @@ NSArray<NSDictionary *> *SGUpdateReleasesFrom(NSData *data) {
         }];
     }
     [entries sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
-        return isNewer(a[@"version"], b[@"version"]) ? NSOrderedAscending : NSOrderedDescending;
+        return SGVersionIsNewer(a[@"version"], b[@"version"]) ? NSOrderedAscending : NSOrderedDescending;
     }];
     return entries.count > kKept ? [entries subarrayWithRange:NSMakeRange(0, kKept)] : entries;
 }

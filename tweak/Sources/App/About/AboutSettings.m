@@ -60,19 +60,14 @@ static void confirmClearKeychain(void) {
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
-static SGModRow *withSymbol(SGModRow *row, NSString *symbol) {
-    row.symbol = symbol;
-    return row;
-}
-
 // Which build this is, whether GitHub has a newer release, and where to reach the mod: without these
 // rows a build that is already installed has no way of telling its user that anything moved on.
 UIViewController *SGAboutPage(void) {
     __block __weak SGModPage *owner = nil;
-    SGModRow *reset = withSymbol(SGActionRow(SGL(@"settings.mod.reset.title", @"Reset all settings"), nil, ^{ confirmReset(); }), @"trash");
+    SGModRow *reset = SGWithSymbol(SGActionRow(SGL(@"settings.mod.reset.title", @"Reset all settings"), nil, ^{ confirmReset(); }), @"trash");
     reset.color = SGRed();
     // Reset all removes the settings; the keys live in the Keychain, which it leaves alone, so this takes them.
-    SGModRow *clearKeys = withSymbol(SGActionRow(SGL(@"settings.mod.keychain.title", @"Clear Keychain"), nil, ^{ confirmClearKeychain(); }), @"key");
+    SGModRow *clearKeys = SGWithSymbol(SGActionRow(SGL(@"settings.mod.keychain.title", @"Clear Keychain"), nil, ^{ confirmClearKeychain(); }), @"key");
     clearKeys.color = SGRed();
     NSString *spotify = SGSpotifyVersion();
     if ([SGSpotifyLikelyWorksVersions containsObject:spotify]) spotify = [spotify stringByAppendingString:SGL(@"settings.mod.spotify_version.likely_works", @", likely works")];
@@ -86,12 +81,12 @@ UIViewController *SGAboutPage(void) {
     betas.defaultOn = SGBuildIsBeta();
     betas.changed = ^(BOOL on) { SGCheckForUpdate(YES); };
     NSMutableArray<SGModRow *> *links = [NSMutableArray array];
-    if (SGRepoURL) [links addObject:withSymbol(SGLinkRow(@"GitHub", nil, SGRepoURL), @"chevron.left.forwardslash.chevron.right")];
+    if (SGRepoURL) [links addObject:SGWithSymbol(SGLinkRow(@"GitHub", nil, SGRepoURL), @"chevron.left.forwardslash.chevron.right")];
     [links addObjectsFromArray:@[
-        withSymbol(SGPageRow(SGL(@"settings.mod.licenses.title", @"Licenses"), ^UIViewController *{ return SGLicensesPage(); }), @"doc.text"),
-        withSymbol(SGActionRow(SGL(@"settings.mod.tour.title", @"Welcome tour"), nil, ^{ SGShowOnboarding(); }), @"map"),
+        SGWithSymbol(SGPageRow(SGL(@"settings.mod.licenses.title", @"Licenses"), ^UIViewController *{ return SGLicensesPage(); }), @"doc.text"),
+        SGWithSymbol(SGActionRow(SGL(@"settings.mod.tour.title", @"Welcome tour"), nil, ^{ SGShowOnboarding(); }), @"map"),
     ]];
-    if (SGWhatsNewChanges().count) [links insertObject:withSymbol(SGActionRow(SGL(@"settings.mod.whats_new.title", @"What's New"), nil, ^{ SGShowWhatsNew(); }), @"sparkles") atIndex:links.count - 1];
+    if (SGWhatsNewChanges().count) [links insertObject:SGWithSymbol(SGActionRow(SGL(@"settings.mod.whats_new.title", @"What's New"), nil, ^{ SGShowWhatsNew(); }), @"sparkles") atIndex:links.count - 1];
     NSMutableArray<SGModRow *> *build = [NSMutableArray arrayWithObjects:updates, betas,
         SGStatRow(SGL(@"settings.mod.version.title", @"Version"), ^NSString *{ return @(SG_VERSION); }),
         SGStatRow(@"Spotify", ^NSString *{ return spotify; }), nil];
@@ -101,11 +96,11 @@ UIViewController *SGAboutPage(void) {
         SGSection(nil, build),
         SGSection(nil, links),
         SGSection(nil, @[
-            withSymbol(SGActionRow(SGL(@"settings.mod.export_settings.title", @"Export settings"), nil, ^{ SGExportSettings(); }), @"square.and.arrow.up"),
-            withSymbol(SGActionRow(SGL(@"settings.mod.import_settings.title", @"Import settings"), nil, ^{ SGImportSettings(owner); }), @"square.and.arrow.down"),
-            withSymbol(SGActionRow(SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), SGL(@"settings.mod.share_diagnostics.subtitle", @"For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show."),
+            SGWithSymbol(SGActionRow(SGL(@"settings.mod.export_settings.title", @"Export settings"), nil, ^{ SGExportSettings(); }), @"square.and.arrow.up"),
+            SGWithSymbol(SGActionRow(SGL(@"settings.mod.import_settings.title", @"Import settings"), nil, ^{ SGImportSettings(owner); }), @"square.and.arrow.down"),
+            SGWithSymbol(SGActionRow(SGL(@"settings.mod.share_diagnostics.title", @"Share diagnostics"), SGL(@"settings.mod.share_diagnostics.subtitle", @"For a bug report: versions, ad counts, this launch's log and Spotify's config. Song names can show."),
                                    ^{ SGShareDiagnostics(owner); }), @"stethoscope"),
-            SGWithNew(withSymbol(SGPageRow(SGL(@"settings.mod.report.title", @"Report a problem"), ^UIViewController *{ return SGReportListPage(); }), @"exclamationmark.bubble"), @"reportProblem"),
+            SGWithNew(SGWithSymbol(SGPageRow(SGL(@"settings.mod.report.title", @"Report a problem"), ^UIViewController *{ return SGReportListPage(); }), @"exclamationmark.bubble"), @"reportProblem"),
         ]),
         SGSection(nil, @[clearKeys, reset]),
     ] footer:nil];

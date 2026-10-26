@@ -27,3 +27,6 @@ release only with the switch on, never a version below the build's.
 
 `versions` checks the ordering itself, including the chain 1.0.0-beta.1, 1.0.0-beta.2, 1.0.0,
 1.0.1-beta.1, 1.0.1 and that no step back counts as newer.
+
+`footers` uses cached releases without a network request and exits after checking that the Updates
+page's action, notice and changelog sections all have no footer view and minimal footer height.

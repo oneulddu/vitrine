@@ -6,6 +6,7 @@
 // `recheck` taps Check now five seconds in.
 #import <UIKit/UIKit.h>
 #import "App/About/About.h"
+#import "../harness-fail.h"
 
 // Spotify's welcome tour is not built here, and nothing holds the screen against the notice.
 BOOL SGOnboardingShowing(void) {
@@ -37,6 +38,25 @@ static UIViewController *plainScreen(void) {
 
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)options {
     NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+    if ([arguments containsObject:@"footers"]) {
+        // Fresh cached releases keep SGUpdatePage's normal check offline.
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:@{
+            @"spotifyglass.update.checked": @(NSDate.date.timeIntervalSince1970),
+            @"spotifyglass.update.releases": @[
+                @{@"version": @"99.0.0", @"notes": @"### Fixes\n* A cached fix"}
+            ],
+        } forName:NSArgumentDomain];
+        UITableViewController *page = (UITableViewController *)SGUpdatePage();
+        UITableView *table = page.tableView;
+        NSInteger sections = [table.dataSource numberOfSectionsInTableView:table];
+        HARNESS_CHECK(sections == 3);
+        for (NSInteger section = 0; section < sections; section++) {
+            HARNESS_CHECK([table.delegate tableView:table viewForFooterInSection:section] == nil);
+            HARNESS_CHECK([table.delegate tableView:table heightForFooterInSection:section] == CGFLOAT_MIN);
+        }
+        NSLog(@"[harness] update footers PASS");
+        exit(0);
+    }
     // `versions`: the comparison the check sorts and decides by, then quits.
     if ([arguments containsObject:@"versions"]) {
         NSArray<NSArray<NSString *> *> *newer = @[

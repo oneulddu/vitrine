@@ -43,14 +43,6 @@ SGModRow *SGOptionRow(NSString *title, NSString *subtitle, NSString *key) {
     return row;
 }
 
-// A switch whose work is not finished: turning it on says so first, and offers the repo to anyone
-// who would rather fix it than live with it.
-SGModRow *SGUnstableRow(NSString *title, NSString *subtitle, NSString *key, NSString *warning) {
-    SGModRow *row = SGSwitchRow(title, subtitle, key);
-    row.warning = warning;
-    return row;
-}
-
 SGModRow *SGFlagRow(NSString *title, NSString *key) {
     SGModRow *row = SGHideRow(title, nil, key);
     row.flag = YES;

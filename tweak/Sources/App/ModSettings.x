@@ -184,10 +184,10 @@ static UIViewController *modSettingsPage(void) {
     self.alpha = highlighted ? 0.5 : 1;
 }
 
-static UINavigationController *navigationIn(UIViewController *page) {
-    if ([page isKindOfClass:UINavigationController.class]) return (UINavigationController *)page;
+static UIViewController *settingsListIn(UIViewController *page, Class kind) {
+    if ([page isKindOfClass:kind]) return page;
     for (UIViewController *child in page.childViewControllers) {
-        UINavigationController *found = navigationIn(child);
+        UIViewController *found = settingsListIn(child, kind);
         if (found) return found;
     }
     return nil;
@@ -206,7 +206,8 @@ static UINavigationController *navigationIn(UIViewController *page) {
         return;
     }
     [presenting dismissViewControllerAnimated:YES completion:^{
-        SGShowPage(navigationIn(presenting).topViewController ?: presenting, modSettingsPage());
+        UINavigationController *nav = (UINavigationController *)settingsListIn(presenting, UINavigationController.class);
+        SGShowPage(nav.topViewController ?: presenting, modSettingsPage());
     }];
 }
 
@@ -219,7 +220,8 @@ void SGOpenModSettings(UIView *source) {
         if ([r isKindOfClass:UIViewController.class]) owner = (UIViewController *)r;
     }
     UINavigationController *nav = nil;
-    for (UIViewController *page = owner; page && !nav; page = page.parentViewController) nav = navigationIn(page);
+    for (UIViewController *page = owner; page && !nav; page = page.parentViewController)
+        nav = (UINavigationController *)settingsListIn(page, UINavigationController.class);
     SGShowPage(nav.topViewController ?: SGTopController(), modSettingsPage());
 }
 
@@ -248,15 +250,6 @@ static void placeRow(UICollectionView *list, SGModSettingsRow *row) {
 // underneath. So the settings list inside the lowest wrapper that holds one is the list the row
 // belongs at the end of, and a controller with no stack to be found on keeps the row rather than
 // losing it.
-static UIViewController *settingsListIn(UIViewController *page, Class kind) {
-    if ([page isKindOfClass:kind]) return page;
-    for (UIViewController *child in page.childViewControllers) {
-        UIViewController *found = settingsListIn(child, kind);
-        if (found) return found;
-    }
-    return nil;
-}
-
 static BOOL isSettingsRoot(UIViewController *list) {
     for (UIViewController *page in list.navigationController.viewControllers) {
         UIViewController *found = settingsListIn(page, list.class);

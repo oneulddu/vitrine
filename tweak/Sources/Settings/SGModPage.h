@@ -93,8 +93,6 @@ SGModRow *SGHideRow(NSString *title, NSString *subtitle, NSString *key);     // 
 SGModRow *SGShownRow(NSString *title, NSString *subtitle, NSString *hideKey);
 // A switch for something the mod adds rather than takes away: off until it is asked for.
 SGModRow *SGOptionRow(NSString *title, NSString *subtitle, NSString *key);
-// A switch whose work is not finished: turning it on says so first, and offers the repo.
-SGModRow *SGUnstableRow(NSString *title, NSString *subtitle, NSString *key, NSString *warning);
 SGModRow *SGFlagRow(NSString *title, NSString *key);   // forces one of Spotify's flags on
 SGModRow *SGKillRow(NSString *title, NSString *key);   // forces a flag Spotify ships on off
 SGModRow *SGStatRow(NSString *title, NSString *(^value)(void));
