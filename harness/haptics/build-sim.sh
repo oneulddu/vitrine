@@ -9,7 +9,7 @@
 set -e
 cd "$(dirname "$0")"
 SRC=../../tweak/Sources
-OUT=build/sim
+OUT=${OUT:-build/sim}
 HAPTICS="$SRC/Shared/Haptics"
 EXTRA=""
 SETTINGS="$SRC/Shared/Haptics/HapticsSettings.m $SRC/Shared/Haptics/SGVibrationsPreview.m $SRC/Shared/Haptics/SGFeedback.m $SRC/Settings/SGPage.m $SRC/Settings/SGPageStyle.m $SRC/Settings/SGModPage.m $SRC/Settings/SGSettingsSearch.m $SRC/Settings/SGGlowSwitch.m"
@@ -27,7 +27,7 @@ mkdir -p "$OUT/gen" "$OUT/HapticsHarness.app"
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O1 -isysroot "$SDK" -Wno-deprecated-declarations \
     $EXTRA -I"$SRC" -I"$SRC/Shared/Haptics" -I"$SRC/Shared/Player" -Isim \
-    sim/main.m sim/fakehaptics.m ../scene.m "$OUT/gen/MusicHaptics.m" "$OUT/gen/SpeedPitch.m" "$SRC/Shared/Player/SGTimePitch.m" "$HAPTICS/SGMusicAnalyzer.m" $SETTINGS \
+    sim/main.m sim/fakehaptics.m ../scene.m ../audio-effects/player-observer-stub.m "$OUT/gen/MusicHaptics.m" "$OUT/gen/SpeedPitch.m" "$SRC/Shared/Player/SGTimePitch.m" "$HAPTICS/SGMusicAnalyzer.m" $SETTINGS \
     "$SRC/Core/SGRebind.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGPrefs.m" "$SRC/Core/SGUIMode.m" "$SRC/Core/SGViewTree.m" "$SRC/Core/SGFlagForce.m" "$SRC/Core/SGLocalize.m" "$SRC/Core/SGGlass.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework AudioToolbox -framework AVFoundation -framework Foundation \
     -o "$OUT/HapticsHarness.app/HapticsHarness"

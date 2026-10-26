@@ -41,6 +41,7 @@
 #import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "Shared/Player/SpeedPitch.h"
+#import "Shared/Player/SGPCMRead.h"
 #import "Haptics.h"
 #import "SGMusicAnalyzer.h"
 #import "SGMusicEventRing.h"
@@ -109,15 +110,6 @@ static void pushEvent(const SGMusicEvent *event, void *context) {
     SGMusicEventRingPush(&sg_ring, event);
 }
 
-static inline float sampleAt(const void *data, UInt32 index, UInt32 bytes, BOOL isFloat, UInt32 fraction) {
-    if (bytes == 4) {
-        if (isFloat) return ((const float *)data)[index];
-        int32_t value = ((const int32_t *)data)[index];
-        return fraction ? (float)((double)value / (double)(1u << fraction)) : (float)(value / 2147483648.0);
-    }
-    return ((const int16_t *)data)[index] / 32768.0f;
-}
-
 // The hardware's format is float with a buffer per channel, but it is read rather than assumed (readFormat),
 // and buffers not laid out the way it says are left alone rather than read as noise: the format read at the
 // start can be a moment old. `refCon` is the unit; only the music's output is heard.
@@ -137,11 +129,7 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
         SGPlayerEndProcessing();
         return noErr;
     }
-    BOOL fits = split ? data->mNumberBuffers == channels : data->mNumberBuffers == 1 && data->mBuffers[0].mNumberChannels == channels;
-    for (UInt32 b = 0; fits && b < data->mNumberBuffers; b++) {
-        fits = data->mBuffers[b].mData && data->mBuffers[b].mDataByteSize == frames * bytes * (split ? 1 : channels);
-    }
-    if (!fits) {
+    if (!SGPCMLayoutFits(data, frames, channels, bytes, split)) {
         atomic_fetch_add_explicit(&sg_skipped, 1, memory_order_relaxed);
         SGPlayerEndProcessing();
         return noErr;
@@ -172,7 +160,7 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
         UInt32 count = MIN(frames - done, (UInt32)kMonoFrames);
         for (UInt32 i = 0; i < count; i++) {
             UInt32 at = (done + i) * stride;
-            sg_mono[i] = 0.5f * (sampleAt(left, at, bytes, isFloat, fraction) + sampleAt(right, at + rightOffset, bytes, isFloat, fraction));
+            sg_mono[i] = 0.5f * (SGPCMReadSample(left, at, bytes, isFloat, fraction) + SGPCMReadSample(right, at + rightOffset, bytes, isFloat, fraction));
         }
         uint64_t chunkTime = hostTime + (uint64_t)(done / sampleRate / sg_secondsPerTick);
         SGMusicAnalyzerProcess(&sg_analyzer, sg_mono, count, chunkTime, pushEvent, NULL);

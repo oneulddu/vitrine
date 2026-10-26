@@ -30,6 +30,7 @@
 #import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "Shared/Player/SpeedPitch.h"
+#import "Shared/Player/SGPCMRead.h"
 #import "AudioEffects.h"
 #import "AudioEffectsApply.h"
 #import "AudioEffectsPresets.h"
@@ -73,23 +74,6 @@ static double loadDouble(atomic_uint_fast64_t *slot) {
 
 #pragma mark - the render thread
 
-static inline float readSample(const void *data, UInt32 index, UInt32 bytes, BOOL isFloat, UInt32 fraction) {
-    if (bytes == 4) {
-        if (isFloat) return ((const float *)data)[index];
-        int32_t value = ((const int32_t *)data)[index];
-        return fraction ? (float)((double)value / (double)(1u << fraction)) : (float)(value / 2147483648.0);
-    }
-    return ((const int16_t *)data)[index] / 32768.0f;
-}
-
-static BOOL laidOut(const AudioBufferList *data, UInt32 frames, UInt32 channels, UInt32 bytes, BOOL split) {
-    BOOL fits = split ? data->mNumberBuffers == channels : data->mNumberBuffers == 1 && data->mBuffers[0].mNumberChannels == channels;
-    for (UInt32 b = 0; fits && b < data->mNumberBuffers; b++) {
-        fits = data->mBuffers[b].mData && data->mBuffers[b].mDataByteSize == frames * bytes * (split ? 1 : channels);
-    }
-    return fits;
-}
-
 #pragma mark - the output's sound, read (AudioEffects.h)
 
 static _Atomic(SGAudioOutputReader) sg_reader;
@@ -105,7 +89,7 @@ static void readOut(SGAudioOutputReader reader, AudioUnitRenderActionFlags flags
     UInt32 formatFlags = (UInt32)layout, channels = (UInt32)(layout >> 32) & 0xffff, bytes = (UInt32)(layout >> 48);
     BOOL isFloat = (formatFlags & kAudioFormatFlagIsFloat) != 0, split = (formatFlags & kAudioFormatFlagIsNonInterleaved) != 0;
     UInt32 fraction = (formatFlags & kLinearPCMFormatFlagsSampleFractionMask) >> kLinearPCMFormatFlagsSampleFractionShift;
-    if ((bytes != 2 && bytes != 4) || channels < 1 || !laidOut(data, frames, channels, bytes, split)) return;
+    if ((bytes != 2 && bytes != 4) || channels < 1 || !SGPCMLayoutFits(data, frames, channels, bytes, split)) return;
     BOOL silent = (flags & kAudioUnitRenderAction_OutputIsSilence) != 0;
     double rate = loadDouble(&sg_rateBits);
     const void *first = data->mBuffers[0].mData, *second = split && channels > 1 ? data->mBuffers[1].mData : first;
@@ -114,7 +98,7 @@ static void readOut(SGAudioOutputReader reader, AudioUnitRenderActionFlags flags
         UInt32 count = MIN(frames - done, (UInt32)kScratchFrames);
         for (UInt32 i = 0; i < count; i++) {
             UInt32 at = (done + i) * stride;
-            sg_mono[i] = silent ? 0 : 0.5f * (readSample(first, at, bytes, isFloat, fraction) + readSample(second, at + secondOffset, bytes, isFloat, fraction));
+            sg_mono[i] = silent ? 0 : 0.5f * (SGPCMReadSample(first, at, bytes, isFloat, fraction) + SGPCMReadSample(second, at + secondOffset, bytes, isFloat, fraction));
         }
         reader(sg_mono, count, rate);
         done += count;
@@ -249,8 +233,8 @@ static NSString *choice(NSArray<NSString *> *names, NSString *key) {
 }
 
 // A file effect's file, from its library by name: its path, nil and an error when there is none to read.
-static NSString *libraryFile(SGDSPFileKind kind, NSString *nameKey, NSString *effect, BOOL on) {
-    NSString *name = SGDSPString(nameKey);
+static NSString *libraryFile(SGDSPFileKind kind, NSString *effect, BOOL on) {
+    NSString *name = SGDSPString(SGDSPFileKey(kind));
     if (!on) return nil;
     if (!name.length) {
         setError(effect, @"No file is chosen");
@@ -309,7 +293,7 @@ static void applyEffect(SGDSPEngine *engine, NSString *effect) {
         NSUInteger count = [nodes componentsSeparatedByString:@";"].count;
         what = [NSString stringWithFormat:@"Graphic EQ %@, about %lu points", onOff(on), (unsigned long)(count > 1 ? count - 1 : count)];
     } else if ([effect isEqualToString:SGKeyDSPConvolver]) {
-        NSString *path = libraryFile(SGDSPFileImpulseResponse, SGKeyDSPConvolverFile, effect, on);
+        NSString *path = libraryFile(SGDSPFileImpulseResponse, effect, on);
         if (on && !path) {
             SGDSPEngineSetConvolver(engine, false, NULL, 0, error, sizeof error);
             return;
@@ -319,7 +303,7 @@ static void applyEffect(SGDSPEngine *engine, NSString *effect) {
         what = [NSString stringWithFormat:@"convolver %@%@%@", onOff(on), on ? @", " : @"", on ? [NSString stringWithFormat:@"%@ (%@) read in %.0f ms",
                 path.lastPathComponent, choice(SGDSPConvolverModeNames(), SGKeyDSPConvolverMode), (CFAbsoluteTimeGetCurrent() - start) * 1000] : @""];
     } else if ([effect isEqualToString:SGKeyDSPDDC]) {
-        NSString *path = libraryFile(SGDSPFileDDC, SGKeyDSPDDCFile, effect, on);
+        NSString *path = libraryFile(SGDSPFileDDC, effect, on);
         if (on && !path) {
             SGDSPEngineSetDDC(engine, false, NULL, error, sizeof error);
             return;
@@ -328,7 +312,7 @@ static void applyEffect(SGDSPEngine *engine, NSString *effect) {
         ok = SGDSPEngineSetDDC(engine, on, text.bytes, error, sizeof error);
         what = [NSString stringWithFormat:@"DDC %@%@%@", onOff(on), on ? @", " : @"", on ? path.lastPathComponent : @""];
     } else if ([effect isEqualToString:SGKeyDSPLiveprog]) {
-        NSString *path = libraryFile(SGDSPFileLiveprog, SGKeyDSPLiveprogFile, effect, on);
+        NSString *path = libraryFile(SGDSPFileLiveprog, effect, on);
         if (on && !path) {
             SGDSPEngineSetLiveprog(engine, false, NULL, error, sizeof error);
             return;

@@ -6,24 +6,15 @@
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
 #import "AudioEffectsPage.h"
+#import "AudioEffectsApply.h"
 #import "AudioEffectsPresets.h"
 
 static NSString *const kAutoEqURL = @"https://github.com/jaakkopasanen/AutoEq";
 // Main-thread requests, shared across page instances for the same library.
 static NSUInteger sg_libraryRequest[SGDSPFileLiveprog + 1];
 
-static NSString *fileKeyOf(SGDSPFileKind kind) {
-    if (kind == SGDSPFileImpulseResponse) return SGKeyDSPConvolverFile;
-    return kind == SGDSPFileDDC ? SGKeyDSPDDCFile : SGKeyDSPLiveprogFile;
-}
-
-static NSString *switchKeyOf(SGDSPFileKind kind) {
-    if (kind == SGDSPFileImpulseResponse) return SGKeyDSPConvolver;
-    return kind == SGDSPFileDDC ? SGKeyDSPDDC : SGKeyDSPLiveprog;
-}
-
 NSString *SGDSPChosenFile(SGDSPFileKind kind) {
-    NSString *name = SGDSPString(fileKeyOf(kind));
+    NSString *name = SGDSPString(SGDSPFileKey(kind));
     return name.length ? name : SGL(@"settings.audioeffects.library.none", @"None");
 }
 
@@ -153,7 +144,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
     _kind = kind;
     ++sg_libraryRequest[kind];
-    self.errorKey = switchKeyOf(kind);
+    self.errorKey = SGDSPEffectOf(SGDSPFileKey(kind));
     self.title = kind == SGDSPFileImpulseResponse ? SGL(@"settings.audioeffects.library.impulseresponses.title", @"Impulse responses") : kind == SGDSPFileDDC ? SGL(@"settings.audioeffects.library.ddcfiles.title", @"DDC files") : SGL(@"settings.audioeffects.library.scripts.title", @"Scripts");
     return self;
 }
@@ -197,7 +188,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
         return cell;
     }
     NSString *name = _files[(NSUInteger)path.row];
-    BOOL chosen = [name isEqualToString:SGDSPString(fileKeyOf(_kind))];
+    BOOL chosen = [name isEqualToString:SGDSPString(SGDSPFileKey(_kind))];
     SGFillCell(cell, name, nil, nil, nil);
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
     if (chosen) {
@@ -221,7 +212,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
     }
     if (path.section != 1 || !_files.count) return;
     ++sg_libraryRequest[_kind];
-    SGDSPSetString(fileKeyOf(_kind), _files[(NSUInteger)path.row]);
+    SGDSPSetString(SGDSPFileKey(_kind), _files[(NSUInteger)path.row]);
     [table reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
 }
 
@@ -244,7 +235,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
         showAlert(self, SGL(@"settings.audioeffects.library.deleteerror.title", @"Could not delete the file"), nil);
         return;
     }
-    if ([name isEqualToString:SGDSPString(fileKeyOf(_kind))]) SGDSPSetString(fileKeyOf(_kind), @"");
+    if ([name isEqualToString:SGDSPString(SGDSPFileKey(_kind))]) SGDSPSetString(SGDSPFileKey(_kind), @"");
     _files = SGDSPLibraryFiles(_kind);
     if (_files.count) [self.tableView deleteRowsAtIndexPaths:@[path] withRowAnimation:UITableViewRowAnimationAutomatic];
     else [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationFade];
@@ -271,22 +262,22 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
     dispatch_once(&once, ^{ imports = dispatch_queue_create("spotifyglass.dsp.import", DISPATCH_QUEUE_SERIAL); });
     SGDSPFileKind kind = _kind;
     NSUInteger request = ++sg_libraryRequest[kind];
-    NSString *selection = SGDSPString(fileKeyOf(kind));
+    NSString *selection = SGDSPString(SGDSPFileKey(kind));
     dispatch_async(imports, ^{
         NSError *error = nil;
         NSString *name = SGDSPImportFile(kind, url, &error);
         NSArray<NSString *> *files = name ? SGDSPLibraryFiles(kind) : nil;
         dispatch_async(dispatch_get_main_queue(), ^{
             BOOL current = request == sg_libraryRequest[kind]
-                && [selection isEqualToString:SGDSPString(fileKeyOf(kind))];
+                && [selection isEqualToString:SGDSPString(SGDSPFileKey(kind))];
             if (!name) {
                 if (current) showAlert(self, SGL(@"settings.audioeffects.library.importerror.title", @"Could not import the file"), error.localizedDescription);
                 return;
             }
             // A stale request may not choose a file, but replacing the current
             // file still invalidates the engine's loaded contents.
-            if (current || [name isEqualToString:SGDSPString(fileKeyOf(kind))])
-                SGDSPSetString(fileKeyOf(kind), name);
+            if (current || [name isEqualToString:SGDSPString(SGDSPFileKey(kind))])
+                SGDSPSetString(SGDSPFileKey(kind), name);
             self->_files = files;
             [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationFade];
         });

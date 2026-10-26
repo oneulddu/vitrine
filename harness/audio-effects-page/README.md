@@ -3,8 +3,9 @@
 Mod Settings > Audio effects (`tweak/Sources/Shared/AudioEffects/`) in a navigation controller, the way Mod
 Settings pushes it: the real page, curve and file pages, the real `Settings/` framework,
 `AudioEffectsSettings.m` and the engine's curve math (`SGDSPFilters.m`), with `stubs.m` standing in for the
-rest of the engine (a made-up status that changes every three seconds, fake libraries in the app's temporary
-directory, and an error for any chosen file with "broken" in its name).
+rest of the engine (a made-up status that changes every three seconds and an error for any chosen file with
+"broken" in its name). File libraries use production `AudioEffectsFiles.m` with seeded fixture files.
+Launch with `master check` to assert slider-label formatting, library selection and error rows, then exit.
 
     THEOS=$HOME/theos ./build.sh
     xcrun simctl install <udid> build/AudioEffectsPageHarness.app

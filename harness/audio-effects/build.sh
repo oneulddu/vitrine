@@ -6,26 +6,37 @@
 #   ./build.sh address    build/audio-effects-address, under AddressSanitizer
 #   ./build.sh route      build/route-check, the corrections remembered per output (route.m)
 #   ./build.sh presets    build/preset-files-check, preset files written and read (preset-files.m)
+#   ./build.sh pcm        build/pcm-read-check, shared PCM reads and exact buffer layout (C only)
 set -e
 cd "$(dirname "$0")"
+if [ "$1" = pcm ]; then
+    OUT=${OUT:-build/pcm-read-check}
+    mkdir -p "$(dirname "$OUT")"
+    xcrun clang -O2 -Wall -Werror -target arm64-apple-macos13.0 -I ../../tweak/Sources \
+        pcm-read.c -o "$OUT"
+    echo "built $OUT"
+    exit
+fi
 if [ "$1" = presets ]; then
     SRC=../../tweak/Sources
     FX=$SRC/Shared/AudioEffects
-    mkdir -p build
+    OUT=${OUT:-build/preset-files-check}
+    mkdir -p "$(dirname "$OUT")"
     xcrun clang -fobjc-arc -O0 -g -Wall -Werror -target arm64-apple-macos13.0 -I ../autoeq/shim -I "$SRC" -I "$FX" \
         preset-files.m "$FX"/AudioEffectsPresets.m "$FX"/AudioEffectsSettings.m "$FX"/AudioEffectsFiles.m "$SRC"/Core/SGPrefs.m \
-        "$SRC"/Core/SGLocalize.m -framework Foundation -o build/preset-files-check
-    echo "built build/preset-files-check"
+        "$SRC"/Core/SGLocalize.m -framework Foundation -o "$OUT"
+    echo "built $OUT"
     exit
 fi
 if [ "$1" = route ]; then
     SRC=../../tweak/Sources
     FX=$SRC/Shared/AudioEffects
-    mkdir -p build
+    OUT=${OUT:-build/route-check}
+    mkdir -p "$(dirname "$OUT")"
     xcrun clang -fobjc-arc -O0 -g -Wall -Werror -target arm64-apple-macos13.0 -I ../autoeq/shim -I "$SRC" -I "$FX" \
         route.m "$FX"/AudioEffectsPresets.m "$FX"/AutoEq.m "$FX"/AudioEffectsSettings.m "$FX"/AudioEffectsFiles.m "$SRC"/Core/SGPrefs.m \
-        "$SRC"/Core/SGLocalize.m -framework Foundation -o build/route-check
-    echo "built build/route-check"
+        "$SRC"/Core/SGLocalize.m -framework Foundation -o "$OUT"
+    echo "built $OUT"
     exit
 fi
 VENDOR=../../vendor/audio

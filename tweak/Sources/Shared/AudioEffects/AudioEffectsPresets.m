@@ -287,11 +287,10 @@ NSString *SGDSPUniquePresetName(NSString *name) {
 
 // List missing library files in effect order, with each name only once.
 NSArray<NSString *> *SGDSPPresetMissingFiles(NSDictionary<NSString *, id> *values) {
-    NSArray<NSString *> *keys = @[SGKeyDSPConvolverFile, SGKeyDSPDDCFile, SGKeyDSPLiveprogFile];
     const SGDSPFileKind kinds[] = {SGDSPFileImpulseResponse, SGDSPFileDDC, SGDSPFileLiveprog};
     NSMutableArray<NSString *> *missing = [NSMutableArray array];
-    for (NSUInteger i = 0; i < keys.count; i++) {
-        id value = values[keys[i]];
+    for (NSUInteger i = 0; i < sizeof kinds / sizeof *kinds; i++) {
+        id value = values[SGDSPFileKey(kinds[i])];
         if (![value isKindOfClass:NSString.class] || ![value length]) continue;
         if (![SGDSPLibraryFiles(kinds[i]) containsObject:value] && ![missing containsObject:value]) [missing addObject:value];
     }

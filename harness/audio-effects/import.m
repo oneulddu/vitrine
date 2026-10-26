@@ -21,6 +21,8 @@ UITableViewCell *SGDequeueCell(UITableView *table, NSString *identifier) { retur
 void SGOpenURL(NSString *url) {}
 NSString *SGDSPError(NSString *key) { return nil; }
 NSString *SGDSPGraphicEqLine(NSString *text) { return text; }
+// This paused-copy fixture models only the Liveprog library.
+NSString *SGDSPFileKey(SGDSPFileKind kind) { return SGKeyDSPLiveprogFile; }
 NSArray<NSString *> *SGDSPFileExtensions(SGDSPFileKind kind) { return @[@"eel"]; }
 NSArray<NSString *> *SGDSPLibraryFiles(SGDSPFileKind kind) { return @[@"A.eel", @"B.eel"]; }
 BOOL SGDSPDeleteFile(SGDSPFileKind kind, NSString *name) { return NO; }

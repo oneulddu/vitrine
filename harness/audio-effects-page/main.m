@@ -29,6 +29,9 @@
 #import "Shared/AudioEffects/AudioEffectsPresets.h"
 #import "Shared/AudioEffects/SGDSPCurveView.h"
 #import "Settings/SGModPage.h"
+#import "../harness-fail.h"
+
+void SGHarnessSeedLibrary(SGDSPFileKind kind);
 
 @interface SGDSPCurveView (Harness)
 - (void)setBand:(NSInteger)band to:(double)value;
@@ -72,6 +75,7 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     if ([args containsObject:@"master"]) SGDSPSetSwitch(SGKeyDSP, YES);
     if ([args containsObject:@"allon"]) for (NSString *key in effectKeys()) SGDSPSetSwitch(key, YES);
     if ([args containsObject:@"broken"]) SGDSPSetString(SGKeyDSPLiveprogFile, @"Tape saturation broken.eel");
+    for (SGDSPFileKind kind = SGDSPFileImpulseResponse; kind <= SGDSPFileLiveprog; ++kind) SGHarnessSeedLibrary(kind);
 
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
     self.window.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -127,6 +131,43 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
     NSArray<NSString *> *parts = [action componentsSeparatedByString:@"="];
     NSString *verb = parts.firstObject, *value = parts.count > 1 ? parts[1] : @"";
     UITableView *table = self.table;
+    if ([verb isEqualToString:@"check"]) {
+        SGDSPSetNumber(SGKeyDSPPostGain, -3.5);
+        UITableViewCell *cell = [table.dataSource tableView:table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:1]];
+        NSMutableArray<UISlider *> *sliders = [NSMutableArray array];
+        findViews(cell, UISlider.class, sliders);
+        HARNESS_CHECK(sliders.count == 1);
+        HARNESS_CHECK([sliders.firstObject.accessibilityValue isEqualToString:@"−3.5 dB"]);
+        SGDSPSetNumber(SGKeyDSPPostGain, 2);
+        cell = [table.dataSource tableView:table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:1 inSection:1]];
+        [sliders removeAllObjects];
+        findViews(cell, UISlider.class, sliders);
+        HARNESS_CHECK([sliders.firstObject.accessibilityValue isEqualToString:@"+2 dB"]);
+        SGDSPSetNumber(SGKeyDSPLimiterRelease, 100);
+        cell = [table.dataSource tableView:table cellForRowAtIndexPath:[NSIndexPath indexPathForRow:3 inSection:1]];
+        [sliders removeAllObjects];
+        findViews(cell, UISlider.class, sliders);
+        HARNESS_CHECK([sliders.firstObject.accessibilityValue isEqualToString:@"100 ms"]);
+        NSArray<NSString *> *keys = @[SGKeyDSPConvolverFile, SGKeyDSPDDCFile, SGKeyDSPLiveprogFile];
+        NSArray<NSString *> *names = @[@"broken.wav", @"broken.vdc", @"broken.eel"];
+        for (SGDSPFileKind kind = SGDSPFileImpulseResponse; kind <= SGDSPFileLiveprog; ++kind) {
+            for (NSString *key in keys) SGDSPSetString(key, @"");
+            SGDSPSetString(keys[kind], names[kind]);
+            HARNESS_CHECK([SGDSPChosenFile(kind) isEqualToString:names[kind]]);
+            for (SGDSPFileKind pageKind = SGDSPFileImpulseResponse; pageKind <= SGDSPFileLiveprog; ++pageKind) {
+                UITableViewController *library = (UITableViewController *)SGDSPLibraryPage(pageKind);
+                [library loadViewIfNeeded];
+                [library beginAppearanceTransition:YES animated:NO];
+                [library endAppearanceTransition];
+                NSInteger rows = [library.tableView.dataSource tableView:library.tableView numberOfRowsInSection:0];
+                HARNESS_CHECK(rows == (pageKind == kind ? 1 : 0));
+                [library beginAppearanceTransition:NO animated:NO];
+                [library endAppearanceTransition];
+            }
+        }
+        NSLog(@"[harness] slider labels and library selection/errors passed");
+        exit(0);
+    }
     if ([verb isEqualToString:@"scroll"]) {
         CGFloat max = MAX(-table.adjustedContentInset.top, table.contentSize.height - table.bounds.size.height + table.adjustedContentInset.bottom);
         [table setContentOffset:CGPointMake(0, MIN(value.doubleValue - table.adjustedContentInset.top, max)) animated:NO];

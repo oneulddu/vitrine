@@ -177,10 +177,6 @@ static double snapped(NSString *key, double value) {
 // "−3.5 dB", "+2 dB", "60 ms", "0.22 s", "60%": the step's decimals unless the number is whole, a sign
 // where the range runs both ways, and a real minus.
 static NSString *numberText(SGDSPRow *row, double value) {
-    if (row.names.count) {
-        NSInteger index = (NSInteger)lround(value);
-        return row.names[(NSUInteger)MAX(0, MIN((NSInteger)row.names.count - 1, index))];
-    }
     SGDSPRange range = SGDSPRangeFor(row.key);
     double step = range.step * row.scale;
     value *= row.scale;

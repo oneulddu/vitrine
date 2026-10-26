@@ -70,6 +70,7 @@
 #import "SGTimePitch.h"
 #import "SGRenderGate.h"
 #import "SGOutputControl.h"
+#import "SGPCMRead.h"
 #import "Shared/Lossless/SGAnchor.h"
 
 // The unit stays in this long after speed and pitch both came back to normal.
@@ -465,15 +466,6 @@ static OSStatus feed(void *refCon, AudioUnitRenderActionFlags *flags, const Audi
 
 static float sg_scratch[kSGTimePitchMaxChannels][kSGTimePitchMaxFrames];
 
-static inline float readSample(const void *data, UInt32 index, UInt32 bytes, BOOL isFloat, UInt32 fraction) {
-    if (bytes == 4) {
-        if (isFloat) return ((const float *)data)[index];
-        int32_t value = ((const int32_t *)data)[index];
-        return fraction ? (float)((double)value / (double)(1u << fraction)) : (float)(value / 2147483648.0);
-    }
-    return ((const int16_t *)data)[index] / 32768.0f;
-}
-
 static inline void writeSample(void *data, UInt32 index, float value, UInt32 bytes, BOOL isFloat, UInt32 fraction) {
     if (bytes == 4 && isFloat) {
         ((float *)data)[index] = value;
@@ -512,7 +504,7 @@ static void shiftInPlace(SGTimePitch *unit, Format *hardware, AudioUnitRenderAct
         lanes[c] = sg_scratch[c];
         const void *source = data->mBuffers[split ? c : 0].mData;
         for (UInt32 i = 0; i < frames; i++) {
-            lanes[c][i] = silent ? 0 : readSample(source, split ? i : i * channels + c, bytes, isFloat, fraction);
+            lanes[c][i] = silent ? 0 : SGPCMReadSample(source, split ? i : i * channels + c, bytes, isFloat, fraction);
         }
     }
     if (!SGTimePitchProcess(unit, lanes, frames) || direct) return;
@@ -606,9 +598,9 @@ static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags
             right = direct ? (float *)data->mBuffers[1].mData + done : sg_scratch[1];
             if (!direct || silent) for (UInt32 j = 0; j < count; ++j) {
                 UInt32 at = split ? done + j : (done + j) * channels;
-                left[j] = silent ? 0 : readSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
+                left[j] = silent ? 0 : SGPCMReadSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
                 right[j] = channels < 2 ? left[j] : silent ? 0
-                    : readSample(data->mBuffers[split ? 1 : 0].mData, split ? done + j : at + 1, bytes, isFloat, fraction);
+                    : SGPCMReadSample(data->mBuffers[split ? 1 : 0].mData, split ? done + j : at + 1, bytes, isFloat, fraction);
             }
             processed = effects(left, right, count, rate);
         }
@@ -618,9 +610,9 @@ static void applyOutputControl(Output *output, AudioUnitRenderActionFlags *flags
         }
         for (UInt32 j = 0; j < count; ++j) {
             UInt32 i = done + j, at = split ? i : i * channels;
-            float l = processed ? left[j] : silent ? 0 : readSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
+            float l = processed ? left[j] : silent ? 0 : SGPCMReadSample(data->mBuffers[0].mData, at, bytes, isFloat, fraction);
             float r = processed ? right[j] : channels < 2 ? l : silent ? 0
-                : readSample(data->mBuffers[split ? 1 : 0].mData, split ? i : at + 1, bytes, isFloat, fraction);
+                : SGPCMReadSample(data->mBuffers[split ? 1 : 0].mData, split ? i : at + 1, bytes, isFloat, fraction);
             if (processed && channels == 1) l = r = 0.5f * (l + r);
             float gain = from == settings.gain ? from : from + step * (i + 1);
             float scale = neutral ? 1 : SGOutputFrameScale(&output->outputEnvelope, settings, gain, l, r);

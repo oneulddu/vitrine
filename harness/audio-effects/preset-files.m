@@ -10,6 +10,7 @@
 #import "AudioEffectsPresets.h"
 
 static int failures;
+static NSString *appliedEffect;
 
 static void check(BOOL ok, NSString *what) {
     printf("%s %s\n", ok ? "ok  " : "FAIL", what.UTF8String);
@@ -18,6 +19,7 @@ static void check(BOOL ok, NSString *what) {
 
 // The engine is not here.
 void SGDSPApply(NSString *effect) {
+    appliedEffect = effect;
 }
 
 static void clearDefaults(void) {
@@ -37,6 +39,32 @@ static NSDictionary *readFile(NSData *data, NSString **name, NSString **error) {
 
 int main(void) {
     @autoreleasepool {
+        clearDefaults();
+
+        check([SGDSPFileKey(SGDSPFileImpulseResponse) isEqual:@"spotifyglass.dsp.convolver.file"], @"impulse response selection key");
+        check([SGDSPFileKey(SGDSPFileDDC) isEqual:@"spotifyglass.dsp.ddc.file"], @"DDC selection key");
+        check([SGDSPFileKey(SGDSPFileLiveprog) isEqual:@"spotifyglass.dsp.liveprog.file"], @"Liveprog selection key");
+        check(SGDSPFileKey((SGDSPFileKind)-1) == nil, @"invalid file kind has no selection key");
+        check([SGDSPPresetMissingFiles(@{
+            SGKeyDSPConvolverFile: @"refactor-missing-ir.wav",
+            SGKeyDSPDDCFile: @"refactor-missing-ddc.vdc",
+            SGKeyDSPLiveprogFile: @"refactor-missing-script.eel"
+        }) isEqual:@[@"refactor-missing-ir.wav", @"refactor-missing-ddc.vdc", @"refactor-missing-script.eel"]],
+              @"missing files retain effect order");
+        check([SGDSPPresetMissingFiles(@{
+            SGKeyDSPConvolverFile: @"refactor-missing.wav", SGKeyDSPDDCFile: @"refactor-missing.wav"
+        }) isEqual:@[@"refactor-missing.wav"]], @"missing names are deduplicated");
+        const SGDSPFileKind kinds[] = {SGDSPFileImpulseResponse, SGDSPFileDDC, SGDSPFileLiveprog};
+        NSArray *effects = @[@"spotifyglass.dsp.convolver", @"spotifyglass.dsp.ddc", @"spotifyglass.dsp.liveprog"];
+        for (NSUInteger i = 0; i < 3; ++i) {
+            NSString *name = [NSUUID.UUID.UUIDString stringByAppendingPathExtension:SGDSPFileExtensions(kinds[i]).firstObject];
+            NSString *path = [SGDSPLibraryDirectory(kinds[i]) stringByAppendingPathComponent:name];
+            check([NSData.data writeToFile:path atomically:YES], @"create owned deletion fixture");
+            SGDSPSetString(SGDSPFileKey(kinds[i]), name);
+            appliedEffect = nil;
+            check(SGDSPDeleteFile(kinds[i], name), @"delete chosen library file");
+            check([appliedEffect isEqual:effects[i]], @"deletion reapplies the owning effect");
+        }
         clearDefaults();
 
         SGDSPLoadBuiltInPreset(1);

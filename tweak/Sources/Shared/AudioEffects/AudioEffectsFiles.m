@@ -20,7 +20,7 @@ static NSString *libraryName(SGDSPFileKind kind) {
 }
 
 // The key naming the file an effect uses, and its switch, for a library.
-static NSString *fileKey(SGDSPFileKind kind) {
+NSString *SGDSPFileKey(SGDSPFileKind kind) {
     switch (kind) {
     case SGDSPFileImpulseResponse: return SGKeyDSPConvolverFile;
     case SGDSPFileDDC: return SGKeyDSPDDCFile;
@@ -163,6 +163,6 @@ BOOL SGDSPDeleteFile(SGDSPFileKind kind, NSString *name) {
     }
     SGLog(@"dsp: %@ deleted from the %@ library", name, libraryName(kind));
     // The effect using it lets it go (and says the file is gone).
-    if ([SGDSPString(fileKey(kind)) isEqualToString:name]) SGDSPApply(SGDSPEffectOf(fileKey(kind)));
+    if ([SGDSPString(SGDSPFileKey(kind)) isEqualToString:name]) SGDSPApply(SGDSPEffectOf(SGDSPFileKey(kind)));
     return YES;
 }
