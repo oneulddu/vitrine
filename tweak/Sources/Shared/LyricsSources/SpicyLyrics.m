@@ -277,17 +277,9 @@ SGLyricsResult *SGSpicyLyricsResult(id root) {
         SGLyricsPageLines(lines, &starts, &texts);
     } else {
         NSMutableArray<NSNumber *> *zeros = [NSMutableArray array];
-        NSMutableArray<NSString *> *plain = [NSMutableArray array];
-        for (SGKaraokeLine *line in lines) {
-            [zeros addObject:@0];
-            [plain addObject:SGKaraokeLineText(line)];
-        }
+        for (NSUInteger i = 0; i < pageTexts.count; i++) [zeros addObject:@0];
         starts = zeros;
-        texts = pageTexts ?: plain;
-        if (pageTexts) {
-            [zeros removeAllObjects];
-            for (NSUInteger i = 0; i < pageTexts.count; i++) [zeros addObject:@0];
-        }
+        texts = pageTexts;
     }
     result.starts = starts;
     result.texts = texts;

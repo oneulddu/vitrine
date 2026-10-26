@@ -92,7 +92,7 @@ static void askMissing(SGLyricsOfferAsk *ask) {
 }
 
 // The track's ask, made if new, with every source missing an answer asked.
-static SGLyricsOfferAsk *askFor(NSString *trackID) {
+void SGLyricsAskOffers(NSString *trackID) {
     if (!sg_asks) sg_asks = [NSMutableDictionary dictionary];
     SGLyricsOfferAsk *ask = sg_asks[trackID];
     if (!ask) {
@@ -103,11 +103,6 @@ static SGLyricsOfferAsk *askFor(NSString *trackID) {
         ask.asking = [NSMutableSet set];
     }
     askMissing(ask);
-    return ask;
-}
-
-void SGLyricsAskOffers(NSString *trackID) {
-    askFor(trackID);
 }
 
 NSDictionary<NSString *, SGLyricsResult *> *SGLyricsOffersSoFar(NSString *trackID, NSArray<NSString *> **asking) {

@@ -92,6 +92,7 @@ static void checkReadingAndSearch(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     id prior = [defaults objectForKey:SGKeyLyricsJapaneseKana];
     [defaults setBool:NO forKey:SGKeyLyricsJapaneseKana];
+    CHECK([SGLyricsRomanised(@"君の名前を呼んでいた", NO) isEqualToString:@"kimi no namae wo yon de i ta"]);
     NSString *romaji = SGLyricsRomanised(@"君の名前を呼ぶ", YES);
     [defaults setBool:YES forKey:SGKeyLyricsJapaneseKana];
     NSString *hiragana = SGLyricsRomanised(@"君の名前を呼ぶ", YES);

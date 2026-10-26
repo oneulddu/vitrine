@@ -36,8 +36,9 @@ BOOL SGLyricsLooksJapanese(NSArray<SGKaraokeLine *> *lines) {
 }
 
 // The tokenizer's reading of each word, a space between words; what it has no reading for (punctuation,
-// another script) is kept for the transform after it.
-static NSString *readJapanese(NSString *text) {
+// another script) is kept for the transform after it. In hiragana mode only words holding Han take a
+// reading; kana, spaces and punctuation stay as written, including を rather than its Latin reading wo.
+static NSString *readJapanese(NSString *text, BOOL hiragana) {
     NSMutableString *read = [NSMutableString string];
     CFLocaleRef japanese = CFLocaleCreate(NULL, CFSTR("ja"));
     CFStringTokenizerRef words = CFStringTokenizerCreate(NULL, (__bridge CFStringRef)text, CFRangeMake(0, text.length),
@@ -46,34 +47,13 @@ static NSString *readJapanese(NSString *text) {
     while (CFStringTokenizerAdvanceToNextToken(words) != kCFStringTokenizerTokenNone) {
         CFRange range = CFStringTokenizerGetCurrentTokenRange(words);
         NSString *between = [text substringWithRange:NSMakeRange(from, range.location - from)];
-        NSString *word = CFBridgingRelease(CFStringTokenizerCopyCurrentTokenAttribute(words, kCFStringTokenizerAttributeLatinTranscription));
-        if (read.length && !between.length) [read appendString:@" "];
-        [read appendString:between];
-        [read appendString:word ?: [text substringWithRange:NSMakeRange(range.location, range.length)]];
-        from = range.location + range.length;
-    }
-    [read appendString:[text substringFromIndex:from]];
-    CFRelease(words);
-    CFRelease(japanese);
-    return read;
-}
-
-// Only words holding Han take a reading. The particles, kana, spaces and punctuation between them
-// stay exactly as written, including を, which the tokenizer's Latin reading would turn into wo.
-static NSString *readHiragana(NSString *text) {
-    NSMutableString *read = [NSMutableString string];
-    CFLocaleRef japanese = CFLocaleCreate(NULL, CFSTR("ja"));
-    CFStringTokenizerRef words = CFStringTokenizerCreate(NULL, (__bridge CFStringRef)text, CFRangeMake(0, text.length),
-                                                         kCFStringTokenizerUnitWord, japanese);
-    NSUInteger from = 0;
-    while (CFStringTokenizerAdvanceToNextToken(words) != kCFStringTokenizerTokenNone) {
-        CFRange range = CFStringTokenizerGetCurrentTokenRange(words);
-        [read appendString:[text substringWithRange:NSMakeRange(from, range.location - from)]];
         NSString *word = [text substringWithRange:NSMakeRange(range.location, range.length)];
-        if (has(word, SGScriptHan)) {
+        if (!hiragana || has(word, SGScriptHan)) {
             NSString *latin = CFBridgingRelease(CFStringTokenizerCopyCurrentTokenAttribute(words, kCFStringTokenizerAttributeLatinTranscription));
-            word = [latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO] ?: word;
+            word = (hiragana ? [latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO] : latin) ?: word;
         }
+        if (!hiragana && read.length && !between.length) [read appendString:@" "];
+        [read appendString:between];
         [read appendString:word];
         from = range.location + range.length;
     }
@@ -98,13 +78,13 @@ NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
         return nil;
     }
     if (hiragana) {
-        romanised = readHiragana(text);
+        romanised = readJapanese(text, YES);
         if ([romanised isEqualToString:text]) romanised = @"";
         [kept setObject:romanised forKey:key];
         return romanised.length ? romanised : nil;
     }
     BOOL kana = japanese || hasKana(text);
-    NSString *source = kana ? readJapanese(text) : text;
+    NSString *source = kana ? readJapanese(text, NO) : text;
     // Han left over is Chinese: its pinyin keeps the tones, and only its punctuation is made ASCII.
     NSString *transform = !kana && has(text, SGScriptHan) ? @"Any-Latin; [[:P:][:Zs:]] Latin-ASCII" : @"Any-Latin; Latin-ASCII";
     romanised = [[source stringByApplyingTransform:transform reverse:NO]
