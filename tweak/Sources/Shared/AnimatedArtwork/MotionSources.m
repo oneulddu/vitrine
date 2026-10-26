@@ -107,7 +107,7 @@ static void canvasFromService(NSString *uri, void (^done)(NSURL *canvas)) {
     }] resume];
 }
 
-void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels,
+void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
                      void (^done)(NSURL *file, NSString *source)) {
     NSArray<NSString *> *order = SGMotionSourceOrder();
     // The walk holds itself until it ends, when it lets go.
@@ -133,7 +133,7 @@ void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *a
                 else next(nil);
             });
         } else {
-            SGMotionAlbumCover(artist, album, shape, pixels, next);
+            SGMotionAlbumCover(artist, album, pixels, next);
         }
     };
     ask = step;

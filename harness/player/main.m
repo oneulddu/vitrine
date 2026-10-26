@@ -1117,6 +1117,7 @@ static BOOL fieldCovered(void) {
     after(25, ^{
         NSLog(@"[harness] motion checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
               self->_failures ? @"FAIL" : @"PASS");
+        exit(self->_failures ? 1 : 0);
     });
 }
 
@@ -1167,20 +1168,20 @@ static NSString *termOf(NSURL *url) {
 
     sg_catalogBody = catalogAlbums(@[@[@"Midnights", @"Taylor Swift", @"https://canvas.harness/standard.m3u8"],
                                      @[@"Midnights (3am Edition)", @"Taylor Swift", @"https://canvas.harness/3am.m3u8"]]);
-    after(1, ^{ SGMotionAlbumCover(@"Taylor Swift", @"Midnights (3am Edition)", SGMotionTall, 600, ^(NSURL *file) {}); });
+    after(1, ^{ SGMotionAlbumCover(@"Taylor Swift", @"Midnights (3am Edition)", 600, ^(NSURL *file) {}); });
     after(2.5, ^{
         NSString *term = termOf(sg_catalogAsked.firstObject), *master = sg_canvasAsked.firstObject.lastPathComponent;
         [self expect:sg_catalogAsked.count == 1 && [term isEqualToString:@"Taylor Swift Midnights"] step:@"the term"
               detail:[NSString stringWithFormat:@"%lu asked, \"%@\"", (unsigned long)sg_catalogAsked.count, term]];
         [self expect:[master isEqualToString:@"3am.m3u8"] step:@"the album of the same name first" detail:master ?: @"none asked"];
         sg_catalogStatus = 429;
-        SGMotionAlbumCover(@"Artist X", @"Album One", SGMotionTall, 600, ^(NSURL *file) {});
+        SGMotionAlbumCover(@"Artist X", @"Album One", 600, ^(NSURL *file) {});
     });
     __block BOOL answered = NO;
     after(4, ^{
         [self expect:sg_catalogAsked.count == 2 step:@"a 429" detail:[NSString stringWithFormat:@"%lu asked", (unsigned long)sg_catalogAsked.count]];
         sg_catalogStatus = 200;
-        SGMotionAlbumCover(@"Artist X", @"Album Two", SGMotionTall, 600, ^(NSURL *file) { answered = !file; });
+        SGMotionAlbumCover(@"Artist X", @"Album Two", 600, ^(NSURL *file) { answered = !file; });
     });
     after(5, ^{
         [self expect:sg_catalogAsked.count == 2 && answered step:@"paused after it"

@@ -634,7 +634,7 @@ UIView *SGRPlayerMotionPreview(void (^arrived)(void)) {
     sg_previewFile = nil;
     sg_previewPoster = nil;
     SGLog(@"redesign player: the Player page looks up the clip of %@%@", track, shown.current ? @"" : @", the last played");
-    SGMotionClipFor(track, shown.canvasURL, shown.artist, shown.album, SGMotionTall, SGMotionPixels(),
+    SGMotionClipFor(track, shown.canvasURL, shown.artist, shown.album, SGMotionPixels(),
                     ^(NSURL *file, NSString *source) {
         if (![track isEqualToString:sg_previewTrack]) return;
         // Nothing found is not kept: the page asks again the next time it shows Animated.

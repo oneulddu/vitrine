@@ -320,9 +320,9 @@ NSURL *SGMotionCanvasIn(NSDictionary *metadata) {
     id address = metadata[@"canvas.url"] ?: metadata[SGMotionHiddenCanvas @"canvas.url"];
     return [type hasPrefix:@"VIDEO"] && [address isKindOfClass:NSString.class] ? [NSURL URLWithString:address] : nil;
 }
-void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels,
+void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
                      void (^done)(NSURL *file, NSString *source)) {
-    void (^apple)(void) = ^{ SGMotionAlbumCover(artist, album, shape, pixels, ^(NSURL *file) { done(file, file ? @"applemusic" : nil); }); };
+    void (^apple)(void) = ^{ SGMotionAlbumCover(artist, album, pixels, ^(NSURL *file) { done(file, file ? @"applemusic" : nil); }); };
     if (!canvas) { apple(); return; }
     SGMotionFile(canvas, ^(NSURL *file) { if (file) done(file, @"canvas"); else apple(); });
 }

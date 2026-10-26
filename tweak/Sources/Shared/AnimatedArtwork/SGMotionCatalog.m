@@ -404,10 +404,8 @@ static void lookUp(NSString *key, void (^done)(id value), void (^look)(void (^an
 
 #pragma mark - album covers
 
-static NSString *videoOf(NSDictionary *editorialVideo, SGMotionShape shape) {
-    NSArray<NSString *> *names = shape == SGMotionTall
-        ? @[@"motionTallVideo3x4", @"motionDetailTall", @"motionSquareVideo1x1", @"motionDetailSquare"]
-        : @[@"motionSquareVideo1x1", @"motionDetailSquare"];
+static NSString *videoOf(NSDictionary *editorialVideo) {
+    NSArray<NSString *> *names = @[@"motionTallVideo3x4", @"motionDetailTall", @"motionSquareVideo1x1", @"motionDetailSquare"];
     for (NSString *name in names) {
         id video = dig(editorialVideo, [name stringByAppendingString:@"/video"]);
         if ([video isKindOfClass:NSString.class] && [video length]) return video;
@@ -434,9 +432,9 @@ static void wholeFileOf(NSURL *master, CGFloat pixels, void (^answer)(id file, B
     });
 }
 
-void SGMotionAlbumCover(NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels, void (^done)(NSURL *file)) {
+void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *file)) {
     if (!NSThread.isMainThread) {
-        dispatch_async(dispatch_get_main_queue(), ^{ SGMotionAlbumCover(artist, album, shape, pixels, done); });
+        dispatch_async(dispatch_get_main_queue(), ^{ SGMotionAlbumCover(artist, album, pixels, done); });
         return;
     }
     NSString *artistKey = SGMotionNameKey(artist), *albumKey = SGMotionNameKey(album);
@@ -444,7 +442,8 @@ void SGMotionAlbumCover(NSString *artist, NSString *album, SGMotionShape shape, 
         done(nil);
         return;
     }
-    NSString *key = [NSString stringWithFormat:@"album\n%ld\n%@\n%@", (long)shape, artistKey, albumKey];
+    // The persisted key retains the tall-first catalog choice's numeric value.
+    NSString *key = [NSString stringWithFormat:@"album\n1\n%@\n%@", artistKey, albumKey];
     // The remote file is what is kept: the store may drop its local copy later in the launch.
     lookUp(key, ^(NSURL *remote) { SGMotionFile(remote, done); }, ^(void (^answer)(id, BOOL)) {
         NSString *term = [NSString stringWithFormat:@"%@ %@", artist, SGMotionSearchName(album)];
@@ -463,7 +462,7 @@ void SGMotionAlbumCover(NSString *artist, NSString *album, SGMotionShape shape, 
                     id name = dig(attributes, @"name");
                     if (pass == 0 ? ![name isKindOfClass:NSString.class] || ![plain(name) isEqualToString:exact]
                                   : ![SGMotionNameKey(name) isEqualToString:albumKey]) continue;
-                    video = videoOf(dig(attributes, @"editorialVideo"), shape);
+                    video = videoOf(dig(attributes, @"editorialVideo"));
                     if (video) break;
                 }
             }

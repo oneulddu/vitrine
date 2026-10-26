@@ -281,7 +281,7 @@ static void *kReadyContext = &kReadyContext;
     __weak SGRAlbumHero *weakSelf = self;
     // Tall, as the Music app's album page: the hero runs past the title, taller than wide, and a square clip
     // filled into it lost its sides. An album with only a square clip gets that one.
-    SGMotionAlbumCover(artist, album, SGMotionTall, pixels, ^(NSURL *file) {
+    SGMotionAlbumCover(artist, album, pixels, ^(NSURL *file) {
         SGRAlbumHero *hero = weakSelf;
         if (hero && file && [hero->_motionAlbum isEqualToString:key]) [hero showMotion:file];
     });

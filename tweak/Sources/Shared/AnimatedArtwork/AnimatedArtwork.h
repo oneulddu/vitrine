@@ -41,14 +41,9 @@ static inline BOOL SGLockArtworkShowsLyrics(SGLockArtwork artwork) {
 // Off until switched on: download in Low Data Mode too.
 #define SGKeyMotionLowData @"spotifyglass.motion.lowdata"
 
-typedef NS_ENUM(NSInteger, SGMotionShape) {
-    SGMotionSquare,   // 1:1
-    SGMotionTall,     // 3:4
-};
-
 // Apple Music's animated cover for an album, as a local file, or nil. `done` runs on the main queue.
 // `pixels` is the width it is shown at; the closest stream at or above it is downloaded.
-void SGMotionAlbumCover(NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels,
+void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels,
                         void (^done)(NSURL *file));
 
 // The artist's logo from Apple Music, a transparent PNG `pixels` wide, or nil. Main queue.
@@ -75,7 +70,7 @@ NSURL *SGMotionCanvasIn(NSDictionary *metadata);
 // The first clip the order finds for the track `uri`, as a local file, or nil, and the key of the source it
 // came from. `canvas` is the track's Canvas video, nil when its metadata names none, and then Spotify's
 // Canvas service is asked for it. Main queue.
-void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels,
+void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
                      void (^done)(NSURL *file, NSString *source));
 
 // Follows the player for one user of moving artwork, the lock screen or the redesign's player

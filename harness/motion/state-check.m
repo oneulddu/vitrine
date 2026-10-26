@@ -27,6 +27,7 @@ static __weak id<SGPlayerStateObserver> observer;
 static NSURL *walkCanvas;
 static NSURL *store;
 static NSString *edition = @"first";
+static NSDictionary *editorialVideos;
 static NSData *redLogo, *blueLogo;
 static BOOL blue;
 
@@ -39,7 +40,7 @@ NSURL *SGMotionCanvasIn(NSDictionary *metadata) {
     NSString *address = metadata[@"canvas.url"];
     return address ? [NSURL URLWithString:address] : nil;
 }
-void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape,
+void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album,
                      CGFloat pixels, void (^done)(NSURL *, NSString *)) {
     walkCanvas = canvas;
     done(canvas, canvas ? @"canvas" : nil);
@@ -74,7 +75,7 @@ static void waitFor(BOOL (^ready)(void)) {
                 ? @{@"name": term, @"editorialArtwork": @{@"musicContentColorLogoTrimmed":
                     @{@"url": @"https://fixture.invalid/logo.png", @"width": @1024, @"height": @1024}}}
                 : @{@"name": [term substringFromIndex:@"Artist ".length], @"artistName": @"Artist",
-                    @"editorialVideo": @{@"motionTallVideo3x4": @{@"video":
+                    @"editorialVideo": editorialVideos ?: @{@"motionTallVideo3x4": @{@"video":
                         [NSString stringWithFormat:@"https://fixture.invalid/%@/%@/master.m3u8", edition,
                             [[term substringFromIndex:@"Artist ".length] stringByReplacingOccurrencesOfString:@" " withString:@"-"]]}}};
             data = [NSJSONSerialization dataWithJSONObject:
@@ -99,7 +100,7 @@ static void waitFor(BOOL (^ready)(void)) {
 static NSURL *album(NSString *name) {
     __block BOOL finished = NO;
     __block NSURL *value;
-    SGMotionAlbumCover(@"Artist", name, SGMotionTall, 720, ^(NSURL *file) { value = file; finished = YES; });
+    SGMotionAlbumCover(@"Artist", name, 720, ^(NSURL *file) { value = file; finished = YES; });
     waitFor(^BOOL { return finished; });
     return value;
 }
@@ -150,13 +151,16 @@ int main(void) {
         CHECK([NSFileManager.defaultManager createDirectoryAtURL:root withIntermediateDirectories:YES attributes:nil error:nil]);
         store = [root URLByAppendingPathComponent:@"answers.plist"];
         CHECK(([@{@"album\n1\nartist\nexpired": @{@"url": @"https://fixture.invalid/expired.mp4",
-            @"at": [NSDate dateWithTimeIntervalSinceNow:-8 * 24 * 3600]}} writeToURL:store atomically:YES]));
+            @"at": [NSDate dateWithTimeIntervalSinceNow:-8 * 24 * 3600]},
+            @"album\n1\nartist\nsaved": @{@"url": @"https://fixture.invalid/saved.mp4", @"at": NSDate.date}}
+            writeToURL:store atomically:YES]));
         NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
         NSString *tokenKey = @"spotifyglass.motion.token";
         id prior = [defaults objectForKey:tokenKey];
         NSData *claims = [NSJSONSerialization dataWithJSONObject:@{@"exp": @4102444800} options:0 error:nil];
         [defaults setObject:[NSString stringWithFormat:@"e30.%@.test", [claims base64EncodedStringWithOptions:0]] forKey:tokenKey];
         CHECK([NSURLProtocol registerClass:CatalogProtocol.class]);
+        CHECK([album(@"Saved").absoluteString isEqual:@"https://fixture.invalid/saved.mp4"]);
         for (NSUInteger i = 0; i < 201; i++) {
             NSString *name = [NSString stringWithFormat:@"Album %lu", (unsigned long)i];
             CHECK(album(name) != nil);
@@ -169,6 +173,30 @@ int main(void) {
         edition = @"second";
         CHECK([album(@"Album 200").absoluteString isEqual:@"https://fixture.invalid/first/Album-200/clip.mp4"]);
         CHECK([album(@"Album 0").absoluteString isEqual:@"https://fixture.invalid/second/Album-0/clip.mp4"]);
+
+        editorialVideos = @{
+            @"motionTallVideo3x4": @{@"video": @"https://fixture.invalid/tall/master.m3u8"},
+            @"motionDetailTall": @{@"video": @"https://fixture.invalid/detail-tall/master.m3u8"},
+            @"motionSquareVideo1x1": @{@"video": @"https://fixture.invalid/square/master.m3u8"},
+            @"motionDetailSquare": @{@"video": @"https://fixture.invalid/detail-square/master.m3u8"},
+        };
+        CHECK([album(@"All formats").absoluteString isEqual:@"https://fixture.invalid/tall/clip.mp4"]);
+        editorialVideos = @{
+            @"motionDetailTall": @{@"video": @"https://fixture.invalid/detail-tall/master.m3u8"},
+            @"motionSquareVideo1x1": @{@"video": @"https://fixture.invalid/square/master.m3u8"},
+            @"motionDetailSquare": @{@"video": @"https://fixture.invalid/detail-square/master.m3u8"},
+        };
+        CHECK([album(@"Detail tall").absoluteString isEqual:@"https://fixture.invalid/detail-tall/clip.mp4"]);
+        editorialVideos = @{
+            @"motionSquareVideo1x1": @{@"video": @"https://fixture.invalid/square/master.m3u8"},
+            @"motionDetailSquare": @{@"video": @"https://fixture.invalid/detail-square/master.m3u8"},
+        };
+        CHECK([album(@"Square fallback").absoluteString isEqual:@"https://fixture.invalid/square/clip.mp4"]);
+        editorialVideos = @{
+            @"motionDetailSquare": @{@"video": @"https://fixture.invalid/detail-square/master.m3u8"},
+        };
+        CHECK([album(@"Detail square fallback").absoluteString isEqual:@"https://fixture.invalid/detail-square/clip.mp4"]);
+        editorialVideos = nil;
 
         redLogo = makeLogo(YES); blueLogo = makeLogo(NO);
         for (NSUInteger i = 0; i < 5; i++)

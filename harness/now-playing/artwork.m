@@ -119,7 +119,7 @@ NSArray *SGMotionSourceOrder(void) { return @[@"canvas"]; }
 NSURL *SGMotionCanvasIn(NSDictionary *metadata) { return nil; }
 NSString *SGLocalFileCoverInURL(NSString *url) { return nil; }
 BOOL SGMotionCanvasOutranks(NSArray *order, NSString *source) { return YES; }
-void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, SGMotionShape shape,
+void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album,
                      CGFloat pixels, void (^done)(NSURL *, NSString *)) {
     lookups++;
     done(sourceFile, sourceFile ? @"canvas" : nil);

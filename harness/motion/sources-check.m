@@ -11,7 +11,7 @@ BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
 NSString *SGL(NSString *key, NSString *english) { return english; }
 void SGSpclientHeaders(void (^use)(NSDictionary *)) { use(@{@"Authorization": @"fixture"}); }
 void SGMotionFile(NSURL *remote, void (^done)(NSURL *)) { done(remote); }
-void SGMotionAlbumCover(NSString *artist, NSString *album, SGMotionShape shape, CGFloat pixels, void (^done)(NSURL *)) {
+void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *)) {
     CHECK(NO); // The fixture enables only Canvas.
 }
 // Settings-page linkage is not exercised by these source-walk checks.
@@ -77,7 +77,7 @@ static void waitFor(BOOL (^ready)(void)) {
     CHECK(ready());
 }
 static void ask(NSString *uri, void (^done)(NSURL *)) {
-    SGMotionClipFor(uri, nil, @"Artist", @"Album", SGMotionTall, 720, ^(NSURL *file, NSString *source) {
+    SGMotionClipFor(uri, nil, @"Artist", @"Album", 720, ^(NSURL *file, NSString *source) {
         CHECK(file ? [source isEqual:@"canvas"] : source == nil);
         done(file);
     });
