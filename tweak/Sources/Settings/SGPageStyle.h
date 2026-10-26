@@ -16,6 +16,8 @@ UIFont *SGSubtitleFont(void);   // subtitles, section headers, footers and notes
 // Both grow through the accessibility sizes with no cap. A control beside a row's title, or text inside a
 // drawing of fixed size, caps its copy so the title keeps its room.
 UIFont *SGCappedFont(UIFont *font, CGFloat largest);
+// Preserve the chosen face and size, replacing its feature settings with tabular digits; nil stays nil.
+UIFont *SGMonospacedDigitsFont(UIFont *font);
 BOOL SGAccessibilityTextSize(void);   // an accessibility size, where a row's value goes under its title
 // A slider row's text, laid out by hand: the title with its value at the trailing edge, or at the accessibility
 // sizes the title wrapped across the row with the value under it, then the subtitle when it has one. The

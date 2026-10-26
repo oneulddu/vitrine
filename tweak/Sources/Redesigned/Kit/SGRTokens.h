@@ -38,8 +38,6 @@ UIColor *SGRHairline(void);
 // The system font at the size `style` has for the current content size category, but never larger
 // than it has at `largest`, in `weight`. Callers re-ask on traitCollectionDidChange:.
 UIFont *SGRFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest);
-// The same font with digits of one width, so a time or a count does not twitch as it changes.
-UIFont *SGRMonospacedDigitsFont(UIFont *font);
 
 BOOL SGRReduceMotion(void);
 BOOL SGRReduceTransparency(void);

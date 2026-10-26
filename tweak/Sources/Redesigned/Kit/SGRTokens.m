@@ -1,4 +1,3 @@
-#import <CoreText/SFNTLayoutTypes.h>
 #import "Core/SGCore.h"
 #import "SGRTokens.h"
 #import "SGRAccent.h"
@@ -67,13 +66,6 @@ UIFont *SGRFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategor
     UITraitCollection *traits = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:current];
     CGFloat size = [UIFont preferredFontForTextStyle:style compatibleWithTraitCollection:traits].pointSize;
     return [UIFont systemFontOfSize:size weight:weight];
-}
-
-UIFont *SGRMonospacedDigitsFont(UIFont *font) {
-    if (!font) return nil;
-    NSArray *features = @[@{UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType), UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)}];
-    UIFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorByAddingAttributes:@{UIFontDescriptorFeatureSettingsAttribute: features}];
-    return [UIFont fontWithDescriptor:descriptor size:font.pointSize];
 }
 
 BOOL SGRReduceMotion(void) {

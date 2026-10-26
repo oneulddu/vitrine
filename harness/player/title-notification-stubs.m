@@ -59,6 +59,8 @@ NSNotificationName const SGRNowPlayingArtworkDidChangeNotification = @"harness.a
 
 // Suppress automatic device-orientation setup only; viewDidLoad's subscriptions still run unchanged.
 BOOL SGRedesignedUI(void) { return NO; }
+NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+void SGPresentDark(UIViewController *controller) {}
 BOOL SGEnabled(NSString *key) { return [key isEqualToString:SGRKeyLyricsAutoHide]; }
 SGRLyricsHide SGRLyricsHideMode(void) { return SGRLyricsHideAll; }
 BOOL SGRPlayerLyricsAvailable(void) { return YES; }

@@ -2,7 +2,7 @@
 set -e
 # The sources of the checkout this harness sits in, unless SRC names others (an older tree, to compare).
 SRC=${SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
-OUT=$(dirname "$0")/build
+OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/TabBarHarness.app"
 
 for f in Shared/Navigation/Links.x Redesigned/Navbar/TabBar.x Redesigned/Navbar/TabBarMinimize.x Redesigned/NowPlayingBar/NowPlayingBar.x; do
@@ -17,7 +17,7 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     "$(dirname "$0")/main.m" "$(dirname "$0")/stubs.m" "$(dirname "$0")/touch.m" \
     "$OUT"/gen/*.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m \
-    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m \
+    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m "$SRC"/Settings/SGPageStyle.m \
     "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Redesigned/Kit/SGRPress.m "$SRC"/Settings/SGMarquee.m \
     "$SRC"/Redesigned/Navbar/NavbarLayout.m "$SRC"/Shared/Navigation/TabIcons.m \
     -framework UIKit -framework IOKit -framework QuartzCore -framework CoreGraphics -framework Foundation \

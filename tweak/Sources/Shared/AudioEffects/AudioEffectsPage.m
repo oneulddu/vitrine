@@ -2,7 +2,6 @@
 // into their controls as their switches go on, and its status line and the effects' errors come and go
 // while it is open, none of which a page of fixed rows does. It keeps Settings/'s look all the same: the
 // cards, the 13pt titles over 11pt subtitles, the tiles, the value and the chevron, the checkmark lists.
-#import <CoreText/SFNTLayoutTypes.h>
 #import "Core/SGCore.h"
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
@@ -187,15 +186,6 @@ static NSString *numberText(SGDSPRow *row, double value) {
     return [NSString stringWithFormat:@"%@%@%@", sign, number, row.unit ?: @""];
 }
 
-// Figures that do not shift sideways as they change, in whatever face the titles are in.
-static UIFont *tabular(UIFont *font) {
-    UIFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorByAddingAttributes:@{
-        UIFontDescriptorFeatureSettingsAttribute: @[@{UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType),
-                                                     UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)}],
-    }];
-    return [UIFont fontWithDescriptor:descriptor size:font.pointSize];
-}
-
 #pragma mark - the slider row
 
 // A step at a time for VoiceOver, or a twentieth of the range where the steps are too fine to swipe through.
@@ -254,7 +244,7 @@ static UIFont *tabular(UIFont *font) {
     NSInteger count = range.step > 0 ? (NSInteger)lround((range.max - range.min) / range.step) : 0;
     _detents = count > 0 && count <= 24;
     _title.font = SGTitleFont();
-    _value.font = tabular(SGTitleFont());
+    _value.font = SGMonospacedDigitsFont(SGTitleFont());
     _title.text = row.title;
     _slider.minimumTrackTintColor = SGGreen();
     _slider.minimumValue = (float)range.min;

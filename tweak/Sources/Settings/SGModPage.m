@@ -1,4 +1,3 @@
-#import <CoreText/SFNTLayoutTypes.h>
 #import "SGModPage.h"
 #import "SGPageStyle.h"
 #import "SGGlowSwitch.h"
@@ -469,15 +468,6 @@ static double snapped(SGModRow *row, double value) {
     return MAX(row.minimum, MIN(row.maximum, value));
 }
 
-// Figures that do not shift sideways as they change, in whatever face the titles are in.
-static UIFont *tabular(UIFont *font) {
-    UIFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorByAddingAttributes:@{
-        UIFontDescriptorFeatureSettingsAttribute: @[@{UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType),
-                                                     UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)}],
-    }];
-    return [UIFont fontWithDescriptor:descriptor size:font.pointSize];
-}
-
 // A step at a time for VoiceOver, or a twentieth of the range where the steps are too fine to swipe through.
 @interface SGModSlider : UISlider
 @property (nonatomic) float spokenStep;
@@ -551,7 +541,7 @@ static const CGFloat kSliderTop = 12, kSliderGap = 6, kSliderHeight = 28, kSlide
     _detents = count > 0 && count <= 24;
     _title.font = SGTitleFont();
     _subtitle.font = SGSubtitleFont();
-    _value.font = tabular(SGTitleFont());
+    _value.font = SGMonospacedDigitsFont(SGTitleFont());
     _title.text = row.title;
     _subtitle.text = row.subtitle;
     _subtitle.hidden = !row.subtitle;

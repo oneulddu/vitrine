@@ -29,7 +29,6 @@
 // The redesign shows the player's sheet as the system menu, with speed, pitch, reverb and Animated artwork
 // as items of its own (Redesigned/Player/PlayerMenu.m), so the block stays out of a sheet shown that way
 // and comes in only if the sheet itself is shown after all (SGPlayerMenuReplaced).
-#import <CoreText/SFNTLayoutTypes.h>
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
@@ -63,14 +62,6 @@ static UIFont *font(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCat
     UITraitCollection *traits = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:current];
     CGFloat size = [UIFont preferredFontForTextStyle:style compatibleWithTraitCollection:traits].pointSize;
     return [UIFont systemFontOfSize:size weight:weight];
-}
-
-// Digits of one width, so a value does not shuffle as it counts.
-static UIFont *monospacedDigits(UIFont *base) {
-    if (!base) return nil;
-    NSArray *features = @[@{UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType), UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)}];
-    UIFontDescriptor *descriptor = [base.fontDescriptor fontDescriptorByAddingAttributes:@{UIFontDescriptorFeatureSettingsAttribute: features}];
-    return [UIFont fontWithDescriptor:descriptor size:base.pointSize];
 }
 
 static void animateOpen(void (^animations)(void), void (^completion)(BOOL finished)) {
@@ -185,7 +176,7 @@ static UILabel *makeLabel(UIFont *font, UIColor *color) {
 
 - (UIButton *)valueButton:(SEL)reset {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.titleLabel.font = monospacedDigits(font(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraLarge));
+    button.titleLabel.font = SGMonospacedDigitsFont(font(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraLarge));
     button.tintColor = primary();
     [button setTitleColor:primary() forState:UIControlStateNormal];
     [button setTitleColor:[primary() colorWithAlphaComponent:0.4] forState:UIControlStateHighlighted];
@@ -260,7 +251,7 @@ static void placeTick(UISlider *slider) {
     _icon.contentMode = UIViewContentModeCenter;
     _title = makeLabel(font(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), primary());
     _title.text = @"Speed and pitch";
-    _summary = makeLabel(monospacedDigits(font(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge)), secondary());
+    _summary = makeLabel(SGMonospacedDigitsFont(font(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge)), secondary());
     _summary.textAlignment = NSTextAlignmentRight;
     _chevron = [[UIImageView alloc] initWithImage:paintedSymbol(@"chevron.down", 13, UIImageSymbolWeightSemibold, secondary())];
     _chevron.contentMode = UIViewContentModeCenter;

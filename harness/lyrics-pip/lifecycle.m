@@ -83,6 +83,9 @@ BOOL SGFlag(NSString *key, BOOL fallback) {
     id value = [NSUserDefaults.standardUserDefaults objectForKey:key]; return value ? [value boolValue] : fallback;
 }
 void SGPresentDark(UIViewController *controller) {}
+// SGPageStyle's accent preferences are not part of the PiP transport fixture.
+NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
+BOOL SGRedesignedUI(void) { return NO; }
 
 static NSUInteger alerts;
 @interface TestPresenter : UIViewController

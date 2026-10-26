@@ -1,4 +1,5 @@
 #import "SGPageStyle.h"
+#import <CoreText/SFNTLayoutTypes.h>
 #import "Core/SGCore.h"
 
 static UIFont *sg_spotifyFont;
@@ -18,6 +19,13 @@ UIFont *SGTitleFont(void) { return scaled(UIFontTextStyleBody, 13); }
 UIFont *SGSubtitleFont(void) { return scaled(UIFontTextStyleFootnote, 11); }
 UIFont *SGCappedFont(UIFont *font, CGFloat largest) {
     return font.pointSize > largest ? [font fontWithSize:largest] : font;
+}
+
+UIFont *SGMonospacedDigitsFont(UIFont *font) {
+    if (!font) return nil;
+    NSArray *features = @[@{UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType), UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)}];
+    UIFontDescriptor *descriptor = [font.fontDescriptor fontDescriptorByAddingAttributes:@{UIFontDescriptorFeatureSettingsAttribute: features}];
+    return [UIFont fontWithDescriptor:descriptor size:font.pointSize];
 }
 
 BOOL SGAccessibilityTextSize(void) {

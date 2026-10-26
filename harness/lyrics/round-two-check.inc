@@ -2,11 +2,6 @@
 
 extern void SGHarnessStartClock(double at, double rate, double pauseAt, double holdFor);
 
-// The download reader is linked too, but these checks exercise only the glyph, not Spotify's tree.
-void SGForEachView(UIView *view, void (^visit)(UIView *)) {
-    visit(view);
-    for (UIView *child in view.subviews) SGForEachView(child, visit);
-}
 
 static void roundTwoChecks(UIWindow *window) {
     UIViewController *root = [UIViewController new];

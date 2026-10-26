@@ -57,3 +57,6 @@ in Spotify's real lists (`rows` uses stand-ins of the same names), and iOS below
 `refactor-check` runs offline and exits: the real About page's Reset row keeps its trash symbol, opening
 Mod Settings finds a navigation controller through the source's parents, and a deeper first-child stack
 wins over a shallower later sibling. About's external actions remain stubs.
+
+`font-check` checks the shared tabular-digit font's descriptor feature, unchanged point size and nil handling,
+then exits. `PAGE_STYLE_SOURCE` can select an isolated `SGPageStyle.m` mutation for this check.

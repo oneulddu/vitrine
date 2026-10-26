@@ -1,6 +1,7 @@
 #import <objc/message.h>
 #import <CoreText/SFNTLayoutTypes.h>
 #import "Core/SGCore.h"
+#import "Settings/SGPageStyle.h"
 #import "SGRRestyle.h"
 #import "SGRTokens.h"
 
@@ -220,7 +221,7 @@ static void applyMonospaced(UILabel *label, Class original) {
     if (!text.length) {
         UIFont *font = label.font;
         if (font && !hasMonospacedDigits(font)) {
-            ((void (*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&parent, @selector(setFont:), SGRMonospacedDigitsFont(font));
+            ((void (*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&parent, @selector(setFont:), SGMonospacedDigitsFont(font));
         }
         return;
     }
@@ -228,7 +229,7 @@ static void applyMonospaced(UILabel *label, Class original) {
     [text enumerateAttribute:NSFontAttributeName inRange:NSMakeRange(0, text.length) options:0 usingBlock:^(UIFont *font, NSRange range, BOOL *stop) {
         if (!font || hasMonospacedDigits(font)) return;
         if (!mapped) mapped = [text mutableCopy];
-        [mapped addAttribute:NSFontAttributeName value:SGRMonospacedDigitsFont(font) range:range];
+        [mapped addAttribute:NSFontAttributeName value:SGMonospacedDigitsFont(font) range:range];
     }];
     if (mapped) ((void (*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&parent, @selector(setAttributedText:), mapped);
 }

@@ -108,7 +108,7 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, UIColor *color
     config.baseForegroundColor = SGRPrimary();
     config.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *attributes) {
         NSMutableDictionary *out = [attributes mutableCopy];
-        out[NSFontAttributeName] = SGRMonospacedDigitsFont(SGRFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraExtraExtraLarge));
+        out[NSFontAttributeName] = SGMonospacedDigitsFont(SGRFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraExtraExtraLarge));
         return out;
     };
     __weak SGROffsetControl *weakSelf = self;
@@ -150,7 +150,7 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, UIColor *color
     head.alignment = UIStackViewAlignmentCenter;
 
     _value = [SGROffsetValue new];
-    _value.font = SGRMonospacedDigitsFont(SGRFont(UIFontTextStyleLargeTitle, UIFontWeightBold, UIContentSizeCategoryAccessibilityMedium));
+    _value.font = SGMonospacedDigitsFont(SGRFont(UIFontTextStyleLargeTitle, UIFontWeightBold, UIContentSizeCategoryAccessibilityMedium));
     _value.adjustsFontForContentSizeCategory = YES;
     _value.textColor = SGRPrimary();
     _value.textAlignment = NSTextAlignmentCenter;

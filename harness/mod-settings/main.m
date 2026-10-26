@@ -21,6 +21,8 @@
 #import "Core/SGCore.h"
 #import "Settings/SGPage.h"
 #import "Settings/SGModPage.h"
+#import "Settings/SGPageStyle.h"
+#import <CoreText/SFNTLayoutTypes.h>
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "App/About/About.h"
 #import "../harness-fail.h"
@@ -155,6 +157,19 @@ static UIViewController *gatedPage(void) {
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"font-check"]) {
+        UIFont *base = [UIFont systemFontOfSize:23.5 weight:UIFontWeightSemibold];
+        UIFont *font = SGMonospacedDigitsFont(base);
+        NSArray *features = [font.fontDescriptor objectForKey:UIFontDescriptorFeatureSettingsAttribute];
+        HARNESS_CHECK(([features containsObject:@{
+            UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType),
+            UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)
+        }]));
+        HARNESS_CHECK(font.pointSize == 23.5);
+        HARNESS_CHECK(SGMonospacedDigitsFont(nil) == nil);
+        NSLog(@"[harness] tabular font checks PASS");
+        exit(0);
+    }
     if ([NSProcessInfo.processInfo.arguments containsObject:@"refactor-check"]) {
         refactorChecks();
         exit(0);

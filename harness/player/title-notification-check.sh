@@ -14,7 +14,7 @@ xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -g -O0 -isysroot "$SDK
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
     -I"$SRC" -I"$SRC/Redesigned/Player" -I"$HERE" -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations \
     "$OUT/PlayerLandscape.m" "$HERE/title-notification-check.m" "$HERE/title-notification-stubs.m" \
-    "$SRC/Settings/SGMarquee.m" "$SRC/Redesigned/Kit/SGRTokens.m" \
+    "$SRC/Settings/SGMarquee.m" "$SRC/Redesigned/Kit/SGRTokens.m" "$SRC/Settings/SGPageStyle.m" "$SRC/Core/SGViewTree.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework Foundation \
     -o "$APP/Contents/MacOS/Check"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
