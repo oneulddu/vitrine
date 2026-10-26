@@ -79,13 +79,7 @@ static NSString *pillGlyph(UIView *pill) {
 }
 
 static NSString *pillWord(UIView *pill) {
-    __block NSString *word = nil;
-    SGForEachView(pill, ^(UIView *v) {
-        if (word || ![v isKindOfClass:UILabel.class]) return;
-        NSString *text = [((UILabel *)v).text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (text.length) word = text;
-    });
-    return word ?: pill.accessibilityLabel;
+    return SGRFirstLabelText(pill) ?: pill.accessibilityLabel;
 }
 
 // The two pills of the row, in the order they are to read on the sheet. Either may be missing: a playlist

@@ -13,6 +13,9 @@
 
 // The first immediate child whose class name contains marker; no recursive search or cache.
 UIView *SGRChildNamed(UIView *host, NSString *marker);
+// First nonempty UILabel text, trimmed of whitespace and newlines, depth first including root and hidden labels.
+// nil when no label has text.
+NSString *SGRFirstLabelText(UIView *root);
 // First image-bearing image view at least 80pt wide, depth first; otherwise the first empty one that wide.
 UIImageView *SGRHeaderArtworkIn(UIView *root);
 // A page's large-title label, retained under key and reattached when needed. Text and layout stay local.

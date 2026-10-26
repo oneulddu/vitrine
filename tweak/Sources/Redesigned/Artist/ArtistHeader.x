@@ -50,11 +50,6 @@ static void setFrame(UIView *view, CGRect frame) {
     if (view && !CGRectIsEmpty(frame) && !CGRectEqualToRect(view.frame, frame)) view.frame = frame;
 }
 
-static NSString *trimmed(NSString *text) {
-    NSString *clean = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    return clean.length ? clean : nil;
-}
-
 static char kLogoNameKey;
 
 // Apple Music's logo for the artist in place of the name, where Apple Music has one. Asked once per name;
@@ -70,15 +65,6 @@ static void showLogo(SGRHeaderInfo *info, NSString *name) {
         [shown showTitleImage:logo];
         if (logo) SGLog(@"redesign artist: Apple Music's logo for %@", name);
     });
-}
-
-static NSString *firstText(UIView *root) {
-    __block NSString *found = nil;
-    SGForEachView(root, ^(UIView *v) {
-        if (found || ![v isKindOfClass:UILabel.class]) return;
-        found = trimmed(((UILabel *)v).text);
-    });
-    return found;
 }
 
 // The TemplateKit container the header sits in, which scrolls with the page.
@@ -274,8 +260,8 @@ static void applyHeader(UIView *header, BOOL full) {
 
     UIView *title = SGRFindByIdentifier(header, @"Encore.AdaptiveTitle", &kTitleKey);
     UIView *listeners = SGRFindByIdentifier(header, @"Components.Header.UI.Metadata", &kMetaKey);
-    NSString *name = firstText(title) ?: firstText(bar);
-    full |= [info showTitle:name creator:nil length:firstText(listeners) about:nil];
+    NSString *name = SGRFirstLabelText(title) ?: SGRFirstLabelText(bar);
+    full |= [info showTitle:name creator:nil length:SGRFirstLabelText(listeners) about:nil];
     // Play's glyph and word are drawn in the field's color, which lands whenever the photo's has been read.
     UIColor *fieldColor = SGRArtistFieldColor(container);
     full |= ![fieldColor isEqual:info.handedPlayColor];
@@ -332,7 +318,7 @@ static void applyContent(UIView *header, UIView *container, SGRHeaderInfo *info,
     if (!logged && header.window && name) {
         logged = YES;
         SGLog(@"redesign artist: own block \"%@\", \"%@\"; shuffle %@, play %@, follow %@, more %@", name,
-              firstText(listeners) ?: @"no listeners", shuffle ? @"found" : @"missing", play ? @"found" : @"missing",
+              SGRFirstLabelText(listeners) ?: @"no listeners", shuffle ? @"found" : @"missing", play ? @"found" : @"missing",
               follow ? @"found" : @"missing", more ? @"found" : @"missing");
     }
 }

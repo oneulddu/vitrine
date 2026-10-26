@@ -74,7 +74,26 @@ static void checkRememberedViews(void) {
     HARNESS_CHECK(released == nil);
 }
 
+static void checkLabelText(void) {
+    UIView *empty = [UIView new];
+    [empty addSubview:[UILabel new]];
+    HARNESS_CHECK(SGRFirstLabelText(empty) == nil);
+
+    UIView *root = [UIView new];
+    UILabel *whitespace = [UILabel new], *first = [UILabel new], *later = [UILabel new];
+    whitespace.text = @" \t\n\r ";
+    first.text = @" \nX\t ";
+    first.hidden = YES;
+    later.text = @"Later";
+    [root addSubview:whitespace];
+    [whitespace addSubview:first];
+    [root addSubview:later];
+    HARNESS_CHECK([SGRFirstLabelText(root) isEqualToString:@"X"]);
+    HARNESS_CHECK([SGRFirstLabelText(first) isEqualToString:@"X"]);
+}
+
 void SGRRunKitChecks(void) {
+    checkLabelText();
     checkHeaderArtwork();
     checkClassNames();
     checkRememberedViews();

@@ -108,6 +108,16 @@ UIView *SGRChildNamed(UIView *host, NSString *marker) {
     return nil;
 }
 
+NSString *SGRFirstLabelText(UIView *root) {
+    __block NSString *found = nil;
+    SGForEachView(root, ^(UIView *view) {
+        if (found || ![view isKindOfClass:UILabel.class]) return;
+        NSString *text = [((UILabel *)view).text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        if (text.length) found = text;
+    });
+    return found;
+}
+
 UILabel *SGRLargeTitleIn(UIView *host, const void *key) {
     UILabel *title = objc_getAssociatedObject(host, key);
     if (!title) {

@@ -472,16 +472,6 @@ static NSString *firstText(UIView *root) {
     return found;
 }
 
-// The first label under `root` with any text at all, one letter included: an album can be called "X".
-static NSString *anyText(UIView *root) {
-    __block NSString *found = nil;
-    SGForEachView(root, ^(UIView *v) {
-        if (found || ![v isKindOfClass:UILabel.class]) return;
-        found = trimmed(((UILabel *)v).text);
-    });
-    return found;
-}
-
 // The kind and the date ("Album • 31. 1. 2025", "Single • 2024") are cells of a collection view, a label each;
 // read in the order they are drawn in.
 static NSString *metadataText(UIView *metadata) {
@@ -527,13 +517,13 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page, NSString **artist,
     UIView *parent = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.ParentRow", &kParentKey);
     UIView *metadata = SGRFindByIdentifier(header, @"Components.UI.MetadataRow", &kMetaKey);
     NSString *length = metadataText(metadata), *line = firstText(parent);
-    *album = anyText(title);
+    *album = SGRFirstLabelText(title);
     *artist = line ?: trimmed(parent.accessibilityLabel);
     [info showTitle:*album creator:*artist length:length about:nil];
     // The line as it reads, without the accessibility label to fall back on: no line, no row loses its artist.
     SGRAlbumSetArtist(page, line);
     // And the title, for the rows to find their plays by.
-    SGRAlbumSetTitle(page, anyText(title));
+    SGRAlbumSetTitle(page, SGRFirstLabelText(title));
     // The kind and the date are cells the metadata row's collection view makes on its own pass, after the
     // header's, and nothing lays the header out again when they arrive; the collection is Spotify's own Swift
     // class, which cannot be watched. So an empty row is read again a moment later, a few times at most.
