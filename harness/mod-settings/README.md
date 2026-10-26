@@ -60,3 +60,8 @@ wins over a shallower later sibling. About's external actions remain stubs.
 
 `font-check` checks the shared tabular-digit font's descriptor feature, unchanged point size and nil handling,
 then exits. `PAGE_STYLE_SOURCE` can select an isolated `SGPageStyle.m` mutation for this check.
+
+`information-check` (launch with `-AppleLanguages '(en)'`) exercises the real empty-artist, unsupported
+lock-screen artwork and failed-app-icon actions. It checks their messages, presenters, OK action and
+main-thread presentation; UIKit's icon-change operation fails offline from a worker queue. The check
+exits on completion. `APP_ICON_SOURCE` can select an isolated app-icon mutation.

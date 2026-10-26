@@ -70,11 +70,7 @@ static void setIcon(NSString *icon, void (^done)(void)) {
         // A re-signed install, or a call while the app is not frontmost, can be refused; without
         // a word the row looks broken. The handler can run off the main thread.
         dispatch_async(dispatch_get_main_queue(), ^{
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.appicon.error.alert.title", @"The icon did not change")
-                                                                           message:error.localizedDescription
-                                                                    preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-            [SGTopController() presentViewController:alert animated:YES completion:nil];
+            SGPresentInformation(SGTopController(), SGL(@"settings.appicon.error.alert.title", @"The icon did not change"), error.localizedDescription);
         });
     }];
 }

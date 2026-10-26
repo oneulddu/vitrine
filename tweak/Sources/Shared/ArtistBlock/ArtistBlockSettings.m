@@ -129,11 +129,8 @@ typedef NS_ENUM(NSInteger, SGArtistSection) {
 - (void)pickFromPlaying:(UIView *)source {
     NSArray<NSDictionary *> *artists = SGPlayingArtists();
     if (!artists.count) {
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.artistblock.nothing_playing.alert.title", @"Nothing playing")
-                                                                      message:SGL(@"settings.artistblock.nothing_playing.alert.message", @"Play a track by the artist first, then come back here.")
-                                                               preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+        SGPresentInformation(self, SGL(@"settings.artistblock.nothing_playing.alert.title", @"Nothing playing"),
+                             SGL(@"settings.artistblock.nothing_playing.alert.message", @"Play a track by the artist first, then come back here."));
         return;
     }
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:SGL(@"settings.artistblock.pick.action_sheet.title", @"Block")

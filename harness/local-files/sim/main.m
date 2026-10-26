@@ -111,6 +111,16 @@ static UIImage *redSquare(void) {
     after(2.5, ^{
         UIView *footer = ((_TtC24ContextMenu_InternalImpl25ContextMenuViewController *)menu).table.tableFooterView;
         CHECK(@"the menu has the Edit info row", [NSStringFromClass(footer.class) isEqualToString:@"SGEditInfoRow"]);
+        UILabel *title = nil;
+        for (UIView *view in footer.subviews) if ([view isKindOfClass:UILabel.class]) title = (UILabel *)view;
+        UITraitCollection *traits = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:
+            large ? UIContentSizeCategoryExtraLarge : UIContentSizeCategoryLarge];
+        UIFont *regular = [UIFont systemFontOfSize:
+            [UIFont preferredFontForTextStyle:UIFontTextStyleBody compatibleWithTraitCollection:traits].pointSize];
+        NSNumber *weight = [title.font.fontDescriptor objectForKey:UIFontDescriptorTraitsAttribute][UIFontWeightTrait];
+        NSNumber *regularWeight = [regular.fontDescriptor objectForKey:UIFontDescriptorTraitsAttribute][UIFontWeightTrait];
+        CHECK(@"Edit info uses regular Body text capped at Extra Large",
+              title.font.pointSize == regular.pointSize && [weight isEqualToNumber:regularWeight]);
         shot(@"menu");
         [(UIControl *)footer sendActionsForControlEvents:UIControlEventTouchUpInside];
     });

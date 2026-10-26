@@ -234,9 +234,7 @@ static void choose(SGLibraryFont *font) {
 
 - (void)tell:(NSString *)title message:(NSString *)message {
     if (!self.viewIfLoaded.window) return;
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    SGPresentInformation(self, title, message);
 }
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)table trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)path {

@@ -253,6 +253,11 @@ static void pageStyleChecks(void) {
     self.nav = [[UINavigationController alloc] initWithRootViewController:home];
     self.window.rootViewController = self.nav;
     [self.window makeKeyAndVisible];
+    if ([args containsObject:@"information-check"]) {
+        extern void SGCheckInformationAlerts(void);
+        dispatch_async(dispatch_get_main_queue(), ^{ SGCheckInformationAlerts(); });
+        return YES;
+    }
     dispatch_async(dispatch_get_main_queue(), ^{ SGOpenModSettings(home.view); });
 
     [actions enumerateObjectsUsingBlock:^(NSString *action, NSUInteger i, BOOL *stop) {

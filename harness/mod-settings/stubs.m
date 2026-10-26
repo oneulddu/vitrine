@@ -14,7 +14,7 @@ static UIViewController *blank(NSString *title) {
 }
 
 #define PAGE(name) UIViewController *name(void) { return blank(@#name); }
-PAGE(SGAdsSettingsPage) PAGE(SGAllFlagsPage) PAGE(SGArtistBlockSettingsPage) PAGE(SGDSPSettingsPage) PAGE(SGAutoMixSettingsPage)
+PAGE(SGAdsSettingsPage) PAGE(SGAllFlagsPage) PAGE(SGDSPSettingsPage) PAGE(SGAutoMixSettingsPage)
 PAGE(SGGesturesSettingsPage) PAGE(SGHeadGesturesSettingsPage) PAGE(SGHomeSettingsPage) PAGE(SGLabsPage)
 PAGE(SGListeningStatsPage) PAGE(SGLiveActivitySettingsPage) PAGE(SGLockScreenWidgetPage) PAGE(SGNavbarSettingsPage)
 PAGE(SGNowPlayingBarSettingsPage) PAGE(SGQueueSettingsPage) PAGE(SGRAlbumSettingsPage) PAGE(SGRArtistSettingsPage)
@@ -52,7 +52,7 @@ NSString *SGKaraokePlayingTrack(void) { return nil; }
 NSNotificationName const SGLyricsDidReloadNotification = @"harness.lyrics.reload";
 
 #define ROW(name) SGModRow *name(void) { return SGPageRow(@#name, ^UIViewController *{ return nil; }); }
-ROW(SGAppIconRow) ROW(SGGeminiKeyRow) ROW(SGGlassLyricsRow) ROW(SGLockScreenLyricsRow) ROW(SGLyricsMeaningsRow)
+ROW(SGGeminiKeyRow) ROW(SGGlassLyricsRow) ROW(SGLockScreenLyricsRow) ROW(SGLyricsMeaningsRow)
 ROW(SGLyricsTranslationLanguageRow) ROW(SGLyricsWordTimingRow) ROW(SGRLyricsTextSizesRow) ROW(SGLyricsDelayRow)
 ROW(SGBingTranslateRow) ROW(SGDeepLKeyRow) ROW(SGGoogleTranslateRow) ROW(SGLyricsCulturalNotesRow)
 ROW(SGLyricsFuriganaRow) ROW(SGLyricsJapaneseReadingRow) ROW(SGLyricsLanguageRulesRow) ROW(SGLyricsPiPRow)
@@ -79,6 +79,11 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) { return @[]; }
 SGModSection *SGLyricsSourcesSection(BOOL namingSource) { return SGSection(nil, @[]); }
 NSArray<SGModSection *> *SGNativePlayerScreenSections(void) { return @[]; }
 NSArray<NSDictionary *> *SGBlockedArtists(void) { return @[]; }
+NSArray<NSDictionary *> *SGPlayingArtists(void) { return @[]; }
+NSString *const SGArtistURI = @"uri", *const SGArtistName = @"name";
+BOOL SGArtistBlocked(NSString *uri) { return NO; }
+void SGBlockArtist(NSDictionary *artist) {}
+void SGUnblockArtist(NSString *uri) {}
 
 NSString *SGDSPSummary(void) { return @"Off"; }
 NSString *SGAutoMixSummary(void) { return @"Off"; }

@@ -12,6 +12,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
+#import "Settings/SGPageStyle.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "LocalFiles.h"
@@ -20,13 +21,6 @@
 static const CGFloat kRowHeight = 56, kSideMargin = 16, kIconSide = 24;
 
 static char kRowKey, kDecidedKey;
-
-static UIFont *rowFont(void) {
-    UIContentSizeCategory current = UIApplication.sharedApplication.preferredContentSizeCategory;
-    if (UIContentSizeCategoryCompareToCategory(current, UIContentSizeCategoryExtraLarge) == NSOrderedDescending) current = UIContentSizeCategoryExtraLarge;
-    UITraitCollection *traits = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:current];
-    return [UIFont systemFontOfSize:[UIFont preferredFontForTextStyle:UIFontTextStyleBody compatibleWithTraitCollection:traits].pointSize];
-}
 
 #pragma mark - the editor
 
@@ -439,7 +433,7 @@ void SGLocalFilePresentEditor(UIViewController *presenter, NSString *uri) {
     _icon = [[UIImageView alloc] initWithImage:[glyph imageWithTintColor:secondary renderingMode:UIImageRenderingModeAlwaysOriginal]];
     _icon.contentMode = UIViewContentModeCenter;
     _title = [UILabel new];
-    _title.font = rowFont();
+    _title.font = SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
     _title.textColor = UIColor.whiteColor;
     _title.text = @"Edit info";
     for (UIView *view in @[_icon, _title]) {

@@ -78,9 +78,6 @@ SGModRow *SGLockScreenArtworkNeedsRow(void) {
         NSString *message = [NSString stringWithFormat:SGL(@"settings.lockscreen.needs_ios26.alert.message", @"This iPhone has iOS %@. The lock screen takes moving artwork "
                                                        @"from apps from iOS 26 on, so the Canvas and Apple Music's animated "
                                                        @"covers can show there once the iPhone is updated."), UIDevice.currentDevice.systemVersion];
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.lockscreen.needs_ios26.alert.title", @"Needs iOS 26") message:message
-                                                                preferredStyle:UIAlertControllerStyleAlert];
-        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-        [SGTopController() presentViewController:alert animated:YES completion:nil];
+        SGPresentInformation(SGTopController(), SGL(@"settings.lockscreen.needs_ios26.alert.title", @"Needs iOS 26"), message);
     });
 }
