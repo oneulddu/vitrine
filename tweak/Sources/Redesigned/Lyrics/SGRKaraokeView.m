@@ -2161,13 +2161,6 @@ typedef struct {
     _dots = nil;
 }
 
-static BOOL hasTranslations(NSArray<SGKaraokeLine *> *lines) {
-    for (SGKaraokeLine *line in lines) {
-        if (line.translation.length) return YES;
-    }
-    return NO;
-}
-
 // A way to translate a song: the lines, the track and the language in, one translation per line out, or a
 // message to show. Main queue.
 typedef SGRAutoTranslated SGRTranslated;
@@ -3161,7 +3154,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     NSArray<SGKaraokeLine *> *kept = _lines && track ? [self linesFor:track] : nil;
     if (kept && kept != _lines && kept != _passedOver) {
         if (!_hasTranslation && kept.count == _lines.count && SGKaraokeLinesTiming(kept) == SGKaraokeLinesTiming(_lines)
-            && hasTranslations(kept)) {
+            && SGLyricsHasTranslations(kept)) {
             // Musixmatch's translations come in a moment after the lines, as copies of them: the song is
             // restyled with them where it stands.
             SGLog(@"karaoke: translations of %@ came in", track);

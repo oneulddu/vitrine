@@ -73,13 +73,19 @@ NSString *const SGImportedLRCKey = @"importedlrc";
 NSString *SGL(NSString *key, NSString *english) { return english; }
 // Song matching is covered by lyrics-sources/genius-lyrics; this fixture's artist is always Singer.
 NSString *SGLyricsLeadArtist(NSString *artist) { return artist; }
-void SGMusixmatchTranslations(NSString *track, NSString *language, void (^done)(NSDictionary *)) { done(nil); }
-NSArray *SGMusixmatchTranslatedLines(NSArray *lines, NSDictionary *byLine) { return nil; }
+static BOOL sg_testTranslations;
+static void (^sg_translationReply)(NSDictionary *);
+static NSArray *sg_translatedLines;
+void SGMusixmatchTranslations(NSString *track, NSString *language, void (^done)(NSDictionary *)) {
+    if (sg_testTranslations) sg_translationReply = done;
+    else done(nil);
+}
+NSArray *SGMusixmatchTranslatedLines(NSArray *lines, NSDictionary *byLine) { return sg_translatedLines; }
 SGModRow *SGStatActionRow(NSString *title, NSString *subtitle, NSString *(^value)(void), void (^action)(void)) { return nil; }
 UIViewController *SGTopController(void) { return nil; }
 UIViewController *SGSourcesPageMake(NSString *title, NSString *note, NSArray *all, NSArray *(^order)(void), void (^setOrder)(NSArray *)) { return nil; }
 void SGRegisterFlagForcer(BOOL beatsOverride, SGFlagForcer launch, SGFlagForcer locked) {}
-BOOL SGRedesignedUI(void) { return NO; }
+BOOL SGRedesignedUI(void) { return sg_testTranslations; }
 NSString *SGURIString(id uri) {
     return [uri isKindOfClass:NSURL.class] ? [uri absoluteString] :
         ([uri isKindOfClass:NSString.class] ? uri : nil);
@@ -1373,6 +1379,80 @@ static void checkBackgroundSkip(void) {
 
 void checkNetEaseURLs(void);
 
+@interface HarnessMethodParent : NSObject
+- (NSInteger)inheritedOnly;
+@end
+@implementation HarnessMethodParent
+- (NSInteger)inheritedOnly { return 1; }
+@end
+@interface HarnessMethodChild : HarnessMethodParent
+@end
+@implementation HarnessMethodChild
+- (NSInteger)duplicate { return 2; }
+@end
+@interface HarnessMethodChild (Duplicate)
+- (NSInteger)duplicate;
+@end
+@implementation HarnessMethodChild (Duplicate)
+- (NSInteger)duplicate { return 3; }
+@end
+
+static void checkOwnMethod(void) {
+    CHECK(SGOwnMethod(HarnessMethodChild.class, @selector(inheritedOnly)) == NULL);
+    // A category and its class deliberately supply different entries for the same selector.
+    // Runtime enumeration order, not the helper's output, defines the expected first entry.
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(HarnessMethodChild.class, &count);
+    Method first = NULL, last = NULL;
+    for (unsigned int i = 0; i < count; i++) {
+        if (method_getName(methods[i]) != @selector(duplicate)) continue;
+        if (!first) first = methods[i];
+        last = methods[i];
+    }
+    free(methods);
+    CHECK(first && last && method_getImplementation(first) != method_getImplementation(last));
+    CHECK(SGOwnMethod(HarnessMethodChild.class, @selector(duplicate)) == first);
+    puts("own method: inherited methods excluded, duplicate selector selects first entry");
+}
+
+static void checkTranslationPresence(void) {
+    CHECK(!SGLyricsHasTranslations(nil));
+    CHECK(!SGLyricsHasTranslations(@[]));
+    SGKaraokeLine *line = SGKaraokeStaticLines(@[@"Original"]).firstObject;
+    line.translation = @"";
+    CHECK(!SGLyricsHasTranslations(@[line]));
+    line.translation = @" \n";
+    CHECK(SGLyricsHasTranslations(@[line]));
+    line.translation = @"Original";
+    CHECK(SGLyricsHasTranslations(@[line]));
+    SGKaraokeLine *untranslated = SGKaraokeStaticLines(@[@"Other"]).firstObject;
+    untranslated.backing = line;
+    CHECK(!SGLyricsHasTranslations(@[untranslated]));
+    CHECK(SGLyricsHasTranslations(@[untranslated, line]));
+    puts("translation presence: stored text, whitespace, repeated originals and top-level lines");
+}
+
+static void checkTranslationDelivery(void) {
+    [sg_testDefaults setInteger:7 forKey:SGKeyLyricsTranslationLanguage]; // English in the persisted index.
+    sg_testTranslations = YES;
+    NSArray *lines = SGKaraokeStaticLines(@[@"Original"]);
+    SGKaraokeKeepLines(@"translation-delivery", lines);
+    CHECK(sg_translationReply != nil);
+    SGKaraokeLine *translated = [lines.firstObject copy];
+    translated.translation = @"Translated";
+    sg_translatedLines = @[translated];
+    sg_translationReply(@{@"Original": @"Translated"});
+    CHECK([SGKaraokeLinesForTrack(@"translation-delivery").firstObject.translation isEqual:@"Translated"]);
+    sg_translationReply = nil;
+    SGKaraokeKeepLines(@"translation-delivery", sg_translatedLines);
+    CHECK(sg_translationReply == nil);
+    sg_testTranslations = NO;
+    sg_translatedLines = nil;
+    [sg_testDefaults removeObjectForKey:SGKeyLyricsTranslationLanguage];
+    SGKaraokeForgetLyrics(@"translation-delivery");
+    puts("translation delivery: late provider reply kept, existing translation suppresses another request");
+}
+
 static void checkTTMLResult(void) {
     NSString *xml = @"<tt><body><div>"
         "<p begin=\"5s\" end=\"6s\"><span begin=\"5s\" end=\"6s\">Later</span></p>"
@@ -1421,6 +1501,8 @@ static void checkLRCProjectionPaths(void) {
 
 int main(void) {
     @autoreleasepool {
+        checkOwnMethod();
+        checkTranslationPresence();
         checkLRCProjectionPaths();
         checkTTMLResult();
         checkNetEaseURLs();
@@ -1447,6 +1529,7 @@ int main(void) {
         sg_requested = [NSMutableSet set]; sg_asking = [NSMutableSet set]; sg_looking = [NSMutableSet set];
         sg_losses = [NSMutableDictionary dictionary]; sg_ownSources = YES;
         sg_lastSeenID = @"song";
+        checkTranslationDelivery();
         checkMissingRecovery();
         checkSpicyCancellation();
         checkCompletedBounds();

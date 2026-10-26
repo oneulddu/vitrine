@@ -108,13 +108,7 @@ static NSArray<NSDictionary *> *cleanItems(NSArray<NSDictionary *> *items) {
 static void cleanReturn(Class cls, SEL selector, id (^make)(IMP original)) {
     Method inherited = class_getInstanceMethod(cls, selector);
     if (!inherited) return;
-    Method own = nil;
-    unsigned int count = 0;
-    Method *methods = class_copyMethodList(cls, &count);
-    for (unsigned int i = 0; i < count && !own; i++) {
-        if (method_getName(methods[i]) == selector) own = methods[i];
-    }
-    free(methods);
+    Method own = SGOwnMethod(cls, selector);
     IMP original = own ? method_getImplementation(own) : class_getMethodImplementation(class_getSuperclass(cls), selector);
     if (!original) return;
     IMP cleaned = imp_implementationWithBlock(make(original));

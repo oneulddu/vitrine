@@ -140,6 +140,8 @@ NSString *SGLyricsBareText(NSString *text);
 // (a translator can hand back a line already in the language as it was). The line still counts as
 // translated, so the translation stays on it and is not asked for again.
 NSString *SGLyricsShownTranslation(SGKaraokeLine *line);
+// Any top-level line has a nonempty stored translation, even whitespace or repeated original text.
+BOOL SGLyricsHasTranslations(NSArray<SGKaraokeLine *> *lines);
 // When the singing of a line is over: its own end, or its backing's when that runs on past it.
 NSInteger SGKaraokeSungEnd(SGKaraokeLine *line);
 // The one line a place with room for one names as the one being sung at `ms`. Two voices can sing

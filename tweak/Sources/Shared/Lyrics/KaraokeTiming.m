@@ -69,6 +69,13 @@ NSInteger SGKaraokeSungEnd(SGKaraokeLine *line) {
     return line.backing ? MAX(line.end, line.backing.end) : line.end;
 }
 
+BOOL SGLyricsHasTranslations(NSArray<SGKaraokeLine *> *lines) {
+    for (SGKaraokeLine *line in lines) {
+        if (line.translation.length) return YES;
+    }
+    return NO;
+}
+
 NSInteger SGKaraokeLeadLine(NSArray<SGKaraokeLine *> *lines, NSInteger ms) {
     NSInteger last = -1;
     while (last + 1 < (NSInteger)lines.count && lines[(NSUInteger)last + 1].start <= ms) last++;

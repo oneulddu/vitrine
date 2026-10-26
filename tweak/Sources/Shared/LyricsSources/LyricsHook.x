@@ -257,17 +257,6 @@ static NSData *amendedCardList(NSData *body, NSString *track) {
 
 #pragma mark - the task's own -response
 
-static Method ownMethod(Class cls, SEL selector) {
-    unsigned int count = 0;
-    Method *methods = class_copyMethodList(cls, &count);
-    Method own = NULL;
-    for (unsigned int i = 0; i < count && !own; i++) {
-        if (method_getName(methods[i]) == selector) own = methods[i];
-    }
-    free(methods);
-    return own;
-}
-
 // Spotify may read the status off the task as well as the delegate argument. The task classes are
 // private and differ between OS versions, so the one answering is taken from the first task that needs it.
 static void answerAs(NSURLSessionTask *task, NSHTTPURLResponse *response) {
@@ -275,7 +264,7 @@ static void answerAs(NSURLSessionTask *task, NSHTTPURLResponse *response) {
     dispatch_once(&once, ^{
         SEL selector = @selector(response);
         for (Class cls = object_getClass(task); cls; cls = class_getSuperclass(cls)) {
-            Method method = ownMethod(cls, selector);
+            Method method = SGOwnMethod(cls, selector);
             if (!method) continue;
             NSURLResponse *(*original)(id, SEL) = (NSURLResponse *(*)(id, SEL))method_getImplementation(method);
             method_setImplementation(method, imp_implementationWithBlock(^NSURLResponse *(id me) {
@@ -646,7 +635,7 @@ static void completed(id delegate, NSURLSession *session, NSURLSessionTask *task
         // put a second hook in front of NSURLSession's.
         SEL selector = @selector(dataTaskWithRequest:);
         Class local = objc_getClass("__NSURLSessionLocal");
-        Method own = local ? ownMethod(local, selector) : NULL;
+        Method own = local ? SGOwnMethod(local, selector) : NULL;
         BOOL hookLocal = own && method_getImplementation(own) != method_getImplementation(class_getInstanceMethod(NSURLSession.class, selector));
         %init(SGLyricsRequests);
         if (hookLocal) %init(SGLyricsLocalSession);

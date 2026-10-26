@@ -629,10 +629,32 @@ static void runChecks(SGRKaraokeView *karaoke, UIView *host) {
             NSMutableArray<SGKaraokeLine *> *translated = [SGKaraokeLinesForTrack(@"harness") mutableCopy];
             for (NSUInteger i = 0; i < translated.count; i += 2) {
                 SGKaraokeLine *line = [translated[i] copy];
-                line.translation = [@"Translated: " stringByAppendingString:SGKaraokeLineText(line)];
+                line.translation = [args boolForKey:@"checkTranslateIn"] ? @"Arrived translation"
+                    : [@"Translated: " stringByAppendingString:SGKaraokeLineText(line)];
                 translated[i] = line;
             }
             SGKaraokeKeepLines(@"harness", translated);
+            if ([args boolForKey:@"checkTranslateIn"]) {
+                NSTimeInterval deadline = NSProcessInfo.processInfo.systemUptime + 5;
+                [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer *timer) {
+                    NSMutableArray<UIView *> *pending = [NSMutableArray arrayWithObject:karaoke];
+                    while (pending.count) {
+                        UIView *view = pending.lastObject;
+                        [pending removeLastObject];
+                        if ([view isKindOfClass:UILabel.class] && !view.hidden && view.alpha > 0 &&
+                            [((UILabel *)view).text isEqual:@"Arrived translation"]) {
+                            puts("translateIn: late translation rendered");
+                            fflush(stdout);
+                            exit(0);
+                        }
+                        [pending addObjectsFromArray:view.subviews];
+                    }
+                    if (NSProcessInfo.processInfo.systemUptime >= deadline) {
+                        fprintf(stderr, "FAILED translateIn: late translation was not rendered\n");
+                        exit(1);
+                    }
+                }];
+            }
         });
     }
 #ifdef SGRKeyLyricsTextOrder
