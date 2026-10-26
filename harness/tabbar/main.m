@@ -948,6 +948,22 @@ static void after(double seconds, dispatch_block_t block) {
         UITableView *list = (UITableView *)chrome.tabs.childViewControllers.firstObject.view;
         [list scrollToRowAtIndexPath:[NSIndexPath indexPathForRow:29 inSection:0] atScrollPosition:UITableViewScrollPositionBottom animated:NO];
         report(chrome, mode);
+        if ([args containsObject:@"verify"] && ([mode isEqualToString:@"split"] || [mode isEqualToString:@"split2"])) {
+            NSMutableArray<UITabBar *> *bars = [NSMutableArray array];
+            for (UITabBar *bar in systemBarsIn(chrome.tabs.bar)) if (!bar.hidden) [bars addObject:bar];
+            [bars sortUsingComparator:^NSComparisonResult(UITabBar *a, UITabBar *b) {
+                return [@(a.frame.origin.x) compare:@(b.frame.origin.x)];
+            }];
+            CGFloat apartWidth = [mode isEqualToString:@"split2"] ? 166 : 104;
+            if (bars.count != 2 || bars[1].frame.size.width != apartWidth
+                || CGRectGetMaxX(bars[0].frame) - CGRectGetMinX(bars[1].frame) != 30
+                || CGRectGetMaxX(bars[1].frame) != chrome.tabs.bar.bounds.size.width) {
+                NSLog(@"[harness] FAIL %@ expanded split frames: %@", mode, [bars valueForKey:@"frame"]);
+                exit(1);
+            }
+            NSLog(@"[harness] PASS %@ expanded split geometry", mode);
+            exit(0);
+        }
     });
 }
 

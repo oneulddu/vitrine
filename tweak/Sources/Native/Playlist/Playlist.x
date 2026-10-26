@@ -15,6 +15,7 @@
 // it, so a hidden cover leaves the room it was counted for. collapseCover() takes that room back.
 #import "Core/SGCore.h"
 #import "Playlist.h"
+#import "Native/Appearance/HeaderBackdrop.h"
 
 @interface NSObject (SGPlaylistHeader)
 - (NSLayoutConstraint *)headerViewHeightConstraint;
@@ -164,17 +165,7 @@ static void applyBackdrop(UIView *layout) {
     UIView *header = container.subviews.firstObject;
     if (header.subviews.count < 2) return;
 
-    UIView *backdrop = objc_getAssociatedObject(header, &kBackdropKey);
-    if (!backdrop) {
-        backdrop = SGBackdropMake(header.bounds, 1);
-        objc_setAssociatedObject(header, &kBackdropKey, backdrop, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    if (backdrop.superview != header) [header insertSubview:backdrop atIndex:1];
-
-    UIImageView *sample = SGBackdropImageView(backdrop);
-    if (objc_getAssociatedObject(sample, &kSourceKey) == image) return;
-    objc_setAssociatedObject(sample, &kSourceKey, image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    sample.image = SGBackdropSample(image);
+    SGNativeHeaderBackdrop(header, image, &kBackdropKey, &kSourceKey);
 }
 
 %hook _TtC28EncoreConsumerMobile_BaseKit19HeaderContentLayout

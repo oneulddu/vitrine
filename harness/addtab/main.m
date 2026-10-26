@@ -145,7 +145,26 @@ static void runNavbar(UIViewController *root, NSString *mode) {
         NSLog(@"[harness] %@: preview \"%@\", tabs %@, labels hidden %d, custom %d", step, preview.accessibilityValue,
               [rows componentsJoinedByString:@", "], [store boolForKey:SGRKeyNavbarHideLabels], [store objectForKey:SGRKeyNavbar] ? [store boolForKey:SGRKeyNavbar] : 1);
     };
-    after(1.0, ^{ log(@"opened"); });
+    after(1.0, ^{
+        log(@"opened");
+        if ([mode isEqualToString:@"navbar"] && [NSProcessInfo.processInfo.arguments containsObject:@"verify"]) {
+            UIView *preview = page.tableView.tableHeaderView.subviews.firstObject;
+            NSMutableArray<UITabBar *> *bars = [NSMutableArray array];
+            for (UIView *view in preview.subviews) if ([view isKindOfClass:UITabBar.class] && !view.hidden) [bars addObject:(UITabBar *)view];
+            [bars sortUsingComparator:^NSComparisonResult(UITabBar *a, UITabBar *b) {
+                return [@(a.frame.origin.x) compare:@(b.frame.origin.x)];
+            }];
+            if (![preview.accessibilityValue isEqualToString:@"Home, Liked Songs, Your Library, Search"]
+                || bars.count != 2 || bars[1].frame.size.width != 104
+                || CGRectGetMaxX(bars[0].frame) - CGRectGetMinX(bars[1].frame) != 30
+                || CGRectGetMaxX(bars[1].frame) != preview.bounds.size.width) {
+                NSLog(@"[harness] FAIL navbar preview: %@ %@", preview.accessibilityValue, [bars valueForKey:@"frame"]);
+                exit(1);
+            }
+            NSLog(@"[harness] PASS navbar preview split geometry");
+            exit(0);
+        }
+    });
     if ([mode isEqualToString:@"icons"]) {
         after(1.5, ^{
             UIView *labels = [page.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:1]].contentView.subviews.firstObject;

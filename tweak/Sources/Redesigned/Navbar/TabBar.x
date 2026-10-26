@@ -18,6 +18,7 @@
 #import "Settings/SGPage.h"
 #import "Headers/SPTEncoreIconView.h"
 #import "Shared/Navigation/TabIcons.h"
+#import "BarGeometry.h"
 #import <objc/message.h>
 
 static char kBarKey, kApartBarKey, kHostKey, kFadeKey, kItemIconKey;
@@ -509,8 +510,6 @@ static UIView *selectedSource(SGRSystemTabBar *bar) {
 // (harness/tabbar, iPhone 17 Pro, iOS 27: a 72 pt bar got a 30 pt platter at x 21), so a split bar is
 // a 62 pt platter, a circle as tall as the bar's, per tab plus those insets, and the main bar runs under
 // its leading inset to leave 12 pt of glassless gap between the two platters.
-static const CGFloat kPlatterInset = 21, kApartItemWidth = 62, kPlatterGap = 12;
-
 static void syncBar(UIView *stockBar) {
     sg_stockBar = stockBar;
 
@@ -579,13 +578,11 @@ static void syncBar(UIView *stockBar) {
     placeFade(stockBar, frame);
     CGRect mainFrame = host.bounds, apartFrame = CGRectZero;
     if (minimized) {
-        CGFloat side = kApartItemWidth + 2 * kPlatterInset;
+        CGFloat side = SGRBarApartItemWidthPt + 2 * SGRBarPlatterInsetPt;
         mainFrame.size.width = side;
         if (apart.count) apartFrame = CGRectMake(width - side, 0, side, height);
-    } else if (apart.count) {
-        CGFloat apartWidth = MIN(width / 2, apart.count * kApartItemWidth + 2 * kPlatterInset);
-        CGRectDivide(host.bounds, &apartFrame, &mainFrame, apartWidth, CGRectMaxXEdge);
-        mainFrame.size.width += 2 * kPlatterInset - kPlatterGap;
+    } else {
+        SGRExpandedBarFrames(host.bounds, apart.count, &mainFrame, &apartFrame);
     }
     if (!CGRectEqualToRect(bar.frame, mainFrame)) bar.frame = mainFrame;
     if (apart.count && !CGRectEqualToRect(apartBar.frame, apartFrame)) apartBar.frame = apartFrame;
@@ -843,16 +840,16 @@ CGRect SGRTabBarInlineSlot(UIView *host, CGFloat height) {
     // The frames the bars are going to, not what is on screen mid-spring. Without a split tab's circle the
     // card runs to where the trailing circle's glass would end.
     CGRect lead = [bar.superview convertRect:bar.frame toView:host];
-    CGFloat left = CGRectGetMinX(lead) + kPlatterInset + kApartItemWidth + SGRGrid;
+    CGFloat left = CGRectGetMinX(lead) + SGRBarPlatterInsetPt + SGRBarApartItemWidthPt + SGRGrid;
     CGFloat right;
     if (apartBar && !apartBar.hidden) {
         CGRect trail = [apartBar.superview convertRect:apartBar.frame toView:host];
-        right = CGRectGetMaxX(trail) - kPlatterInset - kApartItemWidth - SGRGrid;
+        right = CGRectGetMaxX(trail) - SGRBarPlatterInsetPt - SGRBarApartItemWidthPt - SGRGrid;
     } else {
         CGRect whole = [stockBar convertRect:stockBar.bounds toView:host];
-        right = CGRectGetMaxX(whole) - kPlatterInset;
+        right = CGRectGetMaxX(whole) - SGRBarPlatterInsetPt;
     }
-    CGFloat middle = CGRectGetMinY(lead) + kApartItemWidth / 2;
+    CGFloat middle = CGRectGetMinY(lead) + SGRBarApartItemWidthPt / 2;
     CGRect slot = CGRectMake(left, middle - height / 2, right - left, height);
     // A bar Spotify has slid away for a page takes the slot off the screen with it.
     CGRect inWindow = [host convertRect:slot toView:nil];

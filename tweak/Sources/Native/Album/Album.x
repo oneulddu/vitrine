@@ -12,6 +12,7 @@
 #import "Core/SGCore.h"
 #import "Album.h"
 #import "Native/Declutter/Declutter.h"
+#import "Native/Appearance/HeaderBackdrop.h"
 
 static NSString *const kTemplate = @"CreativeWorkPlatform.CreativeWorkTemplateView";
 
@@ -72,17 +73,7 @@ static void applyBackdrop(UIView *page) {
     UIView *header = page.subviews.firstObject;
     if (!image || !SGClassNamed(header.class, @"HeaderView")) return;
 
-    UIView *backdrop = objc_getAssociatedObject(header, &kBackdropKey);
-    if (!backdrop) {
-        backdrop = SGBackdropMake(header.bounds, 1);
-        objc_setAssociatedObject(header, &kBackdropKey, backdrop, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    if (backdrop.superview != header) [header insertSubview:backdrop atIndex:1];
-
-    UIImageView *sample = SGBackdropImageView(backdrop);
-    if (objc_getAssociatedObject(sample, &kSourceKey) == image) return;
-    objc_setAssociatedObject(sample, &kSourceKey, image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    sample.image = SGBackdropSample(image);
+    SGNativeHeaderBackdrop(header, image, &kBackdropKey, &kSourceKey);
 }
 
 %hook _TtC28CreativeWorkPlatform_PageKit24CreativeWorkTemplateView

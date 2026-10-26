@@ -2,6 +2,7 @@
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Navbar.h"
+#import "BarGeometry.h"
 #import "Shared/Navigation/AddTabSheet.h"
 #import "Redesigned/Kit/SGRTokens.h"
 
@@ -332,10 +333,6 @@ static UITabBar *previewBar(void) {
     return bar;
 }
 
-// TabBar.x's split bar: UIKit draws a bar's platter 21 pt in from its sides, a split tab takes a 62 pt circle,
-// and the main bar runs under the split bar's leading inset to leave 12 pt between the two platters.
-static const CGFloat kPlatterInset = 21, kApartItemWidth = 62, kPlatterGap = 12;
-
 // The glass bar as it will look, drawn by the same system UITabBar TabBar.x puts over Spotify's bar, from the
 // list as it stands on the page: the shown tabs in order, the first selected, the split tabs on a bar of
 // their own, names under the glyphs unless Icons only is picked. It takes no touches.
@@ -398,12 +395,8 @@ static NSArray<UITabBarItem *> *itemsFor(NSArray<NSDictionary *> *entries, BOOL 
 
 - (void)layoutSubviews {
     [super layoutSubviews];
-    CGRect bounds = self.bounds, main = bounds, apart = CGRectZero;
-    if (!_apart.hidden) {
-        CGFloat width = MIN(bounds.size.width / 2, _apart.items.count * kApartItemWidth + 2 * kPlatterInset);
-        CGRectDivide(bounds, &apart, &main, width, CGRectMaxXEdge);
-        main.size.width += 2 * kPlatterInset - kPlatterGap;
-    }
+    CGRect main, apart;
+    SGRExpandedBarFrames(self.bounds, _apart.hidden ? 0 : _apart.items.count, &main, &apart);
     _main.frame = main;
     _apart.frame = apart;
     for (UITabBar *bar in @[_main, _apart]) {

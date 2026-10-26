@@ -7,6 +7,10 @@ OUT=$(mktemp -d "${TMPDIR:-/tmp}/vitrine-native-declutter.XXXXXX")
 trap 'rm -rf "$OUT"' EXIT HUP INT TERM
 xcrun clang -fobjc-arc -O0 -g -target arm64-apple-macos13.0 \
     -I "$HERE/shim" -I "$SRC" \
-    "$HERE/check.m" "$SRC/Native/Declutter/Declutter.m" \
+    "$HERE/check.m" "$HERE/view-doubles.m" "$SRC/Native/Declutter/Declutter.m" \
     -framework Foundation -framework CoreGraphics -o "$OUT/check"
 "$OUT/check"
+xcrun clang -fobjc-arc -O0 -g -target arm64-apple-macos13.0 \
+    -I "$HERE/shim" -I "$SRC" "$HERE/backdrop-check.m" "$HERE/view-doubles.m" \
+    -framework Foundation -framework CoreGraphics -o "$OUT/backdrop-check"
+"$OUT/backdrop-check"

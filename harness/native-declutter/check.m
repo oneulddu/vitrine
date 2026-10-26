@@ -2,9 +2,6 @@
 #import "Core/SGPrefs.h"
 #import "Core/SGViewTree.h"
 
-@implementation UIView
-- (void)layoutIfNeeded {}
-@end
 @implementation UICollectionView
 - (void)layoutIfNeeded { if (self.layout) self.layout(); }
 @end
