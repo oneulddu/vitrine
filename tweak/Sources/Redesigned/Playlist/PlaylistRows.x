@@ -31,19 +31,8 @@ static const CGFloat kHairline = 0.5, kHairlineGap = 12;
 
 static char kRowKey, kTrackRowKey, kArtKey, kArtHolderKey, kSubtitleKey, kLineKey, kToolbarKey;
 
-@interface SGRRowArtHolder : NSObject
-@property (nonatomic, weak) UIView *view;
-@end
-
-@implementation SGRRowArtHolder
-@end
-
 // Whether the curation pills close up (SGRKeyPlaylistHideCuration), read at launch.
 static BOOL sg_hideCuration;
-
-static UIView *identified(UIView *root, NSString *identifier, const void *cacheKey) {
-    return SGRFindByIdentifier(root, identifier, cacheKey);
-}
 
 static void clearSurface(UIView *view) {
     UIColor *color = view.backgroundColor;
@@ -72,26 +61,14 @@ static void applyHairline(UIView *row, CGFloat leading) {
 // Where the artwork has no Encore.ImageView of its own (Track.Row): the holder the picture is drawn in, a private
 // class of the row kit that is told by its name. Kept on the row, as the lookups by identifier are.
 static UIView *artHolderIn(UIView *row) {
-    SGRRowArtHolder *box = objc_getAssociatedObject(row, &kArtHolderKey);
-    UIView *cached = box.view;
-    if (cached && [cached isDescendantOfView:row]) return cached;
-    __block UIView *found = nil;
-    SGForEachView(row, ^(UIView *v) {
-        if (!found && [NSStringFromClass(v.class) hasSuffix:@"ImageViewHolder"]) found = v;
+    return SGFindRemembered(row, &kArtHolderKey, ^BOOL(UIView *view) {
+        return [NSStringFromClass(view.class) hasSuffix:@"ImageViewHolder"];
     });
-    if (found) {
-        if (!box) {
-            box = [SGRRowArtHolder new];
-            objc_setAssociatedObject(row, &kArtHolderKey, box, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-        box.view = found;
-    }
-    return found;
 }
 
 // A playlist's row is an Encore.ListRow; the songs liked by one artist have a Track.Row of the same kit.
 static UIView *rowIn(UIView *cell) {
-    return identified(cell, @"Encore.ListRow", &kRowKey) ?: identified(cell, @"Track.Row", &kTrackRowKey);
+    return SGRFindByIdentifier(cell, @"Encore.ListRow", &kRowKey) ?: SGRFindByIdentifier(cell, @"Track.Row", &kTrackRowKey);
 }
 
 // YES when the cell holds a track row.
@@ -104,7 +81,7 @@ static BOOL applyRow(UIView *cell) {
     clearSurface(row);
 
     CGFloat leading = SGRSideMargin + 48 + kHairlineGap;
-    UIView *art = identified(row, @"Encore.ImageView", &kArtKey) ?: artHolderIn(row);
+    UIView *art = SGRFindByIdentifier(row, @"Encore.ImageView", &kArtKey) ?: artHolderIn(row);
     if (art) {
         if (art.layer.cornerRadius != SGRRadiusThumb) {
             art.layer.cornerRadius = SGRRadiusThumb;
@@ -115,7 +92,7 @@ static BOOL applyRow(UIView *cell) {
         if (frame.size.width > 0) leading = CGRectGetMaxX(frame) + kHairlineGap;
     }
 
-    UIView *subtitle = identified(row, @"Track.Row.Content.Subtitle", &kSubtitleKey);
+    UIView *subtitle = SGRFindByIdentifier(row, @"Track.Row.Content.Subtitle", &kSubtitleKey);
     SGForEachView(subtitle, ^(UIView *v) {
         if (![v isKindOfClass:UILabel.class]) return;
         UILabel *label = (UILabel *)v;

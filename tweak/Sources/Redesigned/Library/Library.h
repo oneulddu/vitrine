@@ -14,9 +14,6 @@
 // Threading: main thread only.
 #import <UIKit/UIKit.h>
 
-// The list of every library page (trees/clean/library/03.txt:25).
-extern NSString *const SGRLibraryListIdentifier;
-
 // LibraryHeader.x. The scrim Spotify lays behind a library header taken out, so the soft scroll edge
 // (Kit/SGREdgeEffect.x) is what keeps the header clear of the list under it. A header without one is left
 // alone; the folder's has none.

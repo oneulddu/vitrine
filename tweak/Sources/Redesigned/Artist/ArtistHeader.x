@@ -36,8 +36,8 @@
 // How much of the photo's height the dissolve into the field covers, and the scrim over the top of it that
 // keeps the status bar and the back button legible on a bright picture. The playlist's and the album's.
 static const CGFloat kDissolve = 0.46, kTopScrim = 140, kTopScrimAlpha = 0.28;
-// A photo view narrower than this is a placeholder glyph, and a picture shorter than this one mid load.
-static const CGFloat kMinCover = 80, kMinHero = 120;
+// A picture shorter than this is one mid load.
+static const CGFloat kMinHero = 120;
 // The collapsed ImageHeaderView, Spotify's navigation bar; the text fades out over the last kFade before it.
 static const CGFloat kBar = 100, kFade = 150;
 
@@ -193,21 +193,6 @@ static UIView *containerOf(UIView *header) {
 
 @end
 
-// The image view of Spotify's artwork: the one with the photo in it, or, before the photo has been fetched,
-// the empty one it will land in, so it can be watched from the first pass. Either way one the size of the
-// picture, never a small placeholder glyph beside it.
-static UIImageView *photoIn(UIView *artwork) {
-    __block UIImageView *found = nil, *empty = nil;
-    SGForEachView(artwork, ^(UIView *v) {
-        if (found || ![v isKindOfClass:UIImageView.class]) return;
-        UIImageView *image = (UIImageView *)v;
-        if (image.bounds.size.width < kMinCover) return;
-        if (image.image) found = image;
-        else if (!empty) empty = image;
-    });
-    return found ?: empty;
-}
-
 // The picture from the top of the container down to `bottom`, which comes from the container at rest and only
 // ever grows, so it does not change size while the page loads or scrolls.
 static void applyHero(UIView *container, UIView *artwork, CGFloat bottom, UIColor *fieldColor) {
@@ -228,7 +213,7 @@ static void applyHero(UIView *container, UIView *artwork, CGFloat bottom, UIColo
     if (height < kMinHero) return;
     setFrame(hero, CGRectMake(0, 0, container.bounds.size.width, height));
     hero.fieldColor = fieldColor;
-    [hero followArtwork:photoIn(artwork)];
+    [hero followArtwork:SGRHeaderArtworkIn(artwork)];
 }
 
 #pragma mark - the header's pass

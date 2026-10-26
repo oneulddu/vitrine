@@ -122,6 +122,19 @@ UILabel *SGRLargeTitleIn(UIView *host, const void *key) {
     return title;
 }
 
+UIImageView *SGRHeaderArtworkIn(UIView *root) {
+    static const CGFloat minimumArtworkWidth = 80;
+    __block UIImageView *found = nil, *empty = nil;
+    SGForEachView(root, ^(UIView *v) {
+        if (found || ![v isKindOfClass:UIImageView.class]) return;
+        UIImageView *image = (UIImageView *)v;
+        if (image.bounds.size.width < minimumArtworkWidth) return;
+        if (image.image) found = image;
+        else if (!empty) empty = image;
+    });
+    return found ?: empty;
+}
+
 void SGRBlankView(UIView *view) {
     if (!view) return;
     if (!view.layer.mask) view.layer.mask = [CALayer layer];
@@ -136,16 +149,7 @@ void SGRConcealView(UIView *view) {
 }
 
 BOOL SGRIsTrackContent(UIView *content) {
-    static NSMutableDictionary<id, NSNumber *> *answers;
-    if (!answers) answers = [NSMutableDictionary dictionary];
-    Class cls = object_getClass(content);
-    if (!cls) return NO;
-    NSNumber *answer = answers[(id<NSCopying>)cls];
-    if (!answer) {
-        answer = @([NSStringFromClass(cls) containsString:@"RetrievalListStructuredData"]);
-        answers[(id<NSCopying>)cls] = answer;
-    }
-    return answer.boolValue;
+    return SGClassNamed(object_getClass(content), @"RetrievalListStructuredData");
 }
 
 void SGRCollapseCell(UICollectionViewCell *cell, CGFloat natural, const void *key) {

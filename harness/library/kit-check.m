@@ -2,13 +2,82 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "../harness-fail.h"
+#import "Core/SGViewTree.h"
 #import "Redesigned/Kit/SGRRestyle.h"
 #import "Redesigned/Kit/SGRField.h"
 
 @interface HarnessRetrievalListStructuredData : UIView @end
 @implementation HarnessRetrievalListStructuredData @end
 
+@interface HarnessHome_EvoPageImpl13HomeStructure : UIView @end
+@implementation HarnessHome_EvoPageImpl13HomeStructure @end
+@interface HarnessBrowse_BrowsePageImpl15BrowseStructure : UIView @end
+@implementation HarnessBrowse_BrowsePageImpl15BrowseStructure @end
+@interface HarnessUnnamedContent : HarnessHome_EvoPageImpl13HomeStructure @end
+@implementation HarnessUnnamedContent @end
+
+static UIImageView *artwork(CGFloat width, UIImage *image) {
+    UIImageView *view = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, width, 80)];
+    view.image = image;
+    return view;
+}
+
+static void checkHeaderArtwork(void) {
+    UIView *root = [UIView new];
+    UIImageView *firstEmpty = artwork(80, nil), *secondEmpty = artwork(100, nil);
+    [root addSubview:firstEmpty];
+    [root addSubview:secondEmpty];
+    HARNESS_CHECK(SGRHeaderArtworkIn(root) == firstEmpty);
+
+    UIImageView *filled = artwork(80, [UIImage new]);
+    [secondEmpty addSubview:filled];
+    HARNESS_CHECK(SGRHeaderArtworkIn(root) == filled);
+
+    UIView *thresholdRoot = [UIView new];
+    UIImageView *small = artwork(79, [UIImage new]), *boundary = artwork(80, [UIImage new]);
+    [thresholdRoot addSubview:small];
+    [thresholdRoot addSubview:boundary];
+    HARNESS_CHECK(SGRHeaderArtworkIn(thresholdRoot) == boundary);
+    [boundary removeFromSuperview];
+    HARNESS_CHECK(SGRHeaderArtworkIn(thresholdRoot) == nil);
+}
+
+static void checkClassNames(void) {
+    Class home = HarnessHome_EvoPageImpl13HomeStructure.class;
+    Class browse = HarnessBrowse_BrowsePageImpl15BrowseStructure.class;
+    HARNESS_CHECK(SGClassNamed(home, @"Home_EvoPageImpl13HomeStructure"));
+    HARNESS_CHECK(!SGClassNamed(home, @"Browse_BrowsePageImpl15BrowseStructure"));
+    HARNESS_CHECK(SGClassNamed(browse, @"Browse_BrowsePageImpl15BrowseStructure"));
+    HARNESS_CHECK(!SGClassNamed(browse, @"Home_EvoPageImpl13HomeStructure"));
+    HARNESS_CHECK(!SGClassNamed(HarnessUnnamedContent.class, @"Home_EvoPageImpl13HomeStructure"));
+    HARNESS_CHECK(!SGClassNamed(Nil, @"Home_EvoPageImpl13HomeStructure"));
+}
+
+static void checkRememberedViews(void) {
+    static char key;
+    UIView *root = [UIView new], *branch = [UIView new];
+    [root addSubview:branch];
+    BOOL (^isImage)(UIView *) = ^BOOL(UIView *view) { return [view isKindOfClass:UIImageView.class]; };
+    HARNESS_CHECK(SGFindRemembered(root, &key, isImage) == nil);
+    UIImageView *nested = artwork(80, nil), *later = artwork(80, nil);
+    [branch addSubview:nested];
+    [root addSubview:later];
+    HARNESS_CHECK(SGFindRemembered(root, &key, isImage) == nested);
+    [nested removeFromSuperview];
+    HARNESS_CHECK(SGFindRemembered(root, &key, isImage) == later);
+    __weak UIImageView *released;
+    @autoreleasepool {
+        released = later;
+        [later removeFromSuperview];
+        later = nil;
+    }
+    HARNESS_CHECK(released == nil);
+}
+
 void SGRRunKitChecks(void) {
+    checkHeaderArtwork();
+    checkClassNames();
+    checkRememberedViews();
     static char cellKey, otherKey, titleKey, fieldKey;
     UICollectionViewCell *cell = [[UICollectionViewCell alloc] initWithFrame:CGRectMake(0, 0, 320, 0)];
     cell.contentView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
@@ -76,6 +145,6 @@ void SGRRunKitChecks(void) {
 
     HARNESS_CHECK(SGRIsTrackContent([HarnessRetrievalListStructuredData new]));
     HARNESS_CHECK(!SGRIsTrackContent([UIView new]) && !SGRIsTrackContent(nil));
-    puts("PASS page Kit contracts: cell lifecycle, titles, child lookup, masking, fields, track content");
+    puts("PASS page Kit contracts: artwork, class names, weak lookup, cell lifecycle, titles, child lookup, masking, fields, track content");
     fflush(NULL);
 }

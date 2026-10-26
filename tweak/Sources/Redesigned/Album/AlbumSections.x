@@ -34,16 +34,7 @@ static const CGFloat kLead = 16;
 static char kSettledKey; // the cell's settled height, its lead, and the width and text size it was measured at
 
 static BOOL isFooterContent(UIView *content) {
-    static NSMutableDictionary<id, NSNumber *> *answers;
-    if (!answers) answers = [NSMutableDictionary dictionary];
-    Class cls = object_getClass(content);
-    if (!cls) return NO;
-    NSNumber *answer = answers[(id<NSCopying>)cls];
-    if (!answer) {
-        answer = @([NSStringFromClass(cls) containsString:@"Album_PageImpl20FooterStructuredData"]);
-        answers[(id<NSCopying>)cls] = answer;
-    }
-    return answer.boolValue;
+    return SGClassNamed(object_getClass(content), @"Album_PageImpl20FooterStructuredData");
 }
 
 // The two the album says about itself, restyled as it is kept: Spotify draws both in white, and under a

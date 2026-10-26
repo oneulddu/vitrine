@@ -416,20 +416,6 @@ static void *kReadyContext = &kReadyContext;
 
 @end
 
-// The image view of Spotify's artwork square: the one with the cover in it, or, before the cover has been
-// fetched, the empty one it will land in, so it can be watched from the first pass.
-static UIImageView *coverImageIn(UIView *cover) {
-    __block UIImageView *found = nil, *empty = nil;
-    SGForEachView(cover, ^(UIView *v) {
-        if (found || ![v isKindOfClass:UIImageView.class]) return;
-        UIImageView *image = (UIImageView *)v;
-        if (image.bounds.size.width < kMinCover) return;
-        if (image.image) found = image;
-        else if (!empty) empty = image;
-    });
-    return found ?: empty;
-}
-
 // The picture runs from the top of the header down past where its text begins, so the title and the artist
 // sit on the bottom of its dissolve; below that the page's field is already drawing the very color the
 // picture dissolves into, so there is no seam to see.
@@ -464,7 +450,7 @@ static void applyHero(UIView *header, UIView *cover, CGFloat bottom) {
                                                || CGRectGetMaxY(square) > CGRectGetMaxY(hero.square) + 0.5)) hero.square = square;
         [hero takeShadowFrom:cover];
     }
-    [hero followCover:coverImageIn(cover)];
+    [hero followCover:SGRHeaderArtworkIn(cover)];
     SGRConcealView(cover);
 }
 

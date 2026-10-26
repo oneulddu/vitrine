@@ -46,8 +46,6 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Library.h"
 
-NSString *const SGRLibraryListIdentifier = @"YourLibraryContent.collectionView";
-
 // Spotify's own inset for the header's controls: a 48pt button flush against the header's trailing edge has its
 // 24pt glyph 20pt from the screen, and the 32pt avatar inside its own 48pt box 16pt from it, which is the
 // margin Home gives the avatar.
@@ -149,10 +147,6 @@ static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, C
 
 #pragma mark - the two headers
 
-static BOOL isFace(UIView *view) {
-    return SGRIsAvatar(view);
-}
-
 // The root header's controls at its trailing edge, the avatar last, and the title before them. Answers what it
 // placed in the order it reads, nothing while the header has no control laid out.
 static NSArray<UIView *> *placeRoot(UIView *header) {
@@ -164,7 +158,7 @@ static NSArray<UIView *> *placeRoot(UIView *header) {
     ], keys);
     __block UIView *face = nil;
     SGForEachView(header, ^(UIView *view) {
-        if (!face && isFace(view) && view.bounds.size.width > 1) face = view;
+        if (!face && SGRIsAvatar(view) && view.bounds.size.width > 1) face = view;
     });
     if (face) [trailing addObject:face];
     if (!trailing.count) return trailing;
@@ -209,7 +203,7 @@ static void layoutRoot(UIView *page) {
 
     // The first pass that laid the header out, not the first pass at all: a page appearing lays out before
     // its controls have a size, and a line off that pass would say the header was left as Spotify's.
-    UIView *face = isFace(trailing.lastObject) ? trailing.lastObject : nil;
+    UIView *face = SGRIsAvatar(trailing.lastObject) ? trailing.lastObject : nil;
     static BOOL logged;
     if (!logged && header.window && face) {
         logged = YES;

@@ -38,8 +38,8 @@
 // keeps the status bar and the back button legible on a bright picture.
 static const CGFloat kDissolve = 0.46, kTopScrim = 140, kTopScrimAlpha = 0.28;
 // A header whose cover square is smaller than this is one mid collapse or mid load, not one to measure
-// the hero from; and an artwork view narrower than this is a placeholder glyph rather than the cover.
-static const CGFloat kMinHero = 120, kMinCover = 80;
+// the hero from.
+static const CGFloat kMinHero = 120;
 
 // Whether a tap on the picture opens the cover full screen (SGRKeyPlaylistCoverViewer), read at launch.
 static BOOL sg_coverViewer;
@@ -50,12 +50,6 @@ static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kM
 static char kIndependentActionsKey;
 
 #pragma mark - finding things
-
-@interface SGRWeakView : NSObject
-@property (nonatomic, weak) UIView *view;
-@end
-@implementation SGRWeakView
-@end
 
 // The page the header is on: FTPViewController's own view -- or, for the songs the user liked by one artist,
 // CollectionArtistViewController's, the same header kit with no cover -- which holds the field, the list and the
@@ -100,7 +94,6 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 // above the title, and on none of Spotify's controls or the block's buttons. A drag still scrolls the page.
 @interface SGRPlaylistHero : UIView <UIGestureRecognizerDelegate>
 @property (nonatomic, readonly) UIImageView *picture;
-@property (nonatomic) CGFloat coverPixels;   // the widest copy of the artwork it has been shown
 // The cover in Spotify's artwork view, and every cover it puts there afterward: the hero keeps itself
 // right, rather than being handed a picture on each of the header's passes and staying empty between them.
 - (void)followCover:(UIImageView *)source;
@@ -231,7 +224,6 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
     UIImage *image = source.image;
     if (!image || source.bounds.size.width < kMinHero || _picture.image == image) return;
 
-    self.coverPixels = image.size.width;
     _picture.image = image;
     // The page's field takes its color from the same picture.
     SGRPlaylistSetArtwork(self, image);
@@ -243,20 +235,6 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 }
 
 @end
-
-// The image view of Spotify's artwork square: the one with the cover in it, or, before the cover has been
-// fetched, the empty one it will land in, so it can be watched from the first pass.
-static UIImageView *coverImageIn(UIView *cover) {
-    __block UIImageView *found = nil, *empty = nil;
-    SGForEachView(cover, ^(UIView *v) {
-        if (found || ![v isKindOfClass:UIImageView.class]) return;
-        UIImageView *image = (UIImageView *)v;
-        if (image.bounds.size.width < kMinCover) return;
-        if (image.image) found = image;
-        else if (!empty) empty = image;
-    });
-    return found ?: empty;
-}
 
 // The hero sits in the plane Spotify's color wash is drawn on, which slides away as the header collapses, so
 // Core Animation carries it and its frame is only measured at rest: reading the header per frame flickers.
@@ -288,7 +266,7 @@ static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *bloc
     CGRect frame = CGRectMake(0, 0, plane.bounds.size.width, bottom);
     if (!CGRectEqualToRect(hero.frame, frame)) hero.frame = frame;
 
-    [hero followCover:coverImageIn(cover)];
+    [hero followCover:SGRHeaderArtworkIn(cover)];
     [hero openFrom:layout];
     // Full bleed covers off: Spotify's own square stays above the block, shrinking as the header collapses, and the
     // hero only reads the picture for the field. A mix's picture is full bleed in Spotify's own layout, so it stays.
@@ -644,19 +622,11 @@ static void applyHeader(UIView *layout) {
 // its collapse and a walk of its tree each time would be the redesign's own cost.
 static UIView *layoutIn(UIView *root) {
     if (!root) return nil;
-    SGRWeakView *box = objc_getAssociatedObject(root, &kLayoutKey);
-    UIView *layout = box.view;
-    if (layout && [layout isDescendantOfView:root]) return layout;
     static Class content;
     if (!content) content = NSClassFromString(@"_TtC28EncoreConsumerMobile_BaseKit19HeaderContentLayout");
-    layout = firstOfClass(root, content);
-    if (!layout) return nil;
-    if (!box) {
-        box = [SGRWeakView new];
-        objc_setAssociatedObject(root, &kLayoutKey, box, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    box.view = layout;
-    return layout;
+    return SGFindRemembered(root, &kLayoutKey, ^BOOL(UIView *view) {
+        return [view isKindOfClass:content];
+    });
 }
 
 %hook _TtC28EncoreConsumerMobile_BaseKit19HeaderContentLayout

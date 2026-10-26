@@ -53,16 +53,7 @@ static void logOnce(NSString *what) {
 }
 
 static BOOL isBrowseCell(UIView *content) {
-    if (!content) return NO;
-    static NSMutableDictionary *answers;
-    if (!answers) answers = [NSMutableDictionary dictionary];
-    Class cls = object_getClass(content);
-    NSNumber *answer = answers[(id<NSCopying>)cls];
-    if (!answer) {
-        answer = @([NSStringFromClass(cls) containsString:@"Browse_BrowsePageImpl15BrowseStructure"]);
-        answers[(id<NSCopying>)cls] = answer;
-    }
-    return answer.boolValue;
+    return SGClassNamed(object_getClass(content), @"Browse_BrowsePageImpl15BrowseStructure");
 }
 
 // What collapses, read at launch: the watch feed carousels (SGRKeySearchHideWatchFeeds) and every other kind but the

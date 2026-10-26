@@ -13,6 +13,8 @@
 
 // The first immediate child whose class name contains marker; no recursive search or cache.
 UIView *SGRChildNamed(UIView *host, NSString *marker);
+// First image-bearing image view at least 80pt wide, depth first; otherwise the first empty one that wide.
+UIImageView *SGRHeaderArtworkIn(UIView *root);
 // A page's large-title label, retained under key and reattached when needed. Text and layout stay local.
 UILabel *SGRLargeTitleIn(UIView *host, const void *key);
 // Empty-mask suppression, without changing UIView.hidden or Spotify's layout. Conceal additionally hides

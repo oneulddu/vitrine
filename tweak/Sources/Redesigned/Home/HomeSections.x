@@ -92,22 +92,8 @@ static void markDropped(UICollectionViewCell *cell, NSInteger index, BOOL droppe
     dispatch_async(dispatch_get_main_queue(), ^{ [weakLayout invalidateLayout]; });
 }
 
-static BOOL classNames(Class cls, NSString *marker, NSMutableDictionary<NSString *, NSMutableDictionary *> *cache) {
-    if (!cls || !marker) return NO;
-    NSMutableDictionary *answers = cache[marker];
-    if (!answers) answers = cache[marker] = [NSMutableDictionary dictionary];
-    NSNumber *answer = answers[(id<NSCopying>)cls];
-    if (!answer) {
-        answer = @([NSStringFromClass(cls) containsString:marker]);
-        answers[(id<NSCopying>)cls] = answer;
-    }
-    return answer.boolValue;
-}
-
 static BOOL contentNames(UIView *content, NSString *marker) {
-    static NSMutableDictionary<NSString *, NSMutableDictionary *> *cache;
-    if (!cache) cache = [NSMutableDictionary dictionary];
-    return content && classNames(object_getClass(content), marker, cache);
+    return SGClassNamed(object_getClass(content), marker);
 }
 
 static BOOL isSection(UIView *content) {
