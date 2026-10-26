@@ -950,6 +950,22 @@ static NSString *storedKey(NSString *kind) {
 
 #pragma mark the pick
 
+- (void)waitForRowsNamed:(NSString *)name requestSheet:(BOOL)request then:(dispatch_block_t)pick {
+    _waiting = YES;
+    __weak SGRMenuSession *weakSelf = self;
+    if (!_whenRead) _whenRead = [NSMutableArray array];
+    [_whenRead addObject:pick];
+    if (request) [self requestSheet];
+    if (self.presented) [self pollRows];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kQuickWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SGRMenuSession *session = weakSelf;
+        if (!session || !session->_waiting) return;
+        session->_waiting = NO;
+        SGLog(@"system menu: the sheet had no rows %.0f s after %@ was picked, Spotify's sheet shown", kQuickWait, name);
+        [session reveal];
+    });
+}
+
 // A quick item picked: its row fired, after the rows come in if they are not in yet, for up to kQuickWait;
 // with no such row, or none in time, Spotify's sheet is shown, so the pick is never lost.
 - (void)fireQuick:(NSString *)quick {
@@ -958,38 +974,16 @@ static NSString *storedKey(NSString *kind) {
         return;
     }
     SGLog(@"system menu: %@ picked before the sheet had its rows, waiting up to %.0f s", quick, kQuickWait);
-    _waiting = YES;
     __weak SGRMenuSession *weakSelf = self;
-    if (!_whenRead) _whenRead = [NSMutableArray array];
-    [_whenRead addObject:^{ [weakSelf fireQuickNow:quick]; }];
-    if (self.direct) [self requestSheet];
-    if (self.presented) [self pollRows];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kQuickWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        SGRMenuSession *session = weakSelf;
-        if (!session || !session->_waiting) return;
-        session->_waiting = NO;
-        SGLog(@"system menu: the sheet had no rows %.0f s after %@ was picked, Spotify's sheet shown", kQuickWait, quick);
-        [session reveal];
-    });
+    [self waitForRowsNamed:quick requestSheet:self.direct then:^{ [weakSelf fireQuickNow:quick]; }];
 }
 
 // A stored row picked: the live row of that title is fired once the rows are in.
 - (void)fireTitle:(NSString *)title {
     if (!_groups) {
         SGLog(@"system menu: %@ picked from the stored rows, waiting up to %.0f s for Spotify's", title, kQuickWait);
-        _waiting = YES;
         __weak SGRMenuSession *weakSelf = self;
-        if (!_whenRead) _whenRead = [NSMutableArray array];
-        [_whenRead addObject:^{ [weakSelf fireTitle:title]; }];
-        [self requestSheet];
-        if (self.presented) [self pollRows];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kQuickWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            SGRMenuSession *session = weakSelf;
-            if (!session || !session->_waiting) return;
-            session->_waiting = NO;
-            SGLog(@"system menu: the sheet had no rows %.0f s after %@ was picked, Spotify's sheet shown", kQuickWait, title);
-            [session reveal];
-        });
+        [self waitForRowsNamed:title requestSheet:YES then:^{ [weakSelf fireTitle:title]; }];
         return;
     }
     _waiting = NO;

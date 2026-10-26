@@ -68,11 +68,13 @@ their check executable in the workflow.
 | `lyrics-translation/build.sh` | Default checks include `check-ai.m`; also `--auto-retry-only`. |
 | `lyrics-translation/ondevice-kept-check.sh` | Catalyst Swift check: on-device translation keeps target-language lines as completed results. |
 | `motion/build.sh` | Generated Canvas cuts and synthetic protobuf replies. |
+| `native-declutter/check.sh` | Production native section classification, isolated heading histories and marker-priority/snapshot checks with Foundation view doubles; no simulator. |
 | `now-playing/build.sh` | Logos setter hooks with system setter replaced, lyrics off/on. |
 | `palette/build.sh` | Generated image with asserted edge/main colors. |
 | `palette/field-check.sh` | Catalyst player field palette requests across mode changes and stale replies. |
 | `pitch/build.sh` | Synthetic sine pitch/speed assertions, no song argument. |
 | `player/title-notification-check.sh` | Real Logos controller with offline notification fixtures. |
+| `prefs/check.sh` | Foundation preference validation plus counter persistence and file-hash checks (`counters.m`). |
 | `radio-modes/build.sh` | Foundation Spotify mocks, spoofing off/on. |
 | `sing/build.sh` | `spatial`: model-free lead, spatial and decoder assertions. |
 | `sleep-timer/build.sh` | Fake player and timer/fade assertions. |
@@ -82,7 +84,7 @@ their check executable in the workflow.
 
 ## Excluded scripts
 
-This inventory covers all 74 shell scripts, including the 32 included above.
+This inventory includes the offline scripts above and the simulator/service scripts below.
 Simulator checks are excluded even when they assert; visual-only simulator
 scenarios are not promoted to CI by merely compiling them.
 

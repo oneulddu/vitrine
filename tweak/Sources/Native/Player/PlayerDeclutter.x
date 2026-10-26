@@ -10,13 +10,14 @@
 #import "Core/SGCore.h"
 #import "Shared/AdBlock/AdBlock.h"
 #import "NowPlaying.h"
+#import "Native/Declutter/Declutter.h"
 
 // Like the other switches, the inline preview setting takes effect at launch.
 static BOOL sg_hideLyricsInline;
 
 #pragma mark - cards and sections
 
-static const struct { __unsafe_unretained NSString *marker, *key; } cards[] = {
+static const SGNativeMarkerRule cards[] = {
     {@"Lyrics_CardElementImpl", SGHideLyricsCard},
     {@"CreatorBiography", SGHideAboutArtist},
     {@"VideoRecommendations", SGHideRelatedVideos},
@@ -30,33 +31,11 @@ static const struct { __unsafe_unretained NSString *marker, *key; } cards[] = {
 
 enum { kCards = sizeof(cards) / sizeof(cards[0]) };
 
-static BOOL anyCardSwitch(void) {
-    for (size_t i = 0; i < kCards; i++) {
-        if (SGHidden(cards[i].key)) return YES;
-    }
-    return NO;
-}
-
 // Whether the cell is one of the player's cards: its own first subview or its content view's names the page.
 // Spotify's cell has held the name in both places (Redesigned/Player/PlayerCards.x, and the trees above).
 static BOOL onPlayer(UICollectionViewCell *cell) {
     return SGClassNamed(cell.subviews.firstObject.class, @"NowPlaying_ScrollAPI")
         || SGClassNamed(cell.contentView.subviews.firstObject.class, @"NowPlaying_ScrollAPI");
-}
-
-// The first switched-on card a class in the cell names. Lists nested in the cell are laid out first so the
-// cells that name the card (video cards) exist.
-static NSString *switchedCardIn(UIView *cell) {
-    unsigned hidden = 0;   // a bit per switched-on card (a block cannot capture an array)
-    for (size_t i = 0; i < kCards; i++) if (SGHidden(cards[i].key)) hidden |= 1u << i;
-    __block size_t first = kCards;
-    SGForEachView(cell, ^(UIView *v) {
-        if (v != cell && [v isKindOfClass:UICollectionView.class]) [v layoutIfNeeded];
-        for (size_t i = 0; i < first; i++) {
-            if ((hidden & 1u << i) && SGClassNamed(v.class, cards[i].marker)) first = i;
-        }
-    });
-    return first < kCards ? cards[first].key : nil;
 }
 
 // An ad among the cards (a sponsored playlist's "Advertisement" card, 9.1.78): built of Encore's own views, it is
@@ -71,7 +50,7 @@ static BOOL holdsAd(UIView *cell) {
 
 static NSString *hiddenKeyFor(UICollectionViewCell *cell) {
     // Only the player's cards are looked into: they name the page, which every other list's cells do not.
-    BOOL hideAds = SGHidden(SGKeyHideAds), anyCard = anyCardSwitch();
+    BOOL hideAds = SGHidden(SGKeyHideAds), anyCard = SGNativeAnyMarkerHidden(cards, kCards);
     if (!(hideAds || anyCard) || !onPlayer(cell)) return nil;
     // A cell inside another card's list: the outer card decides.
     for (UIView *v = cell.superview; v; v = v.superview) {
@@ -79,7 +58,7 @@ static NSString *hiddenKeyFor(UICollectionViewCell *cell) {
     }
     // The ad card has been seen only with the name on its content view, so only that shape is searched for ads.
     if (hideAds && SGClassNamed(cell.contentView.subviews.firstObject.class, @"NowPlaying_ScrollAPI") && holdsAd(cell)) return SGKeyHideAds;
-    return anyCard ? switchedCardIn(cell) : nil;
+    return anyCard ? SGNativeHiddenMarkerIn(cell, cards, kCards) : nil;
 }
 
 %hook _TtC12Element_List18CollectionViewCell

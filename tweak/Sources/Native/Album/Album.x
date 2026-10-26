@@ -11,6 +11,7 @@
 // page right after the last section, so it counts as a heading of its own and stays.
 #import "Core/SGCore.h"
 #import "Album.h"
+#import "Native/Declutter/Declutter.h"
 
 static NSString *const kTemplate = @"CreativeWorkPlatform.CreativeWorkTemplateView";
 
@@ -104,7 +105,7 @@ static void applyBackdrop(UIView *page) {
 
 #pragma mark - sections
 
-static const struct { __unsafe_unretained NSString *title, *key; BOOL prefix; } sections[] = {
+static const SGNativeSectionRule sections[] = {
     {@"More by ", SGHideAlbumMoreBy, YES},
     {@"Related Music Videos", SGHideAlbumVideos, NO},
     {@"Concerts", SGHideAlbumConcerts, NO},
@@ -112,23 +113,7 @@ static const struct { __unsafe_unretained NSString *title, *key; BOOL prefix; } 
     {@"You might also like", SGHideAlbumYouMightLike, NO},
 };
 
-static BOOL sectionHidden(NSString *title) {
-    for (size_t i = 0; i < sizeof(sections) / sizeof(sections[0]); i++) {
-        NSString *wanted = sections[i].title;
-        BOOL match = sections[i].prefix
-            ? [title.lowercaseString hasPrefix:wanted.lowercaseString]
-            : [title caseInsensitiveCompare:wanted] == NSOrderedSame;
-        if (match) return SGHidden(sections[i].key);
-    }
-    return NO;
-}
-
-static BOOL anySectionSwitch(void) {
-    for (size_t i = 0; i < sizeof(sections) / sizeof(sections[0]); i++) {
-        if (SGHidden(sections[i].key)) return YES;
-    }
-    return NO;
-}
+enum { kSections = sizeof(sections) / sizeof(sections[0]) };
 
 // The heading's title, the copyright's identifier, or @"" for any other cell.
 static NSString *headingIn(UIView *cell) {
@@ -141,38 +126,19 @@ static NSString *headingIn(UIView *cell) {
     return title ?: @"";
 }
 
-static NSMutableDictionary<NSIndexPath *, NSString *> *headingsOf(UICollectionView *list) {
-    static char key;
-    NSMutableDictionary *headings = objc_getAssociatedObject(list, &key);
-    if (!headings) {
-        headings = [NSMutableDictionary dictionary];
-        objc_setAssociatedObject(list, &key, headings, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    return headings;
-}
-
-// nil above the first heading, or where a cell between this one and its heading is not sized yet.
-static NSString *sectionOf(NSIndexPath *path, NSDictionary<NSIndexPath *, NSString *> *headings) {
-    for (NSInteger item = path.item; item >= 0; item--) {
-        NSString *title = headings[[NSIndexPath indexPathForItem:item inSection:path.section]];
-        if (!title) return nil;
-        if (title.length) return title;
-    }
-    return nil;
-}
-
 static BOOL collapsed(UICollectionViewCell *cell, NSIndexPath *path) {
-    if (!path || !anySectionSwitch()) return NO;
+    if (!path || !SGNativeAnySectionHidden(sections, kSections)) return NO;
     UICollectionView *list = nil;
     for (UIView *v = cell.superview; v; v = v.superview) {
         if ([v isKindOfClass:cell.class]) return NO;   // a card inside a carousel: its row decides
         if (!list && [v isKindOfClass:UICollectionView.class]) list = (UICollectionView *)v;
     }
     if (!list || !albumPageOf(list)) return NO;
-    NSMutableDictionary *headings = headingsOf(list);
+    static char headingsKey;
+    NSMutableDictionary *headings = SGNativeHeadings(list, &headingsKey);
     headings[path] = headingIn(cell);
-    NSString *section = sectionOf(path, headings);
-    return section && sectionHidden(section);
+    NSString *section = SGNativeSectionAt(path, headings);
+    return section && SGNativeSectionHidden(section, sections, kSections);
 }
 
 %hook _TtC12Element_List18CollectionViewCell
