@@ -165,7 +165,24 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
                 [library endAppearanceTransition];
             }
         }
-        NSLog(@"[harness] slider labels and library selection/errors passed");
+        // Ask for the None row without loading the page's view or fetching AutoEq's index.
+        id<UITableViewDataSource> headphones = (id<UITableViewDataSource>)SGDSPHeadphonesPage();
+        UITableView *headphoneTable = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
+        NSArray<NSArray *> *corrections = @[
+            @[@YES, @YES, @"fixture/headphones", @NO],
+            @[@NO, @YES, @"fixture/headphones", @NO],
+            @[@YES, @NO, @"fixture/headphones", @YES],
+            @[@YES, @YES, @"", @YES],
+            @[@NO, @NO, @"", @YES],
+        ]; // master, Graphic EQ, headphone path, None selected
+        for (NSArray *correction in corrections) {
+            SGDSPSetSwitch(SGKeyDSP, [correction[0] boolValue]);
+            SGDSPSetSwitch(SGKeyDSPGraphicEq, [correction[1] boolValue]);
+            SGDSPSetString(SGKeyDSPGraphicEqHeadphone, correction[2]);
+            UITableViewCell *none = [headphones tableView:headphoneTable cellForRowAtIndexPath:[NSIndexPath indexPathForRow:0 inSection:3]];
+            HARNESS_CHECK(((none.accessibilityTraits & UIAccessibilityTraitSelected) != 0) == [correction[3] boolValue]);
+        }
+        NSLog(@"[harness] slider labels, library selection/errors and headphone selection passed");
         exit(0);
     }
     if ([verb isEqualToString:@"scroll"]) {

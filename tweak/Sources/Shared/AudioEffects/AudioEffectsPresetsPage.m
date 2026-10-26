@@ -469,11 +469,6 @@ typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
     [bar resignFirstResponder];
 }
 
-// Whether a headphone's correction is what the Graphic EQ plays, rather than nothing or the user's own curve.
-static BOOL headphoneInUse(void) {
-    return SGDSPSwitch(SGKeyDSPGraphicEq) && SGDSPString(SGKeyDSPGraphicEqHeadphone).length;
-}
-
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
     return SGDSPHeadphoneSections;
 }
@@ -525,7 +520,7 @@ static NSString *correctionName(NSString *path) {
     if (path.section == SGDSPHeadphoneOutput) {
         NSString *uid = SGAutoEqOutputUID();
         BOOL remembered = SGAutoEqOutputRemembered(uid);
-        NSString *current = correctionName(headphoneInUse() ? SGDSPString(SGKeyDSPGraphicEqHeadphone) : nil);
+        NSString *current = correctionName(SGAutoEqCorrectionInUse() ? SGDSPString(SGKeyDSPGraphicEqHeadphone) : nil);
         SGFillCell(cell, [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.usefor.format", @"Use for %@"), SGAutoEqOutputName()],
                    remembered ? [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.whileplays.format", @"%@ while it plays"), current] : [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.rememberfor.format", @"Remember %@ for this output"), current], nil, nil);
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
@@ -556,7 +551,7 @@ static NSString *correctionName(NSString *path) {
     if (path.section == SGDSPHeadphoneNone) {
         SGFillCell(cell, SGL(@"settings.audioeffects.headphones.none", @"None"), nil, nil, nil);
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-        tick(cell, !headphoneInUse());
+        tick(cell, !SGAutoEqCorrectionInUse());
         return cell;
     }
     if (!_shown.count) {
@@ -577,7 +572,7 @@ static NSString *correctionName(NSString *path) {
         cell.accessibilityValue = SGL(@"settings.audioeffects.headphones.applying.value", @"Applying");
         return cell;
     }
-    tick(cell, headphoneInUse() && [headphone.path isEqualToString:SGDSPString(SGKeyDSPGraphicEqHeadphone)]);
+    tick(cell, SGAutoEqCorrectionInUse() && [headphone.path isEqualToString:SGDSPString(SGKeyDSPGraphicEqHeadphone)]);
     return cell;
 }
 

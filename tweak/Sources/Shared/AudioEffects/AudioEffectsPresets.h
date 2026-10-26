@@ -79,6 +79,8 @@ void SGAutoEqApply(SGAutoEqHeadphone *headphone, void (^done)(NSString *error));
 // The second half of that: the file's text into the Graphic EQ, its switch and the master switch on. NO when
 // it is not GraphicEQ. When the output playing now is remembered (below), the pick becomes its correction.
 BOOL SGAutoEqApplyText(NSString *path, NSString *text);
+// Whether the Graphic EQ has a headphone correction enabled, regardless of the master switch.
+BOOL SGAutoEqCorrectionInUse(void);
 // None: the headphone's correction off (a curve of the user's own, with no headphone, stays), and None
 // remembered for the output playing now when it is remembered.
 void SGAutoEqTakeOff(void);
