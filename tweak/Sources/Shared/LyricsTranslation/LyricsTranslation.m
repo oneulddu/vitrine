@@ -7,6 +7,7 @@
 #import "Shared/LocalFiles/LocalFiles.h"
 #import "Headers/SPTPlayer.h"
 #import "AIServicesInternal.h"
+#import "CredentialSettings.h"
 
 // Pin the default; a saved model remains the user's choice.
 static NSString *const kModel = @"gemini-3.8-flash";
@@ -46,6 +47,27 @@ static NSMutableDictionary *geminiGenerationConfig(SGLyricsReplyFormat format) {
         config[@"responseSchema"] = @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}};
     }
     return config;
+}
+
+static NSDictionary *geminiBody(NSString *system, NSString *prompt, SGLyricsReplyFormat format) {
+    // Lyrics are often explicit: lower every filter that can be lowered.
+    NSMutableArray *safety = [NSMutableArray array];
+    for (NSString *category in @[@"HARM_CATEGORY_HARASSMENT", @"HARM_CATEGORY_HATE_SPEECH",
+                                 @"HARM_CATEGORY_SEXUALLY_EXPLICIT", @"HARM_CATEGORY_DANGEROUS_CONTENT"])
+        [safety addObject:@{@"category": category, @"threshold": @"BLOCK_NONE"}];
+    return @{@"systemInstruction": @{@"parts": @[@{@"text": system}]},
+             @"contents": @[@{@"parts": @[@{@"text": prompt}]}],
+             @"safetySettings": safety, @"generationConfig": geminiGenerationConfig(format)};
+}
+
+static NSMutableURLRequest *geminiRequest(NSString *key, NSDictionary *body) {
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:geminiEndpoint()];
+    request.HTTPMethod = @"POST";
+    request.timeoutInterval = aiTimeout();
+    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
+    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+    return request;
 }
 
 #pragma mark - the key
@@ -233,26 +255,8 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
         return;
     }
     if (![[texts componentsJoinedByString:@""] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) { done(texts, nil); return; }
-    // Lyrics are often explicit, and translating them is what the user asked for, so every filter that can
-    // be lowered is. Recitation cannot be switched off, and is named when it stops an answer.
-    NSMutableArray *safety = [NSMutableArray array];
-    for (NSString *category in @[@"HARM_CATEGORY_HARASSMENT", @"HARM_CATEGORY_HATE_SPEECH",
-                                 @"HARM_CATEGORY_SEXUALLY_EXPLICIT", @"HARM_CATEGORY_DANGEROUS_CONTENT"]) {
-        [safety addObject:@{@"category": category, @"threshold": @"BLOCK_NONE"}];
-    }
-    NSMutableDictionary *config = geminiGenerationConfig(format);
-    NSDictionary *body = @{
-        @"systemInstruction": @{@"parts": @[@{@"text": SGLyricsTranslationInstructionForFormat(format)}]},
-        @"contents": @[@{@"parts": @[@{@"text": prompt}]}],
-        @"safetySettings": safety,
-        @"generationConfig": config,
-    };
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:geminiEndpoint()];
-    request.HTTPMethod = @"POST";
-    request.timeoutInterval = aiTimeout();
-    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
-    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
+    NSDictionary *body = geminiBody(SGLyricsTranslationInstructionForFormat(format), prompt, format);
+    NSMutableURLRequest *request = geminiRequest(key, body);
     if (!request.HTTPBody || request.HTTPBody.length > 1024 * 1024) { done(nil, SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.")); return; }
     NSMutableURLRequest *plain = [request mutableCopy];
     NSMutableDictionary *plainBody = [body mutableCopy], *plainConfig = [body[@"generationConfig"] mutableCopy];
@@ -279,38 +283,16 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
 
 static void askForKey(void) {
     // Says what leaves the phone, not only where the key stays: each song translated goes to Google whole.
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.geminikey.alert.title", @"Gemini API key")
-        message:SGL(@"settings.translation.geminikey.alert.message", @"Translate with Gemini sends the song's lyrics to Google, on your own key from Google AI Studio. The key stays on this iPhone.")
-        preferredStyle:UIAlertControllerStyleAlert];
-    // An empty field would store nothing and take the key away, which only Remove is for: Save waits for text.
-    __weak UIAlertController *weakAlert = alert;
-    UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+    SGLyricsCredentialPrompt(SGL(@"settings.translation.geminikey.alert.title", @"Gemini API key"),
+        SGL(@"settings.translation.geminikey.alert.message", @"Translate with Gemini sends the song's lyrics to Google, on your own key from Google AI Studio. The key stays on this iPhone."),
+        SGL(@"settings.translation.geminikey.placeholder", @"API key"),
+        ^BOOL(NSString *text) { return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0; }, ^(NSString *text) {
         // A key copied with the quotes around it, as from a code sample, is turned down by Google as it stands.
         NSMutableCharacterSet *around = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
         [around addCharactersInString:@"\"'“”‘’"];
-        NSString *key = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:around];
+        NSString *key = [text stringByTrimmingCharactersInSet:around];
         if (key.length) { storeKey(key); SGLyricsTranslationServiceSettingsChanged(); }
-    }];
-    save.enabled = NO;
-    __weak UIAlertAction *weakSave = save;
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = SGL(@"settings.translation.geminikey.placeholder", @"API key");
-        field.secureTextEntry = YES;
-        field.autocorrectionType = UITextAutocorrectionTypeNo;
-        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        __weak UITextField *weakField = field;   // the field keeps its actions, and the alert both
-        [field addAction:[UIAction actionWithHandler:^(UIAction *action) {
-            weakSave.enabled = [weakField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length > 0;
-        }] forControlEvents:UIControlEventEditingChanged];
-    }];
-    [alert addAction:save];
-    if (SGGeminiKeySet()) {
-        [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-            storeKey(nil); SGLyricsTranslationServiceSettingsChanged();
-        }]];
-    }
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
-    [SGTopController() presentViewController:alert animated:YES completion:nil];
+    }, ^BOOL { return SGGeminiKeySet(); }, ^{ storeKey(nil); SGLyricsTranslationServiceSettingsChanged(); });
 }
 
 NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";
@@ -367,21 +349,7 @@ NSURLRequest *SGGeminiAIRequest(NSString *system, NSString *prompt, NSString **p
 NSURLRequest *SGGeminiAIRequestWithFormat(NSString *system, NSString *prompt, SGLyricsReplyFormat format, NSString **problem) {
     NSString *key = storedKey();
     if (!key) { *problem = SGL(@"settings.translation.error.nokey", @"Add a Gemini API key on the Lyrics page first."); return nil; }
-    NSMutableArray *safety = [NSMutableArray array];
-    for (NSString *category in @[@"HARM_CATEGORY_HARASSMENT", @"HARM_CATEGORY_HATE_SPEECH", @"HARM_CATEGORY_SEXUALLY_EXPLICIT", @"HARM_CATEGORY_DANGEROUS_CONTENT"]) {
-        [safety addObject:@{@"category": category, @"threshold": @"BLOCK_NONE"}];
-    }
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:geminiEndpoint()];
-    request.HTTPMethod = @"POST";
-    request.timeoutInterval = aiTimeout();
-    [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    [request setValue:key forHTTPHeaderField:@"x-goog-api-key"];
-    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{
-        @"systemInstruction": @{@"parts": @[@{@"text": system}]},
-        @"contents": @[@{@"parts": @[@{@"text": prompt}]}], @"safetySettings": safety,
-        @"generationConfig": geminiGenerationConfig(format)
-    } options:0 error:nil];
-    return request;
+    return geminiRequest(key, geminiBody(system, prompt, format));
 }
 
 NSArray<SGModRow *> *SGGeminiTuningRows(void) {

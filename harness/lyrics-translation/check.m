@@ -51,6 +51,7 @@ static NSSet *testKeys;
 static NSMutableDictionary<NSString *, NSData *> *openAIKeys;
 static OSStatus keyReadFailure, keyWriteFailure, keyDeleteFailure;
 static NSUInteger keyReads;
+static NSData *lastStoredCredential;
 static BOOL preserveTestKeys;
 static void resetCredentialCaches(void) {
     preserveTestKeys = YES;
@@ -92,6 +93,7 @@ OSStatus SGLyricsTestKeyAdd(CFDictionaryRef query, CFTypeRef *result) {
     NSDictionary *item = (__bridge NSDictionary *)query;
     NSString *service = item[(__bridge id)kSecAttrService], *account = item[(__bridge id)kSecAttrAccount];
     if (keyWriteFailure) return keyWriteFailure;
+    lastStoredCredential = item[(__bridge id)kSecValueData];
     testKeys = [testKeys ?: [NSSet set] setByAddingObject:service];
     if (![service isEqual:@"Vitrine.OpenAI"]) return errSecSuccess;
     if (openAIKeys[account]) return errSecDuplicateItem;
@@ -135,10 +137,10 @@ SGModRow *SGStatActionRow(NSString *t, NSString *s, NSString *(^v)(void), void (
 SGModRow *SGOptionRow(NSString *t, NSString *s, NSString *k) { return nil; }
 SGModRow *SGSwitchRow(NSString *t, NSString *s, NSString *k) { SGModRow *r = [SGModRow new]; r.title = t; r.subtitle = s; r.key = k; return r; }
 id SGKaraokeTrackFor(NSString *trackID) { return nil; }
-static BOOL bingEnabled, titlesEnabled, autoRetryEnabled;
+static BOOL bingEnabled, googleEnabled, titlesEnabled, autoRetryEnabled;
 NSString *SGKaraokePlayingTrack(void) { return nil; }
 NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
-BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGRKeyLyricsAutoTranslation] ? autoRetryEnabled : [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
+BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGRKeyLyricsAutoTranslation] ? autoRetryEnabled : [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsGoogleTranslate] ? googleEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
 BOOL SGHidden(NSString *key) { return SGFlag(key, NO); }
 NSString *SGLyricsSongLanguage(NSString *track, NSArray<SGKaraokeLine *> *lines) { return nil; }
 BOOL SGLyricsLanguageRule(NSString *language, BOOL *translation, BOOL *pronunciation) { return NO; }
@@ -298,7 +300,16 @@ void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *hea
 // DeepL.m is compiled with just this transport symbol renamed so the production implementation
 // stays available for the explicit live run, while offline Bing jobs can receive scripted replies.
 void SGLyricsTranslationRealSendRequest(NSURLRequest *, BOOL, BOOL (^)(void), void (^)(NSData *, NSInteger, NSError *));
+static NSMutableArray *googleForms, *googleReplies;
 void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retry, BOOL (^allowed)(void), void (^done)(NSData *, NSInteger, NSError *)) {
+    if ([request.URL.host isEqual:@"translate.googleapis.com"]) {
+        CHECK(NSThread.isMainThread && retry && allowed && allowed() && googleReplies.count);
+        [googleForms addObject:[[NSString alloc] initWithData:request.HTTPBody encoding:NSUTF8StringEncoding]];
+        id reply = googleReplies.firstObject;
+        [googleReplies removeObjectAtIndex:0];
+        dispatch_async(dispatch_get_main_queue(), ^{ done([NSJSONSerialization dataWithJSONObject:reply options:0 error:nil], 200, nil); });
+        return;
+    }
     if (![request.URL.host isEqual:@"www.bing.com"]) {
         CHECK(NSThread.isMainThread && retry && !allowed && aiReplies.count);
         CHECK([request.HTTPMethod isEqual:@"POST"] && request.HTTPBody.length <= 1024 * 1024);

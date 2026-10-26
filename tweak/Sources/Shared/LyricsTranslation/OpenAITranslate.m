@@ -108,10 +108,7 @@ static NSDictionary *keyQuery(NSString *account) {
              (__bridge id)kSecAttrService: kService, (__bridge id)kSecAttrAccount: account};
 }
 static NSString *cleanKey(NSString *text) {
-    NSMutableCharacterSet *around = [NSCharacterSet.whitespaceAndNewlineCharacterSet mutableCopy];
-    [around addCharactersInString:@"\"'“”‘’"];
-    NSString *key = [text stringByTrimmingCharactersInSet:around];
-    return key.length <= 4096 && [key rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound ? key : nil;
+    return SGLyricsCleanCredential(text, 4096);
 }
 static NSString *readKey(NSString *account, OSStatus *status) {
     NSMutableDictionary *query = [keyQuery(account) mutableCopy];
@@ -312,29 +309,14 @@ SGModRow *SGOpenAIBaseURLRow(void) {
 static void askForKey(void) {
     NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase), *host = SGOpenAIKeyHost(base);
     if (!host) { askForBase(); return; }
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.ai.key.title", @"API key")
-        message:[NSString stringWithFormat:SGL(@"settings.translation.openaikey.alert.message", @"The song's lyrics go to %@, on your own API key. The key is kept for that host and stays on this iPhone."), host]
-        preferredStyle:UIAlertControllerStyleAlert];
-    __weak UIAlertController *weakAlert = alert;
-    UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSString *key = cleanKey(weakAlert.textFields.firstObject.text);
+    SGLyricsCredentialPrompt(SGL(@"settings.translation.ai.key.title", @"API key"),
+        [NSString stringWithFormat:SGL(@"settings.translation.openaikey.alert.message", @"The song's lyrics go to %@, on your own API key. The key is kept for that host and stays on this iPhone."), host],
+        SGL(@"settings.translation.openaikey.key", @"API key"),
+        ^BOOL(NSString *text) { return cleanKey(text).length > 0; }, ^(NSString *text) {
+        NSString *key = cleanKey(text);
         if (!key.length || !migrateKey(base) || !storeKey(key, host)) return;
         SGLyricsTranslationServiceSettingsChanged();
-    }];
-    save.enabled = NO;
-    __weak UIAlertAction *weakSave = save;
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        textField(field);
-        field.placeholder = SGL(@"settings.translation.openaikey.key", @"API key");
-        field.secureTextEntry = YES;
-        [field addAction:[UIAction actionWithHandler:^(UIAction *action) {
-            weakSave.enabled = cleanKey(weakAlert.textFields.firstObject.text).length > 0;
-        }] forControlEvents:UIControlEventEditingChanged];
-    }];
-    [alert addAction:save];
-    if (SGOpenAIKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { if (storeKey(nil, host)) SGLyricsTranslationServiceSettingsChanged(); }]];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
-    [SGTopController() presentViewController:alert animated:YES completion:nil];
+    }, ^BOOL { return SGOpenAIKeySet(); }, ^{ if (storeKey(nil, host)) SGLyricsTranslationServiceSettingsChanged(); });
 }
 SGModRow *SGOpenAIKeyRow(void) {
     return SGStatActionRow(SGL(@"settings.translation.ai.key.title", @"API key"), nil,

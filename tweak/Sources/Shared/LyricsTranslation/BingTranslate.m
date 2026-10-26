@@ -2,7 +2,7 @@
 #import "Settings/SGModPage.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
-#import "LyricsTranslation.h"
+#import "AIServicesInternal.h"
 
 static NSMutableDictionary *sg_done;
 // Accessed only on main, like the jobs and their result memo.
@@ -194,17 +194,10 @@ void SGLyricsTranslateWithBing(NSString *trackID, NSArray<SGKaraokeLine *> *line
         if (!SGFlag(SGKeyLyricsBingTranslate, NO)) { done(nil, disabled()); return; }
         NSString *target = SGBingTargetLanguage(languageTag);
         if (!target) { done(nil, SGL(@"settings.translation.bing.error.language", @"Choose a valid language for Bing Translator.")); return; }
-        if (![lines isKindOfClass:NSArray.class] || lines.count > 2000) { done(nil, unreadable()); return; }
-        NSMutableArray *texts = [NSMutableArray array], *send = [NSMutableArray array], *out = [NSMutableArray array];
-        NSUInteger total = 0;
-        for (id line in lines) {
-            if (![line isKindOfClass:SGKaraokeLine.class]) { done(nil, unreadable()); return; }
-            NSString *text = SGKaraokeLineText(line) ?: @"";
-            total += text.length;
-            if (text.length > 2800 || total > 128000) { done(nil, SGL(@"settings.translation.bing.error.toolong", @"The song is too long to send to Bing Translator.")); return; }
-            BOOL keep = SGGoogleKeepsLine(text);
-            [texts addObject:text]; [send addObject:keep ? @"" : text]; [out addObject:keep ? text : @""];
-        }
+        NSMutableArray *send, *out;
+        BOOL tooLong;
+        NSArray *texts = SGLyricsWebTexts(lines, 2800, &send, &out, &tooLong);
+        if (!texts) { done(nil, tooLong ? SGL(@"settings.translation.bing.error.toolong", @"The song is too long to send to Bing Translator.") : unreadable()); return; }
         NSArray *batches = SGLyricsTranslationBatches(send, 40, 2800);
         if (!batches) { done(nil, unreadable()); return; }
         if (!sg_done) sg_done = [NSMutableDictionary dictionary];

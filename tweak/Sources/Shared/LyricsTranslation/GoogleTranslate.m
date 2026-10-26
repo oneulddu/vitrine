@@ -1,7 +1,7 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Shared/Lyrics/Lyrics.h"
-#import "LyricsTranslation.h"
+#import "AIServicesInternal.h"
 
 static NSMutableDictionary *sg_done;
 
@@ -30,6 +30,24 @@ BOOL SGGoogleKeepsLine(NSString *text) {
     if (trimmed.length < 3 || ![trimmed hasPrefix:@"["] || ![trimmed hasSuffix:@"]"]) return NO;
     NSString *inside = [trimmed substringWithRange:NSMakeRange(1, trimmed.length - 2)];
     return [inside rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"[]\r\n"]].location == NSNotFound;
+}
+
+NSArray<NSString *> *SGLyricsWebTexts(NSArray<SGKaraokeLine *> *lines, NSUInteger maxCharacters,
+                                    NSMutableArray **send, NSMutableArray **out, BOOL *tooLong) {
+    *tooLong = NO;
+    if (![lines isKindOfClass:NSArray.class] || lines.count > 2000) return nil;
+    NSMutableArray *texts = [NSMutableArray array];
+    *send = [NSMutableArray array]; *out = [NSMutableArray array];
+    NSUInteger total = 0;
+    for (id line in lines) {
+        if (![line isKindOfClass:SGKaraokeLine.class]) return nil;
+        NSString *text = SGKaraokeLineText(line) ?: @"";
+        total += text.length;
+        if (text.length > maxCharacters || total > 128000) { *tooLong = YES; return nil; }
+        BOOL keep = SGGoogleKeepsLine(text);
+        [texts addObject:text]; [*send addObject:keep ? @"" : text]; [*out addObject:keep ? text : @""];
+    }
+    return texts;
 }
 
 NSString *SGGoogleTranslationTextIn(id root) {
@@ -140,17 +158,10 @@ void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *li
         if (!SGFlag(SGKeyLyricsGoogleTranslate, NO)) { done(nil, disabled()); return; }
         NSString *target = SGGoogleTargetLanguage(languageTag);
         if (!target) { done(nil, SGL(@"settings.translation.google.error.language", @"Choose a valid language for Google Translate.")); return; }
-        if (![lines isKindOfClass:NSArray.class] || lines.count > 2000) { done(nil, unreadable()); return; }
-        NSMutableArray *texts = [NSMutableArray array], *send = [NSMutableArray array], *out = [NSMutableArray array];
-        NSUInteger total = 0;
-        for (id line in lines) {
-            if (![line isKindOfClass:SGKaraokeLine.class]) { done(nil, unreadable()); return; }
-            NSString *text = SGKaraokeLineText(line) ?: @"";
-            total += text.length;
-            if (text.length > 3500 || total > 128000) { done(nil, SGL(@"settings.translation.google.error.toolong", @"The song is too long to send to Google Translate.")); return; }
-            BOOL keep = SGGoogleKeepsLine(text);
-            [texts addObject:text]; [send addObject:keep ? @"" : text]; [out addObject:keep ? text : @""];
-        }
+        NSMutableArray *send, *out;
+        BOOL tooLong;
+        NSArray *texts = SGLyricsWebTexts(lines, 3500, &send, &out, &tooLong);
+        if (!texts) { done(nil, tooLong ? SGL(@"settings.translation.google.error.toolong", @"The song is too long to send to Google Translate.") : unreadable()); return; }
         NSArray *batches = SGLyricsTranslationBatches(send, 2000, 3500);
         if (!batches) { done(nil, unreadable()); return; }
         if (!sg_done) sg_done = [NSMutableDictionary dictionary];

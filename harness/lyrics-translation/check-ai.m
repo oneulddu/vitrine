@@ -1316,6 +1316,84 @@ static void keyPromptAction(SGModRow *row, NSString *title, NSString *text) {
     keyPrompt = nil;
 }
 
+static void checkCredentialEditing(void) {
+    testPresenter = [SGKeyPresenter new];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    NSArray *rows = @[SGClaudeKeyRow(), SGOpenAIKeyRow(), SGDeepLKeyRow(), SGGeminiKeyRow()];
+    for (NSUInteger provider = 0; provider < rows.count; provider++) {
+        testKeys = [NSSet set]; openAIKeys = [NSMutableDictionary dictionary];
+        SGModRow *row = rows[provider];
+        row.action();
+        UITextField *field = keyPrompt.textFields.firstObject;
+        UIAlertAction *save = keyPrompt.actions.firstObject;
+        CHECK(!save.enabled);
+        NSUInteger limit = provider == 2 ? 1024 : 4096;
+        NSString *full = [@"x" stringByPaddingToLength:limit withString:@"x" startingAtIndex:0];
+        NSArray *cases = @[
+            @[@" \t\n", @NO], @[@" \"'“”‘’ ", @(provider == 3)],
+            @[@" “fixture” \n", @YES],
+            @[full, @YES], @[[full stringByAppendingString:@"x"], @(provider == 3)]
+        ];
+        for (NSArray *entry in cases) {
+            field.text = entry[0];
+            [field sendActionsForControlEvents:UIControlEventEditingChanged];
+            if (save.enabled != [entry[1] boolValue])
+                fprintf(stderr, "Credential edit mismatch: provider=%lu length=%lu expected=%d actual=%d\n",
+                    (unsigned long)provider, (unsigned long)[entry[0] length], [entry[1] boolValue], save.enabled);
+            CHECK(save.enabled == [entry[1] boolValue]);
+        }
+        keyPrompt = nil;
+    }
+    testKeys = [NSSet set];
+    lastStoredCredential = nil;
+    keyPromptAction(SGGeminiKeyRow(), @"Save", @" \"'“”‘’ ");
+    CHECK(!lastStoredCredential);
+    keyPromptAction(SGGeminiKeyRow(), @"Save", @" \n“fixture”' ");
+    CHECK([lastStoredCredential isEqual:[@"fixture" dataUsingEncoding:NSUTF8StringEncoding]]);
+    testPresenter = nil; testKeys = [NSSet set]; openAIKeys = nil;
+    puts("Credential editing: provider limits, quote trimming and Gemini's distinct predicate passed");
+}
+
+static NSArray *googleAsk(NSArray *lines, NSString **problem) {
+    __block BOOL finished = NO;
+    __block NSArray *result;
+    __block NSString *failure;
+    SGLyricsTranslateWithGoogle(nil, lines, @"ko", ^(NSArray *answer, NSString *error) {
+        CHECK(NSThread.isMainThread && !finished);
+        result = answer; failure = error; finished = YES;
+    });
+    waitFor(^BOOL { return finished; });
+    *problem = failure;
+    return result;
+}
+
+static void checkGooglePreparation(void) {
+    googleEnabled = YES;
+    googleForms = [NSMutableArray array];
+    googleReplies = [NSMutableArray arrayWithObject:@[@[@[@"안녕\n다음"]]]];
+    NSString *problem;
+    CHECK(([googleAsk(aiLines(@[@" [Chorus] ", @"Hello", @" \t", @" ♪ ", @"Next"]), &problem)
+        isEqual:@[@" [Chorus] ", @"안녕", @"", @" ♪ ", @"다음"]]));
+    CHECK(([googleForms isEqual:@[@"client=gtx&sl=auto&tl=ko&dt=t&q=Hello%0ANext"]]));
+    CHECK(!problem);
+    NSString *full = [@"x" stringByPaddingToLength:3500 withString:@"x" startingAtIndex:0];
+    googleReplies = [NSMutableArray arrayWithObject:@[@[@[@"boundary"]]]];
+    CHECK(([googleAsk(aiLines(@[full]), &problem) isEqual:@[@"boundary"]]));
+    CHECK(!googleAsk(aiLines(@[[full stringByAppendingString:@"x"]]), &problem));
+    CHECK([problem isEqual:@"The song is too long to send to Google Translate."]);
+    NSString *protected = [NSString stringWithFormat:@"[%@]", [@"x" stringByPaddingToLength:3198 withString:@"x" startingAtIndex:0]];
+    NSMutableArray *many = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 40; i++) [many addObject:protected];
+    CHECK([googleAsk(aiLines(many), &problem) isEqual:many]);
+    [many addObject:@"♪"];
+    CHECK(!googleAsk(aiLines(many), &problem));
+    CHECK([problem isEqual:@"The song is too long to send to Google Translate."]);
+    CHECK(!googleAsk((id)@[@"not a lyric line"], &problem));
+    CHECK([problem isEqual:@"Google Translate's answer could not be read. Try again."]);
+    googleEnabled = NO; googleForms = nil; googleReplies = nil;
+    puts("Google preparation: original indices, protected/blank lines, per-line and original-song limits passed");
+}
+
 static void checkCredentialAvailability(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
@@ -1373,6 +1451,8 @@ static void checkNewAI(void) {
     NSMutableDictionary *before = [NSMutableDictionary dictionary];
     for (NSString *key in keys) before[key] = [NSUserDefaults.standardUserDefaults objectForKey:key] ?: NSNull.null;
     checkCredentialAvailability();
+    checkCredentialEditing();
+    checkGooglePreparation();
     checkOpenAIHostKeys();
     checkClaudeAndPresets();
     checkModelLists();

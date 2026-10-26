@@ -4,6 +4,7 @@
 #import "Settings/SGPageStyle.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "AIServicesInternal.h"
+#import "CredentialSettings.h"
 
 static NSString *const kService = @"Vitrine.DeepL", *const kAccount = @"api-key";
 static NSMutableDictionary *sg_done;
@@ -289,36 +290,16 @@ void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lin
 #pragma mark - the row
 
 static NSString *cleanKey(NSString *text) {
-    NSMutableCharacterSet *around = [NSCharacterSet.whitespaceAndNewlineCharacterSet mutableCopy];
-    [around addCharactersInString:@"\"'“”‘’"];
-    NSString *key = [text stringByTrimmingCharactersInSet:around];
-    return key.length <= 1024 && [key rangeOfCharacterFromSet:NSCharacterSet.controlCharacterSet].location == NSNotFound ? key : nil;
+    return SGLyricsCleanCredential(text, 1024);
 }
 static void askForKey(void) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.translation.deeplkey.title", @"DeepL API key")
-        message:SGL(@"settings.translation.deeplkey.message", @"Translate with DeepL sends the song's lyrics to DeepL, on your own key from deepl.com/your-account/keys. The key stays on this iPhone.")
-        preferredStyle:UIAlertControllerStyleAlert];
-    __weak UIAlertController *weakAlert = alert;
-    UIAlertAction *save = [UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSString *key = cleanKey(weakAlert.textFields.firstObject.text);
+    SGLyricsCredentialPrompt(SGL(@"settings.translation.deeplkey.title", @"DeepL API key"),
+        SGL(@"settings.translation.deeplkey.message", @"Translate with DeepL sends the song's lyrics to DeepL, on your own key from deepl.com/your-account/keys. The key stays on this iPhone."),
+        SGL(@"settings.translation.deeplkey.placeholder", @"API key"),
+        ^BOOL(NSString *text) { return cleanKey(text).length > 0; }, ^(NSString *text) {
+        NSString *key = cleanKey(text);
         if (key.length) { storeKey(key); SGLyricsTranslationServiceSettingsChanged(); }
-    }];
-    save.enabled = NO;
-    __weak UIAlertAction *weakSave = save;
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
-        field.placeholder = SGL(@"settings.translation.deeplkey.placeholder", @"API key");
-        field.secureTextEntry = YES;
-        field.autocorrectionType = UITextAutocorrectionTypeNo;
-        field.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        __weak UITextField *weakField = field;
-        [field addAction:[UIAction actionWithHandler:^(UIAction *action) {
-            weakSave.enabled = cleanKey(weakField.text).length > 0;
-        }] forControlEvents:UIControlEventEditingChanged];
-    }];
-    [alert addAction:save];
-    if (SGDeepLKeySet()) [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { storeKey(nil); SGLyricsTranslationServiceSettingsChanged(); }]];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
-    [SGTopController() presentViewController:alert animated:YES completion:nil];
+    }, ^BOOL { return SGDeepLKeySet(); }, ^{ storeKey(nil); SGLyricsTranslationServiceSettingsChanged(); });
 }
 SGModRow *SGDeepLKeyRow(void) {
     return SGStatActionRow(SGL(@"settings.translation.deeplkey.title", @"DeepL API key"),

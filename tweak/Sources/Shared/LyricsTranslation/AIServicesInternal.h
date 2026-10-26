@@ -1,5 +1,11 @@
 // Shared request builders and bounded reply checks, also exercised by the offline harness.
 #import "LyricsTranslation.h"
+#import "CredentialSettings.h"
+
+// Original text, sendable text and initial output retain the same source indices.
+// Oversized originals count even when their protected text will not be sent.
+NSArray<NSString *> *SGLyricsWebTexts(NSArray<SGKaraokeLine *> *lines, NSUInteger maxCharacters,
+                                    NSMutableArray **send, NSMutableArray **out, BOOL *tooLong);
 
 NSArray<NSString *> *SGLyricsAIArrayIn(id content, NSUInteger count);
 typedef NS_ENUM(NSInteger, SGLyricsReplyFormat) { SGLyricsReplyJSON, SGLyricsReplyIndexed };
