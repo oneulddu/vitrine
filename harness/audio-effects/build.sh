@@ -7,8 +7,17 @@
 #   ./build.sh route      build/route-check, the corrections remembered per output (route.m)
 #   ./build.sh presets    build/preset-files-check, preset files written and read (preset-files.m)
 #   ./build.sh pcm        build/pcm-read-check, shared PCM reads and exact buffer layout (C only)
+#   ./build.sh format     build/audio-format-check, exact audio-format diagnostic strings
 set -e
 cd "$(dirname "$0")"
+if [ "$1" = format ]; then
+    OUT=${OUT:-build/audio-format-check}
+    mkdir -p "$(dirname "$OUT")"
+    xcrun clang -fobjc-arc -O2 -Wall -Werror -target arm64-apple-macos13.0 -I ../../tweak/Sources \
+        audio-format.m -framework Foundation -o "$OUT"
+    echo "built $OUT"
+    exit
+fi
 if [ "$1" = pcm ]; then
     OUT=${OUT:-build/pcm-read-check}
     mkdir -p "$(dirname "$OUT")"

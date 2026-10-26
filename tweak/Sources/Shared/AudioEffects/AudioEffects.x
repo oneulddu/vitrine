@@ -31,6 +31,7 @@
 #import "Core/SGCore.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Shared/Player/SGPCMRead.h"
+#import "Shared/Player/SGAudioFormat.h"
 #import "AudioEffects.h"
 #import "AudioEffectsApply.h"
 #import "AudioEffectsPresets.h"
@@ -126,18 +127,6 @@ static void readOutput(AudioUnitRenderActionFlags *flags, UInt32 frames, AudioBu
 
 #pragma mark - Spotify's audio thread
 
-static NSString *fourCC(UInt32 code) {
-    char text[5] = {(char)(code >> 24), (char)(code >> 16), (char)(code >> 8), (char)code, 0};
-    return @(text);
-}
-
-static NSString *formatText(AudioStreamBasicDescription format) {
-    if (format.mFormatID != kAudioFormatLinearPCM) return [NSString stringWithFormat:@"'%@'", fourCC(format.mFormatID)];
-    return [NSString stringWithFormat:@"%.0f Hz, %u channels, %u-bit %@%@", format.mSampleRate, (unsigned)format.mChannelsPerFrame,
-            (unsigned)format.mBitsPerChannel, (format.mFormatFlags & kAudioFormatFlagIsFloat) ? @"float" : @"integer",
-            (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) ? @", a buffer per channel" : @", interleaved"];
-}
-
 // The format the notify's buffers are in, which is the RemoteIO unit's output side (element 0, output scope):
 // the hardware's, not the one Spotify hands the unit (the input scope). In the simulator a 44.1 kHz client
 // comes out at 48 kHz, and a 16-bit interleaved one as float, a buffer per channel (harness/audio-effects/sim).
@@ -155,8 +144,8 @@ static BOOL readFormat(AudioUnit unit) {
     // Spotify's thread and a format change's may both be here.
     static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
     static NSString *logged;
-    NSString *text = [NSString stringWithFormat:@"dsp: Spotify's output renders %@, from %@ Spotify hands it%@", formatText(format),
-                      formatText(client), takes ? @"" : [NSString stringWithFormat:@"; not a format the engine takes (status %d), its sound passes as it is", (int)status]];
+    NSString *text = [NSString stringWithFormat:@"dsp: Spotify's output renders %@, from %@ Spotify hands it%@", SGAudioFormatText(format),
+                      SGAudioFormatText(client), takes ? @"" : [NSString stringWithFormat:@"; not a format the engine takes (status %d), its sound passes as it is", (int)status]];
     os_unfair_lock_lock(&lock);
     BOOL changed = ![text isEqualToString:logged];
     logged = text;

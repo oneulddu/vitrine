@@ -33,6 +33,8 @@ HARNESSES = [
      "run": "sh harness/album-credits/build.sh && harness/album-credits/build/album-credits-check"},
     {"name": "Audio effects routes", "dir": "audio-effects",
      "run": "sh harness/audio-effects/build.sh route && harness/audio-effects/build/route-check"},
+    {"name": "Audio effects format text", "dir": "audio-effects",
+     "run": "sh harness/audio-effects/build.sh format && harness/audio-effects/build/audio-format-check"},
     {"name": "Audio effects presets", "dir": "audio-effects",
      "run": "sh harness/audio-effects/build.sh presets && harness/audio-effects/build/preset-files-check"},
     {"name": "Automatic translation settings", "dir": "auto-translation-settings",

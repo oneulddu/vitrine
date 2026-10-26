@@ -47,7 +47,7 @@ their check executable in the workflow.
 | Script | Mode / reason |
 | --- | --- |
 | `album-credits/build.sh` | Artist-credit matching assertions. |
-| `audio-effects/build.sh` | `route` and `presets`: isolated settings and preset-file assertions. |
+| `audio-effects/build.sh` | `route`, `presets` and `format`: isolated settings, preset-file and audio-format text assertions. |
 | `auto-translation-settings/check.sh` | Real Catalyst settings callbacks with fake providers. |
 | `autoeq/build.sh` | Default offline index/preset fixtures, not `online`. |
 | `clean-links/build.sh` | Pure URL-cleaning assertions. |

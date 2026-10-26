@@ -42,6 +42,7 @@
 #import "Core/SGCore.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Shared/Player/SGPCMRead.h"
+#import "Shared/Player/SGAudioFormat.h"
 #import "Haptics.h"
 #import "SGMusicAnalyzer.h"
 #import "SGMusicEventRing.h"
@@ -173,18 +174,6 @@ static OSStatus rendered(void *refCon, AudioUnitRenderActionFlags *flags, const 
 
 #pragma mark - the output unit
 
-static NSString *fourCC(UInt32 code) {
-    char text[5] = {(char)(code >> 24), (char)(code >> 16), (char)(code >> 8), (char)code, 0};
-    return @(text);
-}
-
-static NSString *formatText(AudioStreamBasicDescription format) {
-    if (format.mFormatID != kAudioFormatLinearPCM) return [NSString stringWithFormat:@"'%@'", fourCC(format.mFormatID)];
-    return [NSString stringWithFormat:@"%.0f Hz, %u channels, %u-bit %@%@", format.mSampleRate, (unsigned)format.mChannelsPerFrame,
-            (unsigned)format.mBitsPerChannel, (format.mFormatFlags & kAudioFormatFlagIsFloat) ? @"float" : @"integer",
-            (format.mFormatFlags & kAudioFormatFlagIsNonInterleaved) ? @", a buffer per channel" : @", interleaved"];
-}
-
 // The format the notify's buffers are in: the RemoteIO unit's output side (element 0, output scope), the
 // hardware's, not the one Spotify hands the unit (the input scope). A format the analyzer cannot read
 // leaves the buffers alone.
@@ -201,8 +190,8 @@ static void readFormat(AudioUnit unit) {
     // Spotify's thread and a format change's may both be here.
     static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
     static NSString *logged;
-    NSString *text = [NSString stringWithFormat:@"music haptics: listening to Spotify's output at %@, from %@ Spotify hands it%@", formatText(format),
-                      formatText(client), takes ? @"" : [NSString stringWithFormat:@"; not a format the analyzer reads (status %d), nothing plays", (int)status]];
+    NSString *text = [NSString stringWithFormat:@"music haptics: listening to Spotify's output at %@, from %@ Spotify hands it%@", SGAudioFormatText(format),
+                      SGAudioFormatText(client), takes ? @"" : [NSString stringWithFormat:@"; not a format the analyzer reads (status %d), nothing plays", (int)status]];
     os_unfair_lock_lock(&lock);
     BOOL changed = ![text isEqualToString:logged];
     logged = text;
