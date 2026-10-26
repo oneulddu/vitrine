@@ -18,7 +18,7 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \
     "$HERE/settings.m" "$SRC/Shared/LyricsPiP/LyricsPiPSettings.m" \
     "$SRC/Shared/LyricsBackground/LyricsBackgroundSettings.m" \
     "$SRC/Shared/LyricsBackground/LyricsBackground.m" \
-    "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
+    "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" "$SRC/Core/SGViewTree.m" \
     -framework UIKit -framework Foundation -framework CoreText -framework ImageIO -framework CoreGraphics -framework Accelerate \
     -framework AVKit -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework QuartzCore \
     -o "$OUT/lyrics-pip"

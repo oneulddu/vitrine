@@ -4,10 +4,6 @@
 #import "SpeedPitchMenu.m"
 
 void SGRequireClasses(NSArray *classes) {}
-void SGForEachView(UIView *view, void (^block)(UIView *)) {
-    block(view);
-    for (UIView *child in view.subviews) SGForEachView(child, block);
-}
 void SGPlayFeedback(SGFeedback feedback) {}
 void SGPrepareFeedback(SGFeedback feedback) {}
 double SGPlayerSpeed(void) { return 1; }
