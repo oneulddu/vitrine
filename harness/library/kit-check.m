@@ -3,8 +3,67 @@
 #import <objc/runtime.h>
 #import "../harness-fail.h"
 #import "Core/SGViewTree.h"
+#import "Core/SGLog.h"
 #import "Redesigned/Kit/SGRRestyle.h"
 #import "Redesigned/Kit/SGRField.h"
+#import "Redesigned/Kit/SGRDownload.h"
+#import "Redesigned/Kit/SGRPress.h"
+
+@interface KitLogControl : UIControl @end
+@implementation KitLogControl
+- (BOOL)accessibilityActivate { return YES; }
+@end
+
+@interface _TtKitLogImage : UIImageView @end
+@implementation _TtKitLogImage @end
+
+static void checkKitLogging(void) {
+    uint64_t start = SGLogLastSeq();
+    for (NSUInteger i = 0; i < 2; i++) SGRActivate([KitLogControl new]);
+    HARNESS_CHECK(([ [SGLogRecent(start) valueForKey:@"text"] isEqual:@[
+        @"redesign kit: KitLogControl fires nothing (events 0x0)",
+        @"redesign kit: KitLogControl fired through accessibility"
+    ]]));
+
+    start = SGLogLastSeq();
+    for (NSUInteger i = 0; i < 2; i++) {
+        KitLogControl *control = [KitLogControl new];
+        UIView *glyph = [UIView new];
+        [control addSubview:glyph];
+        SGRPressGlyph(control, glyph, control, 44, SGRPressScale);
+    }
+    HARNESS_CHECK(([[SGLogRecent(start) valueForKey:@"text"] isEqual:@[
+        @"redesign kit: a press platter on KitLogControl (no id)"
+    ]]));
+
+    start = SGLogLastSeq();
+    for (NSUInteger i = 0; i < 2; i++) {
+        UIView *download = [UIView new];
+        download.accessibilityIdentifier = @"DownloadButton.Granular.None";
+        download.accessibilityLabel = @"Download";
+        download.accessibilityValue = @"Not downloaded";
+        SGRReadDownload(download, NULL, NULL);
+    }
+    HARNESS_CHECK(([[SGLogRecent(start) valueForKey:@"text"] isEqual:@[
+        @"redesign kit: download DownloadButton.Granular.None, model missing state -1 progress unreadable, label \"Download\" value \"Not downloaded\""
+    ]]));
+
+    start = SGLogLastSeq();
+    for (NSUInteger i = 0; i < 2; i++) {
+        UIImageView *image = [_TtKitLogImage new];
+        SGRObserveImage(image, ^(UIImageView *view) {});
+        SGRObserveLayout(image, ^(UIView *view) {});
+    }
+    HARNESS_CHECK(([[SGLogRecent(start) valueForKey:@"text"] isEqual:@[
+        @"redesign kit: _TtKitLogImage watched for setImage: through its class",
+        @"redesign kit: _TtKitLogImage cannot be watched for its layout"
+    ]]));
+
+    start = SGLogLastSeq();
+    SGRObserveImage([UIImageView new], ^(UIImageView *view) {});
+    HARNESS_CHECK(SGLogRecent(start).count == 0);
+    puts("PASS Kit logging: repeated classes and states suppressed; domains independent; silent image adoption");
+}
 
 @interface HarnessRetrievalListStructuredData : UIView @end
 @implementation HarnessRetrievalListStructuredData @end
@@ -93,6 +152,7 @@ static void checkLabelText(void) {
 }
 
 void SGRRunKitChecks(void) {
+    checkKitLogging();
     checkLabelText();
     checkHeaderArtwork();
     checkClassNames();

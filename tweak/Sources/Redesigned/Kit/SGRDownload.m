@@ -94,10 +94,8 @@ BOOL SGRReadDownload(UIView *source, SGRDownloadState *state, CGFloat *progress)
 
     // Said once for each combination read, so the first device run shows which of the two signals moved.
     static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
     NSString *mark = [NSString stringWithFormat:@"%@ %d %d", button.accessibilityIdentifier, current ? *current : -1, stored != NULL];
-    if (![logged containsObject:mark]) {
-        [logged addObject:mark];
+    if (SGLogFirst(&logged, mark)) {
         SGLog(@"redesign kit: download %@, model %@ state %d progress %@, label \"%@\" value \"%@\"",
               button.accessibilityIdentifier, owner ? NSStringFromClass(object_getClass(owner)) : @"missing",
               current ? *current : -1, stored ? (stored[8] == 0 ? @"set" : @"none") : @"unreadable",
@@ -105,9 +103,7 @@ BOOL SGRReadDownload(UIView *source, SGRDownloadState *state, CGFloat *progress)
     }
     if (modelled && named && modelState != said && !(modelState == SGRDownloadWaiting && said == SGRDownloadDownloading)) {
         static NSMutableSet<NSString *> *disagreed;
-        if (!disagreed) disagreed = [NSMutableSet set];
-        if (![disagreed containsObject:mark]) {
-            [disagreed addObject:mark];
+        if (SGLogFirst(&disagreed, mark)) {
             SGLog(@"redesign kit: download model says %d where the identifier says %@, the model wins", *current,
                   button.accessibilityIdentifier);
         }

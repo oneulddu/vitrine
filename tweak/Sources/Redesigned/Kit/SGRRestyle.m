@@ -90,11 +90,9 @@ static BOOL overrideOnClass(Class cls, SEL selector, id (^make)(IMP replaced)) {
 // Said once per class: what could not be watched at all, and what had to be watched through its class.
 static void logWatch(UIView *view, SEL selector, BOOL kept, BOOL onClass) {
     static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
     NSString *name = NSStringFromClass(object_getClass(view));
     NSString *mark = [NSString stringWithFormat:@"%@ %s", name, sel_getName(selector)];
-    if ([logged containsObject:mark]) return;
-    [logged addObject:mark];
+    if (!SGLogFirst(&logged, mark)) return;
     if (!kept) SGLog(@"redesign kit: %@ cannot be watched for %s", name, sel_getName(selector));
     else if (onClass) SGLog(@"redesign kit: %@ watched for %s through its class", name, sel_getName(selector));
 }
@@ -322,12 +320,8 @@ BOOL SGRObserveLayout(UIView *view, void (^laidOut)(UIView *view)) {
     });
     if (!kept) {
         static NSMutableSet<NSString *> *logged;
-        if (!logged) logged = [NSMutableSet set];
         NSString *name = NSStringFromClass(object_getClass(view));
-        if (![logged containsObject:name]) {
-            [logged addObject:name];
-            SGLog(@"redesign kit: %@ cannot be watched for its layout", name);
-        }
+        SGLogOnce(&logged, name, @"redesign kit: %@ cannot be watched for its layout");
     }
     return kept;
 }
@@ -506,12 +500,8 @@ void SGRActivate(UIView *source) {
     if (control && SGRFire(control)) return;
     id target = control ?: source;
     static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
     NSString *name = NSStringFromClass([target class]);
-    if (![logged containsObject:name]) {
-        [logged addObject:name];
-        SGLog(@"redesign kit: %@ fired through accessibility", name);
-    }
+    SGLogOnce(&logged, name, @"redesign kit: %@ fired through accessibility");
     [target accessibilityActivate];
 }
 
@@ -524,10 +514,8 @@ BOOL SGRFire(UIControl *control) {
     UIControlEvents fire = (registered & UIControlEventPrimaryActionTriggered) ? UIControlEventPrimaryActionTriggered
                          : (registered & UIControlEventTouchUpInside) ? UIControlEventTouchUpInside : 0;
     static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
     NSString *name = NSStringFromClass(control.class);
-    if (![logged containsObject:name]) {
-        [logged addObject:name];
+    if (SGLogFirst(&logged, name)) {
         SGLog(@"redesign kit: %@ fires %@ (events 0x%lx)", name, fire == UIControlEventPrimaryActionTriggered ? @"its primary action" : fire ? @"touch up inside" : @"nothing", (unsigned long)registered);
     }
     if (!fire) return NO;

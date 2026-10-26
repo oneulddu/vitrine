@@ -67,7 +67,7 @@ static void keepFilm(UIView *shape, BOOL prominent, SGRGlassMode mode) {
     }
 }
 
-static UIView *glassInside(UIView *control, const void *key, CGSize size, BOOL capsule, BOOL prominent) {
+UIView *SGRGlassCapsuleInside(UIView *control, const void *key, CGSize size, BOOL prominent) {
     if (!control || !key) return nil;
     SGRGlassMode mode = glassMode();
     UIView *shape = objc_getAssociatedObject(control, key);
@@ -96,7 +96,7 @@ static UIView *glassInside(UIView *control, const void *key, CGSize size, BOOL c
     CGRect bounds = CGRectMake(0, 0, size.width, size.height);
     if (!CGRectEqualToRect(shape.bounds, bounds)) {
         shape.bounds = bounds;
-        SGShapeGlass(shape, MIN(size.width, size.height) / 2, capsule);
+        SGShapeGlass(shape, MIN(size.width, size.height) / 2, YES);
     }
     keepFilm(shape, prominent, mode);
     CGPoint middle = CGPointMake(CGRectGetMidX(control.bounds), CGRectGetMidY(control.bounds));
@@ -105,11 +105,7 @@ static UIView *glassInside(UIView *control, const void *key, CGSize size, BOOL c
 }
 
 UIView *SGRGlassInside(UIView *control, const void *key, CGFloat side) {
-    return glassInside(control, key, CGSizeMake(side, side), YES, NO);
-}
-
-UIView *SGRGlassCapsuleInside(UIView *control, const void *key, CGSize size, BOOL prominent) {
-    return glassInside(control, key, size, YES, prominent);
+    return SGRGlassCapsuleInside(control, key, CGSizeMake(side, side), NO);
 }
 
 void SGRShowGlass(UIView *shape, BOOL shown) {

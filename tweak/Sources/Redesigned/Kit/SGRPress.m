@@ -303,10 +303,8 @@ void SGRPressGlyph(UIView *control, UIView *glyph, UIView *platterHost, CGFloat 
             [weakPress pressed:pressed tapped:tapped];
         });
         static NSMutableSet<NSString *> *logged;
-        if (!logged) logged = [NSMutableSet set];
         NSString *name = NSStringFromClass(control.class);
-        if (![logged containsObject:name]) {
-            [logged addObject:name];
+        if (SGLogFirst(&logged, name)) {
             SGLog(@"redesign kit: a press platter on %@ (%@)", name, control.accessibilityIdentifier ?: @"no id");
         }
     }
