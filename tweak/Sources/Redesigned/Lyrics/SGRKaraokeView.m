@@ -2667,8 +2667,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     NSArray<SGKaraokeLine *> *lines = _lines;
     NSString *track = _track, *language = SGLyricsGeminiLanguage();
     if (![track isEqualToString:asked] || ![language isEqualToString:askedIn]) return;   // a menu from before the song or the language changed
-    BOOL had = NO;
-    for (SGKaraokeLine *line in lines) had = had || line.translation.length;
+    BOOL had = SGLyricsHasTranslations(lines);
     SGRTranslateLyrics(lines, track, language, automaticRevision,
     ^(NSArray *sent, NSString *song, NSString *to, SGRTranslated progress, SGRTranslated done) {
         translator(again ? withoutMade(sent) : sent, song, to, progress, done);
