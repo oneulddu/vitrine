@@ -62,13 +62,6 @@ static void vanish(UIView *view) {
     view.accessibilityElementsHidden = YES;
 }
 
-static UIView *childNamed(UIView *host, NSString *marker) {
-    for (UIView *sub in host.subviews) {
-        if ([NSStringFromClass(sub.class) containsString:marker]) return sub;
-    }
-    return nil;
-}
-
 static NSString *tabName(UIWindow *window) {
     if (sg_tabName || !window) return sg_tabName ?: @"Home";
     static NSUInteger tries;
@@ -86,21 +79,6 @@ static NSString *tabName(UIWindow *window) {
     sg_tabName = [name copy];
     SGLog(@"redesign home: title \"%@\" from the tab bar", sg_tabName);
     return sg_tabName;
-}
-
-static UILabel *titleIn(UIView *header) {
-    UILabel *title = objc_getAssociatedObject(header, &kTitleKey);
-    if (!title) {
-        title = [UILabel new];
-        title.textColor = SGRPrimary();
-        title.accessibilityTraits = UIAccessibilityTraitHeader;
-        title.adjustsFontSizeToFitWidth = YES;
-        title.minimumScaleFactor = 0.6;
-        title.userInteractionEnabled = NO;
-        objc_setAssociatedObject(header, &kTitleKey, title, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    if (title.superview != header) [header addSubview:title];
-    return title;
 }
 
 // The header's views, found once: the page lays out again as it appears, and the walk names classes.
@@ -309,10 +287,10 @@ static void layoutTint(UIView *view) {
 static BOOL findHeader(UIView *view) {
     if (sg_stack && [sg_stack isDescendantOfView:view]) return YES;
     for (UIView *wrapper in view.subviews) {
-        UIView *scrim = childNamed(wrapper, @"GradientView");
+        UIView *scrim = SGRChildNamed(wrapper, @"GradientView");
         if (scrim) sg_scrim = scrim;
     }
-    UIView *header = childNamed(childNamed(view, @"HomeHeaderElement"), @"HomeHeaderView");
+    UIView *header = SGRChildNamed(SGRChildNamed(view, @"HomeHeaderElement"), @"HomeHeaderView");
     for (UIView *sub in header.subviews) {
         if ([sub isKindOfClass:UIStackView.class]) sg_stack = (UIStackView *)sub;
     }
@@ -491,7 +469,7 @@ static void layoutHeader(UIViewController *page) {
         layoutTint(view);
     }
 
-    UILabel *title = titleIn(header);
+    UILabel *title = SGRLargeTitleIn(header, &kTitleKey);
     NSString *text = tabName(header.window);
     if (![title.text isEqualToString:text]) {
         title.text = text;

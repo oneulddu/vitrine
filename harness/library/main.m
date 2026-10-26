@@ -7,6 +7,8 @@
 #import <UIKit/UIKit.h>
 #import <os/log.h>
 
+void SGRRunKitChecks(void);
+
 #define HLog(fmt, ...) os_log(OS_LOG_DEFAULT, "[harness] %{public}s", [NSString stringWithFormat:(fmt), ##__VA_ARGS__].UTF8String)
 
 static const CGFloat kHeaderHeight = 159.33;
@@ -309,6 +311,10 @@ static UIView *chips(UIView *filters) {
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
     NSArray<NSString *> *args = NSProcessInfo.processInfo.arguments;
+    if ([args containsObject:@"kitCheck"]) {
+        SGRRunKitChecks();
+        exit(0);
+    }
     BOOL steady = [args containsObject:@"steady"];
     BOOL back = [args containsObject:@"back"];
     NSArray<NSString *> *model = @[@"recents", @"search", @"plus"];

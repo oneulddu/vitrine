@@ -12,6 +12,7 @@ SDK=$(xcrun --sdk macosx --show-sdk-path)
 xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -g -O0 -isysroot "$SDK" \
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" -I"$SRC" -I"$SRC/Redesigned/Lyrics" -Wall -Wno-deprecated-declarations \
     "$HERE/main.m" "$HERE/../scene.m" "$HERE/stubs.m" "$HERE/translation-check.m" "$HERE/../sing/button/sing-stubs.m" \
+    "$SRC"/Redesigned/Lyrics/AutoTranslatorName.m \
     "$SRC"/Redesigned/Lyrics/AutoTranslation.m $( [ -f "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ] && echo "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ) "$SRC"/Redesigned/Lyrics/SGRKaraokeView.m "$SRC"/Redesigned/Lyrics/LyricsText.m "$SRC"/Redesigned/Lyrics/LyricsLook.m "$SRC"/Redesigned/Lyrics/LyricsStyle.m \
     "$SRC"/Redesigned/Lyrics/SongLanguage.m "$SRC"/Redesigned/Lyrics/MeaningSheet.m "$SRC"/Redesigned/Lyrics/SGRSingButton.m \
     "$SRC"/Shared/Lyrics/KaraokeTiming.m "$SRC"/Shared/Lyrics/Romanise.m "$SRC"/Shared/Lyrics/LyricsLanguage.m \

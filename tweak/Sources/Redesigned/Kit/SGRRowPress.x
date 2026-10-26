@@ -12,25 +12,11 @@
 
 static char kRetrievalRowKey;
 
-// Answered once per content class, the way AlbumRows.x answers it.
-static BOOL isTrackContent(UIView *content) {
-    static NSMutableDictionary<id, NSNumber *> *answers;
-    if (!answers) answers = [NSMutableDictionary dictionary];
-    Class cls = object_getClass(content);
-    if (!cls) return NO;
-    NSNumber *answer = answers[(id<NSCopying>)cls];
-    if (!answer) {
-        answer = @([NSStringFromClass(cls) containsString:@"RetrievalListStructuredData"]);
-        answers[(id<NSCopying>)cls] = answer;
-    }
-    return answer.boolValue;
-}
-
 %hook _TtC12Element_List18CollectionViewCell
 - (void)layoutSubviews {
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
-    BOOL row = isTrackContent(cell.contentView.subviews.firstObject)
+    BOOL row = SGRIsTrackContent(cell.contentView.subviews.firstObject)
             && SGRFindByIdentifier(cell, @"Components.UI.RetrievalRow*", &kRetrievalRowKey) != nil;
     SGRPressRow(cell, row);
 }

@@ -21,43 +21,21 @@
 
 NSString *const SGRPlaylistListIdentifier = @"SPTFreeTierPlaylistTableView";
 
-// Above for the bounce at the top of the list, below for the one at the end of it.
-static const UIEdgeInsets kBleed = {600, 0, 600, 0};
-
 static char kFieldKey;
 
 #pragma mark - the page's field
 
-static SGRArtworkField *fieldOn(UIView *view) {
-    for (UIView *v = view; v; v = v.superview) {
-        SGRArtworkField *field = objc_getAssociatedObject(v, &kFieldKey);
-        if (field) return field;
-    }
-    return nil;
-}
-
 UIColor *SGRPlaylistFieldColor(UIView *view) {
-    SGRArtworkField *field = fieldOn(view);
+    SGRArtworkField *field = SGRPageFieldOn(view, &kFieldKey);
     return field.fieldColor ?: SGRNeutralField();
 }
 
 void SGRPlaylistSetArtwork(UIView *view, UIImage *image) {
-    if (image) [fieldOn(view) setArtwork:image identity:nil animated:YES];
+    if (image) [SGRPageFieldOn(view, &kFieldKey) setArtwork:image identity:nil animated:YES];
 }
 
 void SGRPlaylistShowPage(UIView *view) {
-    [fieldOn(view) showPage];
-}
-
-static SGRArtworkField *fieldIn(UIView *page) {
-    SGRArtworkField *field = objc_getAssociatedObject(page, &kFieldKey);
-    if (field) return field;
-    field = [[SGRArtworkField alloc] initWithFrame:page.bounds];
-    field.bleed = kBleed;
-    field.mainColor = YES;
-    objc_setAssociatedObject(page, &kFieldKey, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    SGLog(@"redesign playlist: field on the page %.0fx%.0f", page.bounds.size.width, page.bounds.size.height);
-    return field;
+    [SGRPageFieldOn(view, &kFieldKey) showPage];
 }
 
 // The field goes under the page as its bottom-most view and the repaint hook keeps what Spotify paints over it
@@ -65,11 +43,7 @@ static SGRArtworkField *fieldIn(UIView *page) {
 // Liked Songs' header kit with no cover: its field stays the neutral one.
 static SGRArtworkField *putFieldUnder(UIView *page) {
     sgr_playlistRoot = page;
-    SGRArtworkField *field = fieldIn(page);
-    if (field.superview != page) [page insertSubview:field atIndex:0];
-    else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];
-    if (!CGRectEqualToRect(field.frame, page.bounds)) field.frame = page.bounds;
-    return field;
+    return SGRPageFieldIn(page, &kFieldKey, @"playlist");
 }
 
 %hook _TtC35ListUXPlatform_FreeTierPlaylistImpl17FTPViewController

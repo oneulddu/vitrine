@@ -8,6 +8,31 @@
 
 NSNotificationName const SGRFieldColorDidChangeNotification = @"spotifyglass.redesign.fieldColorDidChange";
 
+static const UIEdgeInsets kPageBleed = {600, 0, 600, 0};
+
+SGRArtworkField *SGRPageFieldOn(UIView *view, const void *key) {
+    for (UIView *v = view; v; v = v.superview) {
+        SGRArtworkField *field = objc_getAssociatedObject(v, key);
+        if (field) return field;
+    }
+    return nil;
+}
+
+SGRArtworkField *SGRPageFieldIn(UIView *page, const void *key, NSString *pageName) {
+    SGRArtworkField *field = objc_getAssociatedObject(page, key);
+    if (!field) {
+        field = [[SGRArtworkField alloc] initWithFrame:page.bounds];
+        field.bleed = kPageBleed;
+        field.mainColor = YES;
+        objc_setAssociatedObject(page, key, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        SGLog(@"redesign %@: field on the page %.0fx%.0f", pageName, page.bounds.size.width, page.bounds.size.height);
+    }
+    if (field.superview != page) [page insertSubview:field atIndex:0];
+    else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];
+    if (!CGRectEqualToRect(field.frame, page.bounds)) field.frame = page.bounds;
+    return field;
+}
+
 static const CGFloat kFallbackHeight = 874;   // a window-less field sizes for an iPhone 17 Pro
 
 // Where the color starts fading to black and where it is black, as shares of the window's height:

@@ -47,30 +47,6 @@ static char kExploreKey, kRowWatchedKey, kMoreKey, kPinnedMoreKey, kPinnedDownlo
 
 #pragma mark - moving Spotify's views
 
-// Invisible for good. Spotify fades the header and the two floating controls by alpha as the page scrolls,
-// so a redesign that answers with alpha is in a fight it loses a frame of on every scroll. `hidden` on the
-// layer cannot be undone by a write to alpha, costs nothing per frame, and, unlike -[UIView setHidden:],
-// tells neither KVO nor the stack views of it, which is what makes it safe on Spotify's Encore layouts; an
-// empty mask holds when Spotify shows the view again with -setHidden:NO, which the playlist page does when
-// Play is pressed (Playlist/PlaylistHeader.x).
-static void conceal(UIView *view) {
-    if (!view) return;
-    if (!view.layer.hidden) view.layer.hidden = YES;
-    if (!view.layer.mask) view.layer.mask = [CALayer layer];
-    if (view.userInteractionEnabled) view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
-// Drawn by nothing but not hidden: for Spotify's own column of the header, which the redesign still reads. A
-// hidden collection view makes no cells, and the kind and the date are cells ("no metadata" in the harness
-// with the column hidden, 2026-09-18), so the column keeps laying itself out and only its drawing goes.
-static void blank(UIView *view) {
-    if (!view) return;
-    if (!view.layer.mask) view.layer.mask = [CALayer layer];
-    if (view.userInteractionEnabled) view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 // The outermost view that still wraps the control exactly: the element view Spotify's layout places, so
 // concealing it leaves the control itself alone to be read and fired.
 static UIView *wrapperFor(UIView *control, UIView *stop) {
@@ -489,7 +465,7 @@ static void applyHero(UIView *header, UIView *cover, CGFloat bottom) {
         [hero takeShadowFrom:cover];
     }
     [hero followCover:coverImageIn(cover)];
-    conceal(cover);
+    SGRConcealView(cover);
 }
 
 #pragma mark - what the header shows
@@ -549,7 +525,7 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page, NSString **artist,
     else if (header.subviews.lastObject != info) [header bringSubviewToFront:info];
     SGRAlbumHero *hero = objc_getAssociatedObject(header, &kHeroKey);
     for (UIView *sub in header.subviews) {
-        if (sub != info && sub != hero) blank(sub);
+        if (sub != info && sub != hero) SGRBlankView(sub);
     }
     setFrame(info, header.bounds);
 
@@ -603,8 +579,8 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page, NSString **artist,
             playColor:SGRAlbumFieldColor(header)];
     SGRPinnedDownload(page, &kPinnedDownloadKey, download);
     // Only what the two floating buttons draw goes: a concealed layer still sends the actions the row fires.
-    if (play) conceal(wrapperFor(play, page));
-    if (shuffle) conceal(wrapperFor(shuffle, page));
+    if (play) SGRConcealView(wrapperFor(play, page));
+    if (shuffle) SGRConcealView(wrapperFor(shuffle, page));
 
     // Add arrives after the header has laid out on an album opened for the first time (the next time its state
     // is cached and it is there from the start), in a row that lays nothing else out (Native/Album/Album.x): the
@@ -630,7 +606,7 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page, NSString **artist,
 #pragma mark - the header's pass
 
 // Drawn by nothing, whatever Spotify does to it: an empty mask. Spotify switches the navigation bar's
-// gradient on and off with -setHidden:, which writes the layer's own hidden and so undoes conceal(); and
+// gradient on and off with -setHidden:, which writes the layer's own hidden and so undoes concealment; and
 // it fades both gradients by alpha. Neither touches a mask.
 static void maskOut(UIView *view) {
     if (!view || view.layer.mask) return;
@@ -733,7 +709,7 @@ static void applyPage(UIView *page) {
     if (button.layer.hidden || ![button.accessibilityIdentifier isEqualToString:@"header-play-button"]) return;
     UIView *page = SGRAlbumPageOf(button);
     if (!page) return;
-    conceal(wrapperFor(button, page));
+    SGRConcealView(wrapperFor(button, page));
     applyPage(page);
 }
 %end

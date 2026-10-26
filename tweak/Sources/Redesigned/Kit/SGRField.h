@@ -69,3 +69,9 @@ extern NSNotificationName const SGRFieldColorDidChangeNotification;
 // How long a page waits for its artwork before it is shown anyway. The Music app shows something at once
 // (HIG, Loading: "Show something as soon as possible"), so the wait is short; a page then loads as it used to.
 extern const NSTimeInterval SGRFieldHoldLimit;
+
+// Album, artist and playlist fields: page-sized, behind its contents, bleeding 600pt above and below,
+// using the artwork's main color. Keys remain page-specific; pageName is the existing diagnostic name.
+SGRArtworkField *SGRPageFieldIn(UIView *page, const void *key, NSString *pageName);
+// The nearest ancestor (view included) carrying this page's field.
+SGRArtworkField *SGRPageFieldOn(UIView *view, const void *key);

@@ -5,20 +5,6 @@
 static const CGFloat kStatusSize = 12;
 static const NSTimeInterval kStatusFade = 0.2;
 
-static NSString *serviceName(SGRAutoTranslator provider) {
-    switch (provider) {
-        case SGRAutoTranslatorOnDevice: return SGL(@"settings.lyrics.auto_translation.ondevice", @"Apple Translate");
-        case SGRAutoTranslatorAppleIntelligence: return SGL(@"settings.lyrics.auto_translation.intelligence", @"Apple Intelligence");
-        case SGRAutoTranslatorGoogle: return SGL(@"settings.translation.google.title", @"Google Translate");
-        case SGRAutoTranslatorBing: return SGL(@"settings.translation.bing.title", @"Bing Translator");
-        case SGRAutoTranslatorDeepL: return SGL(@"settings.lyrics.auto_translation.deepl", @"DeepL");
-        case SGRAutoTranslatorGemini: return SGL(@"settings.lyrics.auto_translation.gemini", @"Gemini");
-        case SGRAutoTranslatorClaude: return SGL(@"settings.lyrics.auto_translation.claude", @"Claude");
-        case SGRAutoTranslatorOpenAI: return SGL(@"settings.lyrics.auto_translation.openai", @"Your AI service");
-        default: return nil;
-    }
-}
-
 // " · 12/40" while some of the song is in, nothing before the first batch.
 static NSString *countOf(SGRAutoTranslationProgress *progress) {
     if (!progress.total || !progress.completed) return @"";
@@ -28,7 +14,7 @@ static NSString *countOf(SGRAutoTranslationProgress *progress) {
 
 // What the note reads and shows for a snapshot, and whether a tap retries. Nil for nothing worth a note.
 static NSString *noteFor(SGRAutoTranslationProgress *progress, NSString **symbol, BOOL *retryable) {
-    NSString *name = serviceName(progress.provider);
+    NSString *name = SGRAutoTranslatorName(progress.provider);
     *retryable = NO;
     switch (progress.phase) {
         case SGRAutoTranslationPhaseRunning:

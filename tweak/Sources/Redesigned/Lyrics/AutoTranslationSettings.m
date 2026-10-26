@@ -7,20 +7,6 @@
 #import "AutoTranslation.h"
 #import "LyricsText.h"
 
-static NSString *autoTranslatorName(SGRAutoTranslator provider) {
-    switch (provider) {
-        case SGRAutoTranslatorOnDevice: return SGL(@"settings.lyrics.auto_translation.ondevice", @"Apple Translate");
-        case SGRAutoTranslatorAppleIntelligence: return SGL(@"settings.lyrics.auto_translation.intelligence", @"Apple Intelligence");
-        case SGRAutoTranslatorGoogle: return SGL(@"settings.translation.google.title", @"Google Translate");
-        case SGRAutoTranslatorBing: return SGL(@"settings.translation.bing.title", @"Bing Translator");
-        case SGRAutoTranslatorDeepL: return SGL(@"settings.lyrics.auto_translation.deepl", @"DeepL");
-        case SGRAutoTranslatorGemini: return SGL(@"settings.lyrics.auto_translation.gemini", @"Gemini");
-        case SGRAutoTranslatorClaude: return SGL(@"settings.lyrics.auto_translation.claude", @"Claude");
-        case SGRAutoTranslatorOpenAI: return SGL(@"settings.lyrics.auto_translation.openai", @"Your AI service");
-        default: return nil;
-    }
-}
-
 // The lyrics menu's glyph for the same service.
 static NSString *autoTranslatorSymbol(SGRAutoTranslator provider) {
     switch (provider) {
@@ -126,7 +112,7 @@ static NSString *autoTranslatorSkip(SGRAutoTranslator provider, SGRAutoTranslati
     NSString *skip = autoTranslatorSkip(provider, SGRAutoTranslationStateOf(provider, SGLyricsGeminiLanguage()));
     NSString *destination = autoTranslatorDestination(provider);
     NSString *detail = skip ? [NSString stringWithFormat:@"%@\n%@", destination, skip] : destination;
-    SGFillCell(cell, autoTranslatorName(provider), detail, skip ? SGGrey() : nil, autoTranslatorSymbol(provider));
+    SGFillCell(cell, SGRAutoTranslatorName(provider), detail, skip ? SGGrey() : nil, autoTranslatorSymbol(provider));
     cell.selectionStyle = UITableViewCellSelectionStyleNone;
     return cell;
 }
@@ -179,7 +165,7 @@ SGModRow *SGRAutoTranslationOrderRow(void) {
     row.value = ^NSString *{
         NSString *language = SGLyricsGeminiLanguage();
         for (NSNumber *provider in SGRAutoTranslationOrder()) {
-            if (SGRAutoTranslationAvailable(provider.integerValue, language)) return autoTranslatorName(provider.integerValue);
+            if (SGRAutoTranslationAvailable(provider.integerValue, language)) return SGRAutoTranslatorName(provider.integerValue);
         }
         return SGL(@"settings.lyrics.auto_translation.order.none", @"None ready");
     };

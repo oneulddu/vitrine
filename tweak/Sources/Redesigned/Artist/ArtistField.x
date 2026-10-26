@@ -18,9 +18,6 @@
 
 static NSString *const kPageIdentifier = @"creator-page";
 
-// Above for the bounce at the top of the page, below for the one at the end of it.
-static const UIEdgeInsets kBleed = {600, 0, 600, 0};
-
 static char kFieldKey;
 static BOOL hideTabs;
 
@@ -35,33 +32,13 @@ UIView *SGRArtistPageOf(UIView *view) {
 
 #pragma mark - the page's field
 
-static SGRArtworkField *fieldOn(UIView *view) {
-    for (UIView *v = view; v; v = v.superview) {
-        SGRArtworkField *field = objc_getAssociatedObject(v, &kFieldKey);
-        if (field) return field;
-    }
-    return nil;
-}
-
 UIColor *SGRArtistFieldColor(UIView *view) {
-    SGRArtworkField *field = fieldOn(view);
+    SGRArtworkField *field = SGRPageFieldOn(view, &kFieldKey);
     return field.fieldColor ?: SGRNeutralField();
 }
 
 void SGRArtistSetArtwork(UIView *view, UIImage *image) {
-    if (image) [fieldOn(view) setArtwork:image identity:nil animated:YES];
-}
-
-static SGRArtworkField *fieldIn(UIView *page) {
-    SGRArtworkField *field = objc_getAssociatedObject(page, &kFieldKey);
-    if (field) return field;
-    field = [[SGRArtworkField alloc] initWithFrame:page.bounds];
-    field.bleed = kBleed;
-    // The photo's main color, not its bottom edge, which on a portrait is the artist's shirt.
-    field.mainColor = YES;
-    objc_setAssociatedObject(page, &kFieldKey, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    SGLog(@"redesign artist: field on the page %.0fx%.0f", page.bounds.size.width, page.bounds.size.height);
-    return field;
+    if (image) [SGRPageFieldOn(view, &kFieldKey) setArtwork:image identity:nil animated:YES];
 }
 
 %hook _TtC32CreativeWorkPlatform_TemplateKit12TemplateView
@@ -71,10 +48,7 @@ static SGRArtworkField *fieldIn(UIView *page) {
     if (![page.accessibilityIdentifier isEqualToString:kPageIdentifier] || page.bounds.size.height < 200) return;
     // The page the repaint hook keeps clear is the one laying out, which is the one on screen.
     sgr_artistRoot = page;
-    SGRArtworkField *field = fieldIn(page);
-    if (field.superview != page) [page insertSubview:field atIndex:0];
-    else if (page.subviews.firstObject != field) [page sendSubviewToBack:field];
-    if (!CGRectEqualToRect(field.frame, page.bounds)) field.frame = page.bounds;
+    SGRArtworkField *field = SGRPageFieldIn(page, &kFieldKey, @"artist");
     // The page comes in whole once its photo has been read (Kit/SGRField.h).
     [field holdPage:page];
 }

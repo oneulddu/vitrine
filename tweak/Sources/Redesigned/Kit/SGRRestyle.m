@@ -100,6 +100,75 @@ static void logWatch(UIView *view, SEL selector, BOOL kept, BOOL onClass) {
 
 #pragma mark - views
 
+UIView *SGRChildNamed(UIView *host, NSString *marker) {
+    for (UIView *sub in host.subviews) {
+        if ([NSStringFromClass(sub.class) containsString:marker]) return sub;
+    }
+    return nil;
+}
+
+UILabel *SGRLargeTitleIn(UIView *host, const void *key) {
+    UILabel *title = objc_getAssociatedObject(host, key);
+    if (!title) {
+        title = [UILabel new];
+        title.textColor = SGRPrimary();
+        title.accessibilityTraits = UIAccessibilityTraitHeader;
+        title.adjustsFontSizeToFitWidth = YES;
+        title.minimumScaleFactor = 0.6;
+        title.userInteractionEnabled = NO;
+        objc_setAssociatedObject(host, key, title, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (title.superview != host) [host addSubview:title];
+    return title;
+}
+
+void SGRBlankView(UIView *view) {
+    if (!view) return;
+    if (!view.layer.mask) view.layer.mask = [CALayer layer];
+    if (view.userInteractionEnabled) view.userInteractionEnabled = NO;
+    view.accessibilityElementsHidden = YES;
+}
+
+void SGRConcealView(UIView *view) {
+    if (!view) return;
+    if (!view.layer.hidden) view.layer.hidden = YES;
+    SGRBlankView(view);
+}
+
+BOOL SGRIsTrackContent(UIView *content) {
+    static NSMutableDictionary<id, NSNumber *> *answers;
+    if (!answers) answers = [NSMutableDictionary dictionary];
+    Class cls = object_getClass(content);
+    if (!cls) return NO;
+    NSNumber *answer = answers[(id<NSCopying>)cls];
+    if (!answer) {
+        answer = @([NSStringFromClass(cls) containsString:@"RetrievalListStructuredData"]);
+        answers[(id<NSCopying>)cls] = answer;
+    }
+    return answer.boolValue;
+}
+
+void SGRCollapseCell(UICollectionViewCell *cell, CGFloat natural, const void *key) {
+    UIView *content = cell.contentView;
+    objc_setAssociatedObject(cell, key, @(natural), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (content.autoresizingMask & UIViewAutoresizingFlexibleHeight) content.autoresizingMask &= ~UIViewAutoresizingFlexibleHeight;
+    CGRect frame = CGRectMake(0, 0, cell.bounds.size.width, natural);
+    if (!CGRectEqualToRect(content.frame, frame)) content.frame = frame;
+    if (!content.hidden) content.hidden = YES;
+    if (!cell.clipsToBounds) cell.clipsToBounds = YES;
+    cell.accessibilityElementsHidden = YES;
+}
+
+void SGRRestoreCell(UICollectionViewCell *cell, const void *key) {
+    UIView *content = cell.contentView;
+    objc_setAssociatedObject(cell, key, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    content.autoresizingMask |= UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    content.frame = cell.bounds;
+    content.hidden = NO;
+    cell.clipsToBounds = NO;
+    cell.accessibilityElementsHidden = NO;
+}
+
 void SGRSuppress(UIView *view) {
     if (!view) return;
     BOOL kept = adopt(view, "SGRSuppressed_", ^(Class subclass, Class original) {

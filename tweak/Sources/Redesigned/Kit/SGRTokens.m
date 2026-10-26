@@ -11,8 +11,6 @@ const CGFloat SGRRadiusCover = 8;
 const CGFloat SGRRadiusThumb = 6;
 const CGFloat SGRGlassCircleSize = 44;
 const CGFloat SGRActionHeight = 48;
-const CGFloat SGRActionSpacing = 12;
-const CGFloat SGRGlassSpacing = 16;
 const NSTimeInterval SGRCrossfade = 0.35;
 
 // A layout spring settles in about this long without overshooting; a press gives a little back.

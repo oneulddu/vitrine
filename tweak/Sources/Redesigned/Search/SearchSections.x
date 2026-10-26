@@ -100,27 +100,6 @@ static void shift(UICollectionViewCell *cell) {
     if (!CGAffineTransformEqualToTransform(cell.transform, moved)) cell.transform = moved;
 }
 
-static void collapse(UICollectionViewCell *cell, CGFloat natural) {
-    UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kCollapsedKey, @(natural), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    if (content.autoresizingMask & UIViewAutoresizingFlexibleHeight) content.autoresizingMask &= ~UIViewAutoresizingFlexibleHeight;
-    CGRect frame = CGRectMake(0, 0, cell.bounds.size.width, natural);
-    if (!CGRectEqualToRect(content.frame, frame)) content.frame = frame;
-    if (!content.hidden) content.hidden = YES;
-    if (!cell.clipsToBounds) cell.clipsToBounds = YES;
-    cell.accessibilityElementsHidden = YES;
-}
-
-static void expand(UICollectionViewCell *cell) {
-    UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kCollapsedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    content.autoresizingMask |= UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    content.frame = cell.bounds;
-    content.hidden = NO;
-    cell.clipsToBounds = NO;
-    cell.accessibilityElementsHidden = NO;
-}
-
 // The top of the first item with a height, when every item above it has none; 0 when the list starts with one.
 static CGFloat measure(UICollectionView *list) {
     BOOL collapsedAbove = NO;
@@ -185,7 +164,7 @@ static void measureSoon(void) {
     SGRSearchKind kind = kindOf(root);
     BOOL collapsed = objc_getAssociatedObject(cell, &kCollapsedKey) != nil;
     if (kind == SGRSearchKindDrop) {
-        collapse(cell, MAX(1, result.size.height));
+        SGRCollapseCell(cell, MAX(1, result.size.height), &kCollapsedKey);
         result.size = CGSizeMake(result.size.width, 0);
         if (!collapsed) {
             sg_changes++;
@@ -194,7 +173,7 @@ static void measureSoon(void) {
         logOnce([@"dropped " stringByAppendingString:describe(root)]);
     } else if (kind == SGRSearchKindKeep && collapsed) {
         // Cells are reused across kinds: one collapsed before holds a card now.
-        expand(cell);
+        SGRRestoreCell(cell, &kCollapsedKey);
         sg_changes++;
         measureSoon();
     }
@@ -212,13 +191,13 @@ static void measureSoon(void) {
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
     NSNumber *natural = objc_getAssociatedObject(cell, &kCollapsedKey);
-    if (natural) collapse(cell, natural.doubleValue);
+    if (natural) SGRCollapseCell(cell, natural.doubleValue, &kCollapsedKey);
     if (sg_gap > 0 && isBrowseCell(cell.contentView)) shift(cell);
 }
 
 - (void)prepareForReuse {
     %orig;
-    if (objc_getAssociatedObject(self, &kCollapsedKey)) expand((UICollectionViewCell *)self);
+    if (objc_getAssociatedObject(self, &kCollapsedKey)) SGRRestoreCell((UICollectionViewCell *)self, &kCollapsedKey);
 }
 %end
 

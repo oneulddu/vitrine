@@ -7,7 +7,7 @@
 #import "SGRSingButton.h"
 
 static const CGFloat kGlyph = 17, kRingWidth = 2.5, kRingInset = 1.5;
-// The slider's capsule over the button, and the gap between them: wider than SGRGlassSpacing (16), so the
+// The slider's capsule over the button, and the gap between them: wider than the 16pt merging distance, so the
 // two glass shapes stay apart rather than sampling each other.
 static const CGFloat kPanelHeight = 168, kPanelGap = 24, kLevelWidth = 120, kLevelHeight = 20;
 // The capsule opens from just under full size at the mic, the way a popover grows out of what opened it.

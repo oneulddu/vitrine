@@ -63,15 +63,8 @@ static void vanish(UIView *view) {
     view.accessibilityElementsHidden = YES;
 }
 
-static UIView *childNamed(UIView *host, NSString *marker) {
-    for (UIView *sub in host.subviews) {
-        if ([NSStringFromClass(sub.class) containsString:marker]) return sub;
-    }
-    return nil;
-}
-
 void SGRLibraryClearScrim(UIView *header) {
-    vanish(childNamed(header, @"GradientView"));
+    vanish(SGRChildNamed(header, @"GradientView"));
 }
 
 #pragma mark - the controls
@@ -138,24 +131,9 @@ static NSString *textIn(UIView *label) {
     return text;
 }
 
-static UILabel *titleIn(UIView *header) {
-    UILabel *title = objc_getAssociatedObject(header, &kTitleKey);
-    if (!title) {
-        title = [UILabel new];
-        title.textColor = SGRPrimary();
-        title.accessibilityTraits = UIAccessibilityTraitHeader;
-        title.adjustsFontSizeToFitWidth = YES;
-        title.minimumScaleFactor = 0.6;
-        title.userInteractionEnabled = NO;
-        objc_setAssociatedObject(header, &kTitleKey, title, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    if (title.superview != header) [header addSubview:title];
-    return title;
-}
-
 // The title Spotify's own says, so it follows the app's language, in the Music app's size on the row's middle.
 static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, CGFloat trailing, CGFloat middle) {
-    UILabel *title = titleIn(header);
+    UILabel *title = SGRLargeTitleIn(header, &kTitleKey);
     NSString *text = textIn(spotifyTitle);
     if (text.length && ![title.text isEqualToString:text]) {
         title.text = text;
@@ -221,7 +199,7 @@ static NSArray<UIView *> *placeFolder(UIView *header) {
 }
 
 static void layoutRoot(UIView *page) {
-    UIView *header = childNamed(page, @"YourLibraryHeaderView");
+    UIView *header = SGRChildNamed(page, @"YourLibraryHeaderView");
     if (!header) return;
     [header layoutIfNeeded];
     SGRLibraryClearScrim(header);
@@ -237,12 +215,12 @@ static void layoutRoot(UIView *page) {
         logged = YES;
         SGLog(@"redesign library: header %@, %lu controls at the trailing edge, avatar %@, chips %@",
               NSStringFromCGRect(header.frame), (unsigned long)trailing.count, face ? @"found" : @"not found",
-              childNamed(header, @"YourLibraryHeaderContentFiltersView") ? @"Spotify's" : @"not found");
+              SGRChildNamed(header, @"YourLibraryHeaderContentFiltersView") ? @"Spotify's" : @"not found");
     }
 }
 
 static void layoutFolder(UIView *page) {
-    UIView *header = childNamed(page, @"FolderHeaderView");
+    UIView *header = SGRChildNamed(page, @"FolderHeaderView");
     if (!header) return;
     [header layoutIfNeeded];
     SGRLibraryClearScrim(header);
@@ -257,7 +235,7 @@ static void layoutFolder(UIView *page) {
         logged = YES;
         SGLog(@"redesign library: folder header %@, back %@, %lu controls at the trailing edge, chips %@",
               NSStringFromCGRect(header.frame), back ? @"found" : @"not found", (unsigned long)trailing,
-              childNamed(header, @"YourLibraryHeaderContentFiltersView") ? @"Spotify's" : @"not found");
+              SGRChildNamed(header, @"YourLibraryHeaderContentFiltersView") ? @"Spotify's" : @"not found");
     }
 }
 

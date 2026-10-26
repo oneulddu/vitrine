@@ -2,7 +2,7 @@
 set -e
 # The sources of the checkout this harness sits in, unless SRC names others (an older tree, to compare).
 SRC=${SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
-OUT=$(dirname "$0")/build
+OUT=${HARNESS_BUILD_DIR:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/LibraryHarness.app"
 
 for f in Redesigned/Library/LibraryHeader.x; do
@@ -14,7 +14,7 @@ SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O0 \
     -I"$SRC" -I"$SRC/Redesigned/Library" -I"$OUT/gen" -isysroot "$SDK" \
     -Wno-deprecated-declarations \
-    "$(dirname "$0")/main.m" "$(dirname "$0")/stubs.m" \
+    "$(dirname "$0")/main.m" "$(dirname "$0")/kit-check.m" "$(dirname "$0")/stubs.m" \
     "$OUT"/gen/*.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m \
     "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m "$SRC"/Core/SGLocalize.m \

@@ -80,25 +80,6 @@ UIViewController *SGRPlaylistHeaderOf(UIView *view) {
     return nil;
 }
 
-// Invisible for good, whatever Spotify does to it. It fades its cover square and its color wash back in
-// from the scroll itself (trees/continuous/1.txt, 2026-09-17), which a hidden layer shrugs off; but pressing
-// Play reconfigures the header, and that shows the wash, the find bar and the play disc again with
-// -setHidden:NO, which writes the layer's own hidden and so undid this: the wash came back over the
-// picture as a dark band and the green disc beside the capsule (trees/continuous/1.txt, 2026-09-18).
-//
-// So two things, each for what the other cannot do. `hidden` on the layer costs nothing while it holds --
-// the layer is not drawn at all -- and, unlike -[UIView setHidden:], tells neither KVO nor the stack views,
-// which is what makes it safe on Spotify's Encore layouts. An empty mask is what holds when Spotify shows
-// the view anyway: nothing Spotify does to these views touches a mask, and a layer masked by nothing draws
-// nothing. The album page found the same (Album/AlbumHeader.x) and masks its gradients.
-static void conceal(UIView *view) {
-    if (!view) return;
-    if (!view.layer.hidden) view.layer.hidden = YES;
-    if (!view.layer.mask) view.layer.mask = [CALayer layer];
-    if (view.userInteractionEnabled) view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 static UIView *firstOfClass(UIView *root, Class wanted) {
     __block UIView *found = nil;
     SGForEachView(root, ^(UIView *v) {
@@ -313,7 +294,7 @@ static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *bloc
     // hero only reads the picture for the field. A mix's picture is full bleed in Spotify's own layout, so it stays.
     hero.squareOnly = !SGRFullBleedCovers() && [cover.accessibilityIdentifier isEqualToString:@"Components.Header.UI.ArtworkImage"];
     if (hero.squareOnly) return;
-    conceal(cover);
+    SGRConcealView(cover);
 }
 
 #pragma mark - the block, the redesign's own
@@ -434,7 +415,7 @@ static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id mo
      trailingFallback:[UIImage systemImageNamed:independent || save ? @"plus" : @"arrow.down"]
             playColor:SGRPlaylistFieldColor(info)];
     // Only what the button draws goes: a concealed layer still sends the actions the capsule fires.
-    conceal(play);
+    SGRConcealView(play);
 
     // Whoever made the playlist, opened from the line that names them. Spotify's own button carries the
     // facepile and the name and takes the tap to a profile -- or, for a playlist several people are on, to
@@ -493,7 +474,7 @@ static SGRHeaderInfo *applyInfo(UIView *block, UIView *headerRoot, UIViewControl
     }
     else if (block.subviews.lastObject != info) [block bringSubviewToFront:info];
     for (UIView *sub in block.subviews) {
-        if (sub != info) conceal(sub);
+        if (sub != info) SGRConcealView(sub);
     }
     // The page's width, centered on the screen: Spotify's block is 16pt narrower than the page (386 of 402).
     CGFloat x = -[block convertPoint:CGPointZero toView:headerRoot].x;
@@ -543,7 +524,7 @@ static void applyToolbar(UIView *headerRoot) {
 // the bar and keeps the back button legible, as on Home, Search and Library. Concealed rather than faded:
 // Spotify writes their alpha on every step of the scroll, and the navigation bar's with -setHidden:.
 static void applyScrims(UIView *headerRoot) {
-    conceal(SGRFindByIdentifier(headerRoot, @"LiquidGlass.gradientContainer", &kScrimKey));
+    SGRConcealView(SGRFindByIdentifier(headerRoot, @"LiquidGlass.gradientContainer", &kScrimKey));
     // A concealed view stays concealed, so the bar is looked for until it is found and then never again:
     // the header lays out on every step of its collapse.
     if (objc_getAssociatedObject(headerRoot, &kBarScrimKey)) return;
@@ -552,7 +533,7 @@ static void applyScrims(UIView *headerRoot) {
     UIView *navigation = firstOfClass(headerRoot, bar);
     for (UIView *sub in navigation.subviews) {
         if (![NSStringFromClass(sub.class) containsString:@"GradientView"]) continue;
-        conceal(sub);
+        SGRConcealView(sub);
         objc_setAssociatedObject(headerRoot, &kBarScrimKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
@@ -578,7 +559,7 @@ static UIView *applyBackground(UIView *layout) {
     SGForEachView(container, ^(UIView *v) {
         if (hero && (v == hero || [v isDescendantOfView:hero])) return;
         if ([NSStringFromClass(v.class) containsString:@"GradientView"]) {
-            conceal(v);
+            SGRConcealView(v);
             return;
         }
         CGColorRef color = v.layer.backgroundColor;
@@ -696,7 +677,7 @@ static UIView *layoutIn(UIView *root) {
     %orig;
     UIView *button = (UIView *)self;
     if (button.layer.hidden || ![button.accessibilityIdentifier isEqualToString:@"header-play-button"]) return;
-    if (SGRPlaylistHeaderOf(button)) conceal(button);
+    if (SGRPlaylistHeaderOf(button)) SGRConcealView(button);
 }
 %end
 

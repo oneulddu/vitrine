@@ -212,27 +212,6 @@ void SGRHomeMeasureAgain(UIView *view) {
 // by the cell. Spotify's content squeezed to 0 with the cell (trees/continuous/1.txt:375-381, every stack,
 // heading and card at {402, 0}) breaks its required constraints on every layout pass of the cell, which
 // held the main thread for up to 1.5 s at a time where dropped sections scrolled in (home perf, 2026-09-17).
-static void collapse(UICollectionViewCell *cell, CGFloat natural) {
-    UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kCollapsedKey, @(natural), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    if (content.autoresizingMask & UIViewAutoresizingFlexibleHeight) content.autoresizingMask &= ~UIViewAutoresizingFlexibleHeight;
-    CGRect frame = CGRectMake(0, 0, cell.bounds.size.width, natural);
-    if (!CGRectEqualToRect(content.frame, frame)) content.frame = frame;
-    if (!content.hidden) content.hidden = YES;
-    if (!cell.clipsToBounds) cell.clipsToBounds = YES;
-    cell.accessibilityElementsHidden = YES;
-}
-
-static void expand(UICollectionViewCell *cell) {
-    UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kCollapsedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    content.autoresizingMask |= UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    content.frame = cell.bounds;
-    content.hidden = NO;
-    cell.clipsToBounds = NO;
-    cell.accessibilityElementsHidden = NO;
-}
-
 %hook _TtC12Element_List18CollectionViewCell
 - (UICollectionViewLayoutAttributes *)preferredLayoutAttributesFittingAttributes:(UICollectionViewLayoutAttributes *)attributes {
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
@@ -246,13 +225,13 @@ static void expand(UICollectionViewCell *cell) {
     SGRHomeKind kind = kindOf(content, &rootName);
     BOOL collapsed = objc_getAssociatedObject(cell, &kCollapsedKey) != nil;
     if (kind == SGRHomeKindDrop) {
-        collapse(cell, MAX(1, result.size.height));
+        SGRCollapseCell(cell, MAX(1, result.size.height), &kCollapsedKey);
         result.size = CGSizeMake(result.size.width, 0);
         markDropped(cell, attributes.indexPath.section, YES);
         logOnce([@"dropped a section of " stringByAppendingString:rootName]);
     } else if (kind == SGRHomeKindKeep) {
         // Cells are reused across kinds: one collapsed before holds a section to keep now.
-        if (collapsed) expand(cell);
+        if (collapsed) SGRRestoreCell(cell, &kCollapsedKey);
         // The page's color (HomeHeader.x) shows through a kept section; Spotify paints a shelf black on each configure.
         UIView *root = content.subviews.firstObject.subviews.firstObject;
         if (SGRHomeLook() && [root isKindOfClass:UICollectionView.class] && ![root.backgroundColor isEqual:UIColor.clearColor]) root.backgroundColor = UIColor.clearColor;
@@ -269,12 +248,12 @@ static void expand(UICollectionViewCell *cell) {
 - (void)layoutSubviews {
     %orig;
     NSNumber *natural = objc_getAssociatedObject(self, &kCollapsedKey);
-    if (natural) collapse((UICollectionViewCell *)self, natural.doubleValue);
+    if (natural) SGRCollapseCell((UICollectionViewCell *)self, natural.doubleValue, &kCollapsedKey);
 }
 
 - (void)prepareForReuse {
     %orig;
-    if (objc_getAssociatedObject(self, &kCollapsedKey)) expand((UICollectionViewCell *)self);
+    if (objc_getAssociatedObject(self, &kCollapsedKey)) SGRRestoreCell((UICollectionViewCell *)self, &kCollapsedKey);
 }
 %end
 

@@ -46,16 +46,6 @@ static char kTitleKey, kMetaKey, kShuffleKey, kPlayKey, kFollowKey, kArtworkKey,
 
 #pragma mark - Spotify's views
 
-// Drawn by nothing and out of the way of touches, whatever Spotify does to it: an empty mask. Not hidden --
-// the header's OverflowStackView traps when a view in it hides, and a hidden view is one the redesign still
-// has to read and fire.
-static void blank(UIView *view) {
-    if (!view) return;
-    if (!view.layer.mask) view.layer.mask = [CALayer layer];
-    if (view.userInteractionEnabled) view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 static void setFrame(UIView *view, CGRect frame) {
     if (view && !CGRectIsEmpty(frame) && !CGRectEqualToRect(view.frame, frame)) view.frame = frame;
 }
@@ -276,7 +266,7 @@ static void applyHeader(UIView *header, BOOL full) {
 
     UIView *bar = keepBar(header);
     for (UIView *sub in header.subviews) {
-        if (sub != bar) blank(sub);
+        if (sub != bar) SGRBlankView(sub);
     }
 
     SGRHeaderInfo *info = objc_getAssociatedObject(container, &kInfoKey);

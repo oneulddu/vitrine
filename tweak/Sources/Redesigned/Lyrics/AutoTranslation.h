@@ -8,6 +8,8 @@ typedef NS_ENUM(NSInteger, SGRAutoTranslator) {
     SGRAutoTranslatorGoogle, SGRAutoTranslatorBing, SGRAutoTranslatorDeepL,
     SGRAutoTranslatorGemini, SGRAutoTranslatorClaude, SGRAutoTranslatorOpenAI, SGRAutoTranslatorCount
 };
+NSString *SGRAutoTranslatorName(SGRAutoTranslator provider);
+
 typedef NS_ENUM(NSInteger, SGRAutoTranslationState) {
     SGRAutoTranslationReady, SGRAutoTranslationNeedsKey, SGRAutoTranslationNeedsSwitch,
     SGRAutoTranslationNeedsSettings, SGRAutoTranslationUnavailableDevice, SGRAutoTranslationUnsupportedLanguage

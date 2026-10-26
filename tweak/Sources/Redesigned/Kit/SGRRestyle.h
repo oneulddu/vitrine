@@ -11,6 +11,15 @@
 
 #pragma mark - views
 
+// The first immediate child whose class name contains marker; no recursive search or cache.
+UIView *SGRChildNamed(UIView *host, NSString *marker);
+// A page's large-title label, retained under key and reattached when needed. Text and layout stay local.
+UILabel *SGRLargeTitleIn(UIView *host, const void *key);
+// Empty-mask suppression, without changing UIView.hidden or Spotify's layout. Conceal additionally hides
+// the layer; blank keeps collection views laying out and creating their cells.
+void SGRBlankView(UIView *view);
+void SGRConcealView(UIView *view);
+
 // Alpha 0, no touches, hidden from accessibility, and kept so: the instance becomes a runtime subclass
 // of its own class (the way KVO does it, `class` still answers the original) whose setAlpha: and
 // setUserInteractionEnabled: hold those values. For plain UIKit views (a UIImageView, a UILabel). One of
@@ -62,6 +71,14 @@ BOOL SGRIsAvatar(UIView *view);
 SGRShadowPlate *SGRShadowPlateIn(UIView *host, const void *key);
 
 #pragma mark - Spotify's controls and pages
+
+// Element_List's retrieval content, identified once per runtime class (nil is not track content).
+BOOL SGRIsTrackContent(UIView *content);
+// A dropped cell keeps its content's natural height, hidden and clipped, rather than squeezing Spotify's
+// constraints to zero. Each page keeps its own key, including across layout and reuse.
+void SGRCollapseCell(UICollectionViewCell *cell, CGFloat natural, const void *key);
+// Also restores Album's settled cells, whose value under key includes its measured lead and text size.
+void SGRRestoreCell(UICollectionViewCell *cell, const void *key);
 
 // The base surface a list cell paints over a page's field, cleared: the #121212 the redesign's AMOLED
 // black has already turned black, on the cell and on everything under it nearly as wide as the cell, and

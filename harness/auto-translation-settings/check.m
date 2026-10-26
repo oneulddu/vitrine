@@ -74,6 +74,8 @@ static UITableViewCell *cellAt(SGPage *page, NSInteger index) {
 }
 static void runChecks(void) {
     check(NSThread.isMainThread, @"checks execute on UIKit main thread");
+    check(SGRAutoTranslatorName(SGRAutoTranslatorOff) == nil && SGRAutoTranslatorName(SGRAutoTranslatorCount) == nil
+          && SGRAutoTranslatorName((SGRAutoTranslator)-1) == nil, @"off and unknown translators have no display name");
     savedOrder = @[@1,@2,@3,@4,@5,@6,@7,@8]; events = [NSMutableArray array];
     SGModRow *toggle = SGRAutoTranslationRow();
     check([toggle.key isEqual:SGRKeyLyricsAutoTranslation] && toggle.changed != nil && !toggle.defaultOn,

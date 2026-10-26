@@ -83,17 +83,6 @@ static void settle(UICollectionViewCell *cell, CGFloat natural, CGFloat lead, CG
     cell.accessibilityElementsHidden = dropped;
 }
 
-// Clears the settled height, its lead and the width and text size they were measured at, together.
-static void unsettle(UICollectionViewCell *cell) {
-    UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kSettledKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    content.autoresizingMask |= UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    content.frame = cell.bounds;
-    content.hidden = NO;
-    cell.clipsToBounds = NO;
-    cell.accessibilityElementsHidden = NO;
-}
-
 #pragma mark - the switches
 
 static const struct { __unsafe_unretained NSString *title, *key; BOOL prefix; } kSections[] = {
@@ -200,7 +189,7 @@ static void logOnce(NSString *what) {
     UIView *content = cell.contentView.subviews.firstObject;
     // Cells are reused across kinds, and one settled before can hold a track row now.
     if (!isFooterContent(content) || !SGRAlbumPageOf(cell)) {
-        if (objc_getAssociatedObject(cell, &kSettledKey)) unsettle(cell);
+        if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);
         return %orig;
     }
     // Asked again at the width and text size it was settled at: the content is pinned, so measuring it again
@@ -218,7 +207,7 @@ static void logOnce(NSString *what) {
             again.size = CGSizeMake(attributes.size.width, settledHeight([settled[0] doubleValue], [settled[1] doubleValue]));
             return again;
         }
-        unsettle(cell);
+        SGRRestoreCell(cell, &kSettledKey);
     }
     UICollectionViewLayoutAttributes *result = %orig;
     CGFloat natural = MAX(1, result.size.height);
@@ -229,7 +218,7 @@ static void logOnce(NSString *what) {
         result.size = CGSizeMake(result.size.width, natural + kLead);
         logOnce(@"the album's own line and its copyright kept under the tracks");
     } else if (shown(cell, content, attributes.indexPath, NO)) {
-        if (objc_getAssociatedObject(cell, &kSettledKey)) unsettle(cell);
+        if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);
         logOnce(@"a section under the tracks shown, its switch off");
     } else {
         settle(cell, natural, 0, width, textSize);
@@ -249,7 +238,7 @@ static void logOnce(NSString *what) {
 
 - (void)prepareForReuse {
     %orig;
-    if (objc_getAssociatedObject(self, &kSettledKey)) unsettle((UICollectionViewCell *)self);
+    if (objc_getAssociatedObject(self, &kSettledKey)) SGRRestoreCell((UICollectionViewCell *)self, &kSettledKey);
 }
 %end
 

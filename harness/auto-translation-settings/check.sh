@@ -3,7 +3,7 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SRC=$(cd "$HERE/../../tweak/Sources" && pwd)
-OUT="$HERE/.build"
+OUT=${HARNESS_BUILD_DIR:-"$HERE/.build"}
 APP="$OUT/Check.app"
 mkdir -p "$APP/Contents/MacOS" "$OUT/tmp"
 export TMPDIR="$OUT/tmp"
@@ -12,6 +12,7 @@ xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -g -O0 -isysroot "$SDK
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
     -I"$SRC" -Wall -Wextra -Wno-unused-parameter -Wno-deprecated-declarations \
     "$SRC/Redesigned/Lyrics/AutoTranslationSettings.m" "$SRC/Settings/SGPage.m" \
+    "$SRC/Redesigned/Lyrics/AutoTranslatorName.m" \
     "$SRC/Core/SGLocalize.m" "$HERE/check.m" \
     -framework UIKit -framework QuartzCore -framework Foundation \
     -o "$APP/Contents/MacOS/Check"

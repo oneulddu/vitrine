@@ -124,27 +124,6 @@ static BOOL onPageList(UICollectionViewCell *cell) {
     return page != nil;
 }
 
-static void settle(UICollectionViewCell *cell, CGFloat natural) {
-    UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kSettledKey, @(natural), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    if (content.autoresizingMask & UIViewAutoresizingFlexibleHeight) content.autoresizingMask &= ~UIViewAutoresizingFlexibleHeight;
-    CGRect frame = CGRectMake(0, 0, cell.bounds.size.width, natural);
-    if (!CGRectEqualToRect(content.frame, frame)) content.frame = frame;
-    if (!content.hidden) content.hidden = YES;
-    if (!cell.clipsToBounds) cell.clipsToBounds = YES;
-    cell.accessibilityElementsHidden = YES;
-}
-
-static void unsettle(UICollectionViewCell *cell) {
-    UIView *content = cell.contentView;
-    objc_setAssociatedObject(cell, &kSettledKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    content.autoresizingMask |= UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    content.frame = cell.bounds;
-    content.hidden = NO;
-    cell.clipsToBounds = NO;
-    cell.accessibilityElementsHidden = NO;
-}
-
 // The cell `back` items before `path` in the list, across the end of a section if it has to.
 static NSIndexPath *before(UICollectionView *list, NSIndexPath *path, NSInteger back) {
     NSInteger section = path.section, item = path.item - back;
@@ -220,7 +199,7 @@ static void logOnce(NSString *what) {
     BOOL page = onPageList(cell) && attributes.indexPath;
     UICollectionView *list = page ? listOf(cell) : nil;
     if (!page) {
-        if (objc_getAssociatedObject(cell, &kSettledKey)) unsettle(cell);
+        if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);
         return %orig;
     }
     UICollectionViewLayoutAttributes *result = %orig;
@@ -235,10 +214,10 @@ static void logOnce(NSString *what) {
         logOnce([dropped[kind] stringByAppendingString:@" dropped from the Music list"]);
     }
     if (!hide && ![droppedOf(list) containsObject:path]) {
-        if (objc_getAssociatedObject(cell, &kSettledKey)) unsettle(cell);
+        if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);
         return result;
     }
-    settle(cell, MAX(1, result.size.height));
+    SGRCollapseCell(cell, MAX(1, result.size.height), &kSettledKey);
     result.size = CGSizeMake(result.size.width, 0);
     return result;
 }
@@ -248,7 +227,7 @@ static void logOnce(NSString *what) {
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
     NSNumber *settled = objc_getAssociatedObject(self, &kSettledKey);
-    if (settled) settle(cell, settled.doubleValue);
+    if (settled) SGRCollapseCell(cell, settled.doubleValue, &kSettledKey);
     if (onPageList(cell)) {
         // What the cell paints over the field -- the "You liked" row, every carousel's collection and the
         // fade Popular's "See more" draws over its last track (device, trees/continuous/3.txt 2026-09-18).
@@ -259,7 +238,7 @@ static void logOnce(NSString *what) {
 
 - (void)prepareForReuse {
     %orig;
-    if (objc_getAssociatedObject(self, &kSettledKey)) unsettle((UICollectionViewCell *)self);
+    if (objc_getAssociatedObject(self, &kSettledKey)) SGRRestoreCell((UICollectionViewCell *)self, &kSettledKey);
 }
 %end
 

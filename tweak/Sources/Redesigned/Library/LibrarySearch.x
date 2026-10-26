@@ -17,13 +17,6 @@
 
 static char kFieldKey, kCancelKey;
 
-static UIView *childNamed(UIView *host, NSString *marker) {
-    for (UIView *sub in host.subviews) {
-        if ([NSStringFromClass(sub.class) containsString:marker]) return sub;
-    }
-    return nil;
-}
-
 static void capsule(UIView *shape) {
     CGFloat height = shape.bounds.size.height;
     if (height < 24) return;
@@ -36,7 +29,7 @@ static void capsule(UIView *shape) {
 %hook _TtC28YourLibrary_YourLibraryXImpl21YourLibrarySearchView
 - (void)layoutSubviews {
     %orig;
-    UIView *header = childNamed((UIView *)self, @"YourLibrarySearchHeaderView");
+    UIView *header = SGRChildNamed((UIView *)self, @"YourLibrarySearchHeaderView");
     if (!header) return;
     SGRLibraryClearScrim(header);
     UIView *field = SGRFindByIdentifier(header, @"Components.Header.UI.Toolbar.SearchField", &kFieldKey);

@@ -358,22 +358,6 @@ static void applyRow(UIView *cell, UIView *page) {
 
 #pragma mark - the cells
 
-// Which cells of Element_List belong to an album's track list, answered once per content class: the same
-// cell class carries Home's sections and the album's footer too, and a walk up to the page on every pass of
-// every cell is what the answer is cached to avoid.
-static BOOL isTrackContent(UIView *content) {
-    static NSMutableDictionary<id, NSNumber *> *answers;
-    if (!answers) answers = [NSMutableDictionary dictionary];
-    Class cls = object_getClass(content);
-    if (!cls) return NO;
-    NSNumber *answer = answers[(id<NSCopying>)cls];
-    if (!answer) {
-        answer = @([NSStringFromClass(cls) containsString:@"RetrievalListStructuredData"]);
-        answers[(id<NSCopying>)cls] = answer;
-    }
-    return answer.boolValue;
-}
-
 %hook _TtC12Element_List18CollectionViewCell
 - (void)layoutSubviews {
     // In the reverse of the order they were made: the artist line's change measured the narrowed title.
@@ -381,7 +365,7 @@ static BOOL isTrackContent(UIView *content) {
     restoreCount((UIView *)self);
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
-    if (!isTrackContent(cell.contentView.subviews.firstObject)) return;
+    if (!SGRIsTrackContent(cell.contentView.subviews.firstObject)) return;
     UIView *page = SGRAlbumPageOf(cell);
     if (page) applyRow(cell, page);
 }
@@ -391,7 +375,7 @@ static BOOL isTrackContent(UIView *content) {
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
     BOOL changed = restoreCredit(cell);
     changed = restoreCount(cell) || changed;
-    if (changed || isTrackContent(cell.contentView.subviews.firstObject)) [cell setNeedsLayout];
+    if (changed || SGRIsTrackContent(cell.contentView.subviews.firstObject)) [cell setNeedsLayout];
 }
 %end
 

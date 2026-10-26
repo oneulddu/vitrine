@@ -35,13 +35,6 @@ static void vanish(UIView *view) {
     view.accessibilityElementsHidden = YES;
 }
 
-static UIView *childNamed(UIView *host, NSString *marker) {
-    for (UIView *sub in host.subviews) {
-        if ([NSStringFromClass(sub.class) containsString:marker]) return sub;
-    }
-    return nil;
-}
-
 // A depth first search that leaves the list out: the header and the scrim sit beside it, and its cells are hundreds of views.
 static UIView *findOutsideList(UIView *view, NSString *identifier) {
     for (UIView *sub in view.subviews) {
@@ -61,7 +54,7 @@ static BOOL findParts(UIView *view) {
         if ([sub isKindOfClass:UICollectionView.class] && [sub.accessibilityIdentifier isEqualToString:SGRSearchListIdentifier]) {
             sg_list = (UICollectionView *)sub;
         }
-        UIView *scrim = childNamed(sub, @"GradientView");
+        UIView *scrim = SGRChildNamed(sub, @"GradientView");
         if (scrim) sg_scrim = scrim;
     }
     UIView *row = findOutsideList(view, @"SearchToolBar.Header");
@@ -86,21 +79,6 @@ static NSString *titleText(UIStackView *row) {
     return @"Search";
 }
 
-static UILabel *titleIn(UIStackView *row) {
-    UILabel *title = objc_getAssociatedObject(row, &kTitleKey);
-    if (!title) {
-        title = [UILabel new];
-        title.textColor = SGRPrimary();
-        title.accessibilityTraits = UIAccessibilityTraitHeader;
-        title.adjustsFontSizeToFitWidth = YES;
-        title.minimumScaleFactor = 0.6;
-        title.userInteractionEnabled = NO;
-        objc_setAssociatedObject(row, &kTitleKey, title, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    if (title.superview != row) [row addSubview:title];
-    return title;
-}
-
 static void layoutHeader(UIStackView *row) {
     vanish(sg_scrim);
 
@@ -116,7 +94,7 @@ static void layoutHeader(UIStackView *row) {
     }
     [row layoutIfNeeded];
 
-    UILabel *title = titleIn(row);
+    UILabel *title = SGRLargeTitleIn(row, &kTitleKey);
     if (![title.text isEqualToString:text]) {
         title.text = text;
         title.accessibilityLabel = text;

@@ -1630,7 +1630,6 @@ typedef struct {
     SGRKaraokeStyle *_style;   // how the lines were laid out
     BOOL _hasSpoken, _hasTranslation;   // whether the song has any line with either
     BOOL _hasNotes;   // whether any line has a cultural note
-    BOOL _spokenMade;   // the pronunciation shown was written by an AI service, asked from the menu
     BOOL _untranslated;   // whether a line with words has no translation, which a translator can fill in
     BOOL _autoQueued;
     BOOL _madeTranslation;   // whether a line shows a translation made here, which the menu can make again or remove
