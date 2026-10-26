@@ -46,9 +46,6 @@ typedef NS_ENUM(NSInteger, SGSourcesSection) {
     }
 }
 
-- (void)save {
-    self.setOrder(_on);
-}
 
 - (void)viewDidLoad {
     [super viewDidLoad];
@@ -131,7 +128,7 @@ typedef NS_ENUM(NSInteger, SGSourcesSection) {
     NSString *key = _on[(NSUInteger)from.row];
     [_on removeObjectAtIndex:(NSUInteger)from.row];
     [_on insertObject:key atIndex:(NSUInteger)to.row];
-    [self save];
+    self.setOrder(_on);
     [table reloadData];   // the numbers in front of the names have all moved
 }
 
@@ -151,7 +148,7 @@ typedef NS_ENUM(NSInteger, SGSourcesSection) {
         [_off removeObject:key];
         [_on addObject:key];
     }
-    [self save];
+    self.setOrder(_on);
     [table reloadData];
 }
 

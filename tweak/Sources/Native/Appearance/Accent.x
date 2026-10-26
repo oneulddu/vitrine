@@ -24,14 +24,6 @@ static void unpack(uint32_t rgb, CGFloat *r, CGFloat *g, CGFloat *b) {
     *b = (rgb & 0xFF) / 255.0;
 }
 
-UIColor *SGAccentColor(void) {
-    NSInteger rgb = chosen();
-    if (rgb < 0) return nil;
-    CGFloat r, g, b;
-    unpack((uint32_t)rgb, &r, &g, &b);
-    return [UIColor colorWithRed:r green:g blue:b alpha:1];
-}
-
 NSInteger SGAccentRGB(void) {
     NSInteger rgb = chosen();
     return rgb < 0 ? SGSpotifyGreen : rgb;

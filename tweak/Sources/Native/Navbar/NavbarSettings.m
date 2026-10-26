@@ -333,7 +333,3 @@ typedef NS_ENUM(NSInteger, SGNavbarSection) {
 UIViewController *SGNavbarSettingsPage(void) {
     return [SGNavbarPage new];
 }
-
-UIViewController *SGNavbarEditorPage(void) {
-    return [SGNavbarPage new];
-}

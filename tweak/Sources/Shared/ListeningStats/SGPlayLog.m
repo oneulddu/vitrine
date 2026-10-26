@@ -348,11 +348,6 @@ static NSString *keyOf(SGPlay *play) {
     return [NSString stringWithFormat:@"%@\x1f%@", play.title.lowercaseString, play.artist.lowercaseString];
 }
 
-static NSString *exactKeyOf(SGPlay *play) {
-    // This is exactly the persisted representation, including field normalization, and NSString's
-    // content hash keeps million-row imports linear instead of making equal-length tuple arrays collide.
-    return lineOf(play);
-}
 
 static NSMutableArray<SGPlay *> *playsFromTSV(NSString *text) {
     NSMutableArray *plays = [NSMutableArray array];
@@ -760,14 +755,16 @@ static BOOL hasNearbyEnd(NSDictionary *buckets, int64_t end) {
     }] != NSNotFound;
     NSMutableDictionary *ends = [NSMutableDictionary dictionary];
     NSMutableSet<NSString *> *exact = needsExact ? [NSMutableSet set] : nil;
+    // An exact import matches on the persisted line itself, field normalization included; NSString's
+    // content hash keeps million-row imports linear instead of making equal-length tuple arrays collide.
     for (SGPlay *play in _plays) {
         indexEnd(ends, keyOf(play), play.end);
-        if (needsExact) [exact addObject:exactKeyOf(play)];
+        if (needsExact) [exact addObject:lineOf(play)];
     }
     NSMutableArray<SGPlay *> *added = [NSMutableArray array];
     for (SGPlay *play in incoming) {
         NSString *key = keyOf(play);
-        NSString *exactKey = needsExact ? exactKeyOf(play) : nil;
+        NSString *exactKey = needsExact ? lineOf(play) : nil;
         BOOL have = play.exactImport && [exact containsObject:exactKey];
         if (!play.exactImport) have = hasNearbyEnd(ends[key], play.end);
         if (have) continue;

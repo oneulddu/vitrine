@@ -63,4 +63,3 @@ UIImage *SGRNavbarGlyph(NSDictionary *entry, BOOL active);
 void SGRShrinkTabTitles(UIView *bar);
 
 UIViewController *SGRNavbarSettingsPage(void);   // the tab editor, in Mod Settings
-UIViewController *SGRNavbarEditorPage(void);     // the tab editor alone, for the welcome tour

@@ -12,8 +12,6 @@ static const CGFloat kCardRadius = 22;
 
 // A view whose glass pane follows its bounds; the panes in SGGlass.m are laid out by their hosts.
 @interface SGGlassView : UIView
-@property (nonatomic) CGFloat radius;
-@property (nonatomic) BOOL capsule;
 @end
 
 @implementation SGGlassView
@@ -22,7 +20,7 @@ static char kPaneKey;
     [super layoutSubviews];
     UIVisualEffectView *pane = SGGlassFor(self, &kPaneKey);
     pane.frame = self.bounds;
-    SGShapeGlass(pane, self.radius, self.capsule);
+    SGShapeGlass(pane, kCardRadius, NO);
 }
 @end
 
@@ -78,7 +76,6 @@ static UIStackView *cardRow(NSString *symbol, NSString *title, NSString *subtitl
 // A glass card of rows, in the look cards' shape, that only points somewhere: the tips at the end of the tour.
 static UIView *tipsCard(NSArray<UIView *> *rows) {
     SGGlassView *card = [SGGlassView new];
-    card.radius = kCardRadius;
     card.clipsToBounds = YES;
     card.layer.cornerRadius = kCardRadius;
     card.layer.cornerCurve = kCACornerCurveContinuous;
@@ -120,7 +117,6 @@ static UIView *tipsCard(NSArray<UIView *> *rows) {
     row.translatesAutoresizingMaskIntoConstraints = NO;
 
     _glass = [SGGlassView new];
-    _glass.radius = kCardRadius;
     _glass.userInteractionEnabled = NO;
     _glass.translatesAutoresizingMaskIntoConstraints = NO;
     self.clipsToBounds = YES;

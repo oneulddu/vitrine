@@ -141,13 +141,7 @@ static NSDictionary<NSString *, NSNumber *> *presetTypes(void) {
     static NSDictionary<NSString *, NSNumber *> *types;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        types = @{
-            SGKeyDSPCompander: @(kPresetSwitch), SGKeyDSPBass: @(kPresetSwitch),
-            SGKeyDSPEqualizer: @(kPresetSwitch), SGKeyDSPGraphicEq: @(kPresetSwitch),
-            SGKeyDSPConvolver: @(kPresetSwitch), SGKeyDSPDDC: @(kPresetSwitch),
-            SGKeyDSPLiveprog: @(kPresetSwitch), SGKeyDSPReverb: @(kPresetSwitch),
-            SGKeyDSPStereoWide: @(kPresetSwitch), SGKeyDSPCrossfeed: @(kPresetSwitch),
-            SGKeyDSPTube: @(kPresetSwitch),
+        NSMutableDictionary<NSString *, NSNumber *> *all = [@{
             SGKeyDSPPostGain: @(kPresetNumber), SGKeyDSPLimiterThreshold: @(kPresetNumber),
             SGKeyDSPLimiterRelease: @(kPresetNumber), SGKeyDSPCompanderTime: @(kPresetNumber),
             SGKeyDSPBassGain: @(kPresetNumber), SGKeyDSPConvolverMode: @(kPresetNumber),
@@ -158,7 +152,9 @@ static NSDictionary<NSString *, NSNumber *> *presetTypes(void) {
             SGKeyDSPGraphicEqNodes: @(kPresetString), SGKeyDSPGraphicEqHeadphone: @(kPresetString),
             SGKeyDSPConvolverFile: @(kPresetString), SGKeyDSPDDCFile: @(kPresetString),
             SGKeyDSPLiveprogFile: @(kPresetString),
-        };
+        } mutableCopy];
+        for (NSString *effect in SGDSPEffectSwitches()) all[effect] = @(kPresetSwitch);
+        types = [all copy];
     });
     return types;
 }

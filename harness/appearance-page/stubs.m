@@ -9,7 +9,6 @@ static NSInteger valid(NSInteger rgb) {
     return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : -1;
 }
 
-UIColor *SGAccentColor(void) { return valid(SGInt(SGKeyAccent, -1)) < 0 ? nil : UIColor.redColor; }
 NSInteger SGAccentRGB(void) { NSInteger rgb = valid(SGInt(SGKeyAccent, -1)); return rgb < 0 ? SGSpotifyGreen : rgb; }
 UIColor *SGRAccentColor(void) { return valid(SGInt(SGRKeyAccent, SGRDefaultAccent)) < 0 ? nil : UIColor.redColor; }
 NSInteger SGRAccentRGB(void) { NSInteger rgb = valid(SGInt(SGRKeyAccent, SGRDefaultAccent)); return rgb < 0 ? SGSpotifyGreen : rgb; }

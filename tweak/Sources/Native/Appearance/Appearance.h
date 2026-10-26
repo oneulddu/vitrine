@@ -8,7 +8,6 @@
 // The last color picked, kept while a preset is in place so Custom brings it back.
 #define SGKeyAccentCustom @"spotifyglass.accent.custom"
 
-UIColor *SGAccentColor(void);   // nil while Spotify's own green is kept
 NSInteger SGAccentRGB(void);    // the color in effect, 0xRRGGBB, Spotify's green included
 
 @class SGModRow;

@@ -27,4 +27,3 @@ void SGLogTabBarRow(UIView *tabBar);
 void SGRefreshTabBar(void);
 
 UIViewController *SGNavbarSettingsPage(void);   // the tab editor, in Mod Settings
-UIViewController *SGNavbarEditorPage(void);     // the tab editor alone, for the welcome tour
