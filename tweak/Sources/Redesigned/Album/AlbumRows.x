@@ -285,7 +285,7 @@ static void applyCount(UIView *cell, UIView *row, UIView *page) {
         objc_setAssociatedObject(cell, &kCountKey, count, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     // The row is measured for Spotify's fixed type, so the count grows with Dynamic Type only up to Large.
-    count.font = SGMonospacedDigitsFont(SGRFont(UIFontTextStyleCaption1, UIFontWeightRegular, UIContentSizeCategoryLarge));
+    count.font = SGMonospacedDigitsFont(SGCategoryCappedFont(UIFontTextStyleCaption1, UIFontWeightRegular, UIContentSizeCategoryLarge));
     count.textColor = SGRSecondary();
     count.text = [NSString stringWithFormat:plays == 1 ? SGL(@"settings.stats.plays.singular", @"%lu play")
                                                        : SGL(@"settings.stats.plays.plural", @"%lu plays"), (unsigned long)plays];

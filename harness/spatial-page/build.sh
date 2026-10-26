@@ -3,7 +3,7 @@
 # framework as they are in the tweak, stubs.m for Sing's state and the head's motion.
 set -e
 SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)
-OUT=$(dirname "$0")/build
+OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/SpatialPageHarness.app"
 
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)

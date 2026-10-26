@@ -149,6 +149,56 @@ static UIViewController *gatedPage(void) {
     ] footer:nil];
 }
 
+@interface SGInformationPresenter : UIViewController
+@property (nonatomic, strong) UIAlertController *information;
+@property (nonatomic) BOOL animated;
+@property (nonatomic, copy) void (^completion)(void);
+@end
+@implementation SGInformationPresenter
+- (void)presentViewController:(UIViewController *)controller animated:(BOOL)animated completion:(void (^)(void))completion {
+    self.information = (UIAlertController *)controller;
+    self.animated = animated;
+    self.completion = completion;
+}
+@end
+
+static void pageStyleChecks(void) {
+    SGInformationPresenter *presenter = [SGInformationPresenter new];
+    SGPresentInformation(presenter, @"Information", @"Details");
+    UIAlertController *alert = presenter.information;
+    HARNESS_CHECK(alert.preferredStyle == UIAlertControllerStyleAlert &&
+        [alert.title isEqual:@"Information"] && [alert.message isEqual:@"Details"] &&
+        alert.actions.count == 1 && [alert.actions.firstObject.title isEqual:@"확인"] &&
+        alert.actions.firstObject.style == UIAlertActionStyleCancel && presenter.animated && !presenter.completion);
+
+    HARNESS_CHECK(UIContentSizeCategoryCompareToCategory(UIApplication.sharedApplication.preferredContentSizeCategory,
+        UIContentSizeCategoryExtraSmall) == NSOrderedDescending);
+    UIFont *capped = SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightBold, UIContentSizeCategoryExtraSmall);
+    UITraitCollection *small = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:UIContentSizeCategoryExtraSmall];
+    HARNESS_CHECK(capped.pointSize == [UIFont preferredFontForTextStyle:UIFontTextStyleBody compatibleWithTraitCollection:small].pointSize &&
+        (capped.fontDescriptor.symbolicTraits & UIFontDescriptorTraitBold));
+    HARNESS_CHECK(SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, nil).pointSize ==
+        [UIFont preferredFontForTextStyle:UIFontTextStyleBody].pointSize);
+
+    UITableView *table = [[UITableView alloc] initWithFrame:CGRectMake(0, 0, 320, 480)];
+    table.contentInsetAdjustmentBehavior = UIScrollViewContentInsetAdjustmentNever;
+    table.contentSize = CGSizeMake(320, 1000);
+    table.contentInset = UIEdgeInsetsMake(20, 3, 40, 5);
+    table.contentOffset = CGPointMake(0, -20);
+    UIView *header = [UIView new];
+    [table addSubview:header];
+    [table addSubview:[UIView new]];
+    SGPositionPinnedPreview(table, header, 80);
+    HARNESS_CHECK(table.contentOffset.y == -80 &&
+        UIEdgeInsetsEqualToEdgeInsets(table.contentInset, UIEdgeInsetsMake(80, 3, 40, 5)) &&
+        UIEdgeInsetsEqualToEdgeInsets(table.verticalScrollIndicatorInsets, table.contentInset) &&
+        CGRectEqualToRect(header.frame, CGRectMake(0, -80, 320, 80)) && table.subviews.lastObject == header);
+    table.contentOffset = CGPointMake(0, 200);
+    SGPositionPinnedPreview(table, header, 100);
+    HARNESS_CHECK(table.contentOffset.y == 200 && CGRectEqualToRect(header.frame, CGRectMake(0, 200, 320, 100)));
+    NSLog(@"[harness] page style checks PASS");
+}
+
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) UINavigationController *nav;
@@ -157,6 +207,10 @@ static UIViewController *gatedPage(void) {
 @implementation AppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"page-style-check"]) {
+        pageStyleChecks();
+        exit(0);
+    }
     if ([NSProcessInfo.processInfo.arguments containsObject:@"font-check"]) {
         UIFont *base = [UIFont systemFontOfSize:23.5 weight:UIFontWeightSemibold];
         UIFont *font = SGMonospacedDigitsFont(base);

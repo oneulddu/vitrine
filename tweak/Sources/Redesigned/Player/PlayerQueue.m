@@ -51,7 +51,7 @@ static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
     if (@available(iOS 26.0, *)) self.tableView.backgroundColor = UIColor.clearColor;
     _empty = [UILabel new];
     _empty.text = SGL(@"settings.player.queue.empty", @"Nothing is playing next.");
-    _empty.font = SGRFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryAccessibilityMedium);
+    _empty.font = SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryAccessibilityMedium);
     _empty.textColor = SGRSecondary();
     _empty.textAlignment = NSTextAlignmentCenter;
     _empty.numberOfLines = 0;
@@ -65,7 +65,7 @@ static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {
     [super traitCollectionDidChange:previous];
-    _empty.font = SGRFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryAccessibilityMedium);
+    _empty.font = SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryAccessibilityMedium);
 }
 
 #pragma mark - the player

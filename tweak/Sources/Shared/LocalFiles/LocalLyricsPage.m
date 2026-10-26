@@ -15,12 +15,6 @@ typedef NS_ENUM(NSInteger, SGLRCImportRow) {
     SGLRCImportRowCount,
 };
 
-static void showAlert(UIViewController *owner, NSString *title, NSString *message) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [owner presentViewController:alert animated:YES completion:nil];
-}
-
 // The local file playing, nil for anything else.
 static NSString *playingLocalFile(void) {
     NSString *uri = SGURIString(SGPlayerState().track.URI);
@@ -138,7 +132,7 @@ static NSString *playingLocalFile(void) {
         handler:^(UIContextualAction *action, UIView *view, void (^done)(BOOL)) {
             BOOL deleted = SGDeleteImportedLRC(name);
             if (deleted) [self reloadFiles];
-            else showAlert(self, SGL(@"settings.locallyrics.error.deletefailed", @"Could not delete the file"), nil);
+            else SGPresentInformation(self, SGL(@"settings.locallyrics.error.deletefailed", @"Could not delete the file"), nil);
             done(deleted);
         }];
     delete.image = [UIImage systemImageNamed:@"trash"];
@@ -154,19 +148,19 @@ static NSString *playingLocalFile(void) {
     NSURL *url = urls.firstObject;
     if (!url) return;
     if (![url.pathExtension.lowercaseString isEqualToString:@"lrc"]) {
-        showAlert(self, SGL(@"settings.locallyrics.error.notlrc.title", @"Not an LRC file"), SGL(@"settings.locallyrics.error.notlrc.message", @"Pick a file whose name ends in .lrc."));
+        SGPresentInformation(self, SGL(@"settings.locallyrics.error.notlrc.title", @"Not an LRC file"), SGL(@"settings.locallyrics.error.notlrc.message", @"Pick a file whose name ends in .lrc."));
         return;
     }
     NSString *linkTo = _linkTo;
     SGImportLRC(url, linkTo, ^(NSString *name, NSError *error) {
         if (!name) {
-            showAlert(self, SGL(@"settings.locallyrics.error.importfailed", @"Could not import the file"), error.localizedDescription);
+            SGPresentInformation(self, SGL(@"settings.locallyrics.error.importfailed", @"Could not import the file"), error.localizedDescription);
             return;
         }
         [self reloadFiles];
         if (linkTo) {
             NSString *title = SGLocalFileInfo(linkTo)[@"title"];
-            showAlert(self, SGL(@"settings.locallyrics.linked.title", @"Lyrics linked"), [NSString stringWithFormat:SGL(@"settings.locallyrics.linked.message", @"%@ now gives the lyrics for %@."), name,
+            SGPresentInformation(self, SGL(@"settings.locallyrics.linked.title", @"Lyrics linked"), [NSString stringWithFormat:SGL(@"settings.locallyrics.linked.message", @"%@ now gives the lyrics for %@."), name,
                                                                          title ? [NSString stringWithFormat:@"\"%@\"", title] : SGL(@"settings.locallyrics.linked.thislocalfile", @"this local file")]);
         }
     });

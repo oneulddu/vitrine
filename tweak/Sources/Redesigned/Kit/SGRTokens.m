@@ -60,14 +60,6 @@ UIColor *SGRElevated(UIColor *field) {
     return [UIColor colorWithRed:r + (1 - r) * lift green:g + (1 - g) * lift blue:b + (1 - b) * lift alpha:1];
 }
 
-UIFont *SGRFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest) {
-    UIContentSizeCategory current = UIApplication.sharedApplication.preferredContentSizeCategory;
-    if (largest && UIContentSizeCategoryCompareToCategory(current, largest) == NSOrderedDescending) current = largest;
-    UITraitCollection *traits = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:current];
-    CGFloat size = [UIFont preferredFontForTextStyle:style compatibleWithTraitCollection:traits].pointSize;
-    return [UIFont systemFontOfSize:size weight:weight];
-}
-
 BOOL SGRReduceMotion(void) {
     return UIAccessibilityIsReduceMotionEnabled();
 }

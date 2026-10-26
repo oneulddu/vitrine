@@ -62,12 +62,6 @@ static UIView *withChevron(UIView *view) {
     return box;
 }
 
-static void showProblem(UIViewController *page, NSString *title, NSString *message) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [page presentViewController:alert animated:YES completion:nil];
-}
-
 #pragma mark - Choose a Link
 
 @interface SGTabLinkPage : SGPage
@@ -160,7 +154,7 @@ static void showProblem(UIViewController *page, NSString *title, NSString *messa
     BOOL spotify = [url.scheme.lowercaseString isEqualToString:@"spotify"];
     if (!spotify || routeOf(url, @"custom") == SGLinkRouteNone) {
         NSString *what = text.length ? text : @"nothing";
-        showProblem(self, SGL(@"settings.addtab.invalid_link.alert.title", @"Can't Use That Link"),
+        SGPresentInformation(self, SGL(@"settings.addtab.invalid_link.alert.title", @"Can't Use That Link"),
                     spotify ? [NSString stringWithFormat:SGL(@"settings.addtab.invalid_link.no_handler.alert.message", @"Spotify has nowhere to open %@, so it would not work as a tab."), url.absoluteString]
                             : [NSString stringWithFormat:SGL(@"settings.addtab.invalid_link.not_uri.alert.message", @"%@ is not a share link or a spotify: URI."), what]);
         return;
@@ -201,7 +195,7 @@ static void showProblem(UIViewController *page, NSString *title, NSString *messa
     [super viewDidLoad];
     _sets = [[UISegmentedControl alloc] initWithItems:@[@"Spotify Encore", @"SF Symbols"]];
     _sets.selectedSegmentIndex = _draft.symbols ? 1 : 0;
-    [_sets addTarget:self action:@selector(setChanged) forControlEvents:UIControlEventValueChanged];
+    [_sets addTarget:self action:@selector(filterNow) forControlEvents:UIControlEventValueChanged];
     self.navigationItem.titleView = _sets;
 
     _search = [[UISearchController alloc] initWithSearchResultsController:nil];
@@ -251,10 +245,6 @@ static void showProblem(UIViewController *page, NSString *title, NSString *messa
     if (!_popAfterSearch) return;
     _popAfterSearch = NO;
     [self.navigationController popViewControllerAnimated:YES];
-}
-
-- (void)setChanged {
-    [self filterNow];
 }
 
 - (void)updateSearchResultsForSearchController:(UISearchController *)search {

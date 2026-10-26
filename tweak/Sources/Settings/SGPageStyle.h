@@ -16,6 +16,8 @@ UIFont *SGSubtitleFont(void);   // subtitles, section headers, footers and notes
 // Both grow through the accessibility sizes with no cap. A control beside a row's title, or text inside a
 // drawing of fixed size, caps its copy so the title keeps its room.
 UIFont *SGCappedFont(UIFont *font, CGFloat largest);
+// System type at the current Dynamic Type category, capped by category rather than point size.
+UIFont *SGCategoryCappedFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest);
 // Preserve the chosen face and size, replacing its feature settings with tabular digits; nil stays nil.
 UIFont *SGMonospacedDigitsFont(UIFont *font);
 BOOL SGAccessibilityTextSize(void);   // an accessibility size, where a row's value goes under its title
@@ -42,6 +44,8 @@ UIView *SGNote(NSString *text);
 void SGFitNote(UITableView *table, UIView *wrapper, CGFloat top, CGFloat bottom);
 // The now playing bar and the tab bar float over the content, so a page insets itself under them.
 void SGInsetForBars(UITableView *table);
+// Keep a preview above the scrolling rows, preserving an offset already at the top.
+void SGPositionPinnedPreview(UITableView *table, UIView *header, CGFloat height);
 
 CGFloat SGSectionHeaderHeight(void);   // grows with the header's text
 extern const CGFloat SGSectionGap;   // above a section with no header, so its card does not touch the one before
@@ -52,6 +56,8 @@ CGFloat SGSectionFooterHeight(UITableView *table, NSString *text);
 UITableViewCell *SGDequeueCell(UITableView *table, NSString *identifier);
 
 void SGOpenURL(NSString *url);
+// Informational alert on the supplied presenter, with one localized cancel-style OK action.
+void SGPresentInformation(UIViewController *presenter, NSString *title, NSString *message);
 extern NSString *const SGRepoURL;
 // The controller on top of the key window, through whatever is presented over it.
 UIViewController *SGTopController(void);

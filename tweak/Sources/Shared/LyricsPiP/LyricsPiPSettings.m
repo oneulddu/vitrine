@@ -1,5 +1,6 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
+#import "Settings/SGPageStyle.h"
 #import "LyricsPiP.h"
 #import "LyricsPiPBackground.h"
 #import "Shared/LyricsBackground/LyricsBackgroundSettings.h"
@@ -144,17 +145,7 @@
             table.tableHeaderView = self.noteView;
         }
     }
-    UIEdgeInsets insets = table.contentInset;
-    if (insets.top != height) {
-        BOOL top = table.contentOffset.y <= 0.5 - table.adjustedContentInset.top;
-        insets.top = height;
-        table.contentInset = insets;
-        table.verticalScrollIndicatorInsets = insets;
-        if (top) table.contentOffset = CGPointMake(table.contentOffset.x, -table.adjustedContentInset.top);
-    }
-    // Scrolling lays the table out again, so the preview stays at the top of what is visible.
-    self.header.frame = CGRectMake(0, table.contentOffset.y + table.adjustedContentInset.top - height, width, height);
-    [table bringSubviewToFront:self.header];
+    SGPositionPinnedPreview(table, self.header, height);
 }
 - (void)dealloc { [NSNotificationCenter.defaultCenter removeObserver:self]; }
 @end

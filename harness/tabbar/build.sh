@@ -16,7 +16,7 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     -Wno-deprecated-declarations \
     "$(dirname "$0")/main.m" "$(dirname "$0")/stubs.m" "$(dirname "$0")/touch.m" \
     "$OUT"/gen/*.m \
-    "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m \
+    "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m "$SRC"/Core/SGLocalize.m \
     "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m "$SRC"/Settings/SGPageStyle.m \
     "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Redesigned/Kit/SGRPress.m "$SRC"/Settings/SGMarquee.m \
     "$SRC"/Redesigned/Navbar/NavbarLayout.m "$SRC"/Shared/Navigation/TabIcons.m \

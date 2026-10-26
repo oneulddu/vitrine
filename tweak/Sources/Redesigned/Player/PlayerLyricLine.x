@@ -74,7 +74,7 @@ BOOL SGRPlayerLyricLineOn(void) {
 }
 
 + (UIFont *)font {
-    return SGRFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraExtraExtraLarge);
+    return SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraExtraExtraLarge);
 }
 
 - (CGFloat)lineHeight {

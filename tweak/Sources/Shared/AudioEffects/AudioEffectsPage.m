@@ -564,7 +564,11 @@ static NSString *numberText(SGDSPRow *row, double value) {
         return cell;
     }
     SGDSPRow *row = [self rowAt:path];
-    if (!row) return [self errorCell:table text:_errors[e.key]];
+    if (!row) {
+        UITableViewCell *cell = SGDSPErrorCell(table, _errors[e.key]);
+        cell.separatorInset = UIEdgeInsetsMake(0, 48, 0, 0);
+        return cell;
+    }
     switch (row.kind) {
         case SGDSPRowSlider: {
             SGDSPSliderCell *cell = [table dequeueReusableCellWithIdentifier:@"slider"] ?: [[SGDSPSliderCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"slider"];
@@ -602,17 +606,6 @@ static NSString *numberText(SGDSPRow *row, double value) {
     cell.accessoryView = SGChevronView();
     cell.accessibilityValue = value;
     cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-    return cell;
-}
-
-// Red, the way Settings' warning rows are: the effect's last change did not take, and why.
-- (UITableViewCell *)errorCell:(UITableView *)table text:(NSString *)text {
-    UITableViewCell *cell = SGDequeueCell(table, @"error");
-    SGFillCell(cell, SGL(@"settings.audioeffects.status.notapplied", @"Not applied"), text, SGRed(), @"exclamationmark.triangle.fill");
-    UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
-    content.secondaryTextProperties.color = SGRed();
-    cell.contentConfiguration = content;
-    cell.separatorInset = UIEdgeInsetsMake(0, 48, 0, 0);
     return cell;
 }
 

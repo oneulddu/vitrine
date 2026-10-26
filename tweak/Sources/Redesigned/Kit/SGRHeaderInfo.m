@@ -78,14 +78,14 @@ UIImageView *SGRCreatorPicture(UIView *root) {
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
     _measuredWidth = -1;
-    _title = infoLabel(self, SGRFont(UIFontTextStyleTitle2, UIFontWeightBold, UIContentSizeCategoryExtraLarge),
+    _title = infoLabel(self, SGCategoryCappedFont(UIFontTextStyleTitle2, UIFontWeightBold, UIContentSizeCategoryExtraLarge),
                        SGRPrimary(), 2, NSTextAlignmentCenter);
     _title.accessibilityTraits = UIAccessibilityTraitHeader;
-    _creator = infoLabel(self, SGRFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
+    _creator = infoLabel(self, SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
                          SGRSecondary(), 1, NSTextAlignmentCenter);
-    _length = infoLabel(self, SGRFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
+    _length = infoLabel(self, SGCategoryCappedFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
                         SGRTertiary(), 1, NSTextAlignmentCenter);
-    _about = infoLabel(self, SGRFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
+    _about = infoLabel(self, SGCategoryCappedFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryExtraLarge),
                        SGRSecondary(), 2, NSTextAlignmentNatural);
     _picture = [UIImageView new];
     _picture.contentMode = UIViewContentModeScaleAspectFill;

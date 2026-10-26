@@ -240,7 +240,15 @@ static void runNavbar(UIViewController *root, NSString *mode) {
         @{SGTabTitle: @"Queue", SGTabURI: @"spotify:now-playing:queue", SGTabIcon: @"queue"},
     ];
     after(0.5, ^{
-        SGPresentAddTabSheet(root, presets, ^(NSDictionary *tab) { NSLog(@"[harness] added %@", tab); });
+        SGPresentAddTabSheet(root, presets, ^(NSDictionary *tab) {
+            NSLog(@"[harness] added %@", tab);
+            if ([args containsObject:@"check-run"]) {
+                BOOL correct = [tab[SGTabTitle] isEqual:@"Liked Songs"] &&
+                    [tab[SGTabURI] isEqual:@"spotify:collection:tracks"] && [tab[SGTabIcon] isEqual:@"music.mic"];
+                NSLog(@"[harness] %@ Add a Tab with the selected SF Symbol", correct ? @"PASS" : @"FAIL");
+                exit(correct ? 0 : 1);
+            }
+        });
     });
     if ([mode isEqualToString:@"sheet"]) return;
     after(2.5, ^{ tap(topPage(root), 1, 0); });

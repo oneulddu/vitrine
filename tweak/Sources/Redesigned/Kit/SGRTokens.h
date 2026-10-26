@@ -11,6 +11,7 @@
 // Threading: the constants and the colors are safe anywhere; fonts, SGRAnimate and the
 // accessibility reads are main thread only.
 #import <UIKit/UIKit.h>
+#import "Settings/SGPageStyle.h"
 
 extern const CGFloat SGRSideMargin;      // 16, the page's side margin
 extern const CGFloat SGRGrid;            // 8, every gap is a multiple of it
@@ -34,10 +35,6 @@ UIColor *SGRElevated(UIColor *field);
 // The line between two rows of a list, drawn a pixel thick from the text's leading edge: white 12%, 20% with
 // Increase Contrast. Never a border around anything -- the redesign's surfaces are told apart by their fill.
 UIColor *SGRHairline(void);
-
-// The system font at the size `style` has for the current content size category, but never larger
-// than it has at `largest`, in `weight`. Callers re-ask on traitCollectionDidChange:.
-UIFont *SGRFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest);
 
 BOOL SGRReduceMotion(void);
 BOOL SGRReduceTransparency(void);

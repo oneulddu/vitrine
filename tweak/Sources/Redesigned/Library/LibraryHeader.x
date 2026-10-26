@@ -137,7 +137,7 @@ static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, C
         title.text = text;
         title.accessibilityLabel = text;
     }
-    UIFont *font = SGRFont(UIFontTextStyleLargeTitle, UIFontWeightBold, UIContentSizeCategoryLarge);
+    UIFont *font = SGCategoryCappedFont(UIFontTextStyleLargeTitle, UIFontWeightBold, UIContentSizeCategoryLarge);
     if (![title.font isEqual:font]) title.font = font;
 
     CGFloat height = ceil(font.lineHeight);

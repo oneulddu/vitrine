@@ -14,6 +14,8 @@
 UIViewController *SGDSPSettingsPage(void);
 // What the Mod Settings row reads out: Off, On, or how many effects are on.
 NSString *SGDSPSummary(void);
+// The shared red "Not applied" row; each page keeps its own separator geometry.
+UITableViewCell *SGDSPErrorCell(UITableView *table, NSString *text);
 
 // The pages the effects' rows push (AudioEffectsLibraryPage.m).
 UIViewController *SGDSPLibraryPage(SGDSPFileKind kind);

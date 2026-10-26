@@ -76,8 +76,8 @@ static UIButton *controlButton(NSString *symbol, CGFloat size, NSString *label, 
 
 // The title and the artist at the phone's text size, capped where the column still holds a cover.
 - (void)applyFonts {
-    _title.font = SGRFont(UIFontTextStyleTitle3, UIFontWeightBold, UIContentSizeCategoryExtraExtraExtraLarge);
-    _artist.font = SGRFont(UIFontTextStyleCallout, UIFontWeightRegular, UIContentSizeCategoryExtraExtraExtraLarge);
+    _title.font = SGCategoryCappedFont(UIFontTextStyleTitle3, UIFontWeightBold, UIContentSizeCategoryExtraExtraExtraLarge);
+    _artist.font = SGCategoryCappedFont(UIFontTextStyleCallout, UIFontWeightRegular, UIContentSizeCategoryExtraExtraExtraLarge);
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {

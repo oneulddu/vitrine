@@ -7,12 +7,6 @@
 #import "AudioEffectsPage.h"
 #import "AudioEffectsPresets.h"
 
-static void showAlert(UIViewController *owner, NSString *title, NSString *message) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [owner presentViewController:alert animated:YES completion:nil];
-}
-
 static void tick(UITableViewCell *cell, BOOL on) {
     if (on) {
         UIImageView *tick = SGSymbolView(@"checkmark", 13, UIImageSymbolWeightSemibold, 16);
@@ -225,7 +219,7 @@ enum { kSaveRow, kImportRow, kActionRows };
 - (void)share:(NSString *)name from:(UIView *)source {
     NSURL *url = sharedFileFor(name);
     if (!url) {
-        showAlert(self, SGL(@"settings.audioeffects.presets.share_failed.alert.title", @"Could not share the preset"), SGL(@"settings.stats.error.try_again", @"Please try again."));
+        SGPresentInformation(self, SGL(@"settings.audioeffects.presets.share_failed.alert.title", @"Could not share the preset"), SGL(@"settings.stats.error.try_again", @"Please try again."));
         return;
     }
     UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[url] applicationActivities:nil];
@@ -269,7 +263,7 @@ enum { kSaveRow, kImportRow, kActionRows };
             SGDSPPresetList *strong = page;
             if (!strong) return;
             if (!values) {
-                showAlert(strong, SGL(@"settings.audioeffects.presets.import_failed.alert.title", @"Preset not imported"), error);
+                SGPresentInformation(strong, SGL(@"settings.audioeffects.presets.import_failed.alert.title", @"Preset not imported"), error);
                 return;
             }
             if (SGDSPUserPresetExists(name)) [strong ask:name values:values];
@@ -304,7 +298,7 @@ enum { kSaveRow, kImportRow, kActionRows };
         ? [NSString stringWithFormat:SGL(@"settings.audioeffects.presets.imported.missing.alert.message", @"“%@” is under Yours. It uses files this iPhone does not have: %@. Import them on the Audio effects page, or the effects that need them stay silent."),
            userPresetTitle(name), [missing componentsJoinedByString:@", "]]
         : [NSString stringWithFormat:SGL(@"settings.audioeffects.presets.imported.alert.message", @"“%@” is under Yours. Tap it to hear it."), userPresetTitle(name)];
-    showAlert(self, SGL(@"settings.audioeffects.presets.imported.alert.title", @"Preset imported"), message);
+    SGPresentInformation(self, SGL(@"settings.audioeffects.presets.imported.alert.title", @"Preset imported"), message);
 }
 
 - (void)askForName {
@@ -629,7 +623,7 @@ static NSString *correctionName(NSString *path) {
     SGAutoEqApply(headphone, ^(NSString *error) {
         self->_applying = nil;
         [self reload:UITableViewRowAnimationNone];
-        if (error) showAlert(self, [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.applyerror.title", @"Could not apply %@"), headphone.name], error);
+        if (error) SGPresentInformation(self, [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.applyerror.title", @"Could not apply %@"), headphone.name], error);
     });
 }
 

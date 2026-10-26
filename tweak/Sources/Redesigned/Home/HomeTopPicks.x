@@ -671,8 +671,8 @@ static BOOL styleLargeCard(UIView *card) {
         parts.surface = [UIView new];
         parts.surface.userInteractionEnabled = NO;
         parts.surface.backgroundColor = SGRElevated(UIColor.blackColor);
-        parts.lead = footerLabel(SGRFont(UIFontTextStyleBody, UIFontWeightSemibold, UIContentSizeCategoryLarge), SGRPrimary());
-        parts.second = footerLabel(SGRFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryLarge), SGRSecondary());
+        parts.lead = footerLabel(SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightSemibold, UIContentSizeCategoryLarge), SGRPrimary());
+        parts.second = footerLabel(SGCategoryCappedFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryLarge), SGRSecondary());
         // The cover drawn by the Kit, edge to edge at the card's top: Spotify keeps its own 2pt in on every side (9.1.90),
         // and a transform scaling its holder out to the edges was reset by the stack's later pass. Spotify's image view
         // goes transparent and keeps everything else (the button's touches, its accessibility label, the image the tint

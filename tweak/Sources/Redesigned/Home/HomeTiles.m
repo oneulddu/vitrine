@@ -151,7 +151,7 @@ static void retitle(UIView *tile) {
         objc_setAssociatedObject(tile, &kMineKey, mine, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     // 13pt: the reference's "DRIP" is 27px of cap height at 3px/pt.
-    UIFont *font = SGRFont(UIFontTextStyleFootnote, UIFontWeightSemibold, UIContentSizeCategoryLarge);
+    UIFont *font = SGCategoryCappedFont(UIFontTextStyleFootnote, UIFontWeightSemibold, UIContentSizeCategoryLarge);
     if (![mine.font isEqual:font]) mine.font = font;
     NSString *text = ((UILabel *)theirs).text;
     if (text ? ![mine.text isEqualToString:text] : mine.text != nil) mine.text = text;

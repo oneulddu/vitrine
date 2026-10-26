@@ -20,12 +20,6 @@ static BOOL untestedChip(void) {
 
 UIView *SGSingCardView(void);   // SGSingCard.m
 
-static void tell(NSString *title, NSString *message) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [SGTopController() presentViewController:alert animated:YES completion:nil];
-}
-
 static void ask(NSString *title, NSString *message, NSString *action, BOOL destructive, void (^then)(void)) {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
@@ -74,7 +68,7 @@ static NSString *modelValue(void) {
 
 static void modelTapped(UITableViewController *page) {
     if (!SGSingOSSupported()) {
-        tell(SGL(@"settings.karaoke.model.alert.title", @"Voice model"), SGSingMissing());
+        SGPresentInformation(SGTopController(), SGL(@"settings.karaoke.model.alert.title", @"Voice model"), SGSingMissing());
         return;
     }
     switch (rowState()) {

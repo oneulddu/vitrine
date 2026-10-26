@@ -28,13 +28,7 @@ static NSString *extensionList(SGDSPFileKind kind) {
     return [NSString stringWithFormat:SGL(@"settings.audioeffects.library.extensions.format", @"%@ or %@"), [dotted componentsJoinedByString:@", "], last];
 }
 
-static void showAlert(UIViewController *owner, NSString *title, NSString *message) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [owner presentViewController:alert animated:YES completion:nil];
-}
-
-static UITableViewCell *errorCell(UITableView *table, NSString *text) {
+UITableViewCell *SGDSPErrorCell(UITableView *table, NSString *text) {
     UITableViewCell *cell = SGDequeueCell(table, @"error");
     SGFillCell(cell, SGL(@"settings.audioeffects.status.notapplied", @"Not applied"), text, SGRed(), @"exclamationmark.triangle.fill");
     UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
@@ -105,7 +99,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
 }
 
 - (UITableViewCell *)errorCellIn:(UITableView *)table {
-    return errorCell(table, _error);
+    return SGDSPErrorCell(table, _error);
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
@@ -232,7 +226,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
 - (void)deleteFile:(NSString *)name at:(NSIndexPath *)path {
     ++sg_libraryRequest[_kind];
     if (!SGDSPDeleteFile(_kind, name)) {
-        showAlert(self, SGL(@"settings.audioeffects.library.deleteerror.title", @"Could not delete the file"), nil);
+        SGPresentInformation(self, SGL(@"settings.audioeffects.library.deleteerror.title", @"Could not delete the file"), nil);
         return;
     }
     if ([name isEqualToString:SGDSPString(SGDSPFileKey(_kind))]) SGDSPSetString(SGDSPFileKey(_kind), @"");
@@ -254,7 +248,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
     NSURL *url = urls.firstObject;
     if (!url) return;
     if (![SGDSPFileExtensions(_kind) containsObject:url.pathExtension.lowercaseString]) {
-        showAlert(self, SGL(@"settings.audioeffects.library.invalidfile.title", @"Not a file this effect takes"), [NSString stringWithFormat:SGL(@"settings.audioeffects.library.invalidfile.message", @"Pick a %@ file."), extensionList(_kind)]);
+        SGPresentInformation(self, SGL(@"settings.audioeffects.library.invalidfile.title", @"Not a file this effect takes"), [NSString stringWithFormat:SGL(@"settings.audioeffects.library.invalidfile.message", @"Pick a %@ file."), extensionList(_kind)]);
         return;
     }
     static dispatch_queue_t imports;
@@ -271,7 +265,7 @@ static UITableViewCell *tiledCell(UITableView *table, NSString *title, NSString 
             BOOL current = request == sg_libraryRequest[kind]
                 && [selection isEqualToString:SGDSPString(SGDSPFileKey(kind))];
             if (!name) {
-                if (current) showAlert(self, SGL(@"settings.audioeffects.library.importerror.title", @"Could not import the file"), error.localizedDescription);
+                if (current) SGPresentInformation(self, SGL(@"settings.audioeffects.library.importerror.title", @"Could not import the file"), error.localizedDescription);
                 return;
             }
             // A stale request may not choose a file, but replacing the current
@@ -415,7 +409,7 @@ typedef NS_ENUM(NSInteger, SGGraphicEqRow) {
 - (void)save:(NSString *)text {
     NSString *line = SGDSPGraphicEqLine(text);
     if (!line) {
-        showAlert(self, text.length ? SGL(@"settings.audioeffects.graphiceq.invalidline.title", @"Not a GraphicEQ line") : SGL(@"settings.audioeffects.graphiceq.nothingtopaste.title", @"Nothing to paste"),
+        SGPresentInformation(self, text.length ? SGL(@"settings.audioeffects.graphiceq.invalidline.title", @"Not a GraphicEQ line") : SGL(@"settings.audioeffects.graphiceq.nothingtopaste.title", @"Nothing to paste"),
                   SGL(@"settings.audioeffects.graphiceq.invalidline.message", @"It starts with \"GraphicEQ:\", then pairs of a frequency and a gain: GraphicEQ: 20 -1.2; 21 -1.1; …"));
         return;
     }

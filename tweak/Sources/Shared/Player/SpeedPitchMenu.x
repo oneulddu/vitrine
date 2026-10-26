@@ -55,15 +55,6 @@ static UIColor *secondary(void) {
     return [UIColor colorWithWhite:1 alpha:UIAccessibilityDarkerSystemColorsEnabled() ? 0.80 : 0.65];
 }
 
-// The system font at a text style's size, which stops growing past `largest` so the row still fits.
-static UIFont *font(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest) {
-    UIContentSizeCategory current = UIApplication.sharedApplication.preferredContentSizeCategory;
-    if (largest && UIContentSizeCategoryCompareToCategory(current, largest) == NSOrderedDescending) current = largest;
-    UITraitCollection *traits = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:current];
-    CGFloat size = [UIFont preferredFontForTextStyle:style compatibleWithTraitCollection:traits].pointSize;
-    return [UIFont systemFontOfSize:size weight:weight];
-}
-
 static void animateOpen(void (^animations)(void), void (^completion)(BOOL finished)) {
     if (UIAccessibilityIsReduceMotionEnabled()) {
         [UIView performWithoutAnimation:animations];
@@ -176,7 +167,7 @@ static UILabel *makeLabel(UIFont *font, UIColor *color) {
 
 - (UIButton *)valueButton:(SEL)reset {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.titleLabel.font = SGMonospacedDigitsFont(font(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraLarge));
+    button.titleLabel.font = SGMonospacedDigitsFont(SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryExtraLarge));
     button.tintColor = primary();
     [button setTitleColor:primary() forState:UIControlStateNormal];
     [button setTitleColor:[primary() colorWithAlphaComponent:0.4] forState:UIControlStateHighlighted];
@@ -249,9 +240,9 @@ static void placeTick(UISlider *slider) {
 
     _icon = [[UIImageView alloc] initWithImage:paintedSymbol(@"slider.horizontal.3", 20, UIImageSymbolWeightRegular, secondary())];
     _icon.contentMode = UIViewContentModeCenter;
-    _title = makeLabel(font(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), primary());
+    _title = makeLabel(SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), primary());
     _title.text = @"Speed and pitch";
-    _summary = makeLabel(SGMonospacedDigitsFont(font(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge)), secondary());
+    _summary = makeLabel(SGMonospacedDigitsFont(SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge)), secondary());
     _summary.textAlignment = NSTextAlignmentRight;
     _chevron = [[UIImageView alloc] initWithImage:paintedSymbol(@"chevron.down", 13, UIImageSymbolWeightSemibold, secondary())];
     _chevron.contentMode = UIViewContentModeCenter;
@@ -262,7 +253,7 @@ static void placeTick(UISlider *slider) {
 
     _panel = [UIView new];
     [self addSubview:_panel];
-    UIFont *nameFont = font(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
+    UIFont *nameFont = SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
     _speedName = makeLabel(nameFont, secondary());
     _speedName.text = @"Speed";
     _pitchName = makeLabel(nameFont, secondary());
@@ -290,7 +281,7 @@ static void placeTick(UISlider *slider) {
         _animatedRow = [UIView new];
         _animatedIcon = [[UIImageView alloc] initWithImage:paintedSymbol(@"play.rectangle.on.rectangle", 18, UIImageSymbolWeightRegular, secondary())];
         _animatedIcon.contentMode = UIViewContentModeCenter;
-        _animatedName = makeLabel(font(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), primary());
+        _animatedName = makeLabel(SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), primary());
         _animatedName.text = @"Animated artwork";
         _animated = [UISwitch new];
         _animated.accessibilityLabel = @"Animated artwork";
@@ -303,7 +294,7 @@ static void placeTick(UISlider *slider) {
     pipConfiguration.contentInsets = NSDirectionalEdgeInsetsMake(0, kSideMargin, 0, kSideMargin);
     pipConfiguration.imagePadding = kSideMargin;
     _pipRow = [UIButton buttonWithConfiguration:pipConfiguration primaryAction:nil];
-    _pipRow.titleLabel.font = font(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
+    _pipRow.titleLabel.font = SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
     _pipRow.titleLabel.numberOfLines = 2;
     _pipRow.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
     [_pipRow setTitleColor:primary() forState:UIControlStateNormal];

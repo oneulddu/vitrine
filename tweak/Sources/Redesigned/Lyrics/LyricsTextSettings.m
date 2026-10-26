@@ -61,16 +61,7 @@ static NSString *percent(double value) {
     CGFloat height = card > 0 ? card + 16 : 0;
     _card.hidden = card <= 0;
     _card.frame = CGRectMake(x, 8, inner, card);
-    UIEdgeInsets insets = table.contentInset;
-    if (insets.top != height) {
-        BOOL top = table.contentOffset.y <= 0.5 - table.adjustedContentInset.top;
-        insets.top = height;
-        table.contentInset = insets;
-        table.verticalScrollIndicatorInsets = insets;
-        if (top) table.contentOffset = CGPointMake(table.contentOffset.x, -table.adjustedContentInset.top);
-    }
-    _header.frame = CGRectMake(0, table.contentOffset.y + table.adjustedContentInset.top - height, width, height);
-    [table bringSubviewToFront:_header];
+    SGPositionPinnedPreview(table, _header, height);
 }
 
 @end

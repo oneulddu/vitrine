@@ -21,6 +21,33 @@ UIFont *SGCappedFont(UIFont *font, CGFloat largest) {
     return font.pointSize > largest ? [font fontWithSize:largest] : font;
 }
 
+UIFont *SGCategoryCappedFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest) {
+    UIContentSizeCategory current = UIApplication.sharedApplication.preferredContentSizeCategory;
+    if (largest && UIContentSizeCategoryCompareToCategory(current, largest) == NSOrderedDescending) current = largest;
+    UITraitCollection *traits = [UITraitCollection traitCollectionWithPreferredContentSizeCategory:current];
+    CGFloat size = [UIFont preferredFontForTextStyle:style compatibleWithTraitCollection:traits].pointSize;
+    return [UIFont systemFontOfSize:size weight:weight];
+}
+
+void SGPositionPinnedPreview(UITableView *table, UIView *header, CGFloat height) {
+    UIEdgeInsets insets = table.contentInset;
+    if (insets.top != height) {
+        BOOL top = table.contentOffset.y <= 0.5 - table.adjustedContentInset.top;
+        insets.top = height;
+        table.contentInset = insets;
+        table.verticalScrollIndicatorInsets = insets;
+        if (top) table.contentOffset = CGPointMake(table.contentOffset.x, -table.adjustedContentInset.top);
+    }
+    header.frame = CGRectMake(0, table.contentOffset.y + table.adjustedContentInset.top - height, table.bounds.size.width, height);
+    [table bringSubviewToFront:header];
+}
+
+void SGPresentInformation(UIViewController *presenter, NSString *title, NSString *message) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
+    [presenter presentViewController:alert animated:YES completion:nil];
+}
+
 UIFont *SGMonospacedDigitsFont(UIFont *font) {
     if (!font) return nil;
     NSArray *features = @[@{UIFontFeatureTypeIdentifierKey: @(kNumberSpacingType), UIFontFeatureSelectorIdentifierKey: @(kMonospacedNumbersSelector)}];

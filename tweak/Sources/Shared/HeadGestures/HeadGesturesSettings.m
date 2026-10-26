@@ -15,15 +15,9 @@ static NSArray<NSString *> *actionNames(void) {
              SGL(@"settings.headgestures.action.shuffle", @"Shuffle"), SGL(@"settings.headgestures.action.repeat", @"Repeat"), SGL(@"settings.headgestures.action.like", @"Like")];
 }
 
-static void say(NSString *title, NSString *message) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-    [SGTopController() presentViewController:alert animated:YES completion:nil];
-}
-
 static BOOL headTracking(void) {
     if (SGHeadGesturesAvailable()) return YES;
-    say(SGL(@"settings.headgestures.alert.no_tracking.title", @"No head tracking"), SGL(@"settings.headgestures.alert.no_tracking.message", @"This iPhone cannot read the motion of headphones."));
+    SGPresentInformation(SGTopController(), SGL(@"settings.headgestures.alert.no_tracking.title", @"No head tracking"), SGL(@"settings.headgestures.alert.no_tracking.message", @"This iPhone cannot read the motion of headphones."));
     return NO;
 }
 

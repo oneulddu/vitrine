@@ -475,7 +475,7 @@ static void layoutHeader(UIViewController *page) {
         title.text = text;
         title.accessibilityLabel = text;
     }
-    UIFont *font = SGRFont(UIFontTextStyleLargeTitle, UIFontWeightBold, UIContentSizeCategoryLarge);
+    UIFont *font = SGCategoryCappedFont(UIFontTextStyleLargeTitle, UIFontWeightBold, UIContentSizeCategoryLarge);
     if (![title.font isEqual:font]) title.font = font;
 
     CGFloat trailing = pillLeading - SGRGrid;

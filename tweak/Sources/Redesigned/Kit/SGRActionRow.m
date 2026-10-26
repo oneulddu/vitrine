@@ -50,7 +50,7 @@ static UIFont *capsuleFont(void) {
     static UIContentSizeCategory madeFor;
     UIContentSizeCategory category = UIApplication.sharedApplication.preferredContentSizeCategory;
     if (!font || ![category isEqualToString:madeFor]) {
-        font = SGRFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryLarge);
+        font = SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryLarge);
         madeFor = category;
     }
     return font;
