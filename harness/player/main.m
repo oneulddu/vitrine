@@ -48,6 +48,10 @@
 #import "Redesigned/Lyrics/MeaningSheet.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 
+@interface SGRPlayerMotionView : UIView
+- (void)playFile:(NSURL *)file poster:(UIImage *)poster;
+@end
+
 void SGRHarnessPlayFrom(NSInteger ms);
 void SGRHarnessSetTrack(NSString *uri, NSString *imageURI, BOOL paused);
 // ../tabbar/touch.m: a finger's touches, through UIKit's own recognizers.
@@ -906,6 +910,45 @@ static BOOL fieldCovered(void) {
     return field.covered && fluid && fluid.hidden;
 }
 
+// Green above the last 3% of rows, equal red/blue halves within them: the foot must
+// render as opaque purple everywhere, not green, either edge's color, or vertical streaks.
+static BOOL motionFootHasMeanColor(NSURL *file, NSString **detail) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
+    format.scale = 1;
+    format.preferredRange = UIGraphicsImageRendererFormatRangeStandard;
+    UIImage *poster = [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(32, 100) format:format]
+        imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+            [UIColor.greenColor setFill];
+            UIRectFill(CGRectMake(0, 0, 32, 100));
+            [UIColor.redColor setFill];
+            UIRectFill(CGRectMake(0, 97, 16, 3));
+            [UIColor.blueColor setFill];
+            UIRectFill(CGRectMake(16, 97, 16, 3));
+        }];
+    SGRPlayerMotionView *probe = [[SGRPlayerMotionView alloc] initWithFrame:CGRectMake(0, 0, 32, 120)];
+    [probe playFile:file poster:poster];
+    [probe layoutIfNeeded];
+    CALayer *foot = [probe valueForKey:@"_foot"];
+    uint8_t pixels[16 * 4] = {0};
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(pixels, 16, 1, 8, sizeof pixels, space,
+                                                kCGBitmapByteOrder32Big | kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    CGContextScaleCTM(context, 16 / foot.bounds.size.width, 1 / foot.bounds.size.height);
+    [foot renderInContext:context];
+    CGContextRelease(context);
+    for (NSUInteger x = 0; x < 16; x++) {
+        uint8_t *pixel = pixels + x * 4;
+        if (pixel[0] != 128 || pixel[1] != 0 || pixel[2] != 128 || pixel[3] != 255) {
+            *detail = [NSString stringWithFormat:@"pixel %lu RGBA %u,%u,%u,%u; expected 128,0,128,255",
+                       (unsigned long)x, pixel[0], pixel[1], pixel[2], pixel[3]];
+            return NO;
+        }
+    }
+    *detail = @"all 16 pixels RGBA 128,0,128,255";
+    return YES;
+}
+
 - (void)runMotionChecks {
     // The clip comes in before the player has laid out, as for the track restored at launch.
     after(3, ^{
@@ -927,9 +970,15 @@ static BOOL fieldCovered(void) {
               detail:[NSString stringWithFormat:@"clip %@ the field, cover %@", motion ? @"on" : @"not on", self->_covers.layer.mask ? @"hidden" : @"shown"]];
         CGFloat seamAt = round(clip.frame.size.height * 0.9);
         BOOL footDown = foot && fabs(foot.frame.origin.y - seamAt) < 1 && CGRectGetMaxY(foot.frame) >= self.window.bounds.size.height
-            && foot.contents && foot.contentsRect.size.height < 0.05 && CGRectGetMaxY(foot.contentsRect) > 0.999;
+            && foot.backgroundColor && CGColorGetAlpha(foot.backgroundColor) == 1;
         [self expect:footDown step:@"the foot"
-              detail:[NSString stringWithFormat:@"clip %@, foot %@ from rows %@", NSStringFromCGRect(clip.frame), NSStringFromCGRect(foot.frame), NSStringFromCGRect(foot.contentsRect)]];
+              detail:[NSString stringWithFormat:@"clip %@, foot %@, opaque mean color %@",
+                      NSStringFromCGRect(clip.frame), NSStringFromCGRect(foot.frame),
+                      foot.backgroundColor ? [UIColor colorWithCGColor:foot.backgroundColor] : nil]];
+        NSString *footDetail = @"clip URL unavailable";
+        NSURL *file = ((AVURLAsset *)((AVPlayer *)[motion valueForKey:@"_player"]).currentItem.asset).URL;
+        BOOL meanColor = file && motionFootHasMeanColor(file, &footDetail);
+        [self expect:meanColor step:@"the foot's mean color" detail:footDetail];
         // The poster under the video, so the clip has a picture before its first frame is decoded; and the
         // Fluid field under it held still and, the clip being opaque, hidden.
         CALayer *still = clip.superlayer;

@@ -134,7 +134,12 @@ come late, out of order, or not at all.
   the app between clips, or the store answers with the last one. Then Low Power Mode, which the process is made
   to report (the simulator has none; Reduce Motion takes the same path), takes the clip away for the cover over
   Fluid and gives it back once off, and a track change with the app made to report the background takes the clip
-  away at once, with no fade. The log ends with `motion checks: n of 25 right -- PASS` or `FAIL`.
+  away at once, with no fade. The foot checks retain the seam-to-bottom geometry and require an opaque
+  fill. A synthetic poster with green above its last 3% of rows and equal red/blue halves in those rows
+  checks that the real motion view renders a uniform purple foot (RGBA 128,0,128,255), not stretched
+  columns. `PlayerMotion.x` deliberately averages those rows to avoid vertical streaks (issue #40);
+  requiring cropped image contents on the foot was a stale expectation.
+  The log ends with `motion checks: n of 26 right -- PASS` or `FAIL`.
   `HARNESS_CANVAS_FAILS=n` fails the first n requests for the clip on the way: with 1 the store tries again and
   every check passes, with 2 the clip never comes.
 - `catalog` is Apple Music's catalog (`SGMotionCatalog.m`) behind a stub of its search: the names searched
