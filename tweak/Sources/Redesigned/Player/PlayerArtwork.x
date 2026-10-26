@@ -28,12 +28,6 @@ static NSHashTable<UIView *> *sg_tilts;
 // size, leaving bounds that no longer match the tilt view's, so the cover is not looked for by size again.
 static NSMapTable<UIView *, UIView *> *sg_covers;
 
-static CGFloat currentScale(void) {
-    SPTPlayerState *state = SGPlayerState();
-    if (!state.isPaused) return 1;
-    return SGRReduceMotion() ? 1 : kPausedScale;
-}
-
 // The child of the tilt view the size of the cover.
 static UIView *coverIn(UIView *tilt) {
     UIView *cover = [sg_covers objectForKey:tilt];
@@ -100,7 +94,9 @@ CGRect SGRPlayerCoverFrameIn(UIView *host) {
 }
 
 CGFloat SGRPlayerCoverScale(void) {
-    return currentScale();
+    SPTPlayerState *state = SGPlayerState();
+    if (!state.isPaused) return 1;
+    return SGRReduceMotion() ? 1 : kPausedScale;
 }
 
 CGRect SGRPlayerArtworkAreaIn(UIView *host) {
@@ -140,7 +136,7 @@ void SGRPlayerSetCoverHidden(BOOL hidden) {
 #pragma mark - the paused shrink
 
 static void scaleEveryCover(BOOL animated) {
-    CGFloat scale = currentScale();
+    CGFloat scale = SGRPlayerCoverScale();
     NSArray<UIView *> *tilts = sg_tilts.allObjects;
     void (^apply)(void) = ^{
         for (UIView *tilt in tilts) {
@@ -287,10 +283,10 @@ static void watchHold(UIView *tilt) {
     plate.bounds = cover.bounds;
     plate.center = cover.center;
     // The same value an animation in flight is heading to, so a layout pass never cuts one short.
-    scaleCover(tilt, currentScale());
+    scaleCover(tilt, SGRPlayerCoverScale());
 
     static dispatch_once_t once;
-    dispatch_once(&once, ^{ SGLog(@"redesign player: cover %@ rounded %.0f with a shadow plate, scale %.2f", NSStringFromClass(cover.class), SGRRadiusArtwork, currentScale()); });
+    dispatch_once(&once, ^{ SGLog(@"redesign player: cover %@ rounded %.0f with a shadow plate, scale %.2f", NSStringFromClass(cover.class), SGRRadiusArtwork, SGRPlayerCoverScale()); });
 }
 %end
 

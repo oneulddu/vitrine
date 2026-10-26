@@ -18,6 +18,10 @@ NSString *SGURIString(id uri);
 // Stops as soon as `limit` tracks qualify; pass NSUIntegerMax for the full list.
 NSArray<SPTPlayerTrack *> *SGPlayerUpcomingTracks(SPTPlayerState *state, NSUInteger limit);
 
+// Spotify's Repeat button's next mode: off, then the playlist or album, then the track, then off again.
+// Sends the commands to `player` in that order and returns what the last one answered.
+id SGPlayerAdvanceRepeat(id<SPTPlayer> player, SPTPlayerOptions *options);
+
 // The first SPTEsperantoPlayer the app added an observer to, weak and nil until then. Unlike
 // SGKaraokePlayer it is there under either look and with the lyrics features off, for the commands
 // that only need a player (the keyboard's). Responds to SPTPlayer's own selectors.

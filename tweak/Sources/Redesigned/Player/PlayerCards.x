@@ -17,27 +17,13 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Player.h"
 
-// Whether the cell's content is the player's card list, remembered per content class.
-static BOOL isPlayerCard(UIView *content) {
-    static NSMutableSet<Class> *yes, *no;
-    if (!yes) {
-        yes = [NSMutableSet set];
-        no = [NSMutableSet set];
-    }
-    Class cls = object_getClass(content);
-    if (!cls || [no containsObject:cls]) return NO;
-    if ([yes containsObject:cls]) return YES;
-    BOOL player = [NSStringFromClass(cls) containsString:@"NowPlaying_ScrollAPI"];
-    [(player ? yes : no) addObject:cls];
-    return player;
-}
-
+// Whether the cell's content is the player's card list.
 %hook _TtC12Element_List18CollectionViewCell
 - (UICollectionViewLayoutAttributes *)preferredLayoutAttributesFittingAttributes:(UICollectionViewLayoutAttributes *)attributes {
     UICollectionViewLayoutAttributes *result = %orig;
     UIView *cell = (UIView *)self;
     UIView *content = cell.subviews.firstObject;
-    if (!content || !isPlayerCard(content)) return result;
+    if (!content || !SGClassNamed(object_getClass(content), @"NowPlaying_ScrollAPI")) return result;
     result.size = CGSizeMake(result.size.width, 0);
     cell.clipsToBounds = YES;
 

@@ -396,14 +396,7 @@ static void runAction(NSString *action) {
     } else if ([name isEqualToString:@"shuffle"]) {
         result = [player setShufflingContext:!state.options.shufflingContext];
     } else if ([name isEqualToString:@"repeat"]) {
-        // Off, then the playlist or album, then the track, then off again, the way Spotify's button goes.
-        switch (repeatModeOf(state.options)) {
-            case 0: result = [player setRepeatingContext:YES]; break;
-            case 1: result = [player setRepeatingTrack:YES]; break;
-            default:
-                [player setRepeatingTrack:NO];
-                result = [player setRepeatingContext:NO];
-        }
+        result = SGPlayerAdvanceRepeat(player, state.options);
     } else if ([name isEqualToString:@"timer"]) {
         if ([value isEqualToString:@"cancel"]) SGSetSleepTimer(SGSleepTimerOff, 0);
         else if ([value isEqualToString:@"track"]) SGSetSleepTimer(SGSleepTimerEndOfTrack, 0);

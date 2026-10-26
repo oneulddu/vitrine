@@ -227,15 +227,7 @@ static BOOL perform(SGHeadAction action) {
             [player setShufflingContext:!state.options.shufflingContext];
             return YES;
         case SGHeadActionRepeat:
-            // Off, then the playlist or album, then the track, then off again, the way Spotify's button goes.
-            if (state.options.repeatingTrack) {
-                [player setRepeatingTrack:NO];
-                [player setRepeatingContext:NO];
-            } else if (state.options.repeatingContext) {
-                [player setRepeatingTrack:YES];
-            } else {
-                [player setRepeatingContext:YES];
-            }
+            SGPlayerAdvanceRepeat(player, state.options);
             return YES;
         default:
             return NO;

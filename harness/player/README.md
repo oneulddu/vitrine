@@ -9,6 +9,15 @@ The Logos observer hooks and UIKit are not compiled. Checks cover malformed stat
 values, track filtering, URI forms (including empty strings), ordering, duplicates, the
 50-row early stop and an unlimited list. Temporary outputs are removed on exit.
 
+## Repeat transitions without a simulator
+
+Run `sh harness/player/repeat-check.sh` from the repository root. It extracts
+`SGPlayerAdvanceRepeat` from the current `PlayerState.x` and runs it against a double that records
+each command in order and answers with its own token. Checks cover all four flag combinations
+(off → context, context → track, track → off then context), that the track flag wins when both are
+set, that the track is cleared before the context, and that the caller gets the last command's answer
+(including nil for no player). Temporary outputs are removed on exit.
+
 ## Landscape title notifications without a simulator
 
 From the repository root on an Apple Silicon Mac with Xcode and Theos:

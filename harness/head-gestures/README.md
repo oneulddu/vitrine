@@ -23,7 +23,8 @@ The traces are synthetic. No recording from real AirPods has been run through it
 
 The real `HeadGestures.x` (through Logos), its settings page, its teaching sheet and the detector, with Spotify's
 player and collection platform stood in for and `CMHeadphoneMotionManager`'s start and stop taken over, so made-up
-motion reaches the handler on the manager's own queue. It checks that nothing listens until the switch is on, the
+motion reaches the handler on the manager's own queue. The Repeat action's transition is the tweak's own
+`SGPlayerAdvanceRepeat`, lifted out of `Shared/Player/PlayerState.x` by `sim/build.sh`. It checks that nothing listens until the switch is on, the
 pull-downs read Like and Next track and offer the nine actions, a double nod adds the playing track with Spotify's
 toast, a shake skips, an episode is not saved, and then each action through the nod's pull-down sends its player
 command: back and forward 15 s (forward stopping at the end), pause, next, previous, shuffle on and off, repeat

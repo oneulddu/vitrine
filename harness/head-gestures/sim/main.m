@@ -396,7 +396,7 @@ static Step waitFor(double seconds) {
         },
         until(^BOOL { return ![[self rowAt:2 section:2].value() isEqualToString:@"Listening…"]; }),
         ^BOOL {
-            check([[self rowAt:2 section:2].value() isEqualToString:@"Double nod"], [NSString stringWithFormat:@"Try it picked up %@", [self rowAt:2 section:2].value()]);
+            check([[self rowAt:2 section:2].value() isEqualToString:@"Nod twice"], [NSString stringWithFormat:@"Try it picked up %@", [self rowAt:2 section:2].value()]);
             check(sg_calls.count == 0, [NSString stringWithFormat:@"and liked nothing: %@", [sg_calls componentsJoinedByString:@", "]]);
             [self tapRow:2 section:2];
             shake(0.21, 2.5);
@@ -404,7 +404,7 @@ static Step waitFor(double seconds) {
         },
         until(^BOOL { return ![[self rowAt:2 section:2].value() isEqualToString:@"Listening…"]; }),
         ^BOOL {
-            check([[self rowAt:2 section:2].value() isEqualToString:@"Shake"], [NSString stringWithFormat:@"Try it picked up %@", [self rowAt:2 section:2].value()]);
+            check([[self rowAt:2 section:2].value() isEqualToString:@"Head shake"], [NSString stringWithFormat:@"Try it picked up %@", [self rowAt:2 section:2].value()]);
             check(sg_calls.count == 0, [NSString stringWithFormat:@"and skipped nothing: %@", [sg_calls componentsJoinedByString:@", "]]);
             [self tapRow:2 section:2];
             hold(2);
@@ -463,7 +463,7 @@ static Step waitFor(double seconds) {
         },
         waitFor(1.5),
         ^BOOL {
-            check([[self teachText:@"heading"] isEqualToString:@"Double nod"], [NSString stringWithFormat:@"the sheet asks for nods first: %@", [self teachText:@"heading"]]);
+            check([[self teachText:@"heading"] isEqualToString:@"Nod twice"], [NSString stringWithFormat:@"the sheet asks for nods first: %@", [self teachText:@"heading"]]);
             check([[self teachCount] isEqualToString:@"0 of 5"], [NSString stringWithFormat:@"none yet: %@", [self teachCount]]);
             self.feeds = [@[
                 ^{ doubleNod(0.35, 0.4); },
@@ -494,7 +494,7 @@ static Step waitFor(double seconds) {
             check(SGInt(SGKeyHeadNod, 0) == 0, @"nothing stored before five");
             return YES;
         },
-        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Shake"]; }),
+        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Shake your head"]; }),
         ^BOOL {
             sg_nodBefore = SGInt(SGKeyHeadNod, 0);
             check(sg_nodBefore > 0, [NSString stringWithFormat:@"five nods in, the nod is stored before the shakes: %ld", (long)sg_nodBefore]);
@@ -628,7 +628,7 @@ static Step waitFor(double seconds) {
         __block double t = 0;
         [NSTimer scheduledTimerWithTimeInterval:0.04 repeats:YES block:^(NSTimer *timer) {
             t += 0.04;
-            BOOL nodding = [[self teachText:@"heading"] isEqualToString:@"Double nod"];
+            BOOL nodding = [[self teachText:@"heading"] isEqualToString:@"Nod twice"];
             double phase = fmod(t, 1.9);
             if (nodding) {
                 double s = phase < 0.9 ? sin(M_PI * phase / 0.45) : 0;

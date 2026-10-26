@@ -7,10 +7,25 @@ OUT=${OUT:-$(dirname "$0")/../build/sim}
 mkdir -p "$OUT/gen" "$OUT/HeadGesturesSim.app"
 "$THEOS/bin/logos.pl" -c generator=internal "$SRC/Shared/HeadGestures/HeadGestures.x" > "$OUT/gen/HeadGestures.m"
 
+# The repeat transition as PlayerState.x has it, so HeadGestures.x links the real one; the Logos observer
+# hooks in that file are not compiled here (main.m stands in for SGPlayer, the state and the observers).
+python3 - "$SRC/Shared/Player/PlayerState.x" "$OUT/gen/player-state-repeat.inc" <<'PY'
+import pathlib
+import re
+import sys
+
+source = pathlib.Path(sys.argv[1]).read_text()
+name = "SGPlayerAdvanceRepeat"
+matches = re.findall(r"^[^\n]*\b" + name + r"\([^\n]*\) \{\n.*?^\}", source, re.M | re.S)
+if len(matches) != 1:
+    raise SystemExit(f"expected one complete definition of {name}, found {len(matches)}")
+pathlib.Path(sys.argv[2]).write_text(matches[0] + "\n")
+PY
+
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O0 \
-    -I"$SRC" -I"$SRC/Shared/HeadGestures" -isysroot "$SDK" -Wall -Werror -Wno-deprecated-declarations \
-    "$(dirname "$0")/main.m" "$(dirname "$0")/../../scene.m" "$OUT/gen/HeadGestures.m" \
+    -I"$SRC" -I"$SRC/Shared/HeadGestures" -I"$OUT/gen" -isysroot "$SDK" -Wall -Werror -Wno-deprecated-declarations \
+    "$(dirname "$0")/main.m" "$(dirname "$0")/player-state-repeat.m" "$(dirname "$0")/../../scene.m" "$OUT/gen/HeadGestures.m" \
     "$SRC"/Shared/HeadGestures/HeadGesturesSettings.m "$SRC"/Shared/HeadGestures/HeadGesturesTeach.m \
     "$SRC"/Shared/HeadGestures/SGHeadDetector.m \
     "$SRC"/Settings/SGPage.m "$SRC"/Settings/SGPageStyle.m "$SRC"/Settings/SGModPage.m "$SRC"/Settings/SGSettingsSearch.m "$SRC"/Settings/SGGlowSwitch.m \

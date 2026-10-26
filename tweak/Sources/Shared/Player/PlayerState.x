@@ -20,6 +20,17 @@ NSArray<SPTPlayerTrack *> *SGPlayerUpcomingTracks(SPTPlayerState *state, NSUInte
     return tracks;
 }
 
+// Returns the last command's answer: while repeating the track it is the context command, else the one made.
+id SGPlayerAdvanceRepeat(id<SPTPlayer> player, SPTPlayerOptions *options) {
+    // Off, then the playlist or album, then the track, then off again, the way Spotify's button goes.
+    if (options.repeatingTrack) {
+        [player setRepeatingTrack:NO];
+        return [player setRepeatingContext:NO];
+    }
+    if (options.repeatingContext) return [player setRepeatingTrack:YES];
+    return [player setRepeatingContext:YES];
+}
+
 static NSHashTable<id<SGPlayerStateObserver>> *sg_stateObservers;
 static SPTPlayerState *sg_playerState;
 // The first player seen, weak: the app owns it.

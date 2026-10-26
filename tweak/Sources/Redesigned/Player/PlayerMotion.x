@@ -497,11 +497,6 @@ static void cover(BOOL covering) {
     SGRPlayerField().covered = covering;
 }
 
-// The Fluid field under a clip holds still, as it does for a paused song (PlayerField.x): the clip covers it.
-static void holdField(void) {
-    SGRPlayerHoldField();
-}
-
 // The mask's opacity to `opacity`, from where it is drawn now, over the clip's own fade. The frame reaches a
 // few covers past the list's bounds either way, which move as the list scrolls: it counts only during a fade,
 // since at 0 the mask hides everything and at 1 it comes off.
@@ -696,7 +691,8 @@ static void clear(BOOL animated) {
     else [inCover removeFromSuperview];
     // Uncovered before the clip starts to fade, so the field is there under it.
     cover(NO);
-    holdField();
+    // The Fluid field under a clip holds still, as it does for a paused song (PlayerField.x): the clip covers it.
+    SGRPlayerHoldField();
     animated = animated && seen(old);
     setCoverShown(YES, animated);
     if (animated) [old disappear:^{ [old removeFromSuperview]; }];
@@ -746,7 +742,7 @@ static void show(NSString *track, NSURL *file) {
         sg_motionFile = file;
         sg_motionPoster = poster;
         layOut();
-        holdField();
+        SGRPlayerHoldField();
         [sg_motion setBlurred:SGRPlayerLyricsOpen() animated:NO];
         BOOL animated = seen(sg_motion);
         [motion appear:animated then:^{
