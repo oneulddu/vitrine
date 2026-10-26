@@ -96,21 +96,8 @@ static BOOL timesWords(NSDictionary *record) {
         !([record[@"instrumental"] isKindOfClass:NSNumber.class] && [record[@"instrumental"] boolValue]);
 }
 
-static SGLyricsResult *syncedResult(NSArray<SGKaraokeLine *> *lines) {
-    if (!lines) return nil;
-    SGLyricsResult *result = [SGLyricsResult new];
-    result.synced = YES;
-    result.karaokeLines = lines;
-    NSArray<NSNumber *> *starts;
-    NSArray<NSString *> *texts;
-    SGLyricsPageLines(lines, &starts, &texts);
-    result.starts = starts;
-    result.texts = texts;
-    return result;
-}
-
 SGLyricsResult *SGLyricsLRCResult(NSString *lrc) {
-    return syncedResult([lrc isKindOfClass:NSString.class] ? linesFromLRC(lrc) : nil);
+    return SGLyricsResultWithLines([lrc isKindOfClass:NSString.class] ? linesFromLRC(lrc) : nil, nil);
 }
 
 SGLyricsResult *SGLyricsPlainResult(NSArray<NSString *> *rows) {
@@ -135,9 +122,8 @@ static SGLyricsResult *resultFrom(NSDictionary *record, NSArray<SGKaraokeLine *>
         result = [SGLyricsResult new];
         result.instrumental = YES;
     } else {
-        result = syncedResult(wordLines);
-        if (result) result.wordTimed = YES;
-        else {
+        result = SGLyricsResultWithLines(wordLines, nil);
+        if (!result) {
             result = SGLyricsLRCResult(record[@"syncedLyrics"]);
         }
         if (!result.karaokeLines.count) result = SGLyricsPlainTextResult(record[@"plainLyrics"], @"LRCLIB");

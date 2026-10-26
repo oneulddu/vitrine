@@ -37,11 +37,9 @@ void SGRPlayerLandscapeLinesChanged(void) {}
 #import "player-lyrics-watcher.inc"
 #undef dispatch_after
 // Exercise the production hook decisions and completion paths, without installing Logos hooks.
-#define timingName hookTimingName
 #define completed hookCompleted
 #import "lyrics-hook.inc"
 #undef completed
-#undef timingName
 
 // Exercise the real Spicy provider through the real walk, with only transport and Keychain mocked.
 static void (^sg_spicyReply)(id, NSHTTPURLResponse *);
@@ -1392,8 +1390,38 @@ static void checkTTMLResult(void) {
     puts("TTML result: supplied timing, parser order, page projection and nil answers passed");
 }
 
+static void checkLRCProjection(SGLyricsResult *result, NSArray *lineStarts, NSArray *starts, NSArray *texts, BOOL wordTimed) {
+    CHECK(result && result.synced && result.wordTimed == wordTimed);
+    CHECK([[result.karaokeLines valueForKey:@"start"] isEqual:lineStarts]);
+    CHECK([result.starts isEqual:starts]);
+    CHECK([result.texts isEqual:texts]);
+}
+
+static void checkLRCProjectionPaths(void) {
+    checkLRCProjection(SGLyricsLRCResult(@"[00:05]B\n[00:01]A\n[00:01.5]\n[00:05.5]\n"),
+        @[@1000, @5000], @[@1000, @1425, @5000, @5425], @[@"A", @"♪", @"B", @""], NO);
+    // Enhanced-LRC word tags remain literal text, not word timing.
+    checkLRCProjection(SGLyricsLRCResult(@"[00:01]<00:01.00>A <00:01.50>B\n[00:02]\n"),
+        @[@1000], @[@1000, @2000], @[@"<00:01.00>A <00:01.50>B", @""], NO);
+    NSString *file = @"version: '1.0'\nlines:\n"
+        "- text: B\n  start_ms: 5000\n  end_ms: 6000\n  words:\n"
+        "  - text: B\n    start_ms: 5000\n    end_ms: 6000\n"
+        "- text: A\n  start_ms: 1000\n  end_ms: 1500\n";
+    checkLRCProjection(SGLrcLibRecordResult(@{@"hasWordSync": @YES, @"lyricsfile": file}),
+        @[@1000, @5000], @[@1000, @1425, @5000, @6000], @[@"A", @"♪", @"B", @""], YES);
+    CHECK(!SGLyricsLRCResult(nil));
+    for (NSString *empty in @[@"", @" \n", @"[00:01]\n[00:02]♪"]) CHECK(!SGLyricsLRCResult(empty));
+    CHECK(!SGLrcLibRecordResult(nil));
+    CHECK(!SGLrcLibRecordResult(@{@"hasWordSync": @YES}));
+    for (NSString *empty in @[@"", @"version: '1.0'\nlines: []\n"]) {
+        CHECK(!SGLrcLibRecordResult(@{@"hasWordSync": @YES, @"lyricsfile": empty}));
+    }
+    puts("LRCLIB projection: line timing, literal word tags, mixed Lyricsfile timing and empty inputs passed");
+}
+
 int main(void) {
     @autoreleasepool {
+        checkLRCProjectionPaths();
         checkTTMLResult();
         checkNetEaseURLs();
         // A separate suite makes the default writes real without touching the app's or the user's.

@@ -352,6 +352,14 @@ SGKaraokeTiming SGKaraokeLinesTiming(NSArray<SGKaraokeLine *> *lines) {
     return finest;
 }
 
+NSString *SGKaraokeTimingName(NSArray<SGKaraokeLine *> *lines) {
+    switch (SGKaraokeLinesTiming(lines)) {
+        case SGKaraokeTimingWords: return @"word timed";
+        case SGKaraokeTimingLine: return @"line timed";
+        default: return @"untimed";
+    }
+}
+
 // Some sources list a line out of its place in time: a chorus written once with its repeats after it,
 // or one voice's lines listed after the other's. Everything that reads lines takes them in time order.
 NSArray<SGKaraokeLine *> *SGKaraokeInTimeOrder(NSArray<SGKaraokeLine *> *lines) {

@@ -167,14 +167,6 @@ static NSData *pageBody(SGLyricsResult *chain, NSData *colours) {
     return SGPBSerialize(@[SGPBBytes(1, SGPBSerialize(lyrics)), SGPBBytes(2, colours ?: defaultColours())]);
 }
 
-static NSString *timingName(NSArray<SGKaraokeLine *> *lines) {
-    switch (SGKaraokeLinesTiming(lines)) {
-        case SGKaraokeTimingWords: return @"word timed";
-        case SGKaraokeTimingLine: return @"line timed";
-        default: return @"untimed";
-    }
-}
-
 // Which lines Spotify's page and the lyrics view get, the view's kept and credited. The body returned
 // is the page's when the sources' lines replace Spotify's, nil when they do not.
 static NSData *decide(NSString *track, SGLyricsResult *chain, NSData *spotifyBody, BOOL donor, NSData *colours) {
@@ -205,7 +197,7 @@ static NSData *decide(NSString *track, SGLyricsResult *chain, NSData *spotifyBod
 
     NSString *provider = chain.provider.length ? chain.provider : kUnnamedProvider;
     NSString *pageGets = page ? [NSString stringWithFormat:@"%@'s lines", provider] : spotifyBody ? @"Spotify's own" : @"none";
-    NSString *viewGets = viewLines ? [NSString stringWithFormat:@"%@'s lines, %@", viewLines == spotifyLines ? @"Spotify" : provider, timingName(viewLines)] : @"nothing";
+    NSString *viewGets = viewLines ? [NSString stringWithFormat:@"%@'s lines, %@", viewLines == spotifyLines ? @"Spotify" : provider, SGKaraokeTimingName(viewLines)] : @"nothing";
     SGLog(@"lyrics: page of %@ gets %@; the lyrics view gets %@", track, pageGets, viewGets);
     return page;
 }

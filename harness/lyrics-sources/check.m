@@ -641,8 +641,22 @@ static void checkMalformedTiming(void) {
     puts("timing: malformed JSON, expanded stamps, ordered estimation and bounded piece clocks passed");
 }
 
+static void checkTimingNames(void) {
+    SGKaraokeLine *word = [SGKaraokeLine new], *line = [SGKaraokeLine new], *plain = [SGKaraokeLine new];
+    word.timing = SGKaraokeTimingWords;
+    line.timing = SGKaraokeTimingLine;
+    plain.timing = SGKaraokeTimingNone;
+    CHECK([SGKaraokeTimingName(@[plain, line, word]) isEqualToString:@"word timed"]);
+    CHECK([SGKaraokeTimingName(@[plain, line]) isEqualToString:@"line timed"]);
+    CHECK([SGKaraokeTimingName(@[plain]) isEqualToString:@"untimed"]);
+    CHECK([SGKaraokeTimingName(@[]) isEqualToString:@"untimed"]);
+    CHECK([SGKaraokeTimingName(nil) isEqualToString:@"untimed"]);
+    puts("timing diagnostic: word, line, untimed, empty and nil names passed");
+}
+
 int main(int argc, char **argv) {
     @autoreleasepool {
+        checkTimingNames();
         checkMalformedTiming();
         checkVoiceScaling();
         // Thai, Lao, Khmer and Burmese, long lines with no space, and Thai among Latin and brackets.

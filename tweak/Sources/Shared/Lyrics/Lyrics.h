@@ -183,6 +183,8 @@ NSArray<SGKaraokeLine *> *SGKaraokeEstimatedLines(NSArray<NSNumber *> *starts, N
 NSArray<SGKaraokeLine *> *SGKaraokeStaticLines(NSArray<NSString *> *texts);
 // The finest timing any of the lines has; SGKaraokeTimingNone for none at all.
 SGKaraokeTiming SGKaraokeLinesTiming(NSArray<SGKaraokeLine *> *lines);
+// Diagnostic text for the finest timing, including "untimed" for no lines.
+NSString *SGKaraokeTimingName(NSArray<SGKaraokeLine *> *lines);
 // The lines in the order they start, lines starting together kept as they came; the array itself when
 // it is in order already, which it nearly always is.
 NSArray<SGKaraokeLine *> *SGKaraokeInTimeOrder(NSArray<SGKaraokeLine *> *lines);

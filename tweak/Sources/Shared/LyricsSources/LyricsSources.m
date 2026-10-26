@@ -479,14 +479,6 @@ static BOOL betterLines(SGLyricsResult *merged, SGLyricsResult *fresh) {
     return !merged.karaokeLines.count || SGKaraokeLinesTiming(fresh.karaokeLines) < SGKaraokeLinesTiming(merged.karaokeLines);
 }
 
-static NSString *timingName(NSArray<SGKaraokeLine *> *lines) {
-    switch (SGKaraokeLinesTiming(lines)) {
-        case SGKaraokeTimingWords: return @"word timed";
-        case SGKaraokeTimingLine: return @"line timed";
-        default: return @"untimed";
-    }
-}
-
 // The same for the text Spotify's own page shows: any text beats none, timed beats untimed.
 static BOOL betterTexts(SGLyricsResult *merged, SGLyricsResult *fresh) {
     if (!fresh.texts.count) return NO;
@@ -613,7 +605,7 @@ static void finish(SGLyricsWalk *walk) {
     }
     SGLog(@"lyrics: %@ ends with %@", trackID, lyrics
           ? [NSString stringWithFormat:@"%lu %@ lines from %@, %lu page lines",
-             (unsigned long)lyrics.karaokeLines.count, timingName(lyrics.karaokeLines),
+             (unsigned long)lyrics.karaokeLines.count, SGKaraokeTimingName(lyrics.karaokeLines),
              lyrics.provider, (unsigned long)lyrics.texts.count]
           : everyoneAsked && failed ? @"nothing, a request failed on the way; not kept, so the next request asks again"
           : everyoneAsked ? @"nothing"
