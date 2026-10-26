@@ -688,12 +688,8 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
 // scrolled toward, by half a screen at most: it opens under the switch that brought it, which may be the page's
 // last row, and a long run of rows does not carry the page far from that switch. A section whose rows all go takes its heading and note with it, and
 // they come back with its first row, so the whole section is faded rather than its rows. Answers whether
-// anything moved; `done` runs once it has, and only then.
-- (BOOL)showRowsThen:(void (^)(void))done {
-    return [self showRows:YES then:done];
-}
-
-// The same, scrolling only when `scroll`: rows that come by themselves do not move the page under the eye.
+// anything moved; `done` runs once it has, and only then. Scrolling happens only when `scroll`: rows that
+// come by themselves do not move the page under the eye.
 - (BOOL)showRows:(BOOL)scroll then:(void (^)(void))done {
     NSArray<NSArray<SGModRow *> *> *next = [self rowsToShow];
     if ([next isEqualToArray:_shown]) return NO;
@@ -749,7 +745,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
 }
 
 - (void)refreshVisibility {
-    [self showRowsThen:nil];
+    [self showRows:YES then:nil];
 }
 
 // The switch row a row waits on, among this page's rows.
@@ -1204,7 +1200,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
     void (^reload)(void) = ^{
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self.tableView reloadData]; });
     };
-    BOOL moved = [self showRowsThen:row.changed ? reload : nil];
+    BOOL moved = [self showRows:YES then:row.changed ? reload : nil];
     // The rows waiting on this switch, directly or through another, stay where they are and fade to their new state.
     NSMutableArray<NSIndexPath *> *waiting = [NSMutableArray array];
     for (NSIndexPath *visible in self.tableView.indexPathsForVisibleRows) {

@@ -7,44 +7,8 @@
 #import "Core/SGCore.h"
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
+#import "Settings/SGModPage.h"
 #import "About.h"
-
-// A row of this page: a line of a changelog, or one of the three at the top that do something.
-@interface SGUpdateRow : NSObject
-@property (nonatomic, copy) NSString *title;
-@property (nonatomic, copy) NSString *subtitle;
-@property (nonatomic, copy) NSString *symbol;
-@property (nonatomic, copy) NSString *key;              // a switch row, on until it is switched off
-@property (nonatomic, copy) NSString *(^value)(void);   // read out on the right, again once a second
-@property (nonatomic, copy) void (^action)(void);
-@end
-
-@interface SGUpdateGroup : NSObject
-@property (nonatomic, copy) NSString *title;
-@property (nonatomic, copy) NSArray<SGUpdateRow *> *rows;
-@end
-
-@implementation SGUpdateRow
-@end
-
-@implementation SGUpdateGroup
-@end
-
-static SGUpdateRow *linkRow(NSString *title, NSString *subtitle, NSString *symbol, NSString *url) {
-    SGUpdateRow *row = [SGUpdateRow new];
-    row.title = title;
-    row.subtitle = subtitle;
-    row.symbol = symbol;
-    row.action = ^{ SGOpenURL(url); };
-    return row;
-}
-
-static SGUpdateGroup *group(NSString *title, NSArray<SGUpdateRow *> *rows) {
-    SGUpdateGroup *section = [SGUpdateGroup new];
-    section.title = title;
-    section.rows = rows;
-    return section;
-}
 
 // "2026-09-18T17:25:02Z" written out, and the empty string for a release GitHub never dated. Every
 // word of the mod's is English, so the month is too, whatever the phone is set to.
@@ -77,7 +41,7 @@ static NSString *longDate(NSString *published) {    // 18 September 2026
 @end
 
 @implementation SGUpdatePageController {
-    NSArray<SGUpdateGroup *> *_groups;
+    NSArray<SGModSection *> *_groups;
     UIView *_intro;
     NSTimer *_ticker;
 }
@@ -124,59 +88,59 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 }
 
 // The three rows at the top, then a section per release and heading: "0.19.0 · Features".
-- (NSArray<SGUpdateGroup *> *)build {
-    NSMutableArray<SGUpdateGroup *> *groups = [NSMutableArray array];
-    SGUpdateRow *check = [SGUpdateRow new];
+- (NSArray<SGModSection *> *)build {
+    NSMutableArray<SGModSection *> *groups = [NSMutableArray array];
+    SGModRow *check = [SGModRow new];
     check.title = SGL(@"settings.mod.update.check_now.title", @"Check now");
     check.symbol = @"arrow.clockwise";
     check.value = ^NSString *{ return SGUpdateStatus(); };
     check.action = ^{ SGCheckForUpdate(YES); };
-    NSMutableArray<SGUpdateRow *> *top = [NSMutableArray arrayWithObject:check];
+    NSMutableArray<SGModRow *> *top = [NSMutableArray arrayWithObject:check];
     SGUpdateRelease *newest = SGUpdateNewestRelease();
     if (SGUpdateVersion() && newest.url.length)
-        [top addObject:linkRow([SGL(@"settings.mod.update.get_version.title_prefix", @"Get ") stringByAppendingString:newest.version],
-                               newest.prerelease ? SGL(@"settings.mod.update.beta.subtitle", @"A beta, on GitHub with its .deb") : SGL(@"settings.mod.update.release.subtitle", @"The release on GitHub, where its .deb is"),
-                               @"arrow.down.circle", newest.url)];
-    if (SGRepoURL) [top addObject:linkRow(SGL(@"settings.mod.update.all_releases.title", @"All releases"), SGL(@"settings.mod.update.all_releases.subtitle", @"Every version, this one and the ones before it"),
-                           @"clock.arrow.circlepath", [SGRepoURL stringByAppendingString:@"/releases"])];
-    [groups addObject:group(nil, top)];
+        [top addObject:SGWithSymbol(SGLinkRow([SGL(@"settings.mod.update.get_version.title_prefix", @"Get ") stringByAppendingString:newest.version],
+                                              newest.prerelease ? SGL(@"settings.mod.update.beta.subtitle", @"A beta, on GitHub with its .deb") : SGL(@"settings.mod.update.release.subtitle", @"The release on GitHub, where its .deb is"),
+                                              newest.url), @"arrow.down.circle")];
+    if (SGRepoURL) [top addObject:SGWithSymbol(SGLinkRow(SGL(@"settings.mod.update.all_releases.title", @"All releases"), SGL(@"settings.mod.update.all_releases.subtitle", @"Every version, this one and the ones before it"),
+                                                         [SGRepoURL stringByAppendingString:@"/releases"]), @"clock.arrow.circlepath")];
+    [groups addObject:SGSection(nil, top)];
 
-    SGUpdateRow *notice = [SGUpdateRow new];
+    SGModRow *notice = [SGModRow new];
     notice.title = SGL(@"settings.mod.update.auto_check.title", @"Auto check updates");
     notice.symbol = @"bell";
     notice.key = SGKeyUpdateNotice;
-    [groups addObject:group(nil, @[notice])];
+    [groups addObject:SGSection(nil, @[notice])];
 
     for (SGUpdateRelease *release in releasesToShow()) {
         NSMutableArray<NSString *> *kinds = [NSMutableArray array];
-        NSMutableDictionary<NSString *, NSMutableArray<SGUpdateRow *> *> *byKind = [NSMutableDictionary dictionary];
+        NSMutableDictionary<NSString *, NSMutableArray<SGModRow *> *> *byKind = [NSMutableDictionary dictionary];
         for (SGUpdateChange *change in release.changes) {
-            NSMutableArray<SGUpdateRow *> *rows = byKind[change.kind];
+            NSMutableArray<SGModRow *> *rows = byKind[change.kind];
             if (!rows) {
                 rows = [NSMutableArray array];
                 byKind[change.kind] = rows;
                 [kinds addObject:change.kind];
             }
-            SGUpdateRow *row = [SGUpdateRow new];
+            SGModRow *row = [SGModRow new];
             row.title = change.text;
             if (change.url.length) row.action = ^{ SGOpenURL(change.url); };
             [rows addObject:row];
         }
         NSString *date = shortDate(release.date);
         if (!kinds.count) {
-            SGUpdateRow *empty = [SGUpdateRow new];
+            SGModRow *empty = [SGModRow new];
             empty.title = SGL(@"settings.mod.update.empty.title", @"Nothing written down");
             empty.subtitle = release.url.length ? SGL(@"settings.mod.update.empty.subtitle", @"Tap to read the release on GitHub") : nil;
             if (release.url.length) empty.action = ^{ SGOpenURL(release.url); };
-            [groups addObject:group([NSString stringWithFormat:@"%@%@", release.version,
-                                     date.length ? [@" · " stringByAppendingString:date] : @""], @[empty])];
+            [groups addObject:SGSection([NSString stringWithFormat:@"%@%@", release.version,
+                                         date.length ? [@" · " stringByAppendingString:date] : @""], @[empty])];
             continue;
         }
         [kinds enumerateObjectsUsingBlock:^(NSString *kind, NSUInteger i, BOOL *stop) {
             // The date goes on the first heading of a release, so several releases read as dated blocks.
             NSString *title = [NSString stringWithFormat:@"%@ · %@%@", release.version, kind,
                                i == 0 && date.length ? [@" · " stringByAppendingString:date] : @""];
-            [groups addObject:group(title, byKind[kind])];
+            [groups addObject:SGSection(title, byKind[kind])];
         }];
     }
     return groups;
@@ -215,7 +179,7 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 
 - (void)readStatus {
     for (UITableViewCell *cell in self.tableView.visibleCells) {
-        SGUpdateRow *row = [self rowAt:[self.tableView indexPathForCell:cell]];
+        SGModRow *row = [self rowAt:[self.tableView indexPathForCell:cell]];
         UILabel *label = (UILabel *)cell.accessoryView;
         if (!row.value || ![label isKindOfClass:UILabel.class]) continue;
         label.text = row.value();
@@ -235,7 +199,7 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
                     animations:^{ [self.tableView reloadData]; } completion:nil];
 }
 
-- (SGUpdateRow *)rowAt:(NSIndexPath *)path {
+- (SGModRow *)rowAt:(NSIndexPath *)path {
     if (!path) return nil;
     return _groups[(NSUInteger)path.section].rows[(NSUInteger)path.row];
 }
@@ -266,7 +230,7 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 }
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
-    SGUpdateRow *row = [self rowAt:path];
+    SGModRow *row = [self rowAt:path];
     UITableViewCell *cell = SGDequeueCell(table, row.symbol ? @"tiled" : @"line");
     SGFillCell(cell, row.title, row.subtitle, nil, nil);
     if (row.symbol) {
@@ -300,7 +264,7 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 - (void)toggled:(UISwitch *)toggle {
     UIView *view = toggle;
     while (view && ![view isKindOfClass:UITableViewCell.class]) view = view.superview;
-    SGUpdateRow *row = [self rowAt:[self.tableView indexPathForCell:(UITableViewCell *)view]];
+    SGModRow *row = [self rowAt:[self.tableView indexPathForCell:(UITableViewCell *)view]];
     if (row.key) SGSetEnabled(row.key, toggle.on);
 }
 
@@ -310,7 +274,7 @@ static NSArray<SGUpdateRelease *> *releasesToShow(void) {
 
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:YES];
-    SGUpdateRow *row = [self rowAt:path];
+    SGModRow *row = [self rowAt:path];
     if (row.action) row.action();
     // Check now goes gray to "checking…" the moment it is tapped rather than on the next tick.
     if (row.value) [self readStatus];
