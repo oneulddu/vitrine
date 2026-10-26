@@ -6,8 +6,8 @@ linked with the real `Core/`.
 
     THEOS=$HOME/theos ./build.sh
     xcrun simctl install <udid> build/NativePlayerHarness.app
-    xcrun simctl launch <udid> com.vojta.nativeplayerharness
-    xcrun simctl spawn <udid> log show --last 1m --style compact --predicate 'process == "NativePlayerHarness"' | grep harness
+    xcrun simctl launch --console <udid> com.vojta.nativeplayerharness
+    xcrun simctl launch --console <udid> com.vojta.nativeplayerharness preview-hidden
 
 `SRC=<another checkout>/tweak/Sources OUT=<dir> ./build.sh` builds it against other sources, for example
 main before the fixes, to see the checks fail.
@@ -21,8 +21,11 @@ It checks, a line each with `ok` or `WRONG`:
   no room and the cover is the centered square of the view it sits in, again after a later pass of
   Spotify's; a small cover and a tilt view outside the player's cover cell are left alone.
 
-The log ends with `native player checks: n of 11 right -- PASS` or `FAIL`. On main before the fixes it
-reads 7 of 11.
+Run both launches: the default checks scrubbing and the shown preview (`6 of 6 right -- PASS`);
+`preview-hidden` checks the hidden preview and cover sizing (`5 of 5 right -- PASS`).
+Each logs its result and exits 0 on success or 1 on failure, without crashing.
+The preview preference is set before the product's constructors, which snapshot it for the launch.
+Changing it between checks in one process cannot test both settings: switches require a restart.
 
 What it does not cover: Spotify's real Auto Layout in the cover cell, its open and close transition, and
 a real touch on the slider.

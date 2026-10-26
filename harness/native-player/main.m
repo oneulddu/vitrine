@@ -67,8 +67,8 @@ static void check(NSString *step, BOOL ok, NSString *detail) {
     NSLog(@"[harness] %@: %@ -- %@", step, detail ?: @"", ok ? @"ok" : @"WRONG");
 }
 
-static void hideLyricsPreview(BOOL hidden) {
-    [NSUserDefaults.standardUserDefaults setBool:hidden forKey:SGHideLyricsInline];
+static BOOL hiddenPreviewRun(void) {
+    return [NSProcessInfo.processInfo.arguments containsObject:@"preview-hidden"];
 }
 
 static void runScrubChecks(UIWindow *window) {
@@ -132,19 +132,20 @@ static void runCoverChecks(UIWindow *window) {
     CGRect square = CGRectMake(0, round((430 - 354) / 2.0), 354, 354);
     UIView *tilt, *preview;
 
-    hideLyricsPreview(NO);
-    UIView *cell = coverCell(window, cellClass, roomFrame, &tilt, &preview);
-    CGRect before = tilt.frame, previewBefore = preview.frame;
-    [cell setNeedsLayout];
-    [cell layoutIfNeeded];
-    [tilt setNeedsLayout];
-    [tilt layoutIfNeeded];
-    check(@"cover, preview shown, untouched", CGRectEqualToRect(tilt.frame, before) && CGRectEqualToRect(preview.frame, previewBefore)
-          && !preview.hidden, [NSString stringWithFormat:@"cover %@, preview %@", NSStringFromCGRect(tilt.frame), NSStringFromCGRect(preview.frame)]);
-    [cell removeFromSuperview];
+    if (!hiddenPreviewRun()) {
+        UIView *cell = coverCell(window, cellClass, roomFrame, &tilt, &preview);
+        CGRect before = tilt.frame, previewBefore = preview.frame;
+        [cell setNeedsLayout];
+        [cell layoutIfNeeded];
+        [tilt setNeedsLayout];
+        [tilt layoutIfNeeded];
+        check(@"cover, preview shown, untouched", CGRectEqualToRect(tilt.frame, before) && CGRectEqualToRect(preview.frame, previewBefore)
+              && !preview.hidden, [NSString stringWithFormat:@"cover %@, preview %@", NSStringFromCGRect(tilt.frame), NSStringFromCGRect(preview.frame)]);
+        [cell removeFromSuperview];
+        return;
+    }
 
-    hideLyricsPreview(YES);
-    cell = coverCell(window, cellClass, roomFrame, &tilt, &preview);
+    UIView *cell = coverCell(window, cellClass, roomFrame, &tilt, &preview);
     [cell setNeedsLayout];
     [cell layoutIfNeeded];
     check(@"cover, preview hidden takes no room", preview.hidden && CGSizeEqualToSize(preview.frame.size, CGSizeZero)
@@ -162,7 +163,7 @@ static void runCoverChecks(UIWindow *window) {
 
     // The bar's 40pt cover, and a tilt view outside the player's cover cell (an album header), stay as they are.
     cell = coverCell(window, cellClass, CGRectMake(16, 16, 40, 52), &tilt, &preview);
-    before = tilt.frame;
+    CGRect before = tilt.frame;
     [cell setNeedsLayout];
     [cell layoutIfNeeded];
     check(@"cover, a small one untouched", CGRectEqualToRect(tilt.frame, before), NSStringFromCGRect(tilt.frame));
@@ -173,7 +174,6 @@ static void runCoverChecks(UIWindow *window) {
     [tilt layoutIfNeeded];
     check(@"cover, outside the cover cell untouched", CGRectEqualToRect(tilt.frame, before), NSStringFromCGRect(tilt.frame));
     [cell removeFromSuperview];
-    hideLyricsPreview(NO);
 }
 
 #pragma mark - app
@@ -261,10 +261,11 @@ static void runArtworkChecks(UIWindow *window) {
             runArtworkChecks(self.window);
             exit(0);
         }
-        runScrubChecks(self.window);
+        if (!hiddenPreviewRun()) runScrubChecks(self.window);
         runCoverChecks(self.window);
         NSLog(@"[harness] native player checks: %lu of %lu right -- %@", (unsigned long)sg_right, (unsigned long)sg_checks,
               sg_right == sg_checks ? @"PASS" : @"FAIL");
+        exit(sg_right == sg_checks ? 0 : 1);
     });
     return YES;
 }
@@ -273,6 +274,8 @@ static void runArtworkChecks(UIWindow *window) {
 // Before every %ctor, so the native look's gate reads on.
 __attribute__((constructor(101))) static void sg_harnessDefaults(void) {
     [NSUserDefaults.standardUserDefaults setBool:NO forKey:@"spotifyglass.redesign"];
+    // PlayerDeclutter snapshots this switch in its constructor, just as a real launch does.
+    [NSUserDefaults.standardUserDefaults setBool:hiddenPreviewRun() forKey:SGHideLyricsInline];
 }
 
 int main(int argc, char *argv[]) {
