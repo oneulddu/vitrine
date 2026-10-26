@@ -1,7 +1,7 @@
 #import "LyricsStore.h"
 #import "Lyrics.h"
 #import "Core/SGLog.h"
-#import <CommonCrypto/CommonDigest.h>
+#import "Core/SGFileHash.h"
 #import <math.h>
 
 // A corrupt/cyclic record cannot exhaust the stack. Real lyrics have at most a few
@@ -129,10 +129,7 @@ static NSURL *directory(void) {
 
 static NSURL *fileFor(NSString *track) {
     NSData *bytes = [track dataUsingEncoding:NSUTF8StringEncoding];
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(bytes.bytes, (CC_LONG)bytes.length, digest);
-    NSMutableString *key = [NSMutableString stringWithCapacity:CC_SHA256_DIGEST_LENGTH * 2];
-    for (NSUInteger i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [key appendFormat:@"%02x", digest[i]];
+    NSString *key = SGDataSHA256(bytes);
     return [directory() URLByAppendingPathComponent:[key stringByAppendingPathExtension:@"plist"]];
 }
 

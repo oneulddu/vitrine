@@ -8,7 +8,7 @@
 #import "Settings/SGPageStyle.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "AIServicesInternal.h"
-#import <CommonCrypto/CommonDigest.h>
+#import "Core/SGFileHash.h"
 
 static const NSUInteger kKept = 200;
 // Store-queue ordering stops at delivery to main. A mutation requested meanwhile
@@ -68,11 +68,7 @@ static NSURL *fileFor(NSString *track, NSString *language) {
     if ([name lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > 255 || [track containsString:@"/"] ||
         [track containsString:@"\\"] || [track isEqual:@"."] || [track isEqual:@".."]) {
         NSData *identity = [track dataUsingEncoding:NSUTF8StringEncoding];
-        unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-        CC_SHA256(identity.bytes, (CC_LONG)identity.length, digest);
-        NSMutableString *name = [NSMutableString stringWithString:@"local-hash-"];
-        for (NSUInteger i = 0; i < sizeof(digest); i++) [name appendFormat:@"%02x", digest[i]];
-        track = name;
+        track = [@"local-hash-" stringByAppendingString:SGDataSHA256(identity)];
     }
     return [folder() URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@.json", track, tag]];
 }
@@ -298,10 +294,7 @@ static NSURL *aiFile(NSString *kind, NSString *track, NSString *variant) {
     NSArray *identity = [kind isEqual:@"pronunciation"] && [variant isEqual:@"0"]
         ? @[kind, track, variant, SGLyricsGeminiLanguage()] : @[kind, track, variant];
     NSData *tuple = [NSJSONSerialization dataWithJSONObject:identity options:0 error:nil];
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(tuple.bytes, (CC_LONG)tuple.length, digest);
-    NSMutableString *name = [NSMutableString stringWithCapacity:64];
-    for (NSUInteger i = 0; i < sizeof(digest); i++) [name appendFormat:@"%02x", digest[i]];
+    NSString *name = SGDataSHA256(tuple);
     return [aiFolder() URLByAppendingPathComponent:[name stringByAppendingString:@".json"]];
 }
 static BOOL validAI(id values) {

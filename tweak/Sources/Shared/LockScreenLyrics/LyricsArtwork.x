@@ -15,6 +15,7 @@
 #import <CommonCrypto/CommonDigest.h>
 #import <os/lock.h>
 #import "Core/SGCore.h"
+#import "Core/SGFileHash.h"
 #import "LockScreenLyrics.h"
 #import "SGLyricsClip.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
@@ -134,10 +135,7 @@ static NSCache<NSString *, UIImage *> *sg_previews;
 static NSURL *clipFile(NSString *artworkID) {
     // Local-track identities contain full metadata; only their digest belongs in a filename.
     NSData *data = [artworkID dataUsingEncoding:NSUTF8StringEncoding];
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *name = [NSMutableString string];
-    for (NSUInteger i = 0; i < sizeof(digest); i++) [name appendFormat:@"%02x", digest[i]];
+    NSString *name = SGDataSHA256(data);
     return [folder() URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"mp4"]];
 }
 
@@ -272,11 +270,7 @@ static NSString *lyricsKey(NSArray<SGKaraokeLine *> *lines) {
     for (SGKaraokeLine *line in lines)
         [rows addObject:@[SGKaraokeLineText(line) ?: @"", @(line.start), @(line.end), @(SGKaraokeSungEnd(line))]];
     NSData *data = [NSJSONSerialization dataWithJSONObject:rows options:0 error:nil];
-    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
-    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
-    NSMutableString *key = [NSMutableString string];
-    for (NSUInteger i = 0; i < sizeof(digest); i++) [key appendFormat:@"%02x", digest[i]];
-    return key;
+    return SGDataSHA256(data);
 }
 
 static BOOL currentCoverRequest(NSUInteger generation, NSString *trackID, SGShownTrack *track) {

@@ -1,4 +1,5 @@
 // Included by check.m so the scripted transport and row stand-ins are shared with the earlier checks.
+#import "../sha256-fixture.h"
 static NSArray *aiLines(NSArray *texts) {
     NSMutableArray *lines = [NSMutableArray array];
     for (NSString *text in texts) {
@@ -1007,6 +1008,10 @@ static void checkAIStore(void) {
     NSDictionary *values = @{@"original": @"value", @"": @"", @"한글 😀": @"기록"};
     SGLyricsSaveAI(@"notes", @"../unsafe/track", @"ko-KR", values);
     CHECK([SGLyricsSavedAI(@"notes", @"../unsafe/track", @"ko-KR") isEqual:values]);
+    NSData *identity = [NSJSONSerialization dataWithJSONObject:@[@"notes", @"../unsafe/track", @"ko-KR"] options:0 error:nil];
+    NSURL *legacyAI = [[SGLyricsTestCacheRoot() URLByAppendingPathComponent:@"AI"]
+        URLByAppendingPathComponent:[HarnessLegacySHA256(identity) stringByAppendingPathExtension:@"json"]];
+    CHECK([NSFileManager.defaultManager fileExistsAtPath:legacyAI.path]);
     CHECK(!SGLyricsSavedAI(@"notes", @".._unsafe_track", @"ko-KR"));
     CHECK(!SGLyricsSavedAI(@"pronunciation", @"../unsafe/track", @"ko-KR"));
     CHECK(!SGLyricsSavedAI(@"notes", @"../unsafe/track", @"en"));
@@ -1130,6 +1135,9 @@ static void checkTranslationReplacement(void) {
     SGLyricsSaveTranslation(longLocalID, @"ko", failed);
     SGLyricsSyncSavedTranslation(longLocalID, @"ko", sibling);
     CHECK([sibling[0].translation isEqual:@"긴 제목 번역"]);
+    NSString *legacyName = [NSString stringWithFormat:@"local-hash-%@.ko.json",
+        HarnessLegacySHA256([longLocalID dataUsingEncoding:NSUTF8StringEncoding])];
+    CHECK([NSFileManager.defaultManager fileExistsAtPath:[directory URLByAppendingPathComponent:legacyName].path]);
     CHECK([NSFileManager.defaultManager contentsOfDirectoryAtURL:directory includingPropertiesForKeys:nil options:0 error:nil].count == 1);
     SGLyricsDeleteTranslation(longLocalID, @"ko");
     SGLyricsSyncSavedTranslation(longLocalID, @"ko", sibling);

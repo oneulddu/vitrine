@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "artwork.h"
+#import "../sha256-fixture.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Shared/AnimatedArtwork/SGFluidClip.h"
 #import "Shared/AnimatedArtwork/SGMotionClip.h"
@@ -643,6 +644,12 @@ void artworkChecks(void) {
     check(sameImage(preview(empty), safe), @"coverless lyric preview uses the shared safe backdrop");
     NSURL *emptyFile = video(empty);
     check(emptyFile != nil, @"coverless lyric video is cached on disk");
+    NSData *legacyRows = [NSJSONSerialization dataWithJSONObject:@[@[@"First", @0, @10000, @10000],
+        @[@"Second", @12000, @20000, @20000]] options:0 error:nil];
+    check([name(empty) containsString:[NSString stringWithFormat:@"-%@-", HarnessLegacySHA256(legacyRows)]],
+          @"lyric timing fingerprint preserves its original SHA-256 identity");
+    NSString *legacyClip = [HarnessLegacySHA256([name(empty) dataUsingEncoding:NSUTF8StringEncoding]) stringByAppendingPathExtension:@"mp4"];
+    check([emptyFile.lastPathComponent isEqual:legacyClip], @"lyric clip filename preserves its original SHA-256 identity");
     // A fresh report draws the next line ahead while requests are recent.
     position = 12000;
     report();

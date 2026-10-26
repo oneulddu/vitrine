@@ -2,6 +2,7 @@
 #import "Core/SGCounterStore.h"
 #import "Core/SGFileHash.h"
 #import "../harness-fail.h"
+#import "../sha256-fixture.h"
 
 static NSString *checkKey;
 static void cleanDefaults(void) {
@@ -35,8 +36,19 @@ static void checkHash(void) {
     HARNESS_CHECK([NSFileManager.defaultManager removeItemAtURL:url error:nil]);
 }
 
+static void checkDataHash(void) {
+    NSArray<NSData *> *inputs = @[[NSData data], [@"abc" dataUsingEncoding:NSUTF8StringEncoding],
+        [@"한글 😀/../" dataUsingEncoding:NSUTF8StringEncoding], [NSData dataWithBytes:"\0\xff\x80\x01" length:4]];
+    for (NSData *data in inputs)
+        HARNESS_CHECK([SGDataSHA256(data) isEqualToString:HarnessLegacySHA256(data)]);
+    HARNESS_CHECK([SGDataSHA256(inputs[0]) isEqualToString:@"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"]);
+    HARNESS_CHECK([SGDataSHA256(inputs[1]) isEqualToString:@"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"]);
+    HARNESS_CHECK([SGDataSHA256(nil) isEqualToString:HarnessLegacySHA256(nil)]);
+}
+
 int main(void) {
     @autoreleasepool {
+        checkDataHash();
         checkHash();
         NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
         NSString *key = [@"vitrine.counter-check." stringByAppendingString:NSUUID.UUID.UUIDString];

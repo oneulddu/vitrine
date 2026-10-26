@@ -1,6 +1,7 @@
 #import <Foundation/Foundation.h>
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Lyrics/LyricsStore.h"
+#import "../sha256-fixture.h"
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #c); exit(1); } } while (0)
 
 static SGKaraokeLine *line(NSString *text, NSInteger start) {
@@ -117,7 +118,8 @@ int main(void) {
         SGLyricsStoreSave(@"../../track", original, @"Fixture provider");
         CHECK(size() == data.length && files(dir).count == 1);
         NSURL *file = files(dir).firstObject;
-        CHECK(file.lastPathComponent.length == 70 && [file.pathExtension isEqual:@"plist"]);
+        NSString *legacyName = [HarnessLegacySHA256([@"../../track" dataUsingEncoding:NSUTF8StringEncoding]) stringByAppendingPathExtension:@"plist"];
+        CHECK([file.lastPathComponent isEqual:legacyName]);
         NSData *stored = [NSData dataWithContentsOfURL:file];
         CHECK(stored.length >= 8 && memcmp(stored.bytes, "bplist00", 8) == 0);
         NSNumber *excluded; CHECK([dir getResourceValue:&excluded forKey:NSURLIsExcludedFromBackupKey error:nil] && excluded.boolValue);
