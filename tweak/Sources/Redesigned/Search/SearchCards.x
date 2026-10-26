@@ -49,13 +49,8 @@ static char kPartsKey, kRoundedKey;
 @implementation SGRSearchCardParts
 @end
 
-static void logOnce(NSString *what) {
-    static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
-    if ([logged containsObject:what]) return;
-    [logged addObject:what];
-    SGLog(@"redesign search: %@", what);
-}
+static NSMutableSet<NSString *> *sg_loggedMessages;
+#define kLogFormat @"redesign search: %@"
 
 static BOOL isCategoryCard(UIView *box) {
     return [box.superview.accessibilityIdentifier isEqualToString:@"Components.UI.CategoryCardBrowse"];
@@ -174,7 +169,7 @@ static void style(UIView *box) {
     UIView *content = contentOf(box);
     CAShapeLayer *fill = fillLayerOf(box);
     if (!content || !fill) {
-        logOnce([NSString stringWithFormat:@"a category card without its %@, left as Spotify's", content ? @"fill layer" : @"content view"]);
+        SGLogOnce(&sg_loggedMessages, ([NSString stringWithFormat:@"a category card without its %@, left as Spotify's", content ? @"fill layer" : @"content view"]), kLogFormat);
         return;
     }
     // A pressed card's fill is Spotify's pressed shade; the color is taken while it is not pressed.
@@ -188,7 +183,7 @@ static void style(UIView *box) {
     // its own 4pt back on the content view between layout passes, and the color and the cover then showed past the glass
     // at the corners (on the phone, 2026-09-17); the content view keeps the card radius only for as long as it lasts.
     if (content.layer.cornerRadius != SGRRadiusCard && objc_getAssociatedObject(box, &kRoundedKey)) {
-        logOnce([NSString stringWithFormat:@"Spotify set a card's content radius back to %.0f; the Box's corner holds", content.layer.cornerRadius]);
+        SGLogOnce(&sg_loggedMessages, ([NSString stringWithFormat:@"Spotify set a card's content radius back to %.0f; the Box's corner holds", content.layer.cornerRadius]), kLogFormat);
     }
     objc_setAssociatedObject(box, &kRoundedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     roundCorners(box, SGRRadiusCard);
@@ -202,7 +197,7 @@ static void style(UIView *box) {
     }
     moveTitleIn(content);
     roundCover(content);
-    logOnce(parts.glass ? @"category cards on tinted glass" : @"category cards on their color, no glass");
+    SGLogOnce(&sg_loggedMessages, parts.glass ? @"category cards on tinted glass" : @"category cards on their color, no glass", kLogFormat);
 }
 
 %hook _TtCE16Encore_LayoutKitO16EncoreFoundation6Encore3Box

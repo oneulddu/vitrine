@@ -51,13 +51,8 @@ void SGRPlayerVanish(UIView *view) {
     view.accessibilityElementsHidden = YES;
 }
 
-static void logMissing(NSString *what) {
-    static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
-    if ([logged containsObject:what]) return;
-    [logged addObject:what];
-    SGLog(@"redesign player: %@ not found, left as Spotify's", what);
-}
+static NSMutableSet<NSString *> *sg_loggedMessages;
+#define kLogFormat @"redesign player: %@ not found, left as Spotify's"
 
 SGRGlyphView *SGRPlayerGlyphFor(UIView *owner, const void *key, NSString *symbol, CGFloat size) {
     SGRGlyphView *glyph = objc_getAssociatedObject(owner, key);
@@ -88,7 +83,7 @@ static void skipGlyph(UIView *host, NSString *identifier, const void *findKey, N
     UIView *button = SGRFindByIdentifier(host, identifier, findKey);
     UIView *content = button.subviews.firstObject;
     if (!content) {
-        logMissing(identifier);
+        SGLogOnce(&sg_loggedMessages, identifier, kLogFormat);
         return;
     }
     static Class icon;
@@ -194,7 +189,7 @@ void SGRPlayerPlayGlyphIn(UIView *host) {
     sg_controlsHost = host;
     UIView *play = SGRFindByIdentifier(host, @"SPTNowPlayingPlayButton", &kPlayKey);
     if (!play) {
-        logMissing(@"SPTNowPlayingPlayButton");
+        SGLogOnce(&sg_loggedMessages, @"SPTNowPlayingPlayButton", kLogFormat);
         return;
     }
     // Before the player has reported a state the glyph could only guess, so the disc stays.
@@ -209,7 +204,7 @@ void SGRPlayerPlayGlyphIn(UIView *host) {
         if ([sub isKindOfClass:UIImageView.class] && CGSizeEqualToSize(sub.bounds.size, button.bounds.size)) disc = (UIImageView *)sub;
     }
     if (!disc) {
-        logMissing(@"the play button's disc");
+        SGLogOnce(&sg_loggedMessages, @"the play button's disc", kLogFormat);
         return;
     }
     SGRSuppress(disc);
@@ -277,7 +272,7 @@ static SGRPlayerControlsWatcher *sg_controlsWatcher;
 static UILabel *monospaced(UIView *host, NSString *identifier, const void *findKey) {
     UILabel *label = (UILabel *)SGRFindByIdentifier(host, identifier, findKey);
     if (![label isKindOfClass:UILabel.class]) {
-        logMissing(identifier);
+        SGLogOnce(&sg_loggedMessages, identifier, kLogFormat);
         return nil;
     }
     SGRMonospacedDigits(label);

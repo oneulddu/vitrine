@@ -184,13 +184,8 @@ static void forgetKinds(UICollectionView *list) {
 }
 %end
 
-static void logOnce(NSString *what) {
-    static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
-    if ([logged containsObject:what]) return;
-    [logged addObject:what];
-    SGLog(@"redesign artist: %@", what);
-}
+static NSMutableSet<NSString *> *sg_loggedMessages;
+#define kLogFormat @"redesign artist: %@"
 
 %hook _TtC12Element_List18CollectionViewCell
 - (UICollectionViewLayoutAttributes *)preferredLayoutAttributesFittingAttributes:(UICollectionViewLayoutAttributes *)attributes {
@@ -211,7 +206,7 @@ static void logOnce(NSString *what) {
     recordKind(list, path, kind);
 
     if (hide) {
-        logOnce([dropped[kind] stringByAppendingString:@" dropped from the Music list"]);
+        SGLogOnce(&sg_loggedMessages, [dropped[kind] stringByAppendingString:@" dropped from the Music list"], kLogFormat);
     }
     if (!hide && ![droppedOf(list) containsObject:path]) {
         if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);

@@ -20,5 +20,13 @@ uint64_t SGLogLastSeq(void);
 
 // Long dumps, split into numbered parts under the unified log's size cap.
 void SGLogLong(NSString *tag, NSString *text);
+// Main-thread only. Lazily creates the caller-owned set; inserts key and returns YES only the first time.
+// Keep a separate set for each independent once-per-message domain.
+BOOL SGLogFirst(NSMutableSet<NSString *> *__strong *logged, NSString *key);
+// Keep fmt literal at the call site for compiler format checking; evaluate key exactly once.
+#define SGLogOnce(logged, key, fmt) do { \
+    NSString *sg_once_key_ = (key); \
+    if (SGLogFirst((logged), sg_once_key_)) SGLog(fmt, sg_once_key_); \
+} while (0)
 // Logs every class of the list that this Spotify does not have; a feature calls it from its %ctor.
 void SGRequireClasses(NSArray<NSString *> *names);

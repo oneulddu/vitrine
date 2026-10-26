@@ -44,13 +44,8 @@ static NSUInteger sg_changes;
 static __weak UICollectionView *sg_list;
 static BOOL sg_measureQueued;
 
-static void logOnce(NSString *what) {
-    static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
-    if ([logged containsObject:what]) return;
-    [logged addObject:what];
-    SGLog(@"redesign search: %@", what);
-}
+static NSMutableSet<NSString *> *sg_loggedMessages;
+#define kLogFormat @"redesign search: %@"
 
 static BOOL isBrowseCell(UIView *content) {
     return SGClassNamed(object_getClass(content), @"Browse_BrowsePageImpl15BrowseStructure");
@@ -161,7 +156,7 @@ static void measureSoon(void) {
             sg_changes++;
             measureSoon();
         }
-        logOnce([@"dropped " stringByAppendingString:describe(root)]);
+        SGLogOnce(&sg_loggedMessages, [@"dropped " stringByAppendingString:describe(root)], kLogFormat);
     } else if (kind == SGRSearchKindKeep && collapsed) {
         // Cells are reused across kinds: one collapsed before holds a card now.
         SGRRestoreCell(cell, &kCollapsedKey);

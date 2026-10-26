@@ -52,6 +52,13 @@ void SGLogLong(NSString *tag, NSString *text) {
     }];
 }
 
+BOOL SGLogFirst(NSMutableSet<NSString *> *__strong *logged, NSString *key) {
+    if (!*logged) *logged = [NSMutableSet set];
+    if ([*logged containsObject:key]) return NO;
+    [*logged addObject:key];
+    return YES;
+}
+
 void SGRequireClasses(NSArray<NSString *> *names) {
     for (NSString *name in names) {
         if (!NSClassFromString(name)) SGLog(@"class %@ not found, its hooks are inactive", name);

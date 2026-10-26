@@ -166,13 +166,8 @@ static BOOL shown(UICollectionViewCell *cell, UIView *content, NSIndexPath *path
     return section != kNoHeading && (switched & (1u << section));
 }
 
-static void logOnce(NSString *what) {
-    static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
-    if ([logged containsObject:what]) return;
-    [logged addObject:what];
-    SGLog(@"redesign album: %@", what);
-}
+static NSMutableSet<NSString *> *sg_loggedMessages;
+#define kLogFormat @"redesign album: %@"
 
 %hook _TtC12Element_List18CollectionViewCell
 - (UICollectionViewLayoutAttributes *)preferredLayoutAttributesFittingAttributes:(UICollectionViewLayoutAttributes *)attributes {
@@ -207,14 +202,14 @@ static void logOnce(NSString *what) {
         shown(cell, content, attributes.indexPath, YES);
         settle(cell, natural, kLead, width, textSize);
         result.size = CGSizeMake(result.size.width, natural + kLead);
-        logOnce(@"the album's own line and its copyright kept under the tracks");
+        SGLogOnce(&sg_loggedMessages, @"the album's own line and its copyright kept under the tracks", kLogFormat);
     } else if (shown(cell, content, attributes.indexPath, NO)) {
         if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);
-        logOnce(@"a section under the tracks shown, its switch off");
+        SGLogOnce(&sg_loggedMessages, @"a section under the tracks shown, its switch off", kLogFormat);
     } else {
         settle(cell, natural, 0, width, textSize);
         result.size = CGSizeMake(result.size.width, 0);
-        logOnce(@"the sections under the tracks dropped");
+        SGLogOnce(&sg_loggedMessages, @"the sections under the tracks dropped", kLogFormat);
     }
     return result;
 }

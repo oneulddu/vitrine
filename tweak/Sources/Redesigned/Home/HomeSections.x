@@ -100,13 +100,8 @@ static BOOL isSection(UIView *content) {
     return contentNames(content, @"Home_EvoPageImpl13HomeStructure");
 }
 
-static void logOnce(NSString *what) {
-    static NSMutableSet<NSString *> *logged;
-    if (!logged) logged = [NSMutableSet set];
-    if ([logged containsObject:what]) return;
-    [logged addObject:what];
-    SGLog(@"redesign home: %@", what);
-}
+static NSMutableSet<NSString *> *sg_loggedMessages;
+#define kLogFormat @"redesign home: %@"
 
 // The shortcuts grid names no identifier; episode cards and whatever else comes as a bare list do.
 static SGRHomeKind gridKind(UICollectionView *grid) {
@@ -154,7 +149,7 @@ static void dropDJHeading(UIView *content) {
     for (UIView *part in stack.arrangedSubviews) {
         if (part.hidden || ![NSStringFromClass(part.class) containsString:@"Home_HeadingElementKit"]) continue;
         part.hidden = YES;
-        logOnce(@"DJ heading hidden");
+        SGLogOnce(&sg_loggedMessages, @"DJ heading hidden", kLogFormat);
     }
 }
 
@@ -214,7 +209,7 @@ void SGRHomeMeasureAgain(UIView *view) {
         SGRCollapseCell(cell, MAX(1, result.size.height), &kCollapsedKey);
         result.size = CGSizeMake(result.size.width, 0);
         markDropped(cell, attributes.indexPath.section, YES);
-        logOnce([@"dropped a section of " stringByAppendingString:rootName]);
+        SGLogOnce(&sg_loggedMessages, [@"dropped a section of " stringByAppendingString:rootName], kLogFormat);
     } else if (kind == SGRHomeKindKeep) {
         // Cells are reused across kinds: one collapsed before holds a section to keep now.
         if (collapsed) SGRRestoreCell(cell, &kCollapsedKey);
@@ -222,9 +217,9 @@ void SGRHomeMeasureAgain(UIView *view) {
         UIView *root = content.subviews.firstObject.subviews.firstObject;
         if (SGRHomeLook() && [root isKindOfClass:UICollectionView.class] && ![root.backgroundColor isEqual:UIColor.clearColor]) root.backgroundColor = UIColor.clearColor;
         markDropped(cell, attributes.indexPath.section, NO);
-        logOnce([@"kept a section of " stringByAppendingString:rootName]);
+        SGLogOnce(&sg_loggedMessages, [@"kept a section of " stringByAppendingString:rootName], kLogFormat);
     } else {
-        logOnce([@"sized a section before its root was in, left as it is: " stringByAppendingString:rootName ?: @"no root"]);
+        SGLogOnce(&sg_loggedMessages, [@"sized a section before its root was in, left as it is: " stringByAppendingString:rootName ?: @"no root"], kLogFormat);
     }
     SGRHomeProbeEnd(SGRHomeProbeSections, began);
     return result;
