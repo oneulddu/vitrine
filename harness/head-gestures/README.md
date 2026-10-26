@@ -40,8 +40,18 @@ sheet holds the motion while paused, and its Cancel after one nod keeps the stor
 shows only while something is learned, and asks before it clears both.
 
     THEOS=$HOME/theos sim/build.sh && xcrun simctl install <udid> build/sim/HeadGesturesSim.app
-    xcrun simctl launch <udid> com.vitrine.headgesturessim    # then read the [harness] lines from the log
+    xcrun simctl launch --console <udid> com.vitrine.headgesturessim
     xcrun simctl launch <udid> com.vitrine.headgesturessim live    # no checks: page, sheet, done or live, to screenshot
+
+With no argument, the assertion run logs its result and exits immediately after the last check:
+status 0 when all pass, status 1 if any fail (logged, without a crash). `--console` waits for
+the app to exit and streams the `[harness]` lines. On iOS 26.5, `simctl launch --console`
+itself returns 0 even when the app exits 1; automation must observe the app's exit status
+(for example with a debugger), not treat the `simctl` command's status as the assertion result.
+
+To leave the app open for manual inspection instead, explicitly pass `page`, `sheet`, `done`
+or `live`. These screenshot/teaching-UI modes do not run the assertions or exit automatically;
+terminate the app when finished with `xcrun simctl terminate <udid> com.vitrine.headgesturessim`.
 
 The `cancel-try` argument runs the focused regression: start Try it, let teaching take over, dismiss teaching,
 then recognize another nod through Try it. It exits nonzero on failure. Set `OUT` when building to keep an

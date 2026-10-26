@@ -5,6 +5,7 @@
 // each action's player call, Try it, the sheet's five recordings, Redo last, Cancel, Forget), not the motion.
 // Steps run in order; each is asked again every quarter second until it says it is done, and fails after
 // 20 s. Each check logs "ok" or "FAIL" and the last line says how many failed.
+// The default assertion run exits with status 0 on success, 1 on failure.
 //
 //     THEOS=$HOME/theos ./build.sh && xcrun simctl install <udid> ../build/sim/HeadGesturesSim.app
 //     xcrun simctl launch --console-pty <udid> com.vitrine.headgesturessim
@@ -19,6 +20,7 @@
 #import "Settings/SGModPage.h"
 #import "Shared/HeadGestures/HeadGestures.h"
 #import "Shared/Player/PlayerState.h"
+#import "../../harness-fail.h"
 
 static int failures;
 static void check(BOOL ok, NSString *what) {
@@ -561,7 +563,9 @@ static Step waitFor(double seconds) {
         ^BOOL {
             check(SGInt(SGKeyHeadNod, 0) == 0 && SGInt(SGKeyHeadShake, 0) == 0, @"Forget clears both");
             check([self.table numberOfRowsInSection:2] == 3, @"nothing learned again: the Forget row goes");
-            NSLog(@"[harness] %@", failures ? [NSString stringWithFormat:@"%d failed", failures] : @"all passed");
+            if (failures) HARNESS_FAIL(@"%d failed", failures);
+            NSLog(@"[harness] all passed");
+            exit(0);
             return YES;
         },
     ]];
