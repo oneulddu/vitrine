@@ -43,6 +43,6 @@ UIImage *SGRNowPlayingArtwork(NSString **trackURI, NSString **identity);
 
 // While the full screen player opens or closes (Shared/Player/PlayerEvents.x announces it).
 BOOL SGRPlayerIsTransitioning(void);
-// SGPlayerTransitionNotification and SGPlayerTransitionEndedNotification as blocks, for as long as
-// `owner` lives. The blocks are handed the owner so they need not capture it.
-void SGRObservePlayerTransition(id owner, void (^began)(id owner), void (^ended)(id owner));
+// Calls `changed` for SGPlayerTransitionNotification and SGPlayerTransitionEndedNotification for as long
+// as `owner` lives. The block is handed the owner so it need not capture it.
+void SGRObservePlayerTransition(id owner, void (^changed)(id owner));

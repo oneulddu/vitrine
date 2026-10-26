@@ -101,6 +101,22 @@ static BOOL fieldIs(SGRArtworkField *field, CGFloat red, CGFloat blue) {
 }
 
 int main(void) { @autoreleasepool {
+    __block NSString *phase = @"opening";
+    __weak NSMutableDictionary *releasedOwner;
+    @autoreleasepool {
+        NSMutableDictionary *owner = [NSMutableDictionary dictionary];
+        releasedOwner = owner;
+        SGRObservePlayerTransition(owner, ^(NSMutableDictionary *observed) { observed[@"phase"] = phase; });
+        [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionNotification object:nil];
+        CHECK([owner[@"phase"] isEqual:@"opening"]);
+        phase = @"closed";
+        [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionEndedNotification object:nil];
+        CHECK([owner[@"phase"] isEqual:@"closed"]);
+    }
+    CHECK(releasedOwner == nil);
+    [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionNotification object:nil];
+    [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerTransitionEndedNotification object:nil];
+    puts("PASS: transition callback follows opening and closing without retaining its owner");
     [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLocalFileEdits];
     UIImage *red = square(UIColor.redColor), *blue = square(UIColor.blueColor);
     BridgeNowPlaying *center = [BridgeNowPlaying new];

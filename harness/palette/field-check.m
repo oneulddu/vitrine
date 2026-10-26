@@ -7,7 +7,7 @@
 
 UIColor *SGRAccentColor(void) { return UIColor.greenColor; }
 BOOL SGRPlayerIsTransitioning(void) { return NO; }
-void SGRObservePlayerTransition(id owner, void (^began)(id), void (^ended)(id)) {}
+void SGRObservePlayerTransition(id owner, void (^changed)(id)) {}
 UIColor *SGRFieldColorFor(UIColor *color) { return color; }
 
 // Only Fluid's visibility/ownership is exercised, not its renderer.

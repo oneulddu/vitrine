@@ -293,7 +293,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [center addObserver:self selector:@selector(artworkChanged) name:SGRNowPlayingArtworkDidChangeNotification object:nil];
     [center addObserver:self selector:@selector(styleChanged) name:SGRVisualiserStyleDidChangeNotification object:nil];
     [center addObserver:self selector:@selector(lyricsKept:) name:SGKaraokeLinesKeptNotification object:nil];
-    SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; }, ^(id owner) { [owner updateMotion]; });
+    SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; });
     SGAddPlayerStateObserver(self);
     [self styleChanged];
     [self artworkChanged];

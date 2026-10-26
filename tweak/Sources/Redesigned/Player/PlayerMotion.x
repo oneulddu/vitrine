@@ -239,7 +239,7 @@ static UIBlurEffect *blurEffect(void) {
     }
     [center addObserver:self selector:@selector(updateDim) name:UIAccessibilityDarkerSystemColorsStatusDidChangeNotification object:nil];
     [center addObserver:self selector:@selector(updateDim) name:UIAccessibilityReduceTransparencyStatusDidChangeNotification object:nil];
-    SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; }, ^(id owner) { [owner updateMotion]; });
+    SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; });
     SGAddPlayerStateObserver(self);
     return self;
 }

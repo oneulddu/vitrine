@@ -6,6 +6,7 @@
 #import <objc/message.h>
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Redesigned/Lyrics/LyricsText.h"
+#import "Redesigned/Kit/SGRDownload.h"
 #if __has_include("Redesigned/Lyrics/AutoTranslation.h")
 #import "Redesigned/Lyrics/AutoTranslation.h"
 #define SG_HARNESS_AUTO_TRANSLATION 1
@@ -27,6 +28,40 @@ static void check(BOOL ok, NSString *what) {
     printf("%s %s\n", ok ? "PASS" : "FAIL", what.UTF8String);
     fflush(stdout);
     if (!ok) sg_failed++;
+}
+
+// Spotify's AddToButton owner exposes its Swift enum as one byte.
+@interface HarnessAddToButton : NSObject {
+@public
+    uint8_t currentStatus;
+}
+- (void)performAction;
+@end
+@implementation HarnessAddToButton
+- (void)performAction {}
+@end
+
+static void addToLookupChecks(void) {
+    HarnessAddToButton *saved = [HarnessAddToButton new], *unsaved = [HarnessAddToButton new];
+    saved->currentStatus = 1;
+    UIButton *root = [UIButton new], *nested = [UIButton new], *sibling = [UIButton new];
+    UIView *branch = [UIView new];
+    [root addTarget:unsaved action:@selector(performAction) forControlEvents:UIControlEventTouchUpInside];
+    [nested addTarget:saved action:@selector(performAction) forControlEvents:UIControlEventTouchUpInside];
+    [sibling addTarget:unsaved action:@selector(performAction) forControlEvents:UIControlEventTouchUpInside];
+    root.accessibilityIdentifier = @"Components.UI.AddToButton";
+    nested.accessibilityIdentifier = @"Components.UI.AddToButton.saved";
+    sibling.accessibilityIdentifier = @"Components.UI.AddToButton";
+    [root addSubview:branch];
+    [branch addSubview:nested];
+    [root addSubview:sibling];
+    BOOL added = YES;
+    check(SGRReadAddTo(root, &added) && !added, @"AddTo lookup includes the root before descendants");
+    root.accessibilityIdentifier = nil;
+    check(SGRReadAddTo(root, &added) && added, @"AddTo lookup takes the first depth-first prefix match");
+    [branch removeFromSuperview];
+    check(SGRReadAddTo(root, &added) && !added, @"AddTo lookup reads the current tree without a cached match");
+    check(!SGRReadAddTo(nil, &added), @"AddTo lookup rejects a missing root");
 }
 
 static void caught(UIViewController *self, SEL _cmd, UIViewController *shown, BOOL animated, void (^completion)(void)) {
@@ -110,6 +145,7 @@ static void googleHolds(void) {
 #include "review-check.inc"
 
 void SGHarnessRunTranslationCheck(UIWindow *window) {
+    addToLookupChecks();
     if (getenv("SG_LYRICS_REVIEW_ONLY")) {
         [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:NO block:^(NSTimer *timer) {
             reviewChecks(window);

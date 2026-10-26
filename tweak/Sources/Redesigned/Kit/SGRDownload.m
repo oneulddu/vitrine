@@ -2,6 +2,7 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "SGRDownload.h"
+#import "SGRRestyle.h"
 #import "SGRTokens.h"
 
 #pragma mark - reading Spotify's button
@@ -9,14 +10,6 @@
 static NSString *const kIdentifierPrefix = @"DownloadButton.Granular.";
 // The plain button the songs liked by one artist have, whose identifier says nothing of the state.
 static NSString *const kPlainIdentifier = @"Components.UI.DownloadButton";
-
-static UIView *identifiedIn(UIView *source, NSString *prefix) {
-    __block UIView *found = nil;
-    SGForEachView(source, ^(UIView *v) {
-        if (!found && [v.accessibilityIdentifier hasPrefix:prefix]) found = v;
-    });
-    return found;
-}
 
 // The Encore object behind the button: the target of the button's own action (-performAction).
 static id ownerOf(UIView *button, NSString *kind) {
@@ -125,7 +118,7 @@ BOOL SGRReadDownload(UIView *source, SGRDownloadState *state, CGFloat *progress)
 }
 
 BOOL SGRReadAddTo(UIView *source, BOOL *added) {
-    UIView *button = source ? identifiedIn(source, @"Components.UI.AddToButton") : nil;
+    UIView *button = SGRFindByIdentifier(source, @"Components.UI.AddToButton*", NULL);
     if (!button) return NO;
     // A Swift enum without payloads, one byte: notAdded, added.
     const uint8_t *status = propertyBytes(ownerOf(button, @"AddToButton"), "currentStatus", 1);

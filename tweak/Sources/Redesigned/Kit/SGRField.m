@@ -229,7 +229,7 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
                                       NSProcessInfoPowerStateDidChangeNotification, UIAccessibilityReduceMotionStatusDidChangeNotification]) {
         [center addObserver:self selector:@selector(updateMotionSoon) name:name object:nil];
     }
-    SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; }, ^(id owner) { [owner updateMotion]; });
+    SGRObservePlayerTransition(self, ^(id owner) { [owner updateMotion]; });
 }
 
 - (void)dealloc {

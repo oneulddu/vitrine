@@ -297,21 +297,15 @@ BOOL SGRPlayerIsTransitioning(void) {
 
 static char kTransitionKey;
 
-void SGRObservePlayerTransition(id owner, void (^began)(id owner), void (^ended)(id owner)) {
-    if (!owner) return;
+void SGRObservePlayerTransition(id owner, void (^changed)(id owner)) {
+    if (!owner || !changed) return;
     __weak id weakOwner = owner;
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     NSMutableArray *tokens = [NSMutableArray array];
-    if (began) {
-        [tokens addObject:[center addObserverForName:SGPlayerTransitionNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+    for (NSNotificationName name in @[SGPlayerTransitionNotification, SGPlayerTransitionEndedNotification]) {
+        [tokens addObject:[center addObserverForName:name object:nil queue:nil usingBlock:^(NSNotification *note) {
             id strongOwner = weakOwner;
-            if (strongOwner) began(strongOwner);
-        }]];
-    }
-    if (ended) {
-        [tokens addObject:[center addObserverForName:SGPlayerTransitionEndedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
-            id strongOwner = weakOwner;
-            if (strongOwner) ended(strongOwner);
+            if (strongOwner) changed(strongOwner);
         }]];
     }
     SGRTransitionObservation *observation = [SGRTransitionObservation new];

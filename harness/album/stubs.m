@@ -10,7 +10,7 @@ __weak UIView *sgr_albumRoot = nil;
 
 // Redesigned/Kit/SGRBridges.x: SGRField.m asks whether the player is opening or closing for its moving field.
 BOOL SGRPlayerIsTransitioning(void) { return NO; }
-void SGRObservePlayerTransition(id owner, void (^began)(id owner), void (^ended)(id owner)) {}
+void SGRObservePlayerTransition(id owner, void (^changed)(id owner)) {}
 
 // Shared/Fonts/FontImport.m: no font of the user's own in the harness.
 NSString *SGRegisterCustomFont(void) { return nil; }

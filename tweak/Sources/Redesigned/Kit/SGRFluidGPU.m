@@ -221,7 +221,7 @@ static BOOL mayDraw(void) {
         name:UIApplicationDidEnterBackgroundNotification object:nil];
     // A cover running in keeps drawing even while moving is NO. Hold that work too while the player
     // opens or closes, and resume its clock only after the transition has finished.
-    SGRObservePlayerTransition(self, ^(id owner) { [owner update]; }, ^(id owner) { [owner update]; });
+    SGRObservePlayerTransition(self, ^(id owner) { [owner update]; });
     return self;
 }
 
