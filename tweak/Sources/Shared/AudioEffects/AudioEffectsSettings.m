@@ -48,13 +48,13 @@ static NSDictionary<NSString *, NSString *> *stringDefaults(void) {
 }
 
 // The switches of the effects, each the prefix of its own keys' names.
-static NSArray<NSString *> *effectSwitches(void) {
+NSArray<NSString *> *SGDSPEffectSwitches(void) {
     return @[SGKeyDSPCompander, SGKeyDSPBass, SGKeyDSPEqualizer, SGKeyDSPGraphicEq, SGKeyDSPConvolver, SGKeyDSPDDC,
              SGKeyDSPLiveprog, SGKeyDSPReverb, SGKeyDSPStereoWide, SGKeyDSPCrossfeed, SGKeyDSPTube];
 }
 
 NSString *SGDSPEffectOf(NSString *key) {
-    for (NSString *effect in effectSwitches()) {
+    for (NSString *effect in SGDSPEffectSwitches()) {
         if ([key isEqualToString:effect] || [key hasPrefix:[effect stringByAppendingString:@"."]]) return effect;
     }
     return SGKeyDSP;
@@ -139,9 +139,9 @@ void SGDSPSetGains(NSString *key, NSArray<NSNumber *> *gains) {
 void SGDSPResetAll(void) {
     for (size_t i = 0; i < sizeof kNumbers / sizeof *kNumbers; i++) [store() removeObjectForKey:kNumbers[i].key];
     for (NSString *key in stringDefaults()) [store() removeObjectForKey:key];
-    for (NSString *effect in effectSwitches()) [store() removeObjectForKey:effect];
+    for (NSString *effect in SGDSPEffectSwitches()) [store() removeObjectForKey:effect];
     SGDSPApply(SGKeyDSP);
-    for (NSString *effect in effectSwitches()) SGDSPApply(effect);
+    for (NSString *effect in SGDSPEffectSwitches()) SGDSPApply(effect);
 }
 
 #pragma mark - lists

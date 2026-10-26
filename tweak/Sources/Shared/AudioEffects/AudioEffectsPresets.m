@@ -56,14 +56,10 @@ static NSArray<NSArray<NSString *> *> *builtIn(void) {
 // The equalizer presets by their place in SGDSPEqualizerPresetNames, whose names are translated.
 enum { kEqualizerVocal = 4, kEqualizerWarm = 5 };
 
-static NSArray<NSNumber *> *equalizer(NSInteger preset) {
-    return SGDSPEqualizerPreset(preset);
-}
-
 static NSDictionary<NSString *, id> *builtInValues(NSInteger index) {
     switch (index) {
         case 0: return @{SGKeyDSPBass: @YES, SGKeyDSPBassGain: @8};
-        case 1: return @{SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: equalizer(kEqualizerVocal),
+        case 1: return @{SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: SGDSPEqualizerPreset(kEqualizerVocal),
                          SGKeyDSPCompander: @YES, SGKeyDSPCompanderGains: @[@0, @0.2, @0.3, @0.3, @0.3, @0.2, @0]};
         // The compander over 0 lifts the quiet parts and holds the loud ones; the gain brings the level back.
         case 2: return @{SGKeyDSPCompander: @YES, SGKeyDSPCompanderGains: @[@0.6, @0.7, @0.8, @0.8, @0.8, @0.7, @0.6],
@@ -72,7 +68,7 @@ static NSDictionary<NSString *, id> *builtInValues(NSInteger index) {
                          SGKeyDSPPostGain: @3, SGKeyDSPLimiterThreshold: @-3};
         case 3: return @{SGKeyDSPReverb: @YES, SGKeyDSPReverbPreset: @7, SGKeyDSPReverbAmount: @40,
                          SGKeyDSPStereoWide: @YES, SGKeyDSPStereoWideLevel: @65};
-        case 4: return @{SGKeyDSPTube: @YES, SGKeyDSPTubeDrive: @6, SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: equalizer(kEqualizerWarm)};
+        case 4: return @{SGKeyDSPTube: @YES, SGKeyDSPTubeDrive: @6, SGKeyDSPEqualizer: @YES, SGKeyDSPEqualizerGains: SGDSPEqualizerPreset(kEqualizerWarm)};
         case 5: return @{SGKeyDSPCrossfeed: @YES, SGKeyDSPCrossfeedMode: @2, SGKeyDSPEqualizer: @YES,
                          SGKeyDSPEqualizerGains: @[@0, @0, @0, @0, @0, @0, @0, @0, @0, @0, @-1, @-2, @-2, @-3, @-3]};
         case 6: return @{SGKeyDSPStereoWide: @YES, SGKeyDSPStereoWideLevel: @75};
@@ -118,9 +114,7 @@ NSArray<NSString *> *SGDSPUserPresetNames(void) {
 
 void SGDSPSaveUserPreset(NSString *name) {
     if (!name.length) return;
-    NSMutableDictionary *presets = [userPresets() mutableCopy];
-    presets[name] = currentValues();
-    [store() setObject:presets forKey:SGKeyDSPUserPresets];
+    SGDSPSaveUserPresetValues(name, currentValues());
 }
 
 BOOL SGDSPLoadUserPreset(NSString *name) {

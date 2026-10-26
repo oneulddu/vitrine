@@ -39,6 +39,14 @@ int main(void) {
     @autoreleasepool {
         clearDefaults();
 
+        SGDSPLoadBuiltInPreset(1);
+        check([SGDSPGains(SGKeyDSPEqualizerGains) isEqual:@[@-2, @-2, @-2, @-1, @-1, @0, @1, @2, @3, @3, @2, @1, @0, @-1, @-1]],
+              @"Vocal clarity selects the vocal equalizer curve");
+        SGDSPLoadBuiltInPreset(4);
+        check([SGDSPGains(SGKeyDSPEqualizerGains) isEqual:@[@2, @2, @2, @2, @1, @1, @0, @0, @0, @-1, @-1, @-2, @-2, @-2, @-2]],
+              @"Warm analog selects the warm equalizer curve");
+        clearDefaults();
+
         // A preset of the user's, written and read back.
         SGDSPSetSwitch(SGKeyDSPBass, YES);
         SGDSPSetNumber(SGKeyDSPBassGain, 9);

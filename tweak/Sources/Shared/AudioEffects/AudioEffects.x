@@ -42,12 +42,6 @@ static const double kSummaryEvery = 60;
 
 enum { kScratchFrames = 4096 };
 
-// The switches of the effects, in the order they are set when everything is.
-static NSArray<NSString *> *effectSwitches(void) {
-    return @[SGKeyDSPCompander, SGKeyDSPBass, SGKeyDSPEqualizer, SGKeyDSPGraphicEq, SGKeyDSPConvolver, SGKeyDSPDDC,
-             SGKeyDSPLiveprog, SGKeyDSPReverb, SGKeyDSPStereoWide, SGKeyDSPCrossfeed, SGKeyDSPTube];
-}
-
 #pragma mark - shared between the threads
 
 typedef enum { SGOutputUnseen, SGOutputPCM, SGOutputUnsupported } SGOutputState;
@@ -378,7 +372,7 @@ static dispatch_queue_t applyQueue(void) {
 
 static void applyAll(SGDSPEngine *engine) {
     applyOutput(engine);
-    for (NSString *effect in effectSwitches()) applyEffect(engine, effect);
+    for (NSString *effect in SGDSPEffectSwitches()) applyEffect(engine, effect);
 }
 
 // Once a second while the engine lives: what the effects replaced freed, an engine gone non-finite started

@@ -379,10 +379,6 @@ static void *running(SGDSPEngine *engine, Slot slot) {
     return state;
 }
 
-static void done(SGDSPEngine *engine) {
-    endConfig(engine);
-}
-
 void SGDSPEngineSetOutput(SGDSPEngine *engine, double postGainDB, double limiterThresholdDB, double limiterReleaseMS) {
     beginConfig(engine);
     engine->releaseMS = fmax(limiterReleaseMS, 0.1);
@@ -400,7 +396,7 @@ void SGDSPEngineSetCompander(SGDSPEngine *engine, bool on, double timeConstant, 
     SGDSPCompander *compander = running(engine, SlotCompander);
     if (compander) {
         SGDSPCompanderSet(compander, timeConstant, gains);
-        done(engine);
+        endConfig(engine);
         return;
     }
     install(engine, SlotCompander, SGDSPCompanderCreate(engine->rate, timeConstant, frequencies, gains));
@@ -414,7 +410,7 @@ void SGDSPEngineSetBassBoost(SGDSPEngine *engine, bool on, double maxGainDB) {
     SGDSPBass *bass = running(engine, SlotBass);
     if (bass) {
         SGDSPBassSet(bass, maxGainDB);
-        done(engine);
+        endConfig(engine);
         return;
     }
     install(engine, SlotBass, SGDSPBassCreate(engine->rate, maxGainDB));
@@ -430,7 +426,7 @@ void SGDSPEngineSetEqualizer(SGDSPEngine *engine, bool on, const double frequenc
     SGDSPEqualizer *equalizer = running(engine, SlotEqualizer);
     if (equalizer) {
         SGDSPEqualizerSet(equalizer, bands);
-        done(engine);
+        endConfig(engine);
         return;
     }
     install(engine, SlotEqualizer, SGDSPEqualizerCreate(bands));
@@ -444,7 +440,7 @@ void SGDSPEngineSetReverb(SGDSPEngine *engine, bool on, int preset, float amount
     SGDSPReverb *reverb = running(engine, SlotReverb);
     if (reverb) {
         SGDSPReverbSet(reverb, preset, amount);
-        done(engine);
+        endConfig(engine);
         return;
     }
     install(engine, SlotReverb, SGDSPReverbCreate(engine->rate, preset, amount));
@@ -458,7 +454,7 @@ void SGDSPEngineSetStereoWide(SGDSPEngine *engine, bool on, double levelPercent)
     SGDSPWide *wide = running(engine, SlotWide);
     if (wide) {
         SGDSPWideSet(wide, levelPercent);
-        done(engine);
+        endConfig(engine);
         return;
     }
     install(engine, SlotWide, SGDSPWideCreate(engine->rate, levelPercent));
@@ -472,7 +468,7 @@ void SGDSPEngineSetCrossfeed(SGDSPEngine *engine, bool on, int preset) {
     SGDSPCrossfeed *crossfeed = running(engine, SlotCrossfeed);
     if (crossfeed) {
         SGDSPCrossfeedSet(crossfeed, preset);
-        done(engine);
+        endConfig(engine);
         return;
     }
     install(engine, SlotCrossfeed, SGDSPCrossfeedCreate(engine->rate, preset));
@@ -486,7 +482,7 @@ void SGDSPEngineSetTube(SGDSPEngine *engine, bool on, double driveDB) {
     SGDSPTube *tube = running(engine, SlotTube);
     if (tube) {
         SGDSPTubeSet(tube, driveDB);
-        done(engine);
+        endConfig(engine);
         return;
     }
     install(engine, SlotTube, SGDSPTubeCreate(engine->rate, driveDB));

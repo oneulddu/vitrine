@@ -2,6 +2,9 @@
 // Shared/AudioEffects.
 #import <Foundation/Foundation.h>
 
+// Effect switches in configuration order; shared by classification, reset and application.
+NSArray<NSString *> *SGDSPEffectSwitches(void);
+
 // The effect a key belongs to, named by its switch key. The master switch and output control's keys
 // belong to SGKeyDSP.
 NSString *SGDSPEffectOf(NSString *key);
