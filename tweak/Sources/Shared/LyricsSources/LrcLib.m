@@ -54,14 +54,11 @@ static NSInteger secondsIn(id record) {
 }
 
 // [00:34.30] Look — the timestamp in minutes, seconds and hundredths, or thousandths where a line
-// carries three digits. A line may be stamped more than once when it is sung more than once, and
-// the tags LRC opens with ([ar:…], [length:…]) are not timestamps, so they fall out on their own.
+// carries three digits (SGLyricsLRCStamp in LyricsSources.h). A line may be stamped more than once when
+// it is sung more than once, and the tags LRC opens with ([ar:…], [length:…]) are not timestamps, so
+// they fall out on their own.
 static NSArray<SGKaraokeLine *> *linesFromLRC(NSString *lrc) {
-    static NSRegularExpression *stamp;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        stamp = [NSRegularExpression regularExpressionWithPattern:@"\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?\\]" options:0 error:nil];
-    });
+    NSRegularExpression *stamp = SGLyricsLRCStamp();
     NSMutableArray<NSDictionary *> *stamped = [NSMutableArray array];
     for (NSString *row in [lrc componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
         NSArray<NSTextCheckingResult *> *found = [stamp matchesInString:row options:0 range:NSMakeRange(0, row.length)];
@@ -71,16 +68,8 @@ static NSArray<SGKaraokeLine *> *linesFromLRC(NSString *lrc) {
         for (NSTextCheckingResult *match in found) {
             if (match.range.location != end) break;
             end = NSMaxRange(match.range);
-            NSInteger minutes = [row substringWithRange:[match rangeAtIndex:1]].integerValue;
-            NSInteger seconds = [row substringWithRange:[match rangeAtIndex:2]].integerValue;
-            NSInteger fraction = 0;
-            NSRange part = [match rangeAtIndex:3];
-            if (part.location != NSNotFound) {
-                NSString *digits = [row substringWithRange:part];
-                fraction = digits.integerValue * (digits.length == 1 ? 100 : digits.length == 2 ? 10 : 1);
-            }
             if (stamped.count + at.count >= kMostTimedRows) return nil;
-            [at addObject:@((minutes * 60 + seconds) * 1000 + fraction)];
+            [at addObject:@(SGLyricsLRCStampMs(row, match))];
         }
         if (!at.count) continue;
         NSString *text = [[row substringFromIndex:end] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];

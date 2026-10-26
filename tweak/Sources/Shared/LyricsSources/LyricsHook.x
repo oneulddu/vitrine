@@ -9,7 +9,7 @@
 
 // Its lyrics are offered wherever Spotify offers lyrics at all.
 static NSString *const kDonorTrack = @"0VjIjW4GlUZAMYd2vXMi3b";
-static NSString *const kLyricsPath = @"/color-lyrics/v2/track/";
+static NSString *const kLyricsPath = SGLyricsColorLyricsPath;
 static NSString *const kCardListPath = @"/scrollsita/";
 static NSString *const kTrackPrefix = @"spotify:track:";
 // On a request sent to the donor, the track it really asks for.
@@ -57,16 +57,6 @@ static os_unfair_lock sg_templateLock = OS_UNFAIR_LOCK_INIT;
 
 #pragma mark - reading requests
 
-static NSString *lyricsTrack(NSURL *url) {
-    NSString *path = url.path;
-    NSRange marker = [path rangeOfString:kLyricsPath];
-    if (marker.location == NSNotFound) return nil;
-    NSString *rest = [path substringFromIndex:NSMaxRange(marker)];
-    NSRange slash = [rest rangeOfString:@"/"];
-    NSString *track = slash.location == NSNotFound ? rest : [rest substringToIndex:slash.location];
-    return track.length ? track : nil;
-}
-
 static NSString *cardListTrack(NSURL *url) {
     if (![url.path containsString:kCardListPath]) return nil;
     for (NSString *component in url.pathComponents) {
@@ -99,7 +89,7 @@ static NSURLRequest *donorRequestFor(NSURLRequest *request) {
     NSString *address = request.URL.absoluteString;
     if (![address containsString:kLyricsPath]) return nil;
     if ([NSURLProtocol propertyForKey:SGLyricsOwnRequestKey inRequest:request] || donorFor(request)) return nil;
-    NSString *track = lyricsTrack(request.URL);
+    NSString *track = SGLyricsTrackInURL(request.URL);
     if (!track || [track isEqualToString:kDonorTrack]) return nil;
     if (SGLyricsSpotifyHas(track) != 0 || !SGLyricsMayHave(track)) return nil;
     NSRange range = [address rangeOfString:[kLyricsPath stringByAppendingString:track]];
@@ -119,7 +109,7 @@ static NSURLRequest *donorRequestFor(NSURLRequest *request) {
 // NSURLSession and its concrete subclass may both see it; preserve the first stamp.
 static NSURLRequest *lyricsRequestFor(NSURLRequest *request) {
     if ([NSURLProtocol propertyForKey:SGLyricsOwnRequestKey inRequest:request]) return request;
-    NSString *track = donorFor(request) ?: lyricsTrack(request.URL);
+    NSString *track = donorFor(request) ?: SGLyricsTrackInURL(request.URL);
     if (!track) return request;
     NSMutableURLRequest *marked = [request mutableCopy];
     if (![NSURLProtocol propertyForKey:kPinGenerationKey inRequest:marked])
@@ -349,7 +339,7 @@ static SGLyricsTaskState *classify(NSURLSessionTask *task, NSURLResponse *respon
 
     NSString *track = donorFor(original) ?: donorFor(current);
     state.donor = track != nil;
-    if (!track) track = lyricsTrack(original.URL) ?: lyricsTrack(current.URL);
+    if (!track) track = SGLyricsTrackInURL(original.URL) ?: SGLyricsTrackInURL(current.URL);
     if (!track) return nil;
     state.track = track;
     NSNumber *generation = [NSURLProtocol propertyForKey:kPinGenerationKey inRequest:original] ?:

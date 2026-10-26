@@ -18,14 +18,13 @@ NSNotificationName const SGLyricsOffersDidChangeNotification = @"spotifyglass.ly
 // Automatic puts back, which holds lines, for as many tracks as the walk keeps.
 static const NSUInteger kAskedTracks = 10, kChosenTracks = 200, kAutomaticTracks = 40;
 
-// Every source asked for one track, and who waits for them all.
+// Every source asked for one track.
 @interface SGLyricsOfferAsk : NSObject
 @property (nonatomic, copy) NSString *trackID;
 // A result with lines, else NSNull. A source unasked for want of a name, or whose request may have failed, has
 // none, and is asked again the next time the menu opens, as is one switched on since.
 @property (nonatomic, strong) NSMutableDictionary<NSString *, id> *answers;
 @property (nonatomic, strong) NSMutableSet<NSString *> *asking;
-@property (nonatomic, strong) NSMutableArray<void (^)(void)> *waiting;
 @end
 
 @implementation SGLyricsOfferAsk
@@ -88,10 +87,6 @@ static void askMissing(SGLyricsOfferAsk *ask) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsOffersDidChangeNotification object:trackID];
             });
-            if (ask.asking.count) return;
-            NSArray *waiting = [ask.waiting copy];
-            [ask.waiting removeAllObjects];
-            for (void (^done)(void) in waiting) done();
         });
     }
 }
@@ -106,7 +101,6 @@ static SGLyricsOfferAsk *askFor(NSString *trackID) {
         ask.trackID = trackID;
         ask.answers = [NSMutableDictionary dictionary];
         ask.asking = [NSMutableSet set];
-        ask.waiting = [NSMutableArray array];
     }
     askMissing(ask);
     return ask;
@@ -120,22 +114,6 @@ NSDictionary<NSString *, SGLyricsResult *> *SGLyricsOffersSoFar(NSString *trackI
     SGLyricsOfferAsk *ask = trackID ? sg_asks[trackID] : nil;
     if (asking) *asking = ask.asking.allObjects ?: @[];
     return ask ? offersIn(ask) : @{};
-}
-
-void SGLyricsOffers(NSString *trackID, NSTimeInterval wait, void (^done)(NSDictionary<NSString *, SGLyricsResult *> *offers)) {
-    SGLyricsOfferAsk *ask = askFor(trackID);
-    __block BOOL called = NO;
-    void (^once)(void) = ^{
-        if (called) return;
-        called = YES;
-        done(offersIn(ask));
-    };
-    if (!ask.asking.count) {
-        once();
-        return;
-    }
-    [ask.waiting addObject:once];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), once);
 }
 
 // The track's lines and credit everywhere they show, at once.

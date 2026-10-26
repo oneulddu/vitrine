@@ -170,14 +170,6 @@ void SGLyricsSetRouteOffsetMs(NSInteger ms) {
     offsetsChanged();
 }
 
-static NSString *trackInURL(NSURL *url) {
-    NSString *path = url.path;
-    NSRange marker = [path rangeOfString:@"/color-lyrics/v2/track/"];
-    if (marker.location == NSNotFound) return nil;
-    NSString *track = [[path substringFromIndex:NSMaxRange(marker)] componentsSeparatedByString:@"/"].firstObject;
-    return track.length ? track : nil;
-}
-
 static void rememberHeaders(NSURLSession *session, NSURLRequest *request) {
     if (![request.URL.host containsString:@"spclient"]) return;
     NSMutableDictionary<NSString *, NSString *> *all = [NSMutableDictionary dictionary];
@@ -340,7 +332,7 @@ void SGKaraokeForgetLyrics(NSString *trackID) {
 
 static void received(NSURLSession *session, NSURLSessionTask *task, NSData *data) {
     rememberHeaders(session, task.currentRequest);
-    if (sg_ownSources || !trackInURL(task.currentRequest.URL)) return;
+    if (sg_ownSources || !SGLyricsTrackInURL(task.currentRequest.URL)) return;
     NSMutableData *body = objc_getAssociatedObject(task, &kBodyKey);
     if (!body) objc_setAssociatedObject(task, &kBodyKey, (body = [NSMutableData data]), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     [body appendData:data];
@@ -354,7 +346,7 @@ static void completed(NSURLSessionTask *task, NSError *error) {
         return;
     }
     objc_setAssociatedObject(task, &kBodyKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    NSString *track = trackInURL(task.currentRequest.URL);
+    NSString *track = SGLyricsTrackInURL(task.currentRequest.URL);
     if (error || !track) return;
     NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesFromBody(body);
     SGLog(@"karaoke: lyrics for %@, %lu bytes, %lu synced lines", track, (unsigned long)body.length, (unsigned long)lines.count);

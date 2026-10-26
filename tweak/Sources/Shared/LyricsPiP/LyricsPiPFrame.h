@@ -14,12 +14,6 @@ typedef struct {
 // minSize the text is drawn at minSize with its last line truncated.
 SGLyricsPiPTextFit SGLyricsPiPFitText(NSString *text, CGSize box, CGFloat size, CGFloat minSize);
 
-// Draws into a bottom-left-origin context sized to SGLyricsPiPReadStyle().raster.
-// The first three content slots remain current, next, credit; empty strings draw nothing.
-void SGLyricsPiPDrawFrame(CGContextRef context, NSArray<NSString *> *content);
-// Production uses a precomputed background; never blurs or generates gradients on the playback tick.
-void SGLyricsPiPDrawFrameWithBackground(CGContextRef context, NSArray<NSString *> *content, CGImageRef background);
-
 // The same frame as PNG data (BGRA premultiplied-first little-endian, device RGB, as the PiP pixel buffers are).
 NSData *SGLyricsPiPFramePNG(NSArray<NSString *> *content);
 

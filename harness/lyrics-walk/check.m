@@ -123,11 +123,16 @@ static SGLyricsResult *fetch(NSString *track) {
     return got;
 }
 
+// Every source in the order asked at once, and the answers waited for: what they offer with lines, by key,
+// once none is still asking. A key held for a later release would hold this too.
 static NSDictionary<NSString *, SGLyricsResult *> *offers(NSString *track) {
-    __block NSDictionary<NSString *, SGLyricsResult *> *got = nil;
-    SGLyricsOffers(track, 0, ^(NSDictionary<NSString *, SGLyricsResult *> *offered) { got = offered; });
-    pump(^BOOL { return got != nil; });
-    return got;
+    SGLyricsAskOffers(track);
+    pump(^BOOL {
+        NSArray<NSString *> *asking = nil;
+        SGLyricsOffersSoFar(track, &asking);
+        return asking.count == 0;
+    });
+    return SGLyricsOffersSoFar(track, NULL);
 }
 
 // The walk keeps its answers for 40 tracks and then forgets them all: 40 other tracks walked forget the ones

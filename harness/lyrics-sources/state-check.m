@@ -255,7 +255,15 @@ static void checkHookPins(void) {
     sg_everyTrack = YES;
     NSURLRequest *donor = lyricsRequestFor([NSURLRequest requestWithURL:url]);
     sg_everyTrack = NO;
-    CHECK([donorFor(donor) isEqual:track] && [lyricsTrack(donor.URL) isEqual:kDonorTrack]);
+    CHECK([donorFor(donor) isEqual:track] && [SGLyricsTrackInURL(donor.URL) isEqual:kDonorTrack]);
+    // The one color-lyrics track reader (LyricsSources.h): the segment after the first marker, from the path
+    // alone and whatever the host, nil when the path has no marker or that segment is empty.
+    CHECK([SGLyricsTrackInURL([NSURL URLWithString:@"https://spclient.wg.spotify.com/color-lyrics/v2/track/abc?format=json"]) isEqual:@"abc"]);
+    CHECK([SGLyricsTrackInURL([NSURL URLWithString:@"https://spclient.wg.spotify.com/color-lyrics/v2/track/abc/more"]) isEqual:@"abc"]);
+    CHECK(SGLyricsTrackInURL([NSURL URLWithString:@"https://spclient.wg.spotify.com/color-lyrics/v2/track/"]) == nil);
+    CHECK([SGLyricsTrackInURL([NSURL URLWithString:@"https://spclient.wg.spotify.com/color-lyrics/v2/track/abc/color-lyrics/v2/track/def"]) isEqual:@"abc"]);
+    CHECK([SGLyricsTrackInURL([NSURL URLWithString:@"https://example.com/color-lyrics/v2/track/xyz"]) isEqual:@"xyz"]);
+    CHECK(SGLyricsTrackInURL([NSURL URLWithString:@"https://spclient.wg.spotify.com/scrollsita/abc"]) == nil);
     task.originalRequest = task.currentRequest = donor;
     CHECK(SGLyricsPin(track, instrumental));
     SGLyricsTaskState *donorState = classify((id)task, response);

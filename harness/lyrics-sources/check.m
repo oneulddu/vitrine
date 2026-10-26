@@ -617,6 +617,15 @@ static void checkMalformedTiming(void) {
     [repeated appendString:@"Hi"];
     CHECK(!SGLyricsLRCResult(repeated));
     CHECK(SGLyricsLRCResult(@"[00:01][00:02]Hi").karaokeLines.count == 2);
+    // The one stamp and its conversion to milliseconds the two LRC parsers share (LyricsSources.h): a
+    // fraction of no digit, of one (tenths), of two (hundredths) and of three (thousandths).
+    for (NSArray *each in @[@[@"[01:02]", @62000], @[@"[01:02.3]", @62300], @[@"[01:02.35]", @62350],
+                            @[@"[101:02:345]", @6062345]]) {
+        NSString *row = each[0];
+        NSTextCheckingResult *match = [SGLyricsLRCStamp() firstMatchInString:row options:0 range:NSMakeRange(0, row.length)];
+        CHECK(match && SGLyricsLRCStampMs(row, match) == [each[1] integerValue]);
+    }
+    CHECK(![SGLyricsLRCStamp() firstMatchInString:@"[ti:x]" options:0 range:NSMakeRange(0, 6)]);
 
     for (NSString *bad in @[
         @"[0,1000](9223372036854775807,1,0)Hi",

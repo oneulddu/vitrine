@@ -139,18 +139,6 @@ SGLyricsPiPTextFit SGLyricsPiPFitText(NSString *text, CGSize box, CGFloat size, 
     return sg_layout(text, CGRectMake(0, 0, box.width, box.height), size, minSize, 1, NULL, nil, 0);
 }
 
-void SGLyricsPiPDrawFrame(CGContextRef context, NSArray<NSString *> *content) {
-    SGLyricsPiPStyle *style = SGLyricsPiPReadStyle();
-    CGImageRef background = SGLyricsBackgroundCreate(NULL, style.raster,
-        SGLyricsBackgroundRead(@"spotifyglass.lyrics.pip.background"));
-    SGLyricsPiPDrawStyledFrame(context, content, style, background, NULL);
-    if (background) CGImageRelease(background);
-}
-
-void SGLyricsPiPDrawFrameWithBackground(CGContextRef context, NSArray<NSString *> *content, CGImageRef background) {
-    SGLyricsPiPDrawStyledFrame(context, content, SGLyricsPiPReadStyle(), background, NULL);
-}
-
 NSArray<NSValue *> *SGLyricsPiPFrameRects(NSArray<NSString *> *content, SGLyricsPiPStyle *style) {
     NSArray *texts = sg_frame_content(content);
     CGSize size = style.raster;

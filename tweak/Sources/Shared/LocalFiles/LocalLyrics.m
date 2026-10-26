@@ -97,15 +97,15 @@ static NSString *trimmed(NSString *text) {
     return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
 }
 
-// [01:02], [01:02.3], [01:02.34], [01:02.345], [101:02:34]: minutes of one to three digits, and a ":"
-// before the fraction as some editors write it. A line sung more than once carries a stamp per time.
+// [01:02], [01:02.3], [01:02.34], [01:02.345], [101:02:34]: a stamp as SGLyricsLRCStamp in
+// LyricsSources.h reads it. A line sung more than once carries a stamp per time.
 static SGLRCSheet *sheetFrom(NSString *lrc) {
-    static NSRegularExpression *stamp, *tag;
+    static NSRegularExpression *tag;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        stamp = [NSRegularExpression regularExpressionWithPattern:@"\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?\\]" options:0 error:nil];
         tag = [NSRegularExpression regularExpressionWithPattern:@"^\\[(ti|ar|offset)\\s*:([^\\]]*)\\]" options:NSRegularExpressionCaseInsensitive error:nil];
     });
+    NSRegularExpression *stamp = SGLyricsLRCStamp();
     SGLRCSheet *sheet = [SGLRCSheet new];
     NSInteger offset = 0;
     NSMutableArray<NSArray *> *stamped = [NSMutableArray array];   // [ms, text]
@@ -129,15 +129,7 @@ static SGLRCSheet *sheetFrom(NSString *lrc) {
         NSString *text = trimmed([stamp stringByReplacingMatchesInString:row options:0 range:NSMakeRange(0, row.length) withTemplate:@""]);
         if (!text.length) continue;
         for (NSTextCheckingResult *match in found) {
-            NSInteger minutes = [row substringWithRange:[match rangeAtIndex:1]].integerValue;
-            NSInteger seconds = [row substringWithRange:[match rangeAtIndex:2]].integerValue;
-            NSInteger fraction = 0;
-            NSRange part = [match rangeAtIndex:3];
-            if (part.location != NSNotFound) {
-                NSString *digits = [row substringWithRange:part];
-                fraction = digits.integerValue * (digits.length == 1 ? 100 : digits.length == 2 ? 10 : 1);
-            }
-            [stamped addObject:@[@((minutes * 60 + seconds) * 1000 + fraction), text]];
+            [stamped addObject:@[@(SGLyricsLRCStampMs(row, match)), text]];
         }
     }
     if (stamped.count) {

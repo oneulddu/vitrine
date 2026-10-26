@@ -279,6 +279,43 @@ static inline SGLyricsResult *SGLyricsPlainTextResult(id text, NSString *provide
     return result;
 }
 
+// The one LRC timestamp, read by LrcLib.m's records and LocalFiles/LocalLyrics.m's imported files:
+// [mm:ss] with a fraction of tenths, hundredths or thousandths, minutes of one to three digits and a
+// ":" before the fraction as some editors write it. A line carries a stamp per time it is sung.
+static inline NSRegularExpression *SGLyricsLRCStamp(void) {
+    static NSRegularExpression *stamp;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        stamp = [NSRegularExpression regularExpressionWithPattern:@"\\[(\\d{1,3}):(\\d{1,2})(?:[.:](\\d{1,3}))?\\]" options:0 error:nil];
+    });
+    return stamp;
+}
+// The milliseconds a stamp of `row` names: its minutes and seconds in ms, plus its fraction as
+// thousandths, a one or two digit fraction counting tenths or hundredths.
+static inline NSInteger SGLyricsLRCStampMs(NSString *row, NSTextCheckingResult *match) {
+    NSInteger minutes = [[row substringWithRange:[match rangeAtIndex:1]] integerValue];
+    NSInteger seconds = [[row substringWithRange:[match rangeAtIndex:2]] integerValue];
+    NSInteger fraction = 0;
+    NSRange part = [match rangeAtIndex:3];
+    if (part.location != NSNotFound) {
+        NSString *digits = [row substringWithRange:part];
+        fraction = digits.integerValue * (digits.length == 1 ? 100 : digits.length == 2 ? 10 : 1);
+    }
+    return (minutes * 60 + seconds) * 1000 + fraction;
+}
+
+// Every color-lyrics request carries this before the track it asks for.
+#define SGLyricsColorLyricsPath @"/color-lyrics/v2/track/"
+// The track a color-lyrics URL asks for, out of its path alone: the segment after the first
+// SGLyricsColorLyricsPath, nil when the path has none or that segment is empty.
+static inline NSString *SGLyricsTrackInURL(NSURL *url) {
+    NSString *path = url.path;
+    NSRange marker = [path rangeOfString:SGLyricsColorLyricsPath];
+    if (marker.location == NSNotFound) return nil;
+    NSString *track = [[path substringFromIndex:NSMaxRange(marker)] componentsSeparatedByString:@"/"].firstObject;
+    return track.length ? track : nil;
+}
+
 SGLyricsResult *SGBugsResult(id root, BOOL timed);
 SGLyricsResult *SGGenieResult(NSString *jsonp);
 SGLyricsResult *SGLyricsPlusResult(id root);
@@ -352,10 +389,8 @@ UIViewController *SGLyricsSourcesPage(void);   // the ordered list on the Lyrics
 // than the one that answered (issue #67). The pick is a track's id against a source's key, kept until Spotify
 // quits; a track's walk asks its picked source first, the rest of the order after it. Main queue.
 NSString *SGLyricsChosenSource(NSString *trackID);
-// Every source in the order is asked for the track at once, the answers kept for the last few tracks, and
-// `done` gets the ones with lines, by key, when all have answered or `wait` has passed.
-void SGLyricsOffers(NSString *trackID, NSTimeInterval wait, void (^done)(NSDictionary<NSString *, SGLyricsResult *> *offers));
-// The same asks started, with no answer awaited.
+// Every source in the order is asked for the track at once, with no answer awaited, and the answers are
+// kept for the last few tracks; SGLyricsOffersDidChangeNotification is posted as each one answers.
 void SGLyricsAskOffers(NSString *trackID);
 // What they have answered, asking nothing: the sources with lines so far, and in `asking` the keys still out.
 NSDictionary<NSString *, SGLyricsResult *> *SGLyricsOffersSoFar(NSString *trackID, NSArray<NSString *> **asking);
