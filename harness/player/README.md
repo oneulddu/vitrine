@@ -1,5 +1,14 @@
 # Player harness
 
+## Upcoming-track parsing without a simulator
+
+Run `sh harness/player/upcoming-tracks-check.sh` from the repository root. It extracts
+`SGURIString` and `SGPlayerUpcomingTracks` directly from the current `PlayerState.x` and
+compiles them as plain Objective-C against Foundation and minimal Spotify data doubles.
+The Logos observer hooks and UIKit are not compiled. Checks cover malformed state/future
+values, track filtering, URI forms (including empty strings), ordering, duplicates, the
+50-row early stop and an unlimited list. Temporary outputs are removed on exit.
+
 ## Landscape title notifications without a simulator
 
 From the repository root on an Apple Silicon Mac with Xcode and Theos:
@@ -86,6 +95,8 @@ come late, out of order, or not at all.
   the progress bar's slider in code (issue #172): the list's pan off while it tracks, back at its end, at a
   cancel and when the slider leaves the window, and a pan that was off already left off. The log ends
   with `scrub checks: ... -- PASS` or `FAIL`.
+- `controls` checks the shared ordinary/DJ glyph helpers: owner/key identity, centering and the DJ offset,
+  autoresizing, front ordering and reparenting. It exits with the result, as does `scroll`.
 - `cover` is issue #77. The cover is checked untouched first, then given Spotify's layout for a track with
   lyrics, a smaller cover over the lyric preview, and must take its room back as a centered square the
   Kit also reports. The log ends with `cover checks: n of 4 right -- PASS` or `FAIL`.

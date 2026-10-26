@@ -74,6 +74,7 @@ their check executable in the workflow.
 | `palette/field-check.sh` | Catalyst player field palette requests across mode changes and stale replies. |
 | `pitch/build.sh` | Synthetic sine pitch/speed assertions, no song argument. |
 | `player/title-notification-check.sh` | Real Logos controller with offline notification fixtures. |
+| `player/upcoming-tracks-check.sh` | Production upcoming-track parsing (`SGURIString`, `SGPlayerUpcomingTracks`) extracted from `PlayerState.x` and run against Foundation doubles; no simulator. |
 | `prefs/check.sh` | Foundation preference validation plus counter persistence and file-hash checks (`counters.m`). |
 | `radio-modes/build.sh` | Foundation Spotify mocks, spoofing off/on. |
 | `sing/build.sh` | `spatial`: model-free lead, spatial and decoder assertions. |

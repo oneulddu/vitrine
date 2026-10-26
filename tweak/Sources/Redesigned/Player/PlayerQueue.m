@@ -1,8 +1,8 @@
 // Player redesign: Playing Next, the Music app's list of what plays after the song, as a dark sheet (medium and
 // large, with the system's grabber) opened from the player's ⋯ menu (PlayerMenu.m).
 //
-// The rows are the player state's tracks to come (SPTPlayerState.future, Headers/SPTPlayer.h), read the way the
-// Live Activity reads them (Shared/LiveActivity/LiveActivity.x, upNext): an SPTPlayerTrack with a title and a URI,
+// The rows are the player state's tracks to come (SPTPlayerState.future, Headers/SPTPlayer.h), read through
+// SGPlayerUpcomingTracks, as the Live Activity reads them: an SPTPlayerTrack with a title and a URI,
 // the rest left out, at most kMaxRows, title over artist. Nothing is fetched: it is the state the player already
 // reported. The list follows every report while the sheet is open (SGPlayerStateObserver's playerStateDidReport:,
 // which carries a queue changed by hand too), reloaded only when the tracks to come changed. A tap skips ahead to
@@ -19,31 +19,11 @@
 
 static const NSUInteger kMaxRows = 50;
 
-// A track's URI as a string; the player hands out NSURL or NSString.
-static NSString *uriOf(SPTPlayerTrack *track) {
-    id uri = track.URI;
-    if ([uri isKindOfClass:NSURL.class]) return [(NSURL *)uri absoluteString];
-    return [uri isKindOfClass:NSString.class] ? uri : nil;
-}
-
-// The state's tracks up next, skipping what is not a track or has no title or URI, at most kMaxRows.
-static NSArray<SPTPlayerTrack *> *upNext(SPTPlayerState *state) {
-    NSMutableArray<SPTPlayerTrack *> *tracks = [NSMutableArray array];
-    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
-    for (id track in [future isKindOfClass:NSArray.class] ? future : @[]) {
-        if (![track isKindOfClass:objc_getClass("SPTPlayerTrack")]) continue;
-        if (![(SPTPlayerTrack *)track trackTitle].length || !uriOf(track)) continue;
-        [tracks addObject:track];
-        if (tracks.count == kMaxRows) break;
-    }
-    return tracks;
-}
-
 // What a row shows, so a report that changed nothing in the list leaves it alone.
 static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
     NSMutableArray<NSString *> *signature = [NSMutableArray arrayWithCapacity:tracks.count];
     for (SPTPlayerTrack *track in tracks) {
-        [signature addObject:[NSString stringWithFormat:@"%@\t%@\t%@", uriOf(track), track.trackTitle, track.artistName ?: @""]];
+        [signature addObject:[NSString stringWithFormat:@"%@\t%@\t%@", SGURIString(track.URI), track.trackTitle, track.artistName ?: @""]];
     }
     return signature;
 }
@@ -91,7 +71,7 @@ static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
 #pragma mark - the player
 
 - (void)takeState:(SPTPlayerState *)state {
-    NSArray<SPTPlayerTrack *> *tracks = upNext(state);
+    NSArray<SPTPlayerTrack *> *tracks = SGPlayerUpcomingTracks(state, kMaxRows);
     NSArray<NSString *> *signature = signatureOf(tracks);
     if (_signature && [signature isEqualToArray:_signature]) return;
     _tracks = tracks;
@@ -140,11 +120,11 @@ static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
     SPTPlayerTrack *track = _tracks[(NSUInteger)path.row];
     id<SPTPlayer> player = SGKaraokePlayer();
     if (![player respondsToSelector:@selector(skipToNextTrackWithOptions:track:)]) {
-        SGLog(@"redesign player: Playing Next cannot play %@ (player %@)", uriOf(track), player ? NSStringFromClass([player class]) : @"nil");
+        SGLog(@"redesign player: Playing Next cannot play %@ (player %@)", SGURIString(track.URI), player ? NSStringFromClass([player class]) : @"nil");
         return;
     }
     id result = [player skipToNextTrackWithOptions:nil track:track];
-    SGLog(@"redesign player: Playing Next plays row %ld, %@ -> %@", (long)path.row, uriOf(track), result);
+    SGLog(@"redesign player: Playing Next plays row %ld, %@ -> %@", (long)path.row, SGURIString(track.URI), result);
     [self close];
 }
 

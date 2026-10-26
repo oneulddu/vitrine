@@ -59,11 +59,11 @@ static void logMissing(NSString *what) {
     SGLog(@"redesign player: %@ not found, left as Spotify's", what);
 }
 
-static SGRGlyphView *glyphFor(UIView *owner, NSString *symbol, CGFloat size) {
-    SGRGlyphView *glyph = objc_getAssociatedObject(owner, &kGlyphKey);
+SGRGlyphView *SGRPlayerGlyphFor(UIView *owner, const void *key, NSString *symbol, CGFloat size) {
+    SGRGlyphView *glyph = objc_getAssociatedObject(owner, key);
     if (!glyph) {
         glyph = [[SGRGlyphView alloc] initWithSymbol:symbol pointSize:size weight:UIImageSymbolWeightRegular];
-        objc_setAssociatedObject(owner, &kGlyphKey, glyph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(owner, key, glyph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     return glyph;
 }
@@ -71,7 +71,7 @@ static SGRGlyphView *glyphFor(UIView *owner, NSString *symbol, CGFloat size) {
 // Centered by the autoresizing mask as well as here: the unit lays out before the buttons in its row
 // have a size, so a center set then is the middle of nothing, (0, 0), and no later pass of the unit's
 // comes to move it (trees/continuous/1.txt, 2026-09-17: glyphs at {-23.7, -14.7} in 56pt buttons).
-static void keepOnTop(UIView *view, UIView *host) {
+void SGRPlayerPlaceGlyph(UIView *view, UIView *host, CGFloat dy) {
     if (view.superview != host) {
         view.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin
                               | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
@@ -79,7 +79,7 @@ static void keepOnTop(UIView *view, UIView *host) {
     } else if (host.subviews.lastObject != view) {
         [host bringSubviewToFront:view];
     }
-    view.center = CGPointMake(CGRectGetMidX(host.bounds), CGRectGetMidY(host.bounds));
+    view.center = CGPointMake(CGRectGetMidX(host.bounds), CGRectGetMidY(host.bounds) + dy);
 }
 
 #pragma mark - previous and next
@@ -93,11 +93,11 @@ static void skipGlyph(UIView *host, NSString *identifier, const void *findKey, N
     }
     static Class icon;
     if (!icon) icon = NSClassFromString(@"SPTEncoreIconView");
-    SGRGlyphView *glyph = glyphFor(button, symbol, kSkipGlyphSize);
+    SGRGlyphView *glyph = SGRPlayerGlyphFor(button, &kGlyphKey, symbol, kSkipGlyphSize);
     SGForEachView(content, ^(UIView *view) {
         if (view != glyph && [view isKindOfClass:icon]) SGRPlayerVanish(view);
     });
-    keepOnTop(glyph, content);
+    SGRPlayerPlaceGlyph(glyph, content, 0);
     // The touches are the button's; the platter goes in with the glyph, under it.
     SGRPressGlyph(button, glyph, content, kSkipPlatter, SGRPressScale | nudge);
 }
@@ -222,8 +222,8 @@ void SGRPlayerPlayGlyphIn(UIView *host) {
     }
 
     // Inside the button, over the disc it replaces, so it follows the button's own press.
-    SGRGlyphView *glyph = glyphFor(play, symbolFor(state.isPaused), kPlayGlyphSize);
-    keepOnTop(glyph, button);
+    SGRGlyphView *glyph = SGRPlayerGlyphFor(play, &kGlyphKey, symbolFor(state.isPaused), kPlayGlyphSize);
+    SGRPlayerPlaceGlyph(glyph, button, 0);
     SGRPressGlyph(play, glyph, button, kPlayPlatter, SGRPressScale);
     sg_playView = play;
     sg_playButton = button;

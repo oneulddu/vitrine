@@ -8,6 +8,18 @@ NSString *SGURIString(id uri) {
     return nil;
 }
 
+NSArray<SPTPlayerTrack *> *SGPlayerUpcomingTracks(SPTPlayerState *state, NSUInteger limit) {
+    NSMutableArray<SPTPlayerTrack *> *tracks = [NSMutableArray array];
+    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
+    for (id track in [future isKindOfClass:NSArray.class] ? future : @[]) {
+        if (![track isKindOfClass:objc_getClass("SPTPlayerTrack")]) continue;
+        if (![(SPTPlayerTrack *)track trackTitle].length || !SGURIString([(SPTPlayerTrack *)track URI])) continue;
+        [tracks addObject:track];
+        if (tracks.count == limit) break;
+    }
+    return tracks;
+}
+
 static NSHashTable<id<SGPlayerStateObserver>> *sg_stateObservers;
 static SPTPlayerState *sg_playerState;
 // The first player seen, weak: the app owns it.

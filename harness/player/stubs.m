@@ -192,7 +192,6 @@ void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *hea
                            void (^done)(NSData *data, NSInteger status)) {
     if (done) done(nil, 0);
 }
-SGKaraokeLine *SGLyricsPronunciation(NSArray<SGKaraokeWord *> *words, NSString *plain, SGKaraokeLine *of) { return nil; }
 BOOL SGLyricsPin(NSString *trackID, NSDictionary *record) { return NO; }
 void SGLyricsUnpin(NSString *trackID) {}
 NSNumber *SGLyricsPinnedID(NSString *trackID) { return nil; }
@@ -310,7 +309,6 @@ NSString *SGSingModelError(void) { return nil; }
 NSString *SGSingModelSizeText(void) { return @""; }
 void SGSingDownloadModel(void) {}
 void SGSingCancelModelDownload(void) {}
-NSNotificationName const SGSingButtonDidChangeNotification = @"harness.singButtonDidChange";
 
 // MotionSources.m: the default order, Canvas then Apple Music, over the catalog the harness builds. No
 // Canvas service: a track whose metadata names no Canvas goes to Apple Music.
@@ -336,14 +334,6 @@ BOOL SGMotionAppleMusicOn(void) { return YES; }
 // TabBar.x: the Mini player section's Apple Music style switch lays the tab bar out again; there is none here.
 void SGRSetTabBarMinimized(BOOL minimized, BOOL animated) {}
 void SGRRefreshTabBar(void) {}
-
-// PlayerVolume.m and PlayerCoverAccent.x are not part of this harness. Keep their layout call sites alive while
-// leaving out the system volume route and Spotify's paint walk, which have harnesses of their own.
-BOOL SGRPlayerVolumeOn(void) { return NO; }
-BOOL SGRPlayerPlaceVolume(UIView *stack, UIView *controls, UIView *row, CGFloat margin) { return NO; }
-BOOL SGRPlayerFollowsCover(void) { return NO; }
-void SGRPlayerSetCoverAccent(UIColor *cover) {}
-void SGRPlayerPaintCover(UIView *stack) {}
 
 // The ⋯'s system menu (PlayerMenu.m, ContextMenu.x), which this harness does not build; PlayerHeader.x hands it
 // the ⋯, and with no button of the mod's over it the ⋯'s own touches press its circle.

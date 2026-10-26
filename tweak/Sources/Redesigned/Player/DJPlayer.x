@@ -27,28 +27,6 @@ static char kShareKey, kConnectKey, kDJKey, kQueueKey;
 
 #pragma mark - previous and next
 
-static SGRGlyphView *glyphFor(UIView *owner, NSString *symbol, CGFloat size) {
-    SGRGlyphView *glyph = objc_getAssociatedObject(owner, &kGlyphKey);
-    if (!glyph) {
-        glyph = [[SGRGlyphView alloc] initWithSymbol:symbol pointSize:size weight:UIImageSymbolWeightRegular];
-        objc_setAssociatedObject(owner, &kGlyphKey, glyph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    return glyph;
-}
-
-// On top inside `host` and centred by the autoresizing mask as well as here: the unit lays out before the
-// buttons in it have a size, so a centre set then is the middle of nothing.
-static void keepOnTop(UIView *view, UIView *host, CGFloat dy) {
-    if (view.superview != host) {
-        view.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin
-                              | UIViewAutoresizingFlexibleTopMargin | UIViewAutoresizingFlexibleBottomMargin;
-        [host addSubview:view];
-    } else if (host.subviews.lastObject != view) {
-        [host bringSubviewToFront:view];
-    }
-    view.center = CGPointMake(CGRectGetMidX(host.bounds), CGRectGetMidY(host.bounds) + dy);
-}
-
 // How far below its own middle a previous/next glyph must sit to share a line with the play glyph. Spotify's
 // head unit puts the 56pt skip buttons and the 64pt play view on one top edge (y=16), so their middles are
 // 44 and 48 apart by 4pt, and the glyphs, centred in their buttons, would be too. Measured in the unit's
@@ -67,14 +45,14 @@ static void skipGlyph(UIView *host, NSString *identifier, const void *findKey, N
     if (!button) return;
     static Class icon;
     if (!icon) icon = NSClassFromString(@"SPTEncoreIconView");
-    SGRGlyphView *glyph = glyphFor(button, symbol, kSkipGlyphSize);
+    SGRGlyphView *glyph = SGRPlayerGlyphFor(button, &kGlyphKey, symbol, kSkipGlyphSize);
     // Spotify's own icon, a Swift view SGRSuppress cannot keep (PlayerControls.x), or a plain image view.
     SGForEachView(button, ^(UIView *view) {
         if (view == glyph) return;
         if (icon && [view isKindOfClass:icon]) SGRPlayerVanish(view);
         else if ([view isKindOfClass:UIImageView.class] && view.superview == button) SGRSuppress(view);
     });
-    keepOnTop(glyph, button, skipDrop(host, button));
+    SGRPlayerPlaceGlyph(glyph, button, skipDrop(host, button));
 }
 
 static void styleControls(UIViewController *unit) {

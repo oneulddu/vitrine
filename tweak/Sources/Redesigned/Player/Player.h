@@ -259,6 +259,12 @@ void SGRPlayerVanish(UIView *view);
 // (PlayerControls.x) and the AI DJ's (DJPlayer.x) share it, with its state, spinner and tap handling.
 void SGRPlayerPlayGlyphIn(UIView *host);
 
+// Transport glyph creation and placement shared by the ordinary and DJ controls (PlayerControls.x).
+// Each caller keeps its own association key; the symbol and size apply only when first created.
+@class SGRGlyphView;
+SGRGlyphView *SGRPlayerGlyphFor(UIView *owner, const void *key, NSString *symbol, CGFloat size);
+void SGRPlayerPlaceGlyph(UIView *view, UIView *host, CGFloat dy);
+
 // The footer's shared parts (PlayerFooter.x), for the AI DJ's footer (DJPlayer.x). `row` is the footer unit's view:
 // moved down over the home indicator with the controls following, the volume row and Follow the cover placed.
 void SGRPlayerLowerRow(UIView *row);

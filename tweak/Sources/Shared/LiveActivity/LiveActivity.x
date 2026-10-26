@@ -150,25 +150,6 @@ static void send(NSString *shown, void (^show)(void)) API_AVAILABLE(ios(17.0)) {
     show();
 }
 
-// A track's URI as a string; the player hands out NSURL or NSString.
-static NSString *uriOf(SPTPlayerTrack *track) {
-    id uri = track.URI;
-    if ([uri isKindOfClass:NSURL.class]) return [(NSURL *)uri absoluteString];
-    return [uri isKindOfClass:NSString.class] ? uri : nil;
-}
-
-// The state's tracks up next, skipping what is not a track or has no title or URI.
-static NSArray<SPTPlayerTrack *> *upNext(SPTPlayerState *state) {
-    NSMutableArray<SPTPlayerTrack *> *tracks = [NSMutableArray array];
-    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
-    for (id track in [future isKindOfClass:NSArray.class] ? future : @[]) {
-        if (![track isKindOfClass:objc_getClass("SPTPlayerTrack")]) continue;
-        if (![(SPTPlayerTrack *)track trackTitle].length || !uriOf(track)) continue;
-        [tracks addObject:track];
-    }
-    return tracks;
-}
-
 // 0 off, 1 the playlist or album, 2 the track.
 static NSInteger repeatModeOf(SPTPlayerOptions *options) {
     return options.repeatingTrack ? 2 : options.repeatingContext ? 1 : 0;
@@ -345,11 +326,11 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
     NSMutableArray<NSString *> *titles = [NSMutableArray array], *artists = [NSMutableArray array], *uris = [NSMutableArray array];
     if (view != SGLiveActivityLyrics) {
         NSUInteger limit = view == SGLiveActivityQueue ? kUpNextQueue : kUpNextPanel;
-        for (SPTPlayerTrack *upcoming in upNext(state)) {
+        for (SPTPlayerTrack *upcoming in SGPlayerUpcomingTracks(state, NSUIntegerMax)) {
             if (titles.count == limit) break;
             [titles addObject:upcoming.trackTitle];
             [artists addObject:upcoming.artistName ?: @""];
-            [uris addObject:uriOf(upcoming)];
+            [uris addObject:SGURIString(upcoming.URI)];
         }
     }
 
@@ -386,8 +367,8 @@ static void tick(void) API_AVAILABLE(ios(17.0)) {
 static void playQueued(NSString *uri) {
     id<SPTPlayer> player = SGKaraokePlayer();
     SPTPlayerTrack *target = nil;
-    for (SPTPlayerTrack *track in upNext(player.state)) {
-        if ([uriOf(track) isEqualToString:uri]) { target = track; break; }
+    for (SPTPlayerTrack *track in SGPlayerUpcomingTracks(player.state, NSUIntegerMax)) {
+        if ([SGURIString(track.URI) isEqualToString:uri]) { target = track; break; }
     }
     if (!target || ![player respondsToSelector:@selector(skipToNextTrackWithOptions:track:)]) {
         SGLog(@"live activity: cannot play %@ (in the queue: %@, player %@)", uri, target ? @"yes" : @"no", player ? NSStringFromClass([player class]) : @"nil");

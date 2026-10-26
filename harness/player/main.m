@@ -38,8 +38,10 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <stdlib.h>
 #import "Shared/Lyrics/Lyrics.h"
 #import "Redesigned/Player/Player.h"
+#import "Redesigned/Kit/SGRGlyph.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Redesigned/Kit/SGRBridges.h"
 #import "Redesigned/Kit/SGRField.h"
@@ -611,6 +613,7 @@ static void loadLyrics(void) {
     if ([scenario() isEqualToString:@"artwork"]) [self runArtworkChecks];
     else if ([scenario() isEqualToString:@"look"]) [self runLook];
     else if ([scenario() isEqualToString:@"scroll"]) [self runScrollChecks];
+    else if ([scenario() isEqualToString:@"controls"]) [self runControlsChecks];
     else if ([scenario() isEqualToString:@"landscape"]) [self runLandscape];
     else if ([scenario() isEqualToString:@"motion"]) [self runMotionChecks];
     else if ([scenario() isEqualToString:@"catalog"]) [self runCatalogChecks];
@@ -1413,6 +1416,41 @@ static CGFloat hillHeight(UIView *view, NSString *ivar) {
     });
 }
 
+- (void)runControlsChecks {
+    static char ordinaryKey, djKey;
+    UIView *owner = [UIView new];
+    SGRGlyphView *glyph = SGRPlayerGlyphFor(owner, &ordinaryKey, @"backward.fill", 32);
+    [self expect:glyph == SGRPlayerGlyphFor(owner, &ordinaryKey, @"pause.fill", 44)
+            step:@"controls reuse the owner's glyph" detail:@"later symbol and size do not replace it"];
+    [self expect:[glyph.symbol isEqualToString:@"backward.fill"]
+            step:@"reuse preserves the original symbol" detail:glyph.symbol];
+    [self expect:[glyph.preferredSymbolConfiguration isEqual:
+                  [UIImageSymbolConfiguration configurationWithPointSize:32 weight:UIImageSymbolWeightRegular]]
+            step:@"reuse preserves the original point size" detail:@"32pt regular, not the requested 44pt"];
+    UIView *djGlyph = (UIView *)SGRPlayerGlyphFor(owner, &djKey, @"forward.fill", 32);
+    [self expect:djGlyph != glyph step:@"controls keep association keys separate" detail:@"ordinary and DJ keys"];
+    UIView *host = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 60)];
+    SGRPlayerPlaceGlyph(glyph, host, 0);
+    [self expect:CGPointEqualToPoint(glyph.center, CGPointMake(50, 30))
+            step:@"ordinary glyph is centered" detail:NSStringFromCGPoint(glyph.center)];
+    SGRPlayerPlaceGlyph(djGlyph, host, 4);
+    [self expect:CGPointEqualToPoint(djGlyph.center, CGPointMake(50, 34))
+            step:@"DJ glyph retains its vertical offset" detail:NSStringFromCGPoint(djGlyph.center)];
+    host.frame = CGRectMake(0, 0, 200, 100);
+    [self expect:CGPointEqualToPoint(glyph.center, CGPointMake(100, 50))
+            step:@"centered glyph follows host resizing" detail:NSStringFromCGPoint(glyph.center)];
+    [host addSubview:[UIView new]];
+    SGRPlayerPlaceGlyph(djGlyph, host, 4);
+    [self expect:host.subviews.lastObject == djGlyph step:@"glyph returns above new content" detail:@"same host"];
+    UIView *nextHost = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 80, 40)];
+    SGRPlayerPlaceGlyph(djGlyph, nextHost, 4);
+    [self expect:djGlyph.superview == nextHost && CGPointEqualToPoint(djGlyph.center, CGPointMake(40, 24))
+            step:@"glyph moves to a new host" detail:NSStringFromCGPoint(djGlyph.center)];
+    NSLog(@"[harness] controls checks: %lu of %lu right -- %@", (unsigned long)(_checks - _failures),
+          (unsigned long)_checks, _failures ? @"FAIL" : @"PASS");
+    exit(_failures ? 1 : 0);
+}
+
 - (void)runScrollChecks {
     after(2, ^{
         UIScrollView *list = self->_list;
@@ -1426,6 +1464,7 @@ static CGFloat hillHeight(UIView *view, NSString *ivar) {
         list.contentOffset = CGPointMake(0, top);
         NSLog(@"[harness] scroll checks: up %@, down %@, again %@ -- %@", up ? @"held" : @"moved", down ? @"kept" : @"lost",
               again ? @"held" : @"moved", up && down && again ? @"PASS" : @"FAIL");
+        if (!(up && down && again)) exit(1);
     });
     // Issue #172: the list's pan is off while the progress bar is scrubbed, back once the scrub ends however
     // it ends, and a pan that was off already stays off.
@@ -1457,6 +1496,7 @@ static CGFloat hillHeight(UIView *view, NSString *ivar) {
         [slider removeFromSuperview];
         NSLog(@"[harness] scrub checks: %@ -- %@", wrong.count ? [wrong componentsJoinedByString:@", "] : @"all right",
               wrong.count ? @"FAIL" : @"PASS");
+        exit(wrong.count ? 1 : 0);
     });
 }
 

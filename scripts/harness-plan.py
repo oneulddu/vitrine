@@ -91,6 +91,8 @@ HARNESSES = [
      "run": "sh harness/pitch/build.sh && harness/pitch/build/pitch"},
     {"name": "Player title notification", "dir": "player", "theos": True,
      "run": "sh harness/player/title-notification-check.sh"},
+    {"name": "Player upcoming tracks", "dir": "player",
+     "run": "sh harness/player/upcoming-tracks-check.sh"},
     {"name": "Preferences and counters", "dir": "prefs",
      "run": "sh harness/prefs/check.sh"},
     {"name": "Radio modes", "dir": "radio-modes",

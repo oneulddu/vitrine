@@ -14,6 +14,10 @@
 // A URI Spotify types as id (NSURL or NSString) as a string; nil for anything else.
 NSString *SGURIString(id uri);
 
+// Upcoming tracks with a title and a nonnil string/URL URI, in order, including duplicates.
+// Stops as soon as `limit` tracks qualify; pass NSUIntegerMax for the full list.
+NSArray<SPTPlayerTrack *> *SGPlayerUpcomingTracks(SPTPlayerState *state, NSUInteger limit);
+
 // The first SPTEsperantoPlayer the app added an observer to, weak and nil until then. Unlike
 // SGKaraokePlayer it is there under either look and with the lyrics features off, for the commands
 // that only need a player (the keyboard's). Responds to SPTPlayer's own selectors.
