@@ -1364,8 +1364,29 @@ static void checkBackgroundSkip(void) {
     printf("background skip: inactive guards, foreground grace including local retry pauses, bounded source retries, activation/replay/explicit recovery and unchanged Spotify-loss retries passed\n");
 }
 
+void checkNetEaseURLs(void);
+
+static void checkTTMLResult(void) {
+    NSString *xml = @"<tt><body><div>"
+        "<p begin=\"5s\" end=\"6s\"><span begin=\"5s\" end=\"6s\">Later</span></p>"
+        "<p begin=\"1s\" end=\"2s\"><span begin=\"1s\" end=\"2s\">Earlier</span></p>"
+        "</div></body></tt>";
+    SGLyricsResult *result = SGTTMLResult(xml, NO);
+    CHECK(result.synced && !result.wordTimed);
+    CHECK(([[result.karaokeLines valueForKey:@"start"] isEqual:@[@5000, @1000]]));
+    CHECK(([result.starts isEqual:@[@5000, @1000, @2000]]));
+    CHECK(([result.texts isEqual:@[@"Later", @"Earlier", @""]]));
+    CHECK(SGTTMLResult(@"<tt><body><p begin=\"1s\" end=\"2s\">Line only</p></body></tt>", YES).wordTimed);
+    CHECK(!SGTTMLResult(nil, YES));
+    CHECK(!SGTTMLResult(@"<tt/>", NO));
+    CHECK(!SGTTMLResult(@"<tt><body><p begin=\"1s\" end=\"2s\">Unclosed", YES));
+    puts("TTML result: supplied timing, parser order, page projection and nil answers passed");
+}
+
 int main(void) {
     @autoreleasepool {
+        checkTTMLResult();
+        checkNetEaseURLs();
         // A separate suite makes the default writes real without touching the app's or the user's.
         sg_testSuite = [@"com.vitrine.lyrics-state-check." stringByAppendingString:NSUUID.UUID.UUIDString];
         sg_testDefaults = [[NSUserDefaults alloc] initWithSuiteName:sg_testSuite];

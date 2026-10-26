@@ -180,6 +180,8 @@ BOOL SGLyricsReplyFailed(NSURLResponse *response, NSError *error);
 // line's translation and pronunciation added where the head has them; nil when the document holds no
 // line the page could show.
 NSArray<SGKaraokeLine *> *SGTTMLLines(NSString *xml);
+// Provider timing metadata is kept verbatim; page lines retain the parser's order.
+SGLyricsResult *SGTTMLResult(NSString *xml, BOOL wordTimed);
 // SGLyricsBareText and SGLyricsShownTranslation are declared in Lyrics.h, beside the lines they read.
 // A line's pronunciation: timed `words` where the source has them, else `plain` estimated across the
 // line's own time; nil when it has neither or reads the same as `of`.

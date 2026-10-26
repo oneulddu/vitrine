@@ -44,22 +44,13 @@ SGLyricsAsk SGUnisonAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *r
             done(nil);
             return;
         }
-        NSArray<SGKaraokeLine *> *lines = SGTTMLLines(data[@"lyrics"]);
-        if (!lines) {
+        SGLyricsResult *result = SGTTMLResult(data[@"lyrics"], [data[@"syncType"] isEqual:@"richsync"]);
+        if (!result) {
             done(nil);
             return;
         }
-        SGLyricsResult *result = [SGLyricsResult new];
-        result.synced = YES;
-        result.wordTimed = [data[@"syncType"] isEqual:@"richsync"];
-        result.karaokeLines = lines;
-        NSArray<NSNumber *> *starts;
-        NSArray<NSString *> *texts;
-        SGLyricsPageLines(lines, &starts, &texts);
-        result.starts = starts;
-        result.texts = texts;
         SGLog(@"unison: %@ by %@ has %lu %@ lines (%@ confidence)", query.title, query.artist,
-              (unsigned long)lines.count, result.wordTimed ? @"word timed" : @"line timed", data[@"confidence"]);
+              (unsigned long)result.karaokeLines.count, result.wordTimed ? @"word timed" : @"line timed", data[@"confidence"]);
         done(result);
     });
 };

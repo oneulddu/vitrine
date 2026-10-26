@@ -12,13 +12,8 @@ static const NSInteger kLengthSlack = 3;
 static const NSUInteger kTriedSongs = 3;
 
 static void get(NSString *path, NSDictionary<NSString *, NSString *> *query, void (^done)(NSDictionary *root)) {
-    NSURLComponents *url = [NSURLComponents componentsWithString:[@"https://music.163.com/api/" stringByAppendingString:path]];
-    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray array];
-    [query enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSString *value, BOOL *stop) {
-        [items addObject:[NSURLQueryItem queryItemWithName:name value:value]];
-    }];
-    url.queryItems = items;
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url.URL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:kTimeout];
+    NSURL *url = SGLyricsURL([@"https://music.163.com/api/" stringByAppendingString:path], query);
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:kTimeout];
     [request setValue:@"https://music.163.com" forHTTPHeaderField:@"Referer"];
     [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         SGLyricsNoteReply(response, error);

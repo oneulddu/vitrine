@@ -35,22 +35,6 @@ static NSDictionary *bestOf(id results, NSInteger seconds) {
     return best;
 }
 
-// The result for a TTML, nil when it has no lines the page can show.
-static SGLyricsResult *resultFor(NSString *ttml, BOOL wordTimed) {
-    NSArray<SGKaraokeLine *> *lines = SGTTMLLines(ttml);
-    if (!lines) return nil;
-    SGLyricsResult *result = [SGLyricsResult new];
-    result.synced = YES;
-    result.wordTimed = wordTimed;
-    result.karaokeLines = lines;
-    NSArray<NSNumber *> *starts;
-    NSArray<NSString *> *texts;
-    SGLyricsPageLines(lines, &starts, &texts);
-    result.starts = starts;
-    result.texts = texts;
-    return result;
-}
-
 static void search(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
     if (!query.title.length || !query.artist.length) {
         SGLog(@"binilyrics: nothing to search with for %@", query.trackID);
@@ -71,7 +55,7 @@ static void search(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
             return;
         }
         SGLyricsGetText([NSURL URLWithString:found[@"lyricsUrl"]], ^(NSString *ttml) {
-            SGLyricsResult *result = resultFor(ttml, [found[@"timing_type"] isEqual:@"word"]);
+            SGLyricsResult *result = SGTTMLResult(ttml, [found[@"timing_type"] isEqual:@"word"]);
             if (!result) SGLog(@"binilyrics: %@ gave nothing the page could show", found[@"lyricsUrl"]);
             else SGLog(@"binilyrics: %@ by %@ has %lu %@ lines", query.title, query.artist,
                        (unsigned long)result.karaokeLines.count, result.wordTimed ? @"word timed" : @"line timed");
@@ -92,7 +76,7 @@ SGLyricsAsk SGBiniLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResul
             return;
         }
         SGLyricsGetText([NSURL URLWithString:[NSString stringWithFormat:kByISRC, isrc]], ^(NSString *ttml) {
-            SGLyricsResult *result = resultFor(ttml, [ttml containsString:@"timing=\"Word\""]);
+            SGLyricsResult *result = SGTTMLResult(ttml, [ttml containsString:@"timing=\"Word\""]);
             if (!result) {
                 SGLog(@"binilyrics: nothing filed under %@, searched by name", isrc);
                 search(query, done);

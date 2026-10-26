@@ -25,6 +25,15 @@ void SGLyricsPiPToggle(UIView *from) {}
 NSString *SGLyricsCreditFor(NSString *trackID) { return [NSUserDefaults.standardUserDefaults stringForKey:@"credit"] ?: @"the harness"; }
 NSNotificationName const SGLyricsSourceChosenNotification = @"spotifyglass.lyricsSourceChosen";
 NSString *SGLyricsLeadArtist(NSString *artist) { return artist; }
+NSURL *SGLyricsURL(NSString *base, NSDictionary<NSString *, NSString *> *query) {
+    NSURLComponents *url = [NSURLComponents componentsWithString:base];
+    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray array];
+    [query enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSString *value, BOOL *stop) {
+        [items addObject:[NSURLQueryItem queryItemWithName:name value:value]];
+    }];
+    url.queryItems = items;
+    return url.URL;
+}
 // LyricsSources.h's, declared here: that header's SPTPlayerTrack clashes with the track stub below.
 @interface SGLyricsLink : NSObject
 @property (nonatomic, copy) NSString *title;

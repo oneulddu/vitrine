@@ -65,13 +65,8 @@ static NSDictionary<NSString *, NSString *> *headers(void) {
 }
 
 static void getJSON(NSString *base, NSDictionary<NSString *, NSString *> *query, void (^done)(NSDictionary *response)) {
-    NSURLComponents *url = [NSURLComponents componentsWithString:base];
-    NSMutableArray<NSURLQueryItem *> *items = [NSMutableArray array];
-    [query enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSString *value, BOOL *stop) {
-        [items addObject:[NSURLQueryItem queryItemWithName:name value:value]];
-    }];
-    url.queryItems = items;
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url.URL cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+    NSURL *url = SGLyricsURL(base, query);
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
                                                        timeoutInterval:10];
     [headers() enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSString *value, BOOL *stop) {
         [request setValue:value forHTTPHeaderField:name];
