@@ -84,13 +84,17 @@ Shared:
                   and automix switched on in the player core, the core and Settings both kept on the audio.crossfade
                   prefs rather than the account's Playback Settings, and crossfade's switch kept in step with its
                   slider (Crossfade.x).
-                  With Spoof Premium on, RadioModes.m enables shuffle and repeat for radio/autoplay in either look:
+                  With Spoof Premium on, RadioModes.m requests shuffle and repeat overrides for radio/autoplay in either look:
                   only restrictions made entirely of radio, endless_context and autoplay are allowed.
                   Raw reason sets remain intact when Spotify copies its state. Positive radio evidence survives
                   empty optimistic updates only for the same playbackId/contextURI; explicit non-radio reasons revoke it. The matching
                   command's ESP request gets overrideRestrictions before the core receives it; other restrictions
                   and commands stay as Spotify supplied them. The hooks install together only when the expected
                   runtime signatures match. Checked by harness/radio-modes/; its README records device evidence.
+                  On 9.1.90, autoplay continuation reports {autoplay} for all three toggles; despite the serialized
+                  override, the core answers Code=101 and leaves shuffle/repeat as Spotify set them there.
+                  Normal album/playlist/search playback and the tested Dawn FM track-menu radio playlist have
+                  empty reason sets and toggle normally without an override.
     AlbumQueue/   With Spoof Premium on, adds Add to Queue to an album page's header menu when Spotify leaves
                   that row out, under either look. The Creative Work page's template.creativeWork.uri is read
                   by named Swift reflection and checked against the header's menu button; a track menu is

@@ -47,6 +47,16 @@ has no finite end to loop back to; these hooks do not create a finite queue or p
 that radio recommendations are reordered. Physical-device behavior on 9.1.78,
 Connect receivers, and the redesigned player was not retested here.
 
+## Device evidence (2026-10-27)
+
+On Spotify 9.1.90 with Spoof Premium enabled and the redesigned player, autoplay
+continuation reports `{autoplay}` for shuffle, repeat-context and repeat-track;
+both command paths serialize `override_restrictions: true`, but the core answers
+Code=101 and leaves shuffle/repeat as Spotify set them there.
+Normal album/playlist/search playback and the Dawn FM radio playlist opened from
+the track's menu have empty reason sets and accept shuffle/repeat changes without
+an override.
+
 ## Important implementation details
 
 - Enable only with Spoof Premium; require the complete expected runtime API before
