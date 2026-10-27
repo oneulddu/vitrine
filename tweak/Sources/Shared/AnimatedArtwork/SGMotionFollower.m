@@ -2,6 +2,7 @@
 // (LockScreenMotion.x) and the redesign's player (Redesigned/Player/PlayerMotion.x) alike.
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
+#import "Core/SGOptionalWork.h"
 #import "Shared/Player/PlayerState.h"
 #import "AnimatedArtwork.h"
 #import "SGMotionClip.h"
@@ -70,6 +71,7 @@
     SPTPlayerTrack *track = next;
     NSString *uri = SGURIString(track.URI);
     if (!uri || [uri isEqualToString:_track] || [uri isEqualToString:_ahead]) return;
+    if (!SGOptionalWorkMayRun(NO)) return;
     _ahead = uri;
     NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
     SGMotionClipFor(uri, SGMotionCanvasIn(metadata), track.artistName, metadata[@"album_title"], SGMotionPixels(),

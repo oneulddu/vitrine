@@ -18,6 +18,8 @@
 //                      more by the artist, no videos, no concerts, no merch, no you might also like, each
 //                      back once its switch is off
 //     AlbumPlays.m     each track's plays from Listening stats, for the rows to show
+//     AlbumPlaysPlace.m where they show: on the row, on its ⋯ sheet, or nowhere
+//     AlbumPlaysMenu.x the plays as a line of information on a track's ⋯ sheet
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
 // Threading: main thread only.
@@ -46,9 +48,25 @@ void SGRAlbumSetArtist(UIView *view, NSString *artist);
 // artist, or the album's artist and the guests the title names after "feat.", "ft.", "featuring" or "with".
 BOOL SGRCreditRepeatsAlbum(NSString *albumArtist, NSString *rowArtist, NSString *title);
 
-// AlbumRows.x. How many times each track was played, trailing on its row before ⋯ (AlbumPlays.m counts them);
-// on until switched off (AlbumSettings.m).
+// How many times each track was played (AlbumPlays.m counts them), shown where the Albums page says
+// (AlbumSettings.m), read at launch: trailing on its row before ⋯ (AlbumRows.x), or as a line of information on the
+// sheet its ⋯ opens (AlbumPlaysMenu.x), or nowhere. Stored under SGRKeyAlbumPlayCountsPlace as an
+// SGRAlbumPlayCountsPlace; while that is unset, the switch it replaced decides: on (or unset) is in the row, off is
+// off.
+#define SGRKeyAlbumPlayCountsPlace @"spotifyglass.redesign.album.playCounts.place"
 #define SGRKeyAlbumPlayCounts @"spotifyglass.redesign.album.playCounts"
+typedef NS_ENUM(NSInteger, SGRAlbumPlayCountsPlace) {
+    SGRAlbumPlayCountsOff,
+    SGRAlbumPlayCountsInRow,
+    SGRAlbumPlayCountsInMenu,
+};
+// AlbumPlaysPlace.m.
+SGRAlbumPlayCountsPlace SGRAlbumPlayCountsWhere(void);
+// AlbumPlaysMenu.x. A ⋯ of an album's track row sent its action: the sheet that opens next, at once, is that
+// track's, `title` on the album `album`. Nil for either clears the mark.
+void SGRAlbumPlaysMarkMenu(NSString *album, NSString *title);
+// AlbumRows.x and AlbumPlaysMenu.x. "12 plays", the count in the locale's grouping; nil for none.
+NSString *SGRAlbumPlaysText(NSUInteger plays);
 // The album's title as the header of the page `view` is on shows it, for the rows to match their plays by. A
 // change lays the page's track rows out again; the same title again is a no-op.
 void SGRAlbumSetTitle(UIView *view, NSString *title);

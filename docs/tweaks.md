@@ -4,7 +4,9 @@
 
     tweak/                      the Theos project: Makefile, control, the bundle filter plist
     tweak/Sources/Core/         what every file builds on: logging, preferences, view-tree walking, glass panes, the
-                                look this launch runs (SGUIMode.h), the forced-flag registry (SGFlagForce.h) and C
+                                look this launch runs (SGUIMode.h), the forced-flag registry (SGFlagForce.h), whether
+                                optional advance work may run (SGOptionalWork.h), the screen the app is showing
+                                (SGTopController.h, shared by the phone driver and the keyboard) and C
                                 functions Spotify imports hooked by rebinding its import slots (SGRebind.h)
     tweak/Sources/Headers/      reverse-engineered Spotify classes, one header each, only the selectors used
     tweak/Sources/Settings/     the Mod Settings framework: SGPage (a page on Spotify's stack), SGModPage (sections
@@ -118,9 +120,10 @@ Shared:
     Lyrics/       the lyrics engine for the redesign's Apple Music style lyrics and the lock screen: lines read from
                   color-lyrics and the player's clock (KaraokeSource.x), words timed by estimate inside Spotify's line
                   times (KaraokeTiming.m, which splits Thai, Lao, Khmer and Burmese at the system's dictionary words), which line to name where two voices sing at once (the one that came in first,
-                  for the lock screen and the Live Activity), a line in another alphabet in Latin letters, offline by Apple's
-                  transforms, kanji read the Japanese way in a song with kana (Romanise.m; checked on the simulator by
-                  harness/lyrics' -romanise), and the Lyrics page's parts. Lines are kept in time order
+                  for the lock screen and the Live Activity), a line in another alphabet in the alphabet chosen, Latin
+                  letters or Hangul, offline by Apple's transforms, kanji read the Japanese way in a song with kana
+                  (Romanise.m; checked on the simulator by harness/lyrics' -romanise and on the Mac by
+                  harness/hangul-pronunciation/), and the Lyrics page's parts. Lines are kept in time order
                   whatever order a source lists them in. LyricsStore.m also keeps received non-local lyrics and their
                   provider in binary versioned plists under Library/Application Support/Vitrine/Lyrics, keyed by
                   SHA-256 of the track ID and excluded from iCloud backup. The default-on “Keep lyrics for offline
@@ -142,7 +145,19 @@ Shared:
                   answer Spotify's requests and the mod's sources and its own requests stand aside. On top of the Delay, an
                   offset per song (SGLyricsTrackOffsetMs, the newest 500) and one per output (SGLyricsRouteOffsetMs, by the
                   port's UID, none for the iPhone's own speaker), each -5000 to 5000 ms and set from the redesign's Sync
-                  sheet, both cached in memory and the route read again on a route change. With Japanese reading set to
+                  sheet, both cached in memory and the route read again on a route change. Pronunciation alphabet
+                  (SGKeyLyricsPronunciationHangul, off; the row under Pronunciation on the redesign's Lyrics page)
+                  picks Latin, today's readings, or Hangul, which reads Japanese and Chinese lines in Hangul offline.
+                  Japanese goes through the reading
+                  Romanise.m already had, then kana to Hangul by a table of its own: small kana combine with the kana
+                  before them (きゃ 캬, てぃ 티), っ adds a final ㅅ to the syllable before (きって 킷테) and ん a final ㄴ
+                  (さんぽ 산포), ー repeats the previous vowel as a syllable of its own (らー 라아), katakana reads as
+                  hiragana, and the kana are aspirated throughout and voiced ones plain (か 카, が 가); Chinese keeps
+                  Apple's Mandarin reading with its tones off and then pinyin to Hangul by Korean orthography's initial
+                  and final table (zhong 중, xi 시, qu 취, si 쓰, er 얼), a syllable it cannot place left in Latin
+                  letters. Only the source script's own runs are read, so an English word spelled like pinyin stays as
+                  it is and other scripts keep their Latin reading; a line over 4,000 UTF-16 units keeps its Latin
+                  reading too. Hangul replaces the Japanese reading; Korean lines are already Hangul. With Japanese reading set to
                   Hiragana, a Japanese song's kanji are read in hiragana instead of romaji, and Furigana
                   (SGKeyLyricsFurigana, off) gives each run of kanji its reading in hiragana with the okurigana left out
                   (SGLyricsFurigana, read from the whole line, so a kanji a source hands over alone is read in its
@@ -234,7 +249,7 @@ Shared:
                   timing is sought. All at once waits for synced page text alongside word-timed lines, or
                   exhaustion, and only accepts instrumental at exhaustion if no lyrics arrived.
                   The old Type first boolean migrates to 0/1. Stored source orders are unchanged; unset
-                  orders prioritize Imported LRC, Spicy Lyrics, BiniLyrics, LyricsPlus, Musixmatch, Unison,
+                  orders prioritize Imported lyrics, Spicy Lyrics, BiniLyrics, LyricsPlus, Musixmatch, Unison,
                   Deezer, NetEase, LRCLIB, Bugs, Genie, QQ Music, KuGou and Genius. Genius.m, last: untimed words for a track no
                   other source has, the song found by the search the line meanings share (SGGeniusSongIn in SongMatch.m, whose match LRCLIB's search shares too)
                   and the words read from its embed script, which is scraping (no API gives the text); checked on
@@ -246,7 +261,10 @@ Shared:
                   Spotify has lyrics for, so one is added to any list without it: that is what makes the player ask for the
                   lyrics and show the card. has_lyrics is forced on for every track, the walk starts at the track change
                   for it and the next, and the player's card-loading timeout flag is forced to its 5 s maximum while a
-                  source is on. In the redesign, with a translation language chosen, lines kept for the lyrics view with
+                  source is on. The next track's walk is optional advance work and stands down while Core's
+                  SGOptionalWork.h says it must (Low Power Mode, serious or critical heat, no usable network, Low Data
+                  Mode); nothing is queued then, and the next track change or queue change asks again. Lyrics are small,
+                  so an expensive cellular network alone does not stop them. In the redesign, with a translation language chosen, lines kept for the lyrics view with
                   no translation of their own take Musixmatch's community translations (Musixmatch.m), whichever
                   source won, Spotify's own included: matched by the line's folded text, as copies kept in place of the
                   lines (KaraokeSource.x), which the view picks up. The default Word timing first mode asks
@@ -413,7 +431,11 @@ Shared:
                   Rendered on the Mac against harness/fluid-clip/. A track whose
                   metadata names no Canvas has it asked of Spotify's Canvas service (MotionSources.m); each track is
                   looked up again when its Canvas comes in a later state, and the next track's clip is fetched ahead
-                  (SGMotionFollower.m). The lock screen takes a clip under a key the system lists, cut to that key's
+                  (SGMotionFollower.m), unless optional advance work is standing down (Core's SGOptionalWork.h: Low
+                  Power Mode, a serious or critical thermal state, no usable network, Low Data Mode, or an expensive
+                  cellular or hotspot network — lyrics are small, artwork is not), in which case nothing is fetched
+                  ahead and the next track's walk tries again. The lock screen takes a clip under a key the
+                  system lists, cut to that key's
                   shape when it is not, with its still filled to the size asked (SGMotionClip.m), and a change of the
                   choice applies at once, Lyrics too. Switch with the star (spotifyglass.lockscreen.star, off;
                   LockScreenStar.x) puts a star on the lock screen widget, MediaPlayer's like command, whose tap swaps
@@ -434,20 +456,35 @@ Shared:
                   lyrics are kept under the URI and asked of the sources by name, since Spotify never asks for them;
                   with no source switched on, of LRCLIB alone, which then gets the file's title, artist, album and
                   length. A rename gives a new key (a cover alone does not), asked for at once while the file plays.
-                  A miss is asked again a few times, in case it was a lost request. The user's own .lrc files
-                  (LocalLyrics.m), imported from Files on the Imported LRC files page under Lyrics' sources and kept
-                  as UTF-8 in Documents/Vitrine/Lyrics, come before any source: a file linked to the local file
-                  playing (Import for current track) is its lyrics whatever its tags say, and any other is matched by
+                  A miss is asked again a few times, in case it was a lost request. The user's own lyrics files
+                  (LocalLyrics.m, the Imported lyrics files page under Lyrics' sources), .lrc, .ttml or plain text and
+                  kept as UTF-8 in Documents/Vitrine/Lyrics, come before any source: a file linked to the local file
+                  playing (Import for current track, or Paste for the clipboard's lyrics) is its lyrics whatever its
+                  tags say, and any other is matched by
                   [ti:] and [ar:], or a name of "Artist - Title", folded; an import or a delete has the engine forget
-                  what it kept for local files and ask again. SGImportedLRCAsk is the same as a source for the
+                  what it kept for local files and ask again. What a file holds is decided by its content, never by
+                  its name — a TTML document with timed lines, else LRC's stamped lines, else one untimed line after
+                  another — and it is kept under the extension of what it turned out to be. A file or a paste over
+                  1,048,576 bytes of text, an empty one, bytes that are neither UTF-8 nor UTF-16 with a BOM, or a
+                  document with no line at all is refused with its own reason; a document that looks like TTML or LRC
+                  but yields no line is read as plain text, and refused only when that gives nothing. A replacement
+                  writes the new file and links it, then puts the replaced file's name on a list of its own and
+                  deletes nothing; that list is worked off at the next launch, and only a name no link holds, that is
+                  a regular file directly in the lyrics folder, is removed, so a by-name import or a file copied in by
+                  hand is never touched. Every change to the store runs on one serial queue — a name's allocation,
+                  its file, the links, the retired list, a delete and the launch's retire step — so the step always
+                  runs before anything the launch asks for, and every notification is posted on the main queue. A link
+                  whose file is missing gives that track no lines rather than another song's, and a write that fails
+                  leaves the old file, link and lines as they were. SGImportedLRCAsk is the same as a source for the
                   order, which moves it on top at the first import and at every link once LyricsSources lists it.
                   Where Spotify's player shows its placeholder for a local file, the file's own cover is found
                   (LocalCover.m) in the image fields of its metadata or, while the titles and artists agree, in the
                   system's now playing artwork, which the lock screen shows; the native look puts it into the front
                   cover's empty image view (Native/LocalFiles/LocalCover.x), the redesign's artwork bridge takes it
                   as the picture of a local file whose metadata names none. A cover picked in Edit info wins.
-                  The model and the LRC reading are checked on the Mac against harness/local-files/, the row and
-                  the editor in the simulator against its sim/
+                  The model, the cover fallback and every kind of lyrics file are checked on the Mac against
+                  harness/local-files/, whose README lists the cases, the row and the editor in the simulator
+                  against its sim/
     Navigation/   the page transition fix (PageTransition.x), opening a spotify: link (Links.x), and either look's
                   Add a Tab sheet (AddTabSheet.m) with the icons a tab can wear, Encore's glyphs or SF Symbols
                   (TabIcons.m). The sheet runs in the simulator in harness/addtab/
@@ -640,12 +677,46 @@ Shared:
                   Try it listens a few seconds and names in its row what it picked up, doing nothing to the song. A
                   sheet teaches one's own nod and shake, five of each after a tone, a ring showing the head live (a dot
                   that moves with it, ticks lighting toward where it went; SGHeadMotionListen) and five dots counting
-                  what landed, with Redo last; the threshold kept is the one that fires on all five but one at least, the nod
-                  stored before the shakes begin, so Cancel keeps it. Forget shows only while something is learned.
+                  what landed, with Redo last. Then 20 seconds of ordinary movement, the ring counting them down while
+                  the sheet asks the user to look around, nod along and walk, with no Redo. Nothing is stored before
+                  that check: each gesture's learned threshold is replayed over all the recorded motion and kept only
+                  if it fires none of the 20 seconds, never fires as the other gesture during the other one's five
+                  demonstrations, and recognizes at least 3 of its own 5 and at least 60% of them, and the 20 seconds
+                  must be whole (a full span, no gap the detector cannot read through). Nod and shake are judged
+                  separately, each against the other's stored threshold; when both pass on their own but would break
+                  each other as a pair, the pair is tried together first, then the shake beside the new nod threshold
+                  with the nod dropped, and otherwise the shake is dropped and the nod kept. When either is
+                  accepted, that gesture's threshold is stored and Sensitivity goes back to its default 100%; a
+                  rejected one keeps the threshold it had, and the sheet says per gesture what it recognized
+                  and how often it went off during the ordinary movement; with neither accepted it says so and asks for
+                  quicker, bigger gestures. Cancel keeps everything as it was, and so does an interruption — headphones
+                  taken off, or the app leaving the front — which ends with "Nothing changed". (SGHeadGesturesFinishTeaching)
+                  Forget shows only while something is learned.
                   The one CMHeadphoneMotionManager is lent to other features
                   (SGHeadMotionListen: Karaoke's spatial voice), and runs for them with the switch off, the detector then
                   unfed. The detector is
                   tested on the Mac against harness/head-gestures/, the hook and the page in the simulator against its sim/
+    Keyboard/     the hardware keyboard's commands, in either look and with no switch of its own: Space play or pause
+                  (offered only where Space is free — not while text is edited, not to VoiceOver, not to a focused
+                  control), ⌘→ and ⌘← next and previous, ⌘L like, ⌘↑ and ⌘↓ the system volume, ⌘1/⌘2/⌘3 Home, Search and
+                  Library, ⌘F Search, and Esc or ⌘W the player closed. The commands are one table (KeyboardCommands.m,
+                  Keyboard.h), which also holds what the ⌘-hold overlay shows for each; they are added to
+                  -[UIApplication keyCommands], the end of the responder chain, so nothing has to be first responder.
+                  Volume moves 6.25 points a press (16 steps across the range), snapped to that grid and kept within
+                  0–100%, through the slider of one off-screen MPVolumeView, so it is the system volume and never a
+                  Connect device's; without a slider a press does nothing.
+                  A destination opens only when Spotify's link dispatcher has a handler for its URI, and Home, Search and
+                  Library are named rather than taken by tab position. ⌘F opens Search, then 450 ms later presses its
+                  bar and takes the field of the input page that push brings, in one ordered run that a second ⌘F
+                  replaces and that stops itself if the user is elsewhere by then. Esc and ⌘W press the player's own close control, looked for at most
+                  every 300 ms and only while no other window covers the app. All of them are skipped while text is
+                  being edited. The screen the app shows and what is presented over it come from Core
+                  (SGTopController.h), which the phone driver's `state` reads too, so a command and the driver never
+                  disagree; whether a window of its own covers the app, which is what leaves Esc to a sheet or alert,
+                  is read beside the commands (SGKeyboardWindowCovers). The volume grid, the table's inputs,
+                  modifiers and titles and the screen and window readings are checked on the Mac against
+                  harness/keyboard-commands/ and
+                  harness/keyboard-top-controller/; the keys themselves are the phone's
     LiveActivity/ a Live Activity on the lock screen and in the Dynamic Island in one of three views, the line being
                   sung with the next one under it, the tracks up next (a tap on one skipping ahead to it), or a control
                   menu of tabs, Controls (previous, play and pause, next, shuffle, repeat), Queue and a sleep Timer of
@@ -713,7 +784,8 @@ Native:
                   the cover's room are checked in the simulator against harness/native-player/
     Lyrics/       the full screen lyrics page on glass, and a tap on the lyrics' footer opening the pages a credit
                   links to (LyricsPage.x)
-    LocalFiles/   a lyrics button on the player's footer for a local file with an LRC file linked to it, a fifth of the
+    LocalFiles/   a lyrics button on the player's footer for a local file with an imported lyrics file linked to
+                  it, a fifth of the
                   way in from the leading edge, which opens a page of the lines on black that follows the song
                   (LocalLyrics.h lists its files); the file's metadata says has_lyrics. Checked in the simulator
                   against harness/local-files/lyrics/. And the file's own cover where the player shows
@@ -779,7 +851,12 @@ Redesigned:
                   cover plays at 2x until the finger lifts (PlayerArtwork.x), an octave higher while Pitch follows
                   speed is on. Hide on the player's Shuffle and Repeat (spotifyglass.redesign.player.hideShuffle,
                   .hideRepeat, read at launch) take those buttons off the controls by alpha in their slots, as the
-                  Music app keeps them off its own (PlayerControls.x). A Free account gets it too: Spotify's Reinvented Free player mode, whose units none of
+                  Music app keeps them off its own (PlayerControls.x). With both hidden in portrait, previous and next
+                  move outward so each is min(row width / 3, 140 pt) from play's center, less where that would take a
+                  button past the row's edge and not at all where it is already farther out; play stays centered and
+                  every button keeps its size, and the move is a translation set in the unit's own layout pass, so
+                  Spotify's layout stays underneath and comes back exactly when a button is shown again. With one of
+                  the two hidden, on a podcast's row without them, or in landscape, the slots stay Spotify's. A Free account gets it too: Spotify's Reinvented Free player mode, whose units none of
                   the hooks reach, declines while the redesign runs, so the track falls to Spotify's other Free mode,
                   built from the units the redesign styles (PlayerFree.x, read from the binary, not yet seen on a Free
                   account). Animated artwork (PlayerMotion.x)
@@ -830,8 +907,9 @@ Redesigned:
                   or left automatic, with Keep for its songs, which keeps the translation and pronunciation switches as
                   they are for every song in it, SongLanguage.m; and Write Pronunciation and Explain References, which ask
                   the AI service picked from a submenu and keep its answer for the song), in the order of sizes the Lyrics page sets
-                  (LyricsText.h). With the Lyrics page's Romanized lyrics on, a line in another alphabet has the same
-                  again in Latin letters right under its words (the source's own pronunciation where it is hidden, none
+                  (LyricsText.h). With the Lyrics page's Pronunciation on, a line in another alphabet has the same
+                  again in the alphabet chosen (Latin letters, or Hangul with that picked) right under its words (the
+                  source's own pronunciation where it is hidden, none
                   where it shows), before the translation, at the pronunciation's size, lit with its line but never swept.
                   Furigana sit in room the row makes above its words, centered on the kanji they read, and light with the
                   line; a cultural note goes last under its line, smaller and dimmer than a translation. Name the
@@ -843,7 +921,20 @@ Redesigned:
                   Keep screen on (SGRKeyLyricsKeepAwake, off) holds the idle timer off while lines show and the song moves,
                   and lets it go 5 s into a pause, when the view leaves its window or the app leaves the front.
                   A word held 0.9 s or more glows and its letters rise in a wave as the sweep reaches
-                  them. The size, the room between lines, the blur, the glow and the wave are the Lyrics page's look
+                  them. Pressing and holding a line opens the system edit menu on it (UIEditMenuInteraction, anchored
+                  on the line, its Copy and Share and, first, Meaning where Genius has already explained that line):
+                  Copy puts the line's own words on the pasteboard alone, Share offers the line, then "— title · artist"
+                  and, for a streamed track whose lyrics are the one playing, its open.spotify.com link, never a
+                  timestamp; Meaning opens the same sheet a tap on a meaning-marked line does. A line with no letter
+                  or digit in it (an empty one, an instrumental break), a touch on the page's own controls (the
+                  extras, the auto-translation note, the Sing button) and any preview get no menu, and the menu
+                  follows its line: it is let go with its own
+                  dismissal or when that line's view goes, and a press that offers nothing takes the last one away.
+                  Nothing there asks a source for anything, a light tap confirms the press where Vibrations' Controls
+                  are on, and VoiceOver
+                  gets the same three as custom actions (Meaning, Copy line, Share line). The items, what Copy and
+                  Share say (SGRLyricsShareText), the anchor and the dismissals are checked in the simulator against
+                  harness/lyrics-hold/, the press itself on the phone. The size, the room between lines, the blur, the glow and the wave are the Lyrics page's look
                   (LyricsLook.h): five presets and a sheet of sliders, applied at once to every view, under a live
                   preview of the view playing a song of its own (LyricsLookSettings.m). Laid out on the Mac against
                   harness/lyrics/; the page against harness/lyrics-page/
@@ -903,7 +994,17 @@ Redesigned:
                   everything the server sends is dropped -- more by the artist, videos, concerts, merch, you might also
                   like, and whatever it adds next -- but the album's own line and its copyright, each section back
                   once its switch on the Albums page is off (told apart by its English heading; in another
-                  language Everything else covers them all; Album.h lists its files). A podcast's episode page is the same template, so it is given the same field, and what it
+                  language Everything else covers them all; Album.h lists its files). Play counts, from Listening
+                  stats, have a place of their own on the Albums page (Off, In the row — the default and what the
+                  switch it replaced meant when on — or In menu), read at launch: In the row draws "12 plays" after
+                  the title in the locale's grouping, never 1.2K, and nothing for a track with none; In menu leaves
+                  the row alone and puts the count, as a line of information with no glyph, in the header (or, where
+                  Spotify uses the header, the footer) of the sheet that track's ⋯ opens, matched to the track by the
+                  row's ⋯ as it sends its action, so a finger, VoiceOver, Full Keyboard Access and Switch Control are
+                  all read; a slot Spotify fills with a view of its own takes the line off that sheet for good
+                  (AlbumPlaysPlace.m, AlbumPlaysMenu.x; the place and the old switch's migration, and the sheet's
+                  line against Spotify's mocked sheet, are checked on the Mac by harness/ui-refinements/). A stored switch migrates: on or unset is In the row, off is
+                  Off, and the key stays readable. A podcast's episode page is the same template, so it is given the same field, and what it
                   paints over it is taken off. Laid out on the Mac against harness/album/
     Artist/       the artist page on the same field and header (Artist.h lists its files), its Music / Video / Merch
                   strip gone so the Music list is the page, and off that list its videos (on until switched off) and,
@@ -1007,7 +1108,9 @@ carry FLEX; `make release` and the release workflow's build leave it out, and it
 there.
 
 `scripts/phone.py` is the client. It uses whatever already answers on 127.0.0.1:8085 or starts iproxy and
-leaves it running:
+leaves it running. `state`'s screen and the controllers its path holds come from Core's resolver
+(`Core/SGTopController.h`), which the keyboard's Esc and ⌘F read too, so the driver and the keyboard never
+disagree about what is in front.
 
     scripts/phone.py tree | state | log [--since N]
     scripts/phone.py find --class UILabel
@@ -1052,7 +1155,14 @@ privacy; Libraries & presets, Labs and All flags; Mod. It is checked in the simu
 against harness/mod-settings/. The Appearance page has, in the native look, AMOLED (the redesign is always black), then the stored look's Accent color
 preset, a pull-down of Spotify, Apple Music and Custom read off the color stored (a color set before the presets
 existed reads as Custom, Apple Music's red as Apple Music), and Accent color, the hex and a swatch of the color in
-effect, which opens the system picker in a sheet that stores only from its checkmark, as Custom. The custom color is
+effect, which opens a sheet of the colors chosen before over the system picker, storing only from a swatch or from
+the picker's checkmark (never while it is dragged), as Custom. The recent colors are up to 8 discs, newest first,
+under a "Recent colors" caption; choosing a color already listed moves it to the front instead of repeating it, the
+9th drops the oldest, and Spotify's green is never kept, nor the redesign's own green, nor an entry that is not a
+whole number in #000000–#FFFFFF. Each look keeps its own list under its own key (SGKeyAccentRecent for the native
+look, SGRKeyAccentRecent for the redesign), its swatches labelled with the color's name or hex and marked selected
+when it is the one in effect. The two lists' rules are checked on the Mac against
+harness/ui-refinements/. The custom color is
 kept aside while a preset is in place, so Custom brings it back. Last come the Font, under either look and on any
 iOS, below 26 too, a page of its own with each choice drawn in itself: Default (Spotify's), San Francisco, SF
 Rounded, New York and SF Mono; More fonts, the families iOS carries of a fixed few (Avenir Next to American
@@ -1077,7 +1187,10 @@ its own list of tabs. Lyrics, on the main page of its own: in the redesign a liv
 under it and their sliders in a sheet (Text size, Line spacing, Blur, Glow, Wave), applying at once; then Karaoke, then the ordered list of lyrics sources,
 lyrics for every track, naming the source in the redesign, the lock screen, and glass lyrics in the native look; in
 the redesign also which of the lyrics, their pronunciation and their translation is set largest, Pronunciation
-(applied at once), and a Translation & AI subpage grouped into Automatic translation, Services and Saved translations.
+(applied at once); its Pronunciation alphabet row, grayed out while that is off, reads out Latin or Hangul and opens
+a page of the two choices and the Japanese reading (Romaji or Hiragana), with a note that Hangul reads Japanese and
+Chinese offline and replaces the Japanese reading; then a Translation & AI subpage grouped into Automatic
+translation, Services and Saved translations.
 Request mode & lyric types and Timing remain on Lyrics. Karaoke, under either look, on the main page and as Lyrics' first row, the row reading out On,
 Off or how far the voice model's download has come, kept up to date while the page shows: Karaoke's switch, which turns
 the mic on and off at once, a card at its top (SGSingCard.m: the song, what Karaoke is doing, a tap saying more, the vocals

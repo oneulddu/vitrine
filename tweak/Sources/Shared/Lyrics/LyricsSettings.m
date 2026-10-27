@@ -32,7 +32,7 @@ SGModSection *SGLyricsSourcesSection(BOOL namingSource) {
         NSString *first = SGLyricsProviderFor(order.firstObject).name;
         return order.count == 1 ? first : [NSString stringWithFormat:SGL(@"settings.lyrics.sources.summary.format", @"%@ +%lu"), first, (unsigned long)order.count - 1];
     };
-    SGModRow *imported = SGPageRow(SGL(@"settings.lyrics.imported_lrc.title", @"Imported LRC files"), ^UIViewController *{ return SGImportedLRCPage(); });
+    SGModRow *imported = SGPageRow(SGL(@"settings.lyrics.imported_lrc.title", @"Imported lyrics files"), ^UIViewController *{ return SGImportedLRCPage(); });
     imported.value = ^NSString *{
         NSUInteger count = SGImportedLRCFiles().count;
         return count ? @(count).stringValue : SGL(@"settings.lyrics.imported_lrc.value.none", @"None");
@@ -71,7 +71,7 @@ SGModRow *SGLyricsTranslationLanguageRow(void) {
 
 // Only the redesign's lyrics view draws it, and every one there is redrawn as the switch flips.
 SGModRow *SGLyricsRomanisedRow(void) {
-    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.romanized.title", @"Pronunciation"), SGL(@"settings.lyrics.romanized.subtitle", @"Shows Latin-letter readings, or hiragana for Japanese."), SGKeyLyricsRomanised);
+    SGModRow *row = SGOptionRow(SGL(@"settings.lyrics.romanized.title", @"Pronunciation"), SGL(@"settings.lyrics.pronunciation.subtitle", @"Shows readings in your chosen alphabet."), SGKeyLyricsRomanised);
     row.changed = ^(BOOL on) {
         [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsRomanisedDidChangeNotification object:nil];
     };
@@ -79,13 +79,26 @@ SGModRow *SGLyricsRomanisedRow(void) {
 }
 
 SGModRow *SGLyricsJapaneseReadingRow(void) {
-    NSArray<NSString *> *choices = @[SGL(@"settings.lyrics.japanese_reading.romaji", @"Romaji"),
-                                    SGL(@"settings.lyrics.japanese_reading.hiragana", @"Hiragana")];
-    SGModRow *row = SGMenuRow(SGL(@"settings.lyrics.japanese_reading.title", @"Japanese reading"), choices,
-                             ^NSString *{ return choices[SGFlag(SGKeyLyricsJapaneseKana, NO) ? 1 : 0]; }, ^(NSInteger index) {
-        SGSetEnabled(SGKeyLyricsJapaneseKana, index == 1);
-        [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsRomanisedDidChangeNotification object:nil];
+    NSString *title = SGL(@"settings.lyrics.pronunciation.alphabet", @"Pronunciation alphabet");
+    NSArray<NSString *> *alphabets = @[SGL(@"settings.lyrics.pronunciation.latin", @"Latin"),
+                                      SGL(@"settings.lyrics.pronunciation.hangul", @"Hangul")];
+    SGModRow *row = SGPageRow(title, ^UIViewController *{
+        SGModRow *alphabet = SGMenuRow(title, alphabets,
+            ^NSString *{ return alphabets[SGFlag(SGKeyLyricsPronunciationHangul, NO) ? 1 : 0]; }, ^(NSInteger index) {
+                SGSetEnabled(SGKeyLyricsPronunciationHangul, index == 1);
+                [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsRomanisedDidChangeNotification object:nil];
+            });
+        NSArray<NSString *> *choices = @[SGL(@"settings.lyrics.japanese_reading.romaji", @"Romaji"),
+                                        SGL(@"settings.lyrics.japanese_reading.hiragana", @"Hiragana")];
+        SGModRow *japanese = SGMenuRow(SGL(@"settings.lyrics.japanese_reading.title", @"Japanese reading"), choices,
+            ^NSString *{ return choices[SGFlag(SGKeyLyricsJapaneseKana, NO) ? 1 : 0]; }, ^(NSInteger index) {
+                SGSetEnabled(SGKeyLyricsJapaneseKana, index == 1);
+                [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsRomanisedDidChangeNotification object:nil];
+            });
+        return [[SGModPage alloc] initWithTitle:title intro:nil sections:@[SGSection(nil, @[alphabet, japanese])]
+            footer:SGL(@"settings.lyrics.pronunciation.alphabet.footer", @"Hangul reads Japanese and Chinese offline, replacing the Japanese reading choice. Other languages keep their usual readings. Applies at once.")];
     });
+    row.value = ^NSString *{ return alphabets[SGFlag(SGKeyLyricsPronunciationHangul, NO) ? 1 : 0]; };
     row.waitsOn = SGKeyLyricsRomanised;
     return row;
 }

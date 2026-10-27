@@ -21,6 +21,7 @@
 #import "Shared/HeadGestures/HeadGestures.h"
 #import "Shared/Player/PlayerState.h"
 #import "../../harness-fail.h"
+#import "../teaching-fixtures.h"
 
 static int failures;
 static void check(BOOL ok, NSString *what) {
@@ -110,8 +111,10 @@ static NSOperationQueue *sg_motionQueue;
 static BOOL sg_active;
 static int sg_starts, sg_stops;
 static double sg_clock = 100;
+static CMHeadphoneMotionManager *sg_fakeManager;
 
 static void fakeStart(id self, SEL _cmd, NSOperationQueue *queue, CMHeadphoneDeviceMotionHandler handler) {
+    sg_fakeManager = self;
     sg_handler = handler;
     sg_motionQueue = queue;
     sg_active = YES;
@@ -176,7 +179,7 @@ static void findViews(UIView *root, Class kind, NSMutableArray *found) {
 
 typedef BOOL (^Step)(void);   // YES once done
 
-static NSInteger sg_nodBefore;
+static NSInteger sg_nodBefore, sg_shakeBefore;
 
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
@@ -480,6 +483,7 @@ static Step waitFor(double seconds) {
                 ^{ shake(0.15, 2.0); },
                 ^{ shake(0.2, 2.4); },
                 ^{ shake(0.17, 2.2); },
+                ^{ hold(20); },
             ] mutableCopy];
             [self teachButton:@"primaryButton"];
             return YES;
@@ -499,11 +503,25 @@ static Step waitFor(double seconds) {
         until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Shake your head"]; }),
         ^BOOL {
             sg_nodBefore = SGInt(SGKeyHeadNod, 0);
-            check(sg_nodBefore > 0, [NSString stringWithFormat:@"five nods in, the nod is stored before the shakes: %ld", (long)sg_nodBefore]);
+            check(sg_nodBefore == 0, @"five nods in: nothing stored before the ordinary-movement check");
             return YES;
         },
+        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Move normally"]; }),
+        ^BOOL {
+            check(SGInt(SGKeyHeadNod, 0) == 0 && SGInt(SGKeyHeadShake, 0) == 0, @"ordinary movement starts with both thresholds unchanged");
+            check([[self teachValue:@"redoButton"] isHidden], @"ordinary movement has no Redo last");
+            [self setPlaying:NO];
+            return YES;
+        },
+        waitFor(10),
         until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"All set"]; }),
         ^BOOL {
+            sg_nodBefore = SGInt(SGKeyHeadNod, 0);
+            sg_shakeBefore = SGInt(SGKeyHeadShake, 0);
+            check(sg_nodBefore > 0 && SGInt(SGKeyHeadSensitivity, 0) == 100, @"accepted teaching stores nod and restores neutral sensitivity");
+            check([[self teachText:@"line"] containsString:@"5 of 5 recognized; 0 during ordinary movement."], @"result reports replay counts");
+            check(!sg_active, @"finished while paused: teaching releases motion before Done");
+            [self setPlaying:YES];
             check(SGInt(SGKeyHeadShake, 0) > 0, [NSString stringWithFormat:@"five shakes in, the shake is stored: %ld", (long)SGInt(SGKeyHeadShake, 0)]);
             check(sg_calls.count == 0, [NSString stringWithFormat:@"with a song playing, no gesture did anything while it taught: %@", [sg_calls componentsJoinedByString:@", "]]);
             check(self.teach.navigationItem.leftBarButtonItem == nil, @"All set: no Cancel, Done instead");
@@ -525,9 +543,13 @@ static Step waitFor(double seconds) {
             check([sg_calls isEqualToArray:@[@"add spotify:track:4uLU6hMCjMI75M1A2tKUQC toast"]],
                   [NSString stringWithFormat:@"the smallest taught nod likes the song: %@", [sg_calls componentsJoinedByString:@", "]]);
             [sg_calls removeAllObjects];
-            // Teaching again, canceled after one nod: the stored nod stays, and the motion stops.
+            // Teaching again, canceled during ordinary movement: neither threshold can be committed.
             [self setPlaying:NO];
-            self.feeds = [@[^{ doubleNod(0.2, 0.45); }, ^{}] mutableCopy];
+            SGSetInt(SGKeyHeadSensitivity, 150);
+            self.feeds = [NSMutableArray array];
+            for (int i = 0; i < 5; i++) [self.feeds addObject:^{ doubleNod(0.35, 0.4); }];
+            for (int i = 0; i < 5; i++) [self.feeds addObject:^{ shake(0.21, 2.5); }];
+            [self.feeds addObject:^{ hold(20); }];
             [self tapRow:0 section:2];
             return YES;
         },
@@ -538,17 +560,23 @@ static Step waitFor(double seconds) {
             [self teachButton:@"primaryButton"];
             return YES;
         },
-        until(^BOOL { return [[self teachCount] isEqualToString:@"1 of 5"]; }),
+        until(^BOOL { return [[self teachCount] isEqualToString:@"3 of 5"]; }),
+        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Shake your head"]; }),
+        until(^BOOL { return [[self teachCount] isEqualToString:@"3 of 5"]; }),
+        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Move normally"]; }),
+        waitFor(1),
         ^BOOL {
             UIBarButtonItem *cancel = self.teach.navigationItem.leftBarButtonItem;
             [UIApplication.sharedApplication sendAction:cancel.action to:cancel.target from:cancel forEvent:nil];
             return YES;
         },
         until(^BOOL { return self.nav.presentedViewController == nil; }),
-        waitFor(0.6),
+        waitFor(11),
+        waitFor(11),
         ^BOOL {
             self.feeds = nil;
             check(SGInt(SGKeyHeadNod, 0) == sg_nodBefore, [NSString stringWithFormat:@"Cancel keeps the nod %ld: %ld", (long)sg_nodBefore, (long)SGInt(SGKeyHeadNod, 0)]);
+            check(SGInt(SGKeyHeadShake, 0) == sg_shakeBefore && SGInt(SGKeyHeadSensitivity, 0) == 150, @"Cancel during ordinary movement preserves shake and sensitivity, even after its timer expires");
             check(!sg_active, @"canceled, paused: stopped");
             [self tapRow:3 section:2];
             return YES;
@@ -563,13 +591,93 @@ static Step waitFor(double seconds) {
         ^BOOL {
             check(SGInt(SGKeyHeadNod, 0) == 0 && SGInt(SGKeyHeadShake, 0) == 0, @"Forget clears both");
             check([self.table numberOfRowsInSection:2] == 3, @"nothing learned again: the Forget row goes");
-            if (failures) HARNESS_FAIL(@"%d failed", failures);
-            NSLog(@"[harness] all passed");
-            exit(0);
+            NSArray *nods = teachingFive(TeachingNod, 5), *shakes = teachingFive(TeachingShake, 5);
+            SGSetInt(SGKeyHeadNod, 1777);
+            SGSetInt(SGKeyHeadShake, 1888);
+            SGHeadTeachingResults partial = SGHeadGesturesFinishTeaching(nods, shakes, teachingMotion(TeachingWalkWithNod));
+            check(!partial.nod.accepted && partial.nod.ordinaryFires == 1 && partial.shake.accepted &&
+                  SGInt(SGKeyHeadNod, 0) == 1777 && SGInt(SGKeyHeadShake, 0) != 1888,
+                  @"ordinary false nod rejects nod, accepts shake and really preserves the previous nod");
+            SGHeadTeachingResults two = SGHeadGesturesFinishTeaching(teachingFive(TeachingNod, 2), shakes, teachingMotion(TeachingWalk));
+            check(!two.nod.accepted && two.nod.recognized == 2 && SGInt(SGKeyHeadNod, 0) == 1777, @"two of five rejected without changing stored nod");
+            SGSetInt(SGKeyHeadShake, 1888);
+            SGSetInt(SGKeyHeadSensitivity, 150);
+            SGHeadTeachingResults neither = SGHeadGesturesFinishTeaching(teachingFive(TeachingNod, 2), teachingFive(TeachingShake, 2), teachingMotion(TeachingWalk));
+            check(!neither.nod.accepted && !neither.shake.accepted &&
+                  SGInt(SGKeyHeadNod, 0) == 1777 && SGInt(SGKeyHeadShake, 0) == 1888 &&
+                  SGInt(SGKeyHeadSensitivity, 0) == 150, @"neither accepted preserves both thresholds and sensitivity");
+            SGHeadTeachingResults shortMotion = SGHeadGesturesFinishTeaching(nods, shakes, teachingMotion(TeachingSingleNod));
+            check(!shortMotion.nod.accepted && !shortMotion.shake.accepted &&
+                  SGInt(SGKeyHeadNod, 0) == 1777 && SGInt(SGKeyHeadShake, 0) == 1888 &&
+                  SGInt(SGKeyHeadSensitivity, 0) == 150, @"short ordinary recording leaves thresholds and sensitivity untouched");
+            SGHeadTeachingResults lowShake = SGHeadGesturesFinishTeaching(teachingFive(TeachingMixedNod, 5),
+                teachingFive(TeachingSmallShake, 5), teachingMotion(TeachingWalkWithSmallShake));
+            check(lowShake.nod.accepted && lowShake.nod.recognized == 5 && !lowShake.shake.accepted &&
+                  lowShake.shake.ordinaryFires == 1 && SGInt(SGKeyHeadNod, 0) != 1777 &&
+                  SGInt(SGKeyHeadShake, 0) == 1888 && SGInt(SGKeyHeadSensitivity, 0) == 100,
+                  @"a rejected low shake no longer suppresses the accepted nod beside the previous shake threshold");
             return YES;
         },
     ]];
+    [steps addObjectsFromArray:[self interruptionChecks:NO]];
+    [steps addObjectsFromArray:[self interruptionChecks:YES]];
+    [steps addObject:^BOOL {
+        if (failures) HARNESS_FAIL(@"%d failed", failures);
+        NSLog(@"[harness] all passed");
+        exit(0);
+        return YES;
+    }];
     return steps;
+}
+
+- (NSArray<Step> *)interruptionChecks:(BOOL)disconnect {
+    return @[
+        ^BOOL {
+            [self setPlaying:NO];
+            SGSetInt(SGKeyHeadNod, 1777);
+            SGSetInt(SGKeyHeadShake, 1888);
+            SGSetInt(SGKeyHeadSensitivity, 150);
+            self.feeds = [NSMutableArray array];
+            for (int i = 0; i < 5; i++) [self.feeds addObject:^{ doubleNod(0.35, 0.4); }];
+            for (int i = 0; i < 5; i++) [self.feeds addObject:^{ shake(0.21, 2.5); }];
+            [self.feeds addObject:^{ hold(20); }];
+            SGHeadMotionListen(@"harness-other", ^(CMDeviceMotion *motion) {});
+            [self tapRow:0 section:2];
+            return YES;
+        },
+        until(^BOOL { return self.teach.viewIfLoaded.window != nil; }),
+        waitFor(0.5),
+        ^BOOL { [self teachButton:@"primaryButton"]; return YES; },
+        until(^BOOL { return [[self teachCount] isEqualToString:@"3 of 5"]; }),
+        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Shake your head"]; }),
+        until(^BOOL { return [[self teachCount] isEqualToString:@"3 of 5"]; }),
+        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Move normally"]; }),
+        waitFor(1),
+        ^BOOL {
+            if (disconnect)
+                [sg_fakeManager.delegate headphoneMotionManagerDidDisconnect:sg_fakeManager];
+            else
+                [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:UIApplication.sharedApplication];
+            return YES;
+        },
+        until(^BOOL { return [[self teachText:@"heading"] isEqualToString:@"Nothing changed"]; }),
+        waitFor(11),
+        waitFor(11),
+        ^BOOL {
+            check(SGInt(SGKeyHeadNod, 0) == 1777 && SGInt(SGKeyHeadShake, 0) == 1888 &&
+                  SGInt(SGKeyHeadSensitivity, 0) == 150,
+                  disconnect ? @"disconnect invalidates teaching even after its recording timer expires"
+                             : @"backgrounding invalidates teaching even after its recording timer expires");
+            check(sg_active, @"ending teaching preserves another feature's motion listener");
+            SGHeadMotionListen(@"harness-other", nil);
+            check(!sg_active, @"results retain no teaching hold after the other listener leaves");
+            self.feeds = nil;
+            [self teachButton:@"primaryButton"];
+            return YES;
+        },
+        until(^BOOL { return self.nav.presentedViewController == nil; }),
+        waitFor(0.5),
+    ];
 }
 
 - (NSArray<Step> *)cancelTryChecks {
@@ -649,6 +757,7 @@ static Step waitFor(double seconds) {
         [feeds removeLastObject];
         for (int i = 0; i < 3; i++) [feeds addObject:^{ doubleNod(0.32, 0.4); }];
         for (int i = 0; i < 5; i++) [feeds addObject:^{ shake(0.2, 2.4); }];
+        [feeds addObject:^{ hold(20); }];
     }
     return @[switchOn, ^BOOL {
         [self tapRow:0 section:2];
@@ -713,6 +822,7 @@ static Step waitFor(double seconds) {
     [self.window makeKeyAndVisible];
 
     NSString *shot = NSProcessInfo.processInfo.arguments.count > 1 ? NSProcessInfo.processInfo.arguments[1] : nil;
+    if ([shot isEqualToString:@"fail-exit"]) HARNESS_FAIL(@"deliberate exit-contract failure");
     self.steps = [@[waitFor(1.5)] arrayByAddingObjectsFromArray:[shot isEqualToString:@"cancel-try"] ? [self cancelTryChecks] : shot ? [self shot:shot] : [self checks]];
     [NSTimer scheduledTimerWithTimeInterval:0.25 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     return YES;

@@ -10,14 +10,28 @@ back, that no other path comes back through it, and that a dropped or replaced l
 It runs on the Mac as a Mac Catalyst binary with `CFFIXED_USER_HOME` set to `build/home`, so its
 defaults and its covers never reach the Mac's own.
 
-It then builds `lrc.m` against `LocalLyrics.m` and the engine's line timing: an `.lrc` import (empty,
-over 1 MB and tagless files refused, UTF-16 kept as UTF-8, a taken name numbered), the stamps read
-(several on a line, every fraction form, `[offset:]`, untimed text), a file linked to a local file through
-a rename's key and gone with a delete, and the match by title and artist, folded, with an
-"Artist - Title" name's sides worked out from the track.
+It then builds `lrc.m` against `LocalLyrics.m`, the engine's line timing and `SGTTML.m`: the validator
+(empty, 1 MB + 1, binary garbage, blank text, UTF-16 with a BOM, 8 GiB sparse input refused without
+loading it), the three readings by content (a TTML sample, an LRC sample, a plain text sample with CRLF
+and blank lines, and the plain-text fallback of a TTML or LRC document that holds no line, an LRC whose
+timestamps are all malformed included: its stamps and tags go and its words stay), an import kept under
+what it holds (a taken name numbered), a file linked to a local file through a rename's key and gone with a
+delete, a paste held to the same rules and kept under what it holds too, and the match by title and artist,
+folded, with an "Artist - Title" name's sides worked out from the track.
+
+Replacing a linked file writes and links the new one and puts the old file's name on a retired list of its
+own, deleting nothing at that step. Every change to the store — a name's allocation and its file, the links,
+the retired list, a delete and the launch's retire step — runs on one serial queue, so the step always runs
+first and never beside an import that reuses a name it is about to remove; every store notification is
+posted on the main queue. The check walks each case over separate launches of the same binary (a by-name
+import and a hand-copied file surviving three, the retired file removed once its link has moved on, a link
+update lost to a crash keeping the old file while its link still names it, and a retired directory or
+symlink never deleted), plus the reuse race and the notification's thread. A link whose file is missing
+gives no lines rather than another song's. With the write injected to fail, the old file, its link and its
+lines stand as they were.
 
 It does not cover Spotify's image-loader hook or metadata consumers, the lyrics engine asking for the new key
-(`Shared/Lyrics/KaraokeSource.x`) or the Imported LRC files page.
+(`Shared/Lyrics/KaraokeSource.x`) or the Imported lyrics files page.
 
 Cover Save writes a fresh UUID JPEG synchronously on main, publishes its reference, then removes the
 previous file in the same turn. Picker work already limits the image to 1200 pixels off main.

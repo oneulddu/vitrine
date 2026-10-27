@@ -174,7 +174,7 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, CGFloat size, 
     _timed = SGKaraokeLinesTiming(_lines) != SGKaraokeTimingNone;
     if (!_lines.count) {
         _status.hidden = NO;
-        _status.text = SGImportedLRCLinkedTo(_uri) ? @"This LRC file has no lines to show." : @"No imported lyrics for this track.";
+        _status.text = SGImportedLRCLinkedTo(_uri) ? @"This lyrics file has no lines to show." : @"No imported lyrics for this track.";
         return;
     }
     _status.hidden = YES;

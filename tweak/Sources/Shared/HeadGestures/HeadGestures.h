@@ -83,9 +83,11 @@ void SGHeadGesturesHold(BOOL hold);
 
 // The threshold one recording of the gesture of `axis` teaches, 0 when it holds no such gesture.
 double SGHeadGesturesSampleThreshold(NSData *motion, SGHeadAxis axis);
-// Learns `axis` from recordings of it (SGHeadLearnSamples, all but one of them at least) and stores the
-// threshold; answers it, or 0 with nothing stored.
-double SGHeadGesturesLearnFrom(NSArray<NSData *> *motions, SGHeadAxis axis);
+typedef struct {
+    SGHeadTeachingResult nod, shake;
+} SGHeadTeachingResults;
+// The only teaching commit: rejected thresholds are never written. No call on Cancel.
+SGHeadTeachingResults SGHeadGesturesFinishTeaching(NSArray<NSData *> *nods, NSArray<NSData *> *shakes, NSData *ordinary);
 
 UIViewController *SGHeadGesturesSettingsPage(void);
 // The teaching sheet over `owner`; `closed` runs once it is gone, whatever it stored.

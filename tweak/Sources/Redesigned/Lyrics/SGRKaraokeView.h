@@ -27,3 +27,8 @@
 // hidden (the player's lines on their own, Redesigned/Player/PlayerLyrics.x), so Sing is always in reach.
 @property (nonatomic) BOOL keepsSing;
 @end
+
+// What sharing a held line says: the line, then "— <title> · <artist>" on the next line, and the song's public
+// link on the one after that only while the lyrics are the playing song's own and it is not a local file's.
+// A missing title or artist drops it, and with no title the second line goes too. No timestamp.
+NSString *SGRLyricsShareText(NSString *line, NSString *title, NSString *artist, NSString *trackID, BOOL playing);

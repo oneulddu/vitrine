@@ -21,6 +21,7 @@
 // class's views in the tree's order, windows included.
 #if SG_DRIVER
 #import "Core/SGCore.h"
+#import "Core/SGTopController.h"
 #import "Diagnostics.h"
 #import "SGDriverCommand.h"
 #import "Headers/SPTPlayer.h"
@@ -456,35 +457,7 @@ static UIView *titled(NSString *title, BOOL (^filter)(UIView *)) {
 }
 
 static UIViewController *topController(NSMutableArray<NSString *> *path, NSMutableArray<NSString *> *presented) {
-    UIViewController *top = keyWindow().rootViewController;
-    while (top) {
-        [path addObject:NSStringFromClass(top.class)];
-        UIViewController *next = nil;
-        if (top.presentedViewController && !top.presentedViewController.isBeingDismissed) {
-            next = top.presentedViewController;
-            [presented addObject:NSStringFromClass(next.class)];
-        } else if ([top isKindOfClass:UINavigationController.class]) {
-            next = ((UINavigationController *)top).topViewController;
-        } else if ([top isKindOfClass:UITabBarController.class]) {
-            next = ((UITabBarController *)top).selectedViewController;
-        } else {
-            // A container of Spotify's own: the child that covers most of it, not a bar inside it.
-            CGRect own = CGRectIntersection(screenFrame(top.viewIfLoaded), keyWindow().bounds);
-            CGFloat best = own.size.width * own.size.height / 2;
-            for (UIViewController *child in top.childViewControllers) {
-                if (!child.isViewLoaded || !isShown(child.view)) continue;
-                CGRect frame = CGRectIntersection(screenFrame(child.view), keyWindow().bounds);
-                CGFloat area = frame.size.width * frame.size.height;
-                if (area > best) {
-                    best = area;
-                    next = child;
-                }
-            }
-        }
-        if (!next) break;
-        top = next;
-    }
-    return top;
+    return SGTopControllerInWindow(keyWindow(), path, presented);
 }
 
 static NSDictionary *nowPlaying(void) {

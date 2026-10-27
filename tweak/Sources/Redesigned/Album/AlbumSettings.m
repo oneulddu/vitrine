@@ -12,7 +12,9 @@ UIViewController *SGRAlbumSettingsPage(void) {
             SGOptionRow(SGL(@"settings.album.motion_low_data.title", @"Download in Low Data Mode"), SGL(@"settings.album.motion_low_data.subtitle", @"Applies to animated artwork throughout Vitrine."), SGKeyMotionLowData),
         ], SGL(@"settings.album.apple_music.note", @"Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.")),
         SGNotedSection(SGL(@"settings.album.tracks.header", @"Tracks"), @[
-            SGSwitchRow(SGL(@"settings.album.play_counts.title", @"Play counts"), SGL(@"settings.album.play_counts.subtitle", @"How many times you played each track"), SGRKeyAlbumPlayCounts),
+            SGChoiceRow(SGL(@"settings.album.play_counts.title", @"Play counts"), SGL(@"settings.album.play_counts.subtitle", @"How many times you played each track"), SGRKeyAlbumPlayCountsPlace,
+                        @[SGL(@"settings.album.play_counts.choice.off", @"Off"), SGL(@"settings.album.play_counts.choice.in_row", @"In the row"),
+                          SGL(@"settings.album.play_counts.choice.in_menu", @"In menu")], SGRAlbumPlayCountsWhere()),
         ], SGL(@"settings.album.play_counts.note", @"Counted from Listening stats on this phone, matched by the album's and the track's names. With Record plays off, the counts stay as they are.")),
         SGSection(SGL(@"settings.album.hide_on_page.header", @"Hide on an album's page"), @[
             SGSwitchRow(SGL(@"settings.album.hide_track_artists.title", @"Repeated track artists"), SGL(@"settings.album.hide_track_artists.subtitle", @"The artist under a track when it is the album's own"), SGRKeyAlbumHideTrackArtists),

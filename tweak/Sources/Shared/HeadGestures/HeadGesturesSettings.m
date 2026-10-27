@@ -60,7 +60,7 @@ UIViewController *SGHeadGesturesSettingsPage(void) {
     __block __weak SGModPage *page;
     __block NSString *tried = @"";
     __block BOOL trying = NO;
-    SGModRow *teach = SGStatActionRow(SGL(@"settings.headgestures.teach.title", @"Teach your gestures"), SGL(@"settings.headgestures.teach.subtitle", @"Five of each, one after each tone"), ^NSString *{ return learnedValue(); }, ^{
+    SGModRow *teach = SGStatActionRow(SGL(@"settings.headgestures.teach.title", @"Teach your gestures"), SGL(@"settings.headgestures.teach.subtitle", @"Five of each, then 20 seconds of ordinary movement"), ^NSString *{ return learnedValue(); }, ^{
         if (!headTracking()) return;
         SGHeadGesturesStopListening();
         trying = NO;
@@ -109,7 +109,7 @@ UIViewController *SGHeadGesturesSettingsPage(void) {
             "tone in the music confirms each, a rising pair when it worked and a low one when it did not, with the "
             "iPhone on silent too. iOS asks once for Motion & Fitness access, which is how Spotify reads the movement.")),
         SGNotedSection(SGL(@"settings.headgestures.section.fit.header", @"Fit to you"), @[teach, sensitivity, tryRow, forgetRow],
-            SGL(@"settings.headgestures.section.fit.footer", @"Teaching sets how big a move counts from five of your own. Sensitivity scales that for both. Try it does "
+            SGL(@"settings.headgestures.section.fit.footer", @"Teaching sets how big a move counts from five of your own, checked against 20 seconds of ordinary movement. Sensitivity scales that for both. Try it does "
             "nothing to the music, so you can tune it while a song plays.")),
     ] footer:nil];
     page = shown;

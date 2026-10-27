@@ -28,7 +28,8 @@
 // count is the album's title and the row's title matched in the log (AlbumPlays.m), so the rows are laid out
 // again when the header's title arrives and when the counts change. The title and the artist line are narrowed
 // so neither runs under it. This is done before the artist line's change, which then measures the narrowed
-// title, and put back after it.
+// title, and put back after it. That is the In the row place of the Albums page's Play counts; In menu the row shows
+// none, and its ⋯ tells AlbumPlaysMenu.x which track the sheet it opens is for.
 //
 // Everything changed is put back at the start of the cell's next pass and when the cell is prepared for reuse,
 // which also asks for a pass: Spotify can show a cached row again at the same size without one, and the last
@@ -48,6 +49,7 @@ static const CGFloat kCountGap = 2, kCountTextGap = 8;
 
 static char kRowKey, kSubtitleKey, kLineKey, kTitleKey, kBadgeKey, kArtistKey, kChangeKey;
 static char kAlbumKey, kMenuKey, kCountKey, kCountChangeKey;
+static NSMutableSet<NSString *> *sg_loggedMenus;
 
 static void clearSurface(UIView *view) {
     UIColor *color = view.backgroundColor;
@@ -221,10 +223,10 @@ static void applyCredit(UIView *cell, UIView *row, UIView *page) {
 
 #pragma mark - play counts
 
-static BOOL showsCounts(void) {
-    static NSInteger on = -1;
-    if (on < 0) on = SGEnabled(SGRKeyAlbumPlayCounts);
-    return on;
+static SGRAlbumPlayCountsPlace countsPlace(void) {
+    static NSInteger place = -1;
+    if (place < 0) place = SGRAlbumPlayCountsWhere();
+    return (SGRAlbumPlayCountsPlace)place;
 }
 
 // The album pages that have had a title, to lay out again when the counts change.
@@ -237,10 +239,83 @@ static NSHashTable<UIView *> *countedPages(void) {
 void SGRAlbumSetTitle(UIView *view, NSString *title) {
     UIView *page = SGRAlbumPageOf(view);
     NSString *known = objc_getAssociatedObject(page, &kAlbumKey);
-    if (!page || !showsCounts() || known == title || [known isEqualToString:title]) return;
+    if (!page || countsPlace() == SGRAlbumPlayCountsOff || known == title || [known isEqualToString:title]) return;
     objc_setAssociatedObject(page, &kAlbumKey, title, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    if (countsPlace() == SGRAlbumPlayCountsInMenu) {
+        // No row asks for a count before a ⋯ is touched; the first ask starts reading the log, so it is read by then.
+        SGRAlbumPlayCount(title, nil);
+        return;
+    }
     [countedPages() addObject:page];
     layOutRowsAgain(page);
+}
+
+// In menu: a row's ⋯ says which track the sheet it opens is for (AlbumPlaysMenu.x) as it sends its action, before
+// Spotify's runs: a finger's tap, VoiceOver's activation, Full Keyboard Access and Switch Control all go through
+// UIControl's sendAction, where a touch-down target would miss every one but the finger. A row's pass flags its ⋯
+// as watched, so every other control pays one associated-object read. The cell holds the ⋯ it flagged and takes the
+// flag back as it is prepared for reuse or laid out as anything but an album's track row; and the action checks the
+// row again, so a ⋯ that is no longer an album track's leaves whatever mark there is alone.
+static char kWatchedKey, kWatchedMenuKey;
+
+static void unwatch(UIView *cell) {
+    UIView *menu = objc_getAssociatedObject(cell, &kWatchedMenuKey);
+    if (!menu) return;
+    objc_setAssociatedObject(menu, &kWatchedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(cell, &kWatchedMenuKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static UIView *cellOf(UIView *view) {
+    Class cellClass = %c(_TtC12Element_List18CollectionViewCell);
+    for (UIView *v = view; v; v = v.superview) {
+        if ([v isKindOfClass:cellClass]) return v;
+    }
+    return nil;
+}
+
+static void markIfWatched(UIControl *control) {
+    if (!objc_getAssociatedObject(control, &kWatchedKey)) return;
+    UICollectionViewCell *cell = (UICollectionViewCell *)cellOf(control);
+    UIView *page = cell ? SGRAlbumPageOf(cell) : nil;
+    NSString *album = page ? objc_getAssociatedObject(page, &kAlbumKey) : nil;
+    UIView *row = control.superview;
+    while (row && ![row.accessibilityIdentifier hasPrefix:@"Components.UI.RetrievalRow"]) row = row.superview;
+    UILabel *title = onlyLabel(SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Title", &kTitleKey));
+    BOOL eligible = cell && objc_getAssociatedObject(cell, &kWatchedMenuKey) == control
+        && SGRIsTrackContent(cell.contentView.subviews.firstObject) && album.length && title.text.length
+        && [control.accessibilityIdentifier hasPrefix:@"Components.UI.ContextMenuButton"] && [row isDescendantOfView:cell];
+    if (!eligible) {
+        objc_setAssociatedObject(control, &kWatchedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (cell && objc_getAssociatedObject(cell, &kWatchedMenuKey) == control) unwatch(cell);
+        return;
+    }
+    SGRAlbumPlaysMarkMenu(album, title.text);
+}
+
+%group SGRAlbumMenuActions
+%hook UIControl
+- (void)sendAction:(SEL)action to:(id)target forEvent:(UIEvent *)event {
+    markIfWatched(self);
+    %orig;
+}
+
+- (void)sendAction:(UIAction *)action {
+    markIfWatched(self);
+    %orig;
+}
+%end
+%end
+
+static void watchMenu(UIView *cell, UIView *row) {
+    UIView *menu = SGRFindByIdentifier(row, @"Components.UI.ContextMenuButton*", &kMenuKey);
+    if (!menu) return;
+    if (![menu isKindOfClass:UIControl.class]) {
+        SGLogOnce(&sg_loggedMenus, NSStringFromClass(menu.class), @"redesign album: a track's ⋯ is a %@, not a control: its plays stay off its sheet");
+        return;
+    }
+    // The cell holds its own descendant: no cycle.
+    objc_setAssociatedObject(menu, &kWatchedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(cell, &kWatchedMenuKey, menu, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 // What a row's count narrowed, each label's frame before and after, to be put back.
@@ -287,8 +362,7 @@ static void applyCount(UIView *cell, UIView *row, UIView *page) {
     // The row is measured for Spotify's fixed type, so the count grows with Dynamic Type only up to Large.
     count.font = SGMonospacedDigitsFont(SGCategoryCappedFont(UIFontTextStyleCaption1, UIFontWeightRegular, UIContentSizeCategoryLarge));
     count.textColor = SGRSecondary();
-    count.text = [NSString stringWithFormat:plays == 1 ? SGL(@"settings.stats.plays.singular", @"%lu play")
-                                                       : SGL(@"settings.stats.plays.plural", @"%lu plays"), (unsigned long)plays];
+    count.text = SGRAlbumPlaysText(plays);
     CGSize size = [count sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)];
     size = CGSizeMake(ceil(size.width), ceil(size.height));
 
@@ -353,7 +427,8 @@ static void applyRow(UIView *cell, UIView *page) {
     });
 
     applyHairline(row);
-    if (showsCounts()) applyCount(cell, row, page);
+    if (countsPlace() == SGRAlbumPlayCountsInRow) applyCount(cell, row, page);
+    else if (countsPlace() == SGRAlbumPlayCountsInMenu) watchMenu(cell, row);
     if (hidesCredits()) applyCredit(cell, row, page);
 }
 
@@ -364,6 +439,8 @@ static void applyRow(UIView *cell, UIView *page) {
     // In the reverse of the order they were made: the artist line's change measured the narrowed title.
     restoreCredit((UIView *)self);
     restoreCount((UIView *)self);
+    // Flagged again below while it is still an album's track row.
+    unwatch((UIView *)self);
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
     if (!SGRIsTrackContent(cell.contentView.subviews.firstObject)) return;
@@ -374,6 +451,7 @@ static void applyRow(UIView *cell, UIView *page) {
 - (void)prepareForReuse {
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
+    unwatch(cell);
     BOOL changed = restoreCredit(cell);
     changed = restoreCount(cell) || changed;
     if (changed || SGRIsTrackContent(cell.contentView.subviews.firstObject)) [cell setNeedsLayout];
@@ -383,7 +461,8 @@ static void applyRow(UIView *cell, UIView *page) {
 %ctor {
     if (!SGRedesignedUI()) return;
     %init;
-    if (showsCounts()) {
+    if (countsPlace() == SGRAlbumPlayCountsInMenu) %init(SGRAlbumMenuActions);
+    if (countsPlace() == SGRAlbumPlayCountsInRow) {
         // Posted on the main thread (AlbumPlays.m).
         [NSNotificationCenter.defaultCenter addObserverForName:SGRAlbumPlayCountsDidChangeNotification object:nil
                                                          queue:nil usingBlock:^(NSNotification *note) {

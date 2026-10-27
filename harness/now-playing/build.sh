@@ -19,11 +19,11 @@ xcrun clang -target arm64-apple-ios26.0-macabi -isysroot "$SDK" -iframework "$SD
     -fobjc-arc -g -O0 -Wall -I"$SRC" -I"$SRC/Shared/LockScreenLyrics" -I"$SRC/Shared/AnimatedArtwork" \
     "$(dirname "$0")/main.m" "$(dirname "$0")/artwork.m" "$OUT/gen/LockScreenMotion.m" \
     "$OUT/gen/LockScreenLyrics.m" "$OUT/gen/LyricsArtwork.m" "$OUT/gen/NowPlayingExtras.m" \
-    "$SRC/Shared/AnimatedArtwork/SGMotionFollower.m" \
+    "$SRC/Shared/AnimatedArtwork/SGMotionFollower.m" "$SRC/Core/SGOptionalWork.m" "$SRC/Core/SGLog.m" \
     "$SRC/Shared/Player/SGLastTrack.m" "$SRC/Core/SGFileHash.m" \
     "$SRC/Shared/LyricsBackground/LyricsBackground.m" \
     "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
-    -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Accelerate -o "$OUT/now-playing"
+    -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Accelerate -framework Network -o "$OUT/now-playing"
 
 "$OUT/now-playing"
 LSL=1 "$OUT/now-playing"

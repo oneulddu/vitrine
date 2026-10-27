@@ -7,6 +7,7 @@
 //     build/head-gestures <trace.csv> [nod] [shake]     # a recording, one "time,pitch,yaw" a line
 #import <Foundation/Foundation.h>
 #import "Shared/HeadGestures/SGHeadDetector.h"
+#import "teaching-fixtures.h"
 
 enum { kRate = 25, kMax = 25 * 60 };
 
@@ -85,6 +86,75 @@ static int replayTrace(const Trace *trace, double nodThreshold, double shakeThre
 }
 
 static int failures;
+
+static SGHeadRecording fixtureRecording(NSData *data) {
+    int count = (int)(data.length / (3 * sizeof(double)));
+    const double *values = data.bytes;
+    double *buffer = calloc(count * 3, sizeof(double));
+    for (int i = 0; i < count; i++) {
+        buffer[i] = values[3 * i];
+        buffer[count + i] = values[3 * i + 1];
+        buffer[2 * count + i] = values[3 * i + 2];
+    }
+    return (SGHeadRecording){buffer, buffer + count, buffer + 2 * count, count};
+}
+
+static void teachingCheck(const char *name, BOOL ok) {
+    printf("%s %s\n", ok ? "ok" : "FAIL", name);
+    if (!ok) failures++;
+}
+
+static void teachingChecks(void) {
+    SGHeadRecording nods[5], shakes[5];
+    NSArray *nodData = teachingFive(TeachingNod, 5), *shakeData = teachingFive(TeachingShake, 5);
+    for (int i = 0; i < 5; i++) {
+        nods[i] = fixtureRecording(nodData[i]);
+        shakes[i] = fixtureRecording(shakeData[i]);
+    }
+    SGHeadRecording walk = fixtureRecording(teachingMotion(TeachingWalk));
+    SGHeadRecording falseNod = fixtureRecording(teachingMotion(TeachingWalkWithNod));
+    SGHeadTeachingResult cleanNod = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, shakes, 5, walk);
+    SGHeadTeachingResult cleanShake = SGHeadEvaluate(1.4, 1.1, SGHeadAxisYaw, shakes, 5, nods, 5, walk);
+    teachingCheck("clean motion accepts both; five demonstrations, zero ordinary triggers",
+        cleanNod.accepted && cleanShake.accepted && cleanNod.recognized == 5 && cleanShake.recognized == 5 &&
+        cleanNod.ordinaryFires == 0 && cleanShake.ordinaryFires == 0);
+    SGHeadTeachingResult noisyNod = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, shakes, 5, falseNod);
+    SGHeadTeachingResult safeShake = SGHeadEvaluate(1.4, 1.1, SGHeadAxisYaw, shakes, 5, nods, 5, falseNod);
+    teachingCheck("ordinary nod rejects only the nod", !noisyNod.accepted && noisyNod.ordinaryFires == 1 && safeShake.accepted);
+    SGHeadTeachingResult crossed = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, nods, 5, walk);
+    teachingCheck("nod in shake demonstrations rejects the nod", !crossed.accepted && crossed.otherFires == 5);
+    for (int i = 2; i < 5; i++) {
+        free((void *)nods[i].time);
+        nods[i] = fixtureRecording(teachingMotion(TeachingSingleNod));
+    }
+    SGHeadTeachingResult two = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, shakes, 5, walk);
+    teachingCheck("two of five rejected", !two.accepted && two.recognized == 2);
+    free((void *)nods[2].time);
+    nods[2] = fixtureRecording(teachingMotion(TeachingNod));
+    SGHeadTeachingResult three = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, shakes, 5, walk);
+    teachingCheck("three of five accepted", three.accepted && three.recognized == 3);
+    SGHeadRecording six[] = {nods[0], nods[1], nods[2], nods[3], nods[4], nods[4]};
+    SGHeadTeachingResult half = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, six, 6, shakes, 5, walk);
+    teachingCheck("three of six rejected below sixty percent", !half.accepted && half.recognized == 3);
+    SGHeadTeachingResult absent = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, shakes, 5, (SGHeadRecording){0});
+    teachingCheck("missing ordinary motion never passes", !absent.accepted);
+    SGHeadRecording shortWalk = walk;
+    shortWalk.count = 50;
+    SGHeadTeachingResult shortResult = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, shakes, 5, shortWalk);
+    teachingCheck("two seconds of ordinary motion cannot pass as twenty", !shortResult.accepted);
+    SGHeadRecording gappedWalk = fixtureRecording(teachingMotion(TeachingWalk));
+    // Keep the full time span but drop one second of interior samples.
+    double *times = (double *)gappedWalk.time, *pitches = (double *)gappedWalk.pitch, *yaws = (double *)gappedWalk.yaw;
+    for (int i = 250; i < gappedWalk.count - 25; i++) {
+        times[i] = times[i + 25]; pitches[i] = pitches[i + 25]; yaws[i] = yaws[i + 25];
+    }
+    gappedWalk.count -= 25;
+    SGHeadTeachingResult gapResult = SGHeadEvaluate(1.1, 1.4, SGHeadAxisPitch, nods, 5, shakes, 5, gappedWalk);
+    teachingCheck("twenty-second span with a one-second gap is incomplete", !gapResult.accepted);
+    free((void *)gappedWalk.time);
+    for (int i = 0; i < 5; i++) { free((void *)nods[i].time); free((void *)shakes[i].time); }
+    free((void *)walk.time); free((void *)falseNod.time);
+}
 
 static void expect(const char *name, const Trace *trace, double nod, double shake, int likes, int skips) {
     int gotLikes, gotSkips;
@@ -275,6 +345,7 @@ int main(int argc, char **argv) {
     printf("     taught shake %.2f rad/s\n", taughtShake);
     for (int i = 0; i < 5; i++) free(five[i]);
 
+    teachingChecks();
     printf(failures ? "%d failed\n" : "all passed\n", failures);
     return failures ? 1 : 0;
 }

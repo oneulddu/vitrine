@@ -86,26 +86,30 @@ static int descending(const void *a, const void *b) {
     return x < y ? 1 : x > y ? -1 : 0;
 }
 
-// Whether the detector, at these thresholds, fires the gesture of `axis` on the samples and nothing else.
+// Count both gestures, including one completed just after the recording ends.
 // Still samples follow the last one, so a gesture made at the very end of the recording is read too.
-static bool fires(const double *time, const double *pitch, const double *yaw, int count, SGHeadAxis axis,
-                  double nodThreshold, double shakeThreshold) {
-    if (count < 1) return false;
-    SGHeadGesture want = axis == SGHeadAxisPitch ? SGHeadGestureDoubleNod : SGHeadGestureShake;
+static void countFires(const double *time, const double *pitch, const double *yaw, int count,
+                       double nodThreshold, double shakeThreshold, int fired[3]) {
+    if (count < 1) return;
     SGHeadDetector d;
     SGHeadDetectorReset(&d, nodThreshold, shakeThreshold);
-    bool wanted = false;
     for (int i = 0; i < count; i++) {
         SGHeadGesture gesture = SGHeadDetectorFeed(&d, time[i], pitch[i], yaw[i]);
-        if (gesture != SGHeadGestureNone && gesture != want) return false;
-        wanted = wanted || gesture == want;
+        fired[gesture]++;
     }
     for (double t = time[count - 1] + kStillStep; t <= time[count - 1] + kQuiet + 2 * kStillStep; t += kStillStep) {
         SGHeadGesture gesture = SGHeadDetectorFeed(&d, t, pitch[count - 1], yaw[count - 1]);
-        if (gesture != SGHeadGestureNone && gesture != want) return false;
-        wanted = wanted || gesture == want;
+        fired[gesture]++;
     }
-    return wanted;
+}
+
+static bool fires(const double *time, const double *pitch, const double *yaw, int count, SGHeadAxis axis,
+                  double nodThreshold, double shakeThreshold) {
+    int fired[3] = {0};
+    countFires(time, pitch, yaw, count, nodThreshold, shakeThreshold, fired);
+    SGHeadGesture want = axis == SGHeadAxisPitch ? SGHeadGestureDoubleNod : SGHeadGestureShake;
+    SGHeadGesture other = axis == SGHeadAxisPitch ? SGHeadGestureShake : SGHeadGestureDoubleNod;
+    return fired[want] > 0 && fired[other] == 0;
 }
 
 double SGHeadLearn(const double *time, const double *pitch, const double *yaw, int count, SGHeadAxis axis, double otherThreshold) {
@@ -168,4 +172,45 @@ double SGHeadLearnSamples(const SGHeadRecording *recordings, int n, SGHeadAxis a
         }
     }
     return bestFired >= atLeast ? best : 0;
+}
+
+static bool ordinaryComplete(SGHeadRecording recording) {
+    if (recording.count < 2) return false;
+    // At 25 Hz the first and last samples may each miss a phase boundary by one sample.
+    // Use the detector's own 0.3 s gap limit: beyond that it cannot read motion continuously.
+    double span = recording.time[recording.count - 1] - recording.time[0];
+    if (!isfinite(span) || span < SGHeadOrdinarySeconds - 2 * kStillStep) return false;
+    for (int i = 1; i < recording.count; i++) {
+        double dt = recording.time[i] - recording.time[i - 1];
+        if (!isfinite(dt) || dt <= 0 || dt > kGap) return false;
+    }
+    return true;
+}
+
+SGHeadTeachingResult SGHeadEvaluate(double threshold, double otherThreshold, SGHeadAxis axis,
+    const SGHeadRecording *own, int ownCount, const SGHeadRecording *other, int otherCount,
+    SGHeadRecording ordinary) {
+    SGHeadTeachingResult result = {.threshold = threshold, .demonstrations = ownCount};
+    if (threshold <= 0) return result;
+    double nod = axis == SGHeadAxisPitch ? threshold : otherThreshold;
+    double shake = axis == SGHeadAxisYaw ? threshold : otherThreshold;
+    SGHeadGesture want = axis == SGHeadAxisPitch ? SGHeadGestureDoubleNod : SGHeadGestureShake;
+    for (int i = 0; i < ownCount; i++) {
+        SGHeadRecording r = own[i];
+        int fired[3] = {0};
+        countFires(r.time, r.pitch, r.yaw, r.count, nod, shake, fired);
+        result.recognized += fired[want] > 0;
+    }
+    for (int i = 0; i < otherCount; i++) {
+        SGHeadRecording r = other[i];
+        int fired[3] = {0};
+        countFires(r.time, r.pitch, r.yaw, r.count, nod, shake, fired);
+        result.otherFires += fired[want];
+    }
+    int fired[3] = {0};
+    countFires(ordinary.time, ordinary.pitch, ordinary.yaw, ordinary.count, nod, shake, fired);
+    result.ordinaryFires = fired[want];
+    result.accepted = ordinaryComplete(ordinary) && result.recognized >= 3 &&
+        result.recognized * 5 >= ownCount * 3 && !result.ordinaryFires && !result.otherFires;
+    return result;
 }

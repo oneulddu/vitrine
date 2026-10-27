@@ -162,6 +162,31 @@ only, no code); the notes give no numbers, so the limits below are Vitrine's own
 | Album, artist and playlist pages like the Music app; more Appearance options; lock screen styles | Open: the notes and site name them without a behavior to build from |
 | Web Player, Siri and Shortcuts, settings backup, Workshop, sign-in | Leave out: Plus, the chroma.pw account or its server |
 
+### Chroma 1.0.0-beta.4 (described by behavior)
+
+The first batch taken from beta.4, described by behavior only and built against Vitrine's own code.
+
+| Item | Where Vitrine stands |
+|---|---|
+| Lyrics pronunciation in Hangul: Japanese and Chinese lines read in Hangul, every other script in Latin | Done (Romanise.m): offline kana and pinyin to Hangul, under Pronunciation alphabet; harness/hangul-pronunciation/ |
+| Teaching gestures checked against 20 seconds of ordinary movement, a threshold stored only if it never fires there | Done (HeadGesturesTeach.m, SGHeadEvaluate): the harness covers rejection, a kept previous threshold and Cancel |
+| Hardware keyboard: ⌘↑ / ⌘↓ volume, ⌘1 / ⌘2 / ⌘3 Home, Search and Library, ⌘F Search with its field focused, Esc and ⌘W the player closed | Done (Shared/Keyboard, Core/SGTopController.h); harness/keyboard-commands/ and harness/keyboard-top-controller/; the keys themselves are a device check |
+| Hold a lyrics line for Copy, Share and, where it has one, Meaning | Done (Redesigned/Lyrics/SGRKaraokeView.m); harness/lyrics-hold/; the press itself is a device check |
+| Own lyrics as TTML, LRC or plain text, pasted too, the same 1 MB and content rules, replaced files deleted at the next launch | Done (Shared/LocalFiles/LocalLyrics.m and its page in both looks); harness/local-files/ |
+| Advance work (the next track's lyrics and artwork) stands down on Low Power Mode, serious or critical heat, an unavailable network and Low Data Mode | Done (Core/SGOptionalWork.h, asked at KaraokeSource.x's next-track walk and SGMotionFollower.m's fetch ahead) |
+| With shuffle and repeat both hidden, previous and next move out to where the Music app keeps them | Done (Redesigned/Player/PlayerControls.x); a device check on a narrow and a wide iPhone is outstanding |
+| Recent accent colors, up to 8, each look keeping its own | Done (Native/Appearance/AccentHistory.m, Redesigned/Kit/SGRAccentHistory.m); harness/ui-refinements/ |
+| Album play counts Off, In the row or In menu, the switch it replaced migrated | Done (Redesigned/Album/AlbumPlaysPlace.m, AlbumPlaysMenu.x); harness/ui-refinements/; the sheet in Spotify itself is a device check |
+
+Judged not better, or not ours to take:
+
+| Item | Why |
+|---|---|
+| Autoplay shuffle | Unsolved, and no answer of ours either: on 9.1.90 autoplay continuation reports `{autoplay}`, and despite the serialized restriction override the core answers Code=101 and leaves shuffle and repeat as Spotify set them (harness/radio-modes/README.md) |
+| Rewriting an MP3's metadata tags | Left out for its data-loss risk: it edits the user's own files, and the gain is cosmetic |
+| Short-video carousels in Search | Not restored; the redesign keeps the watch feed and its promos collapsed |
+| Account, Plus, server and telemetry features | Out of scope, as in Leave out: no account, no paid tier, no upstream server |
+
 ### Before the fork point, or not needed any more
 
 | # | Item |
@@ -191,3 +216,5 @@ only, no code); the notes give no numbers, so the limits below are Vitrine's own
   (iOS 27) for beta.1. Still unchecked: Karaoke with a freshly downloaded model, Delay with AirPods, the Live
   Activity options and preview, the font families, Settings at the largest accessibility text size, and
   VoiceOver. Each commit body lists what to check.
+- From beta.4, on a phone: the hardware keyboard's keys, holding a lyric line, the player's spacing with shuffle and
+  repeat both hidden on a narrow and a wide iPhone, and an album's ⋯ sheet with Play counts In menu.

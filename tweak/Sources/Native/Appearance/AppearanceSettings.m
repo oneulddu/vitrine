@@ -23,16 +23,23 @@ static void choosePreset(NSInteger index) {
     SGSetInt(SGKeyAccent, index == 0 ? -1 : index == 1 ? SGAppleMusicRed : custom);
 }
 
+// A color from the sheet, a swatch's or the picker's: Custom, and first among the recent colors when it is another.
+static void chooseColor(NSInteger rgb) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    NSArray<NSNumber *> *recent = SGAccentRecentFrom([store objectForKey:SGKeyAccentRecent]);
+    [store setObject:SGAccentRecentAdding(recent, rgb, SGAccentRGB()) forKey:SGKeyAccentRecent];
+    SGSetInt(SGKeyAccent, rgb);
+    SGSetInt(SGKeyAccentCustom, rgb);
+}
+
 // The native look's rows of the Appearance page (App/Pages.m): the preset from a menu, then the color in
-// effect, which opens the picker; a color stored from there is Custom.
+// effect, which opens the sheet of recent colors and the picker; a color stored from there is Custom.
 NSArray<SGModRow *> *SGNativeAppearanceRows(void) {
     SGModRow *menu = SGMenuRow(SGL(@"settings.appearance.accent_preset.title", @"Accent color preset"), presets(), ^NSString *{ return presets()[(NSUInteger)preset()]; },
                                ^(NSInteger index) { choosePreset(index); });
     SGModRow *colour = SGStatActionRow(SGL(@"settings.appearance.accent_color.title", @"Accent color"), nil, ^NSString *{ return [NSString stringWithFormat:@"#%06lX", (long)SGAccentRGB()]; }, ^{
-        SGPickColor(SGL(@"settings.appearance.accent_color.title", @"Accent color"), SGAccentRGB(), ^(NSInteger rgb) {
-            SGSetInt(SGKeyAccent, rgb);
-            SGSetInt(SGKeyAccentCustom, rgb);
-        });
+        SGPickAccent(SGL(@"settings.appearance.accent_color.title", @"Accent color"), SGAccentRGB(),
+                     SGAccentRecentFrom([NSUserDefaults.standardUserDefaults objectForKey:SGKeyAccentRecent]), ^(NSInteger rgb) { chooseColor(rgb); });
     });
     colour.swatch = ^UIColor *{ return SGColorRGB(SGAccentRGB()); };
     return @[

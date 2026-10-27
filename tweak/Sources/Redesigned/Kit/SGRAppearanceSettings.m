@@ -25,16 +25,24 @@ static void choosePreset(NSInteger index) {
     SGSetInt(SGRKeyAccent, index == 0 ? -1 : index == 1 ? SGAppleMusicRed : custom);
 }
 
+// A color from the sheet, a swatch's or the picker's: Custom, and first among the recent colors when it is another.
+static void chooseColor(NSInteger rgb) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    NSArray<NSNumber *> *recent = SGRAccentRecentFrom([store objectForKey:SGRKeyAccentRecent]);
+    [store setObject:SGRAccentRecentAdding(recent, rgb, SGRAccentRGB()) forKey:SGRKeyAccentRecent];
+    SGSetInt(SGRKeyAccent, rgb);
+    SGSetInt(SGRKeyAccentCustom, rgb);
+}
+
 // The redesign's rows of the Appearance page (App/Pages.m): the preset from a menu, then the color in effect,
-// which opens the picker; a color stored from there is Custom. AMOLED has no row: the redesign is always black.
+// which opens the sheet of recent colors and the picker; a color stored from there is Custom. AMOLED has no row:
+// the redesign is always black.
 NSArray<SGModRow *> *SGRAppearanceRows(void) {
     SGModRow *menu = SGMenuRow(SGL(@"settings.appearance.accent_preset.title", @"Accent color preset"), presets(), ^NSString *{ return presets()[(NSUInteger)preset()]; },
                                ^(NSInteger index) { choosePreset(index); });
     SGModRow *colour = SGStatActionRow(SGL(@"settings.appearance.accent_color.title", @"Accent color"), nil, ^NSString *{ return [NSString stringWithFormat:@"#%06lX", (long)SGRAccentRGB()]; }, ^{
-        SGPickColor(SGL(@"settings.appearance.accent_picker.title", @"Accent color"), SGRAccentRGB(), ^(NSInteger rgb) {
-            SGSetInt(SGRKeyAccent, rgb);
-            SGSetInt(SGRKeyAccentCustom, rgb);
-        });
+        SGRPickAccent(SGL(@"settings.appearance.accent_picker.title", @"Accent color"), SGRAccentRGB(),
+                      SGRAccentRecentFrom([NSUserDefaults.standardUserDefaults objectForKey:SGRKeyAccentRecent]), ^(NSInteger rgb) { chooseColor(rgb); });
     });
     colour.swatch = ^UIColor *{ return SGColorRGB(SGRAccentRGB()); };
     return @[

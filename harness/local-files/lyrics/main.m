@@ -50,6 +50,8 @@ void SGLyricsPageLines(NSArray<SGKaraokeLine *> *lines, NSArray<NSNumber *> **st
     *texts = @[];
 }
 SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) { return nil; }
+// SGTTML.m reads it for a translation in the language the Lyrics page asks for, which this page of lines does not show.
+NSString *SGLyricsTranslationLanguage(void) { return nil; }
 NSInteger SGKaraokeDelayMs(void) { return [NSUserDefaults.standardUserDefaults integerForKey:SGKeyLyricsDelay]; }
 
 #pragma mark - the run

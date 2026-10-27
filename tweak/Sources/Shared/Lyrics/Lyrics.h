@@ -17,6 +17,7 @@ SGModRow *SGLockScreenLyricsRow(void);
 SGModRow *SGLyricsTranslationLanguageRow(void);
 SGModRow *SGLyricsWordTimingRow(void);
 SGModRow *SGLyricsRomanisedRow(void);
+// Opens the alphabet and Japanese-reading choices, beneath the existing pronunciation switch.
 SGModRow *SGLyricsJapaneseReadingRow(void);
 SGModRow *SGLyricsDelayRow(void);
 
@@ -26,8 +27,10 @@ SGModRow *SGLyricsDelayRow(void);
 #define SGKeyLyricsRomanised @"spotifyglass.lyricsRomanised"
 // A Japanese song reads in hiragana instead of romaji; kana and Latin stay as written. Off by default.
 #define SGKeyLyricsJapaneseKana @"spotifyglass.lyricsJapaneseKana"
+// Off: existing Latin/hiragana readings. On: Japanese and Chinese readings in Hangul.
+#define SGKeyLyricsPronunciationHangul @"spotifyglass.lyricsPronunciationHangul"
 extern NSNotificationName const SGLyricsRomanisedDidChangeNotification;
-// Romanise.m: the text in Latin letters, offline; nil where it has no letter of another script, or
+// Romanise.m: the selected alphabet, offline; nil where it has no letter of another script, or
 // reads the same. With Japanese reading set to Hiragana, only tokens holding kanji change. `japanese` reads kanji the Japanese way, for a song SGLyricsLooksJapanese says is
 // (a line of kanji alone would read as Chinese). Safe off the main thread, and kept per text.
 NSString *SGLyricsRomanised(NSString *text, BOOL japanese);

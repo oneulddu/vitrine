@@ -74,3 +74,16 @@ typedef struct {
 // on in the most recordings wins, the lowest of a tie, so the smallest of them still counts. 0 when no
 // candidate fires in `atLeast` of them.
 double SGHeadLearnSamples(const SGHeadRecording *recordings, int n, SGHeadAxis axis, double otherThreshold, int atLeast);
+
+typedef struct {
+    double threshold;
+    int recognized, demonstrations, ordinaryFires, otherFires;
+    bool accepted;
+} SGHeadTeachingResult;
+
+enum { SGHeadOrdinarySeconds = 20 };
+
+// Replay a candidate against its demonstrations, the other gesture, and ordinary listening.
+SGHeadTeachingResult SGHeadEvaluate(double threshold, double otherThreshold, SGHeadAxis axis,
+    const SGHeadRecording *own, int ownCount, const SGHeadRecording *other, int otherCount,
+    SGHeadRecording ordinary);

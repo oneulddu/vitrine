@@ -6,3 +6,6 @@ mkdir -p build
 xcrun clang -fobjc-arc -O2 -Wall -Werror -I ../../tweak/Sources -framework Foundation \
     main.m ../../tweak/Sources/Shared/HeadGestures/SGHeadDetector.m -o build/head-gestures
 echo "built build/head-gestures"
+if [ "${HEAD_GESTURES_SIM:-0}" = 1 ]; then
+    python3 sim/check.py
+fi

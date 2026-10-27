@@ -1,6 +1,7 @@
-// Imported LRC files, on the Lyrics page beside the sources: the files kept (a swipe deletes one), Import
-// for current track…, which links the file to the local file playing, and Import LRC…, matched by title
-// and artist. Both open Files and copy the file in.
+// Imported lyrics files, on the Lyrics page beside the sources: the files kept (a swipe deletes one),
+// Import for current track…, which links the file to the local file playing, Paste, which keeps the
+// clipboard's lyrics for it, and Import lyrics…, matched by title and artist. Import opens Files and
+// copies the file in; what it holds, TTML, LRC or plain text, is decided by its content.
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Core/SGCore.h"
 #import "Settings/SGPage.h"
@@ -11,6 +12,7 @@
 
 typedef NS_ENUM(NSInteger, SGLRCImportRow) {
     SGLRCImportForTrack,
+    SGLRCImportPasted,
     SGLRCImportByName,
     SGLRCImportRowCount,
 };
@@ -21,27 +23,44 @@ static NSString *playingLocalFile(void) {
     return SGLocalFileIs(uri) ? uri : nil;
 }
 
+// Why an import was refused, as its own words: the code says it, so every page says it the same.
+static NSString *refusalText(NSError *error) {
+    switch (error.code) {
+        case SGLyricsImportErrorNothing:
+            return SGL(@"settings.locallyrics.error.nothing", @"There is nothing to import.");
+        case SGLyricsImportErrorTooLarge:
+            return SGL(@"settings.locallyrics.error.toolarge", @"The lyrics are larger than 1 MB.");
+        case SGLyricsImportErrorUnreadableFile:
+            return SGL(@"settings.locallyrics.error.unreadablefile", @"The file could not be read.");
+        case SGLyricsImportErrorStorage:
+            return SGL(@"settings.locallyrics.error.storage", @"The lyrics could not be saved. The ones it had are unchanged.");
+        default:
+            return SGL(@"settings.locallyrics.error.unreadable", @"The lyrics could not be read as text.");
+    }
+}
+
 @interface SGImportedLRCFilesPage : SGPage <UIDocumentPickerDelegate>
 @end
 
 @implementation SGImportedLRCFilesPage {
     NSArray<NSString *> *_files;
     UIView *_footer;
-    // The local file playing when Files opened for Import for current track, nil for Import LRC….
+    // The local file playing when Paste or Files opened, nil for Import lyrics….
     NSString *_linkTo;
 }
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
-    self.title = SGL(@"settings.locallyrics.title", @"Imported LRC files");
+    self.title = SGL(@"settings.locallyrics.title", @"Imported lyrics files");
     return self;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
     _footer = SGNote(SGL(@"settings.locallyrics.footer", @"Import for current track links the file to the local file playing, whatever its tags say. "
-                      "Import LRC… keeps a file for any track whose title and artist match its [ti:] and [ar:] tags, "
-                      "or its name as \"Artist - Title\". Swipe left on a file to delete it."));
+                      "Paste keeps the clipboard's lyrics for it. Import lyrics… keeps a file for any track whose title and artist "
+                      "match its [ti:] and [ar:] tags, or its name as \"Artist - Title\". A file may be TTML, LRC or plain text: "
+                      "what it holds is read from its content. Swipe left on a file to delete it."));
     self.tableView.tableFooterView = _footer;
 }
 
@@ -89,7 +108,12 @@ static NSString *playingLocalFile(void) {
     if (path.section == 1) {
         UITableViewCell *cell = SGDequeueCell(table, @"import");
         if (path.row == SGLRCImportByName) {
-            SGFillCell(cell, SGL(@"settings.locallyrics.importbyname.title", @"Import LRC…"), SGL(@"settings.locallyrics.importbyname.subtitle", @"Matched by title and artist"), nil, @"square.and.arrow.down");
+            SGFillCell(cell, SGL(@"settings.locallyrics.importbyname.title", @"Import lyrics…"), SGL(@"settings.locallyrics.importbyname.subtitle", @"Matched by title and artist"), nil, @"square.and.arrow.down");
+        } else if (path.row == SGLRCImportPasted) {
+            NSString *uri = playingLocalFile();
+            SGFillCell(cell, SGL(@"settings.locallyrics.paste.title", @"Paste"),
+                       uri ? SGLocalFileInfo(uri)[@"title"] : SGL(@"settings.locallyrics.importfortrack.notplaying", @"Start playing a local track first"),
+                       uri ? nil : SGGrey(), @"doc.on.clipboard");
         } else {
             NSString *uri = playingLocalFile();
             NSString *title = SGLocalFileInfo(uri)[@"title"] ?: SGL(@"settings.locallyrics.importfortrack.defaulttitle", @"The local file playing");
@@ -117,23 +141,52 @@ static NSString *playingLocalFile(void) {
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:YES];
     if (path.section != 1) return;
-    _linkTo = path.row == SGLRCImportForTrack ? playingLocalFile() : nil;
-    if (path.row == SGLRCImportForTrack && !_linkTo) return;
-    // .lrc is nobody's registered type, so Files offers any file and the name is checked after.
+    _linkTo = path.row == SGLRCImportByName ? nil : playingLocalFile();
+    if (!_linkTo && path.row != SGLRCImportByName) return;
+    if (path.row == SGLRCImportPasted) {
+        [self pasteInto:_linkTo];
+        return;
+    }
+    // No lyrics kind is a registered type, so Files offers any file and its content is read after.
     UIDocumentPickerViewController *picker = [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[UTTypeData] asCopy:YES];
     picker.delegate = self;
     [self presentViewController:picker animated:YES completion:nil];
 }
 
+// Read only once the row is tapped: the page itself never touches the clipboard, and an empty one says
+// so instead of importing nothing.
+- (void)pasteInto:(NSString *)uri {
+    NSString *text = UIPasteboard.generalPasteboard.string;
+    if (!text.length) {
+        SGPresentInformation(self, SGL(@"settings.locallyrics.error.nothing.title", @"Nothing to import"), refusalText([NSError errorWithDomain:SGLyricsImportErrorDomain code:SGLyricsImportErrorNothing userInfo:nil]));
+        return;
+    }
+    SGImportPastedLyrics(text, uri, ^(NSString *name, NSError *error) {
+        if (!name) {
+            BOOL nothing = error.code == SGLyricsImportErrorNothing;
+            SGPresentInformation(self, nothing ? SGL(@"settings.locallyrics.error.nothing.title", @"Nothing to import")
+                                               : SGL(@"settings.locallyrics.error.pastefailed", @"Could not import the lyrics"), refusalText(error));
+            return;
+        }
+        [self reloadFiles];
+        [self sayLinked:name to:uri];
+    });
+}
+
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)table trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)path {
     if (path.section != 0 || !_files.count) return nil;
     NSString *name = _files[(NSUInteger)path.row];
+    // The store answers on the main queue once the file is gone, which is when the row goes and the
+    // swipe's own completion can be told.
+    __weak typeof(self) weakSelf = self;
     UIContextualAction *delete = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive title:SGL(@"common.delete", @"Delete")
         handler:^(UIContextualAction *action, UIView *view, void (^done)(BOOL)) {
-            BOOL deleted = SGDeleteImportedLRC(name);
-            if (deleted) [self reloadFiles];
-            else SGPresentInformation(self, SGL(@"settings.locallyrics.error.deletefailed", @"Could not delete the file"), nil);
-            done(deleted);
+            SGDeleteImportedLRC(name, ^(BOOL deleted) {
+                SGImportedLRCFilesPage *page = weakSelf;
+                if (deleted) [page reloadFiles];
+                else if (page) SGPresentInformation(page, SGL(@"settings.locallyrics.error.deletefailed", @"Could not delete the file"), nil);
+                done(deleted);
+            });
         }];
     delete.image = [UIImage systemImageNamed:@"trash"];
     return [UISwipeActionsConfiguration configurationWithActions:@[delete]];
@@ -144,25 +197,25 @@ static NSString *playingLocalFile(void) {
     [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:0] withRowAnimation:UITableViewRowAnimationFade];
 }
 
+// Says what the file now gives, for a file linked to the local file playing.
+- (void)sayLinked:(NSString *)name to:(NSString *)uri {
+    if (!uri) return;
+    NSString *title = SGLocalFileInfo(uri)[@"title"];
+    SGPresentInformation(self, SGL(@"settings.locallyrics.linked.title", @"Lyrics linked"), [NSString stringWithFormat:SGL(@"settings.locallyrics.linked.message", @"%@ now gives the lyrics for %@."), name,
+                                                                 title ? [NSString stringWithFormat:@"\"%@\"", title] : SGL(@"settings.locallyrics.linked.thislocalfile", @"this local file")]);
+}
+
 - (void)documentPicker:(UIDocumentPickerViewController *)picker didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *url = urls.firstObject;
     if (!url) return;
-    if (![url.pathExtension.lowercaseString isEqualToString:@"lrc"]) {
-        SGPresentInformation(self, SGL(@"settings.locallyrics.error.notlrc.title", @"Not an LRC file"), SGL(@"settings.locallyrics.error.notlrc.message", @"Pick a file whose name ends in .lrc."));
-        return;
-    }
     NSString *linkTo = _linkTo;
     SGImportLRC(url, linkTo, ^(NSString *name, NSError *error) {
         if (!name) {
-            SGPresentInformation(self, SGL(@"settings.locallyrics.error.importfailed", @"Could not import the file"), error.localizedDescription);
+            SGPresentInformation(self, SGL(@"settings.locallyrics.error.importfailed", @"Could not import the file"), refusalText(error));
             return;
         }
         [self reloadFiles];
-        if (linkTo) {
-            NSString *title = SGLocalFileInfo(linkTo)[@"title"];
-            SGPresentInformation(self, SGL(@"settings.locallyrics.linked.title", @"Lyrics linked"), [NSString stringWithFormat:SGL(@"settings.locallyrics.linked.message", @"%@ now gives the lyrics for %@."), name,
-                                                                         title ? [NSString stringWithFormat:@"\"%@\"", title] : SGL(@"settings.locallyrics.linked.thislocalfile", @"this local file")]);
-        }
+        [self sayLinked:name to:linkTo];
     });
 }
 

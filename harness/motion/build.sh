@@ -14,7 +14,8 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi \
     -iframework "$(xcrun --sdk macosx --show-sdk-path)/System/iOSSupport/System/Library/Frameworks" \
     -fobjc-arc -DSG_MOTION_TEST_STORE -I ../../tweak/Sources \
     -framework UIKit -framework Foundation -framework CoreGraphics -framework AVFoundation -framework CoreMedia -framework CoreVideo \
-    state-check.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionFollower.m \
+    -framework Network \
+    state-check.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionFollower.m ../../tweak/Sources/Core/SGOptionalWork.m ../../tweak/Sources/Core/SGLog.m \
     ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionCatalog.m \
     ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionClip.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m \
     -o "$OUT/state-check"

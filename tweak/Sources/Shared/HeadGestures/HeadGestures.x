@@ -474,19 +474,44 @@ double SGHeadGesturesSampleThreshold(NSData *motion, SGHeadAxis axis) {
     return learned;
 }
 
-double SGHeadGesturesLearnFrom(NSArray<NSData *> *motions, SGHeadAxis axis) {
-    int n = (int)motions.count;
-    SGHeadRecording *recordings = calloc(MAX(n, 1), sizeof *recordings);
-    for (int i = 0; i < n; i++) recordings[i] = unpack(motions[i]);
-    double learned = SGHeadLearnSamples(recordings, n, axis, otherThreshold(axis), MAX(1, n - 1));
-    for (int i = 0; i < n; i++) free((void *)recordings[i].time);
-    free(recordings);
-    SGLog(@"head gestures: learned %.2f rad/s for %@ from %d recordings", learned, axis == SGHeadAxisPitch ? @"nod" : @"shake", n);
-    if (learned > 0) {
-        SGSetInt(axis == SGHeadAxisPitch ? SGKeyHeadNod : SGKeyHeadShake, lround(learned * kMilli));
+SGHeadTeachingResults SGHeadGesturesFinishTeaching(NSArray<NSData *> *nods, NSArray<NSData *> *shakes, NSData *ordinary) {
+    int n = (int)nods.count, s = (int)shakes.count;
+    SGHeadRecording *nr = calloc(MAX(n, 1), sizeof *nr), *sr = calloc(MAX(s, 1), sizeof *sr);
+    for (int i = 0; i < n; i++) nr[i] = unpack(nods[i]);
+    for (int i = 0; i < s; i++) sr[i] = unpack(shakes[i]);
+    SGHeadRecording movement = unpack(ordinary);
+    double oldNod = learnedOr(SGKeyHeadNod, SGHeadDefaultNod), oldShake = learnedOr(SGKeyHeadShake, SGHeadDefaultShake);
+    // Validate the exact thousandths that playback will read, not an unrounded candidate.
+    double nod = lround(SGHeadLearnSamples(nr, n, SGHeadAxisPitch, oldShake, 1) * kMilli) / kMilli;
+    double shake = lround(SGHeadLearnSamples(sr, s, SGHeadAxisYaw, oldNod, 1) * kMilli) / kMilli;
+    SGHeadTeachingResults result = {
+        SGHeadEvaluate(nod, oldShake, SGHeadAxisPitch, nr, n, sr, s, movement),
+        SGHeadEvaluate(shake, oldNod, SGHeadAxisYaw, sr, s, nr, n, movement),
+    };
+    // A rejected candidate never participates in the other gesture's decision. If both work
+    // independently, try the pair. If the pair conflicts, keep a valid single replacement;
+    // when both conflict, teaching order breaks the tie (nod first).
+    if (result.nod.accepted && result.shake.accepted) {
+        SGHeadTeachingResult pairedNod = SGHeadEvaluate(nod, shake, SGHeadAxisPitch, nr, n, sr, s, movement);
+        SGHeadTeachingResult pairedShake = SGHeadEvaluate(shake, nod, SGHeadAxisYaw, sr, s, nr, n, movement);
+        if (pairedNod.accepted && pairedShake.accepted) {
+            result = (SGHeadTeachingResults){pairedNod, pairedShake};
+        } else if (pairedShake.accepted) {
+            result.nod = pairedNod;
+        } else {
+            result.shake = pairedShake;
+        }
+    }
+    for (int i = 0; i < n; i++) free((void *)nr[i].time);
+    for (int i = 0; i < s; i++) free((void *)sr[i].time);
+    free(nr); free(sr); free((void *)movement.time);
+    if (result.nod.accepted) SGSetInt(SGKeyHeadNod, lround(nod * kMilli));
+    if (result.shake.accepted) SGSetInt(SGKeyHeadShake, lround(shake * kMilli));
+    if (result.nod.accepted || result.shake.accepted) {
+        SGSetInt(SGKeyHeadSensitivity, 100);
         SGHeadGesturesSettingsChanged();
     }
-    return learned;
+    return result;
 }
 
 // Playing or not, from the one player hook every feature shares.

@@ -279,7 +279,7 @@ int main(int argc, char **argv) {
         SGPrefsChanged();
         [sg_asked removeAllObjects];
         got = fetch(@"t4");
-        CHECK([sg_asked isEqualToArray:@[@"importedLRC:t4"]] && [got.provider isEqualToString:@"Imported LRC"]);
+        CHECK([sg_asked isEqualToArray:@[@"importedLRC:t4"]] && [got.provider isEqualToString:@"Imported lyrics"]);
         [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGKeyLyricsProviders: @[@"musixmatch", @"importedLRC", @"lrclib"],
                                                                  SGKeyLyricsPreferWordTiming: @YES} forName:NSArgumentDomain];
         SGPrefsChanged();

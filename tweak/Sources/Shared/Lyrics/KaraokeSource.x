@@ -5,6 +5,7 @@
 // With a source of the mod's on, the color-lyrics body is Shared/LyricsSources' to answer and it
 // hands the lines over.
 #import "Core/SGCore.h"
+#import "Core/SGOptionalWork.h"
 #import "Lyrics.h"
 #import "LyricsStore.h"
 #import "Shared/LocalFiles/LocalFiles.h"
@@ -786,6 +787,7 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
     SPTPlayerTrack *next = upNextIn(state);
     NSString *nextID = idOf(next);
     if (!nextID || [nextID isEqualToString:trackID]) return;
+    if (!SGOptionalWorkMayRun(YES)) return;
     remember(next, nextID);
     SGLyricsPrefetch(nextID);
 }

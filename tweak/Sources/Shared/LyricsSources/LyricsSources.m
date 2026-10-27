@@ -238,7 +238,7 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             make(@"qqmusic", @"QQ Music", SGL(@"settings.lyricssources.qqmusic.subtitle", @"Line timing, Chinese catalog"), SGQQMusicAsk),
             make(@"kugou", @"KuGou", SGL(@"settings.lyricssources.kugou.subtitle", @"Word timing, Chinese catalog"), SGKuGouAsk),
             make(@"deezer", @"Deezer", SGL(@"settings.lyricssources.deezer.subtitle", @"Word and line timing, your own ARL"), SGDeezerAsk),
-            make(SGImportedLRCKey, SGL(@"settings.lyricssources.importedlrc.title", @"Imported LRC"), SGL(@"settings.lyricssources.importedlrc.subtitle", @"Your own .lrc files"), SGImportedLRCAsk),
+            make(SGImportedLRCKey, SGL(@"settings.lyricssources.importedlrc.title", @"Imported lyrics"), SGL(@"settings.lyricssources.importedlrc.subtitle", @"Your own LRC, TTML or text files"), SGImportedLRCAsk),
             make(@"genius", @"Genius", SGL(@"settings.lyricssources.genius.subtitle", @"Untimed, when no other has lyrics"), SGGeniusAsk),
         ];
     });

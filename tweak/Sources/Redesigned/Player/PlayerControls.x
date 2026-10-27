@@ -139,11 +139,86 @@ static void suppressButton(UIView *button) {
 }
 
 // Each is looked for only in its own end of the row, so a row without it (a podcast's) costs a walk of one
-// element, not the unit.
-static void hideShuffleAndRepeat(UIView *host, UIStackView *row) {
+// element, not the unit. YES when both were there and are hidden.
+static BOOL hideShuffleAndRepeat(UIView *host, UIStackView *row) {
     sg_buttonsHost = host;
-    if (sg_hideShuffle) suppressButton(SGRFindByIdentifier(row.arrangedSubviews.firstObject, kShuffleID, &kShuffleKey));
-    if (sg_hideRepeat) suppressButton(SGRFindByIdentifier(row.arrangedSubviews.lastObject, kRepeatID, &kRepeatKey));
+    UIView *shuffle = sg_hideShuffle ? SGRFindByIdentifier(row.arrangedSubviews.firstObject, kShuffleID, &kShuffleKey) : nil;
+    UIView *repeat = sg_hideRepeat ? SGRFindByIdentifier(row.arrangedSubviews.lastObject, kRepeatID, &kRepeatKey) : nil;
+    suppressButton(shuffle);
+    suppressButton(repeat);
+    return shuffle && repeat;
+}
+
+#pragma mark - previous and next, with shuffle and repeat both hidden
+
+// The Music app's three transport glyphs stand well apart; Spotify's previous and next stay next to play with the
+// empty slots of shuffle and repeat outside them. With both slots empty, each moves out until its center is
+// kSpreadReachMax (or a third of the row, whichever is less) from play's, less where that would take either past the
+// row's edge; one already farther out stays. Play keeps its place and every button its size. A translation on the
+// row's slot, set in the unit's own layout pass: the stack places its slots by center and bounds, which a transform
+// leaves alone, so Spotify's layout stays underneath and identity puts it back exactly. In landscape, with only one
+// of the two hidden, or on a row without them (a podcast's), the slots are Spotify's.
+static const CGFloat kSpreadReachMax = 140;
+static char kSpreadSlotsKey, kSpreadShiftKey;
+
+// The row's own slot that holds `view`, or nil.
+static UIView *slotOf(UIStackView *row, UIView *view) {
+    for (UIView *v = view; v; v = v.superview) {
+        if (v.superview == row) return v;
+    }
+    return nil;
+}
+
+// Moves `slot` by `dx` across, only over a transform this file set (or none), and remembers it on the row to undo.
+static void shiftSlot(UIStackView *row, UIView *slot, CGFloat dx) {
+    NSValue *mine = objc_getAssociatedObject(slot, &kSpreadShiftKey);
+    CGAffineTransform expected = mine ? mine.CGAffineTransformValue : CGAffineTransformIdentity;
+    if (!CGAffineTransformEqualToTransform(slot.transform, expected)) return;
+    CGAffineTransform shift = CGAffineTransformMakeTranslation(dx, 0);
+    if (!CGAffineTransformEqualToTransform(slot.transform, shift)) slot.transform = shift;
+    objc_setAssociatedObject(slot, &kSpreadShiftKey, dx ? [NSValue valueWithCGAffineTransform:shift] : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSHashTable<UIView *> *shifted = objc_getAssociatedObject(row, &kSpreadSlotsKey);
+    if (!shifted) {
+        shifted = [NSHashTable weakObjectsHashTable];
+        objc_setAssociatedObject(row, &kSpreadSlotsKey, shifted, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (dx) [shifted addObject:slot];
+    else [shifted removeObject:slot];
+}
+
+static void spreadSkips(UIView *host, UIStackView *row, BOOL bothHidden) {
+    UIView *play = slotOf(row, SGRFindByIdentifier(host, @"SPTNowPlayingPlayButton", &kPlayKey));
+    UIView *previous = slotOf(row, SGRFindByIdentifier(host, @"SPTNowPlayingPreviousTrackButton", &kPreviousKey));
+    UIView *next = slotOf(row, SGRFindByIdentifier(host, @"SPTNowPlayingNextTrackButton", &kNextKey));
+    // An iPhone in landscape is compact in height.
+    BOOL portrait = row.traitCollection.verticalSizeClass != UIUserInterfaceSizeClassCompact;
+    CGFloat previousShift = 0, nextShift = 0;
+    if (bothHidden && portrait && play && previous && next && previous != play && next != play && previous != next) {
+        CGFloat width = row.bounds.size.width, playX = play.center.x;
+        // From play's center to the farthest a button's center can go on its side with the button still in the row.
+        CGFloat (^room)(UIView *) = ^CGFloat(UIView *slot) {
+            return (slot.center.x < playX ? playX : width - playX) - slot.bounds.size.width / 2;
+        };
+        CGFloat reach = MIN(MIN(width / 3, kSpreadReachMax), MIN(room(previous), room(next)));
+        CGFloat (^outward)(UIView *) = ^CGFloat(UIView *slot) {
+            CGFloat offset = slot.center.x - playX;
+            CGFloat more = MAX(0, reach - fabs(offset));
+            return offset < 0 ? -more : more;
+        };
+        previousShift = outward(previous);
+        nextShift = outward(next);
+    }
+    // A slot shifted before that is no longer previous or next (the row was rebuilt) goes back first.
+    NSHashTable<UIView *> *shifted = objc_getAssociatedObject(row, &kSpreadSlotsKey);
+    for (UIView *slot in shifted.allObjects) {
+        if (slot != previous && slot != next) shiftSlot(row, slot, 0);
+    }
+    if (previous) shiftSlot(row, previous, previousShift);
+    if (next) shiftSlot(row, next, nextShift);
+    if (previousShift || nextShift) {
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ SGLog(@"redesign player: shuffle and repeat hidden, previous and next moved %.1f and %.1fpt out in a %.0fpt row", previousShift, nextShift, row.bounds.size.width); });
+    }
 }
 
 #pragma mark - play
@@ -240,7 +315,8 @@ void SGRPlayerPlayGlyphIn(UIView *host) {
     skipGlyph(host, @"SPTNowPlayingPreviousTrackButton", &kPreviousKey, @"backward.fill", SGRPressNudgeBack);
     skipGlyph(host, @"SPTNowPlayingNextTrackButton", &kNextKey, @"forward.fill", SGRPressNudgeForward);
     SGRPlayerPlayGlyphIn(host);
-    hideShuffleAndRepeat(host, row);
+    BOOL bothHidden = hideShuffleAndRepeat(host, row);
+    if (row) spreadSkips(host, row, bothHidden);
 }
 %end
 

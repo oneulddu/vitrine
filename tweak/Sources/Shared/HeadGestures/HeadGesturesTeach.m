@@ -4,8 +4,7 @@
 // light up toward where the head went and how far, fading back as it settles (Reduce Motion: the dot moves,
 // no ticks light). Five dots and "2 of 5" under the ring count what landed. A recording that holds no such
 // gesture is not counted and is taken again; Redo last drops the last one counted. Five in, the threshold is
-// learned from them together (SGHeadGesturesLearnFrom) and stored, the nod's before the shake begins, so a
-// Cancel then keeps it.
+// learned from them together, then checked against 20 seconds of ordinary movement before anything is stored.
 //
 // The sheet holds the motion open while it is up (SGHeadGesturesHold), so the system's Motion & Fitness prompt,
 // the first time, comes over it before Start, and no gesture does anything to the song meanwhile. The ring
@@ -105,6 +104,7 @@ static BOOL headOffset(double *pitch, double *yaw) {
 - (void)stop;
 // The end: every tick lit, a checkmark for the dot, nothing more drawn.
 - (void)showDone;
+- (void)startOrdinary;
 @end
 
 @implementation SGTeachRing {
@@ -116,6 +116,7 @@ static BOOL headOffset(double *pitch, double *yaw) {
     UIImageView *_check;
     CADisplayLink *_link;
     CFTimeInterval _lastFrame;
+    CFTimeInterval _ordinaryStarted;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -204,6 +205,13 @@ static BOOL headOffset(double *pitch, double *yaw) {
 - (void)frame:(CADisplayLink *)link {
     double dt = _lastFrame ? MIN(link.timestamp - _lastFrame, 0.1) : 1.0 / 60;
     _lastFrame = link.timestamp;
+    if (_ordinaryStarted) {
+        double elapsed = MIN(SGHeadOrdinarySeconds, CACurrentMediaTime() - _ordinaryStarted);
+        for (NSInteger i = 0; i < kTicks; i++) _ticks[i].opacity = i < kTicks * elapsed / SGHeadOrdinarySeconds ? 1 : 0;
+        self.accessibilityValue = [NSString stringWithFormat:SGL(@"settings.headgestures.teach.seconds_format", @"%ld seconds remaining"),
+                                  (long)ceil(SGHeadOrdinarySeconds - elapsed)];
+        return;
+    }
 
     // Screen down is a nod's down (pitch falling), screen left the head turned left (yaw rising).
     double pitch, yaw;
@@ -235,6 +243,11 @@ static BOOL headOffset(double *pitch, double *yaw) {
     }
 }
 
+- (void)startOrdinary {
+    _ordinaryStarted = CACurrentMediaTime();
+    _dot.hidden = YES;
+}
+
 - (void)showDone {
     [self stop];
     _dot.hidden = YES;
@@ -262,8 +275,9 @@ static BOOL headOffset(double *pitch, double *yaw) {
     UILabel *_count, *_heading, *_line;
     UIButton *_primaryButton, *_redoButton;
     NSMutableArray<NSData *> *_samples;
+    NSArray<NSData *> *_nodSamples;
     SGHeadAxis _axis;
-    BOOL _running, _finished;
+    BOOL _running, _finished, _ordinary, _sessionActive;
     BOOL _listening;      // a recording is open
     NSUInteger _step;     // which scheduled step is current: Redo, a restart and closing move it on
 }
@@ -272,12 +286,18 @@ static BOOL headOffset(double *pitch, double *yaw) {
     if (!(self = [super initWithNibName:nil bundle:nil])) return nil;
     _closed = [closed copy];
     _samples = [NSMutableArray array];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(interrupted)
+        name:UIApplicationDidEnterBackgroundNotification object:nil];
     self.title = SGL(@"settings.headgestures.teach.page.title", @"Teach your gestures");
     return self;
 }
 
 - (BOOL)nod {
     return _axis == SGHeadAxisPitch;
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
 - (UIButton *)buttonTitled:(NSString *)title prominent:(BOOL)prominent action:(SEL)action {
@@ -382,25 +402,50 @@ static BOOL headOffset(double *pitch, double *yaw) {
     ]];
 
     [self showGesture];
-    _line.text = SGL(@"settings.headgestures.teach.intro", @"After each tone, nod twice the way you would say yes. Five nods, then five shakes.");
+    _line.text = SGL(@"settings.headgestures.teach.intro.checked", @"After each tone, nod twice the way you would say yes. Five nods, five shakes, then 20 seconds of ordinary movement.");
     _redoButton.hidden = YES;
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
+    if (_finished) return;
+    _sessionActive = YES;
+    __weak SGTeachController *weakSelf = self;
+    SGHeadMotionListen(@"teaching-session", ^(CMDeviceMotion *motion) {
+        if (!motion) dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf interrupted]; });
+    });
     SGHeadGesturesHold(YES);
-    if (!_finished) [_dial start];
+    [_dial start];
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
     [super viewDidDisappear:animated];
+    [self stopTeaching];
+    if (_closed) _closed();
+    _closed = nil;
+}
+
+- (void)stopTeaching {
+    _sessionActive = NO;
     _step++;
     _listening = NO;
     [_dial stop];
+    SGHeadMotionListen(@"teaching-session", nil);
     SGHeadGesturesStopListening();
     SGHeadGesturesHold(NO);
-    if (_closed) _closed();
-    _closed = nil;
+}
+
+- (void)interrupted {
+    if (!_sessionActive || _finished) return;
+    _finished = YES;
+    _running = NO;
+    [self stopTeaching];
+    self.navigationItem.leftBarButtonItem = nil;
+    _redoButton.hidden = YES;
+    _heading.text = SGL(@"settings.headgestures.teach.interrupted.title", @"Nothing changed");
+    _line.text = SGL(@"settings.headgestures.teach.interrupted.detail", @"Teaching was interrupted. Keep the app open and your headphones connected, then try again.");
+    announce([NSString stringWithFormat:@"%@. %@", _heading.text, _line.text]);
+    [self setPrimaryTitle:SGL(@"common.done", @"Done")];
 }
 
 #pragma mark - what it shows
@@ -491,18 +536,9 @@ static BOOL headOffset(double *pitch, double *yaw) {
 }
 
 - (void)learn {
-    if (SGHeadGesturesLearnFrom(_samples, _axis) <= 0) {
-        [_samples removeAllObjects];
-        _line.text = SGL(@"settings.headgestures.teach.error.inconsistent", @"Those five were too far apart to learn from. Let's take them again.");
-        announce(_line.text);
-        [self after:self.gap * 2 then:^{
-            [self showCount];
-            [self record];
-        }];
-        return;
-    }
     if (self.nod) {
-        _line.text = SGL(@"settings.headgestures.teach.transition", @"Your nod is learned. Next, five shakes.");
+        _nodSamples = [_samples copy];
+        _line.text = SGL(@"settings.headgestures.teach.transition.checked", @"Five nods recorded. Next, five shakes. Nothing is saved until the movement check.");
         announce(_line.text);
         [self after:self.gap * 1.5 then:^{
             self->_axis = SGHeadAxisYaw;
@@ -513,20 +549,60 @@ static BOOL headOffset(double *pitch, double *yaw) {
         }];
         return;
     }
+    [self after:self.gap then:^{ [self recordOrdinary]; }];
+}
+
+- (void)recordOrdinary {
+    _ordinary = YES;
+    _redoButton.hidden = YES;
+    for (UIView *dot in _dots) dot.hidden = YES;
+    _count.text = nil;
+    _heading.text = SGL(@"settings.headgestures.teach.ordinary.title", @"Move normally");
+    _line.text = SGL(@"settings.headgestures.teach.ordinary.detail", @"For 20 seconds, look around and nod along to the music. Walk too if you want gestures while walking.");
+    _dial.accessibilityLabel = _heading.text;
+    announce(_line.text);
+    [_dial startOrdinary];
+    NSUInteger step = ++_step;
+    _listening = YES;
+    SGHeadGesturesRecord(SGHeadOrdinarySeconds, ^(NSData *motion) {
+        if (step != self->_step) return;
+        self->_listening = NO;
+        [self finish:motion];
+    });
+}
+
+- (NSString *)summary:(SGHeadTeachingResult)result name:(NSString *)name {
+    NSString *status = result.accepted ? SGL(@"settings.headgestures.teach.result.saved", @"Saved")
+                                      : SGL(@"settings.headgestures.teach.result.unchanged", @"Unchanged");
+    return [NSString stringWithFormat:SGL(@"settings.headgestures.teach.result.format", @"%@: %@. %d of %d recognized; %d during ordinary movement."),
+            name, status, result.recognized, result.demonstrations, result.ordinaryFires];
+}
+
+- (void)finish:(NSData *)motion {
+    if (!_sessionActive || _finished) return;
+    if (UIApplication.sharedApplication.applicationState == UIApplicationStateBackground) {
+        [self interrupted];
+        return;
+    }
+    SGHeadTeachingResults results = SGHeadGesturesFinishTeaching(_nodSamples, _samples, motion);
     _finished = YES;
     _running = NO;
+    [self stopTeaching];
     self.navigationItem.leftBarButtonItem = nil;
-    _heading.text = SGL(@"settings.headgestures.teach.heading.all_set", @"All set");
+    BOOL any = results.nod.accepted || results.shake.accepted;
+    _heading.text = any ? SGL(@"settings.headgestures.teach.heading.all_set", @"All set")
+                       : SGL(@"settings.headgestures.teach.result.nothing", @"Nothing changed — try quicker, bigger gestures.");
     [_dial showDone];
     _dial.accessibilityLabel = SGL(@"settings.headgestures.teach.a11y.all_set", @"Nod and shake");
-    _line.text = SGL(@"settings.headgestures.teach.complete.detail", @"Both are learned from yours. If one still slips past, raise Sensitivity.");
-    announce([SGL(@"settings.headgestures.teach.a11y.all_set_lead", @"All set. ") stringByAppendingString:_line.text]);
-    [self showCount];
+    _line.text = [NSString stringWithFormat:@"%@\n\n%@",
+        [self summary:results.nod name:SGL(@"settings.headgestures.teach.step.nod", @"Nod twice")],
+        [self summary:results.shake name:SGL(@"settings.headgestures.teach.step.shake", @"Shake your head")]];
+    announce([NSString stringWithFormat:@"%@. %@", _heading.text, _line.text]);
     [self setPrimaryTitle:SGL(@"common.done", @"Done")];
 }
 
 - (void)redo {
-    if (!_running || !_samples.count) return;
+    if (!_running || _ordinary || !_samples.count) return;
     _listening = NO;
     SGHeadGesturesStopListening();
     [_samples removeLastObject];
@@ -537,6 +613,7 @@ static BOOL headOffset(double *pitch, double *yaw) {
 }
 
 - (void)cancel {
+    [self stopTeaching];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 

@@ -150,6 +150,13 @@ static BOOL alignsRight(SGKaraokeLine *line) {
     return (line.align == SGKaraokeAlignTrailing) != readsRightToLeft(SGKaraokeLineText(line));
 }
 
+// A line's text as holding it offers it, nil for a line there is nothing to offer for: an empty one, or one
+// holding only a break's mark, as an instrumental break's does.
+static NSString *heldLineText(SGKaraokeLine *line) {
+    NSString *text = SGKaraokeLineText(line);
+    return [text rangeOfCharacterFromSet:NSCharacterSet.alphanumericCharacterSet].location == NSNotFound ? nil : text;
+}
+
 static UILabel *wordLabel(NSString *text, UIFont *font, UIColor *color, CGRect frame, BOOL rightToLeft) {
     UILabel *label = [[UILabel alloc] initWithFrame:frame];
     label.text = text;
@@ -1021,6 +1028,10 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
 @property (nonatomic, readonly) BOOL right;
 @property (nonatomic) BOOL active;
 @property (nonatomic, copy) BOOL (^activate)(void);
+// What holding the line offers, as VoiceOver's own actions: Copy line and Share line, and Meaning where the page
+// found one. Nil until the page hands them over; a backing row, and a preview, get none.
+@property (nonatomic, copy) BOOL (^copyText)(void);
+@property (nonatomic, copy) BOOL (^shareText)(void);
 @property (nonatomic) CGFloat blur;
 // under: the line a backing row hangs under, nil for a line of its own. sweepsEstimates: the words of a
 // line timed only by the line are swept on their estimated times, rather than lit whole.
@@ -1045,8 +1056,33 @@ static double secant(SGSweepKnot *knots, NSUInteger i) {
     NSArray<UILabel *> *_furigana;   // the readings over the line's kanji, lit with the line
     NSUInteger _generation;
     SGRKaraokeLineView *_backing;
+    NSArray<UIAccessibilityCustomAction *> *_meaningActions;   // VoiceOver's Meaning, while the line has one
     // How bright the texts set apart are, waiting and sung, from the style.
     CGFloat _translationDim, _translationLit, _spokenDim, _spokenLit, _noteDim, _noteLit;
+}
+
+// VoiceOver's actions on the line: Meaning first where it has one, then Copy line and Share line, each the
+// menu's own item. A line with nothing to copy, and a backing row, offer none.
+- (void)buildActions {
+    NSString *text = heldLineText(self.line);
+    if (!text.length || !self.copyText || !self.isAccessibilityElement) {
+        self.accessibilityCustomActions = nil;
+        return;
+    }
+    NSMutableArray<UIAccessibilityCustomAction *> *actions = [NSMutableArray array];
+    [actions addObjectsFromArray:_meaningActions];
+    __weak SGRKaraokeLineView *weakSelf = self;
+    [actions addObject:[[UIAccessibilityCustomAction alloc]
+        initWithName:SGL(@"settings.lyrics.hold.copy.line", @"Copy line") actionHandler:^BOOL(UIAccessibilityCustomAction *action) {
+            SGRKaraokeLineView *line = weakSelf;
+            return line.copyText ? line.copyText() : NO;
+        }]];
+    [actions addObject:[[UIAccessibilityCustomAction alloc]
+        initWithName:SGL(@"settings.lyrics.hold.share.line", @"Share line") actionHandler:^BOOL(UIAccessibilityCustomAction *action) {
+            SGRKaraokeLineView *line = weakSelf;
+            return line.shareText ? line.shareText() : NO;
+        }]];
+    self.accessibilityCustomActions = actions;
 }
 
 // A sweep's word views, each put where the layout has it and told where it sits along the sweep.
@@ -1298,12 +1334,14 @@ static const NSUInteger kLinesPerFrame = 4;
 }
 
 - (void)markMeaning:(NSArray<SGLyricsMeaning *> *)meanings {
-    NSString *text = SGKaraokeLineText(self.line);
-    self.accessibilityCustomActions = meanings.count ? @[[[UIAccessibilityCustomAction alloc]
-        initWithName:@"Show Meaning" actionHandler:^BOOL(UIAccessibilityCustomAction *action) {
+    // VoiceOver's Meaning comes before Copy and Share, as it does in the menu; without one the line offers the two.
+    NSString *text = heldLineText(self.line);
+    _meaningActions = meanings.count && text.length ? @[[[UIAccessibilityCustomAction alloc]
+        initWithName:SGL(@"settings.lyrics.hold.meaning", @"Meaning") actionHandler:^BOOL(UIAccessibilityCustomAction *action) {
             SGRShowMeanings(text, meanings);
             return YES;
         }]] : nil;
+    [self buildActions];
     [_bubble removeFromSuperview];
     _bubble = nil;
     [_underline removeFromSuperlayer];
@@ -1588,7 +1626,7 @@ typedef struct {
 - (BOOL)accessibilityActivate { return self.activate ? self.activate() : NO; }
 @end
 
-@interface SGRKaraokeView () <UIScrollViewDelegate, SGPlayerStateObserver>
+@interface SGRKaraokeView () <UIScrollViewDelegate, SGPlayerStateObserver, UIEditMenuInteractionDelegate>
 @end
 
 @implementation SGRKaraokeView {
@@ -1662,6 +1700,9 @@ typedef struct {
     CFTimeInterval _sampleEpoch;
     NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *_meanings;   // Genius's, by line
     NSUInteger _meaningsAsked;
+    UIEditMenuInteraction *_editMenu;   // a held line's Copy, Share and Meaning
+    SGRKaraokeLineView *_heldLine;   // the line the menu that is up was opened on
+    id<NSCopying> _heldKey;   // that menu's configuration's identifier: its dismissal is the one that lets the line go
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -1722,6 +1763,8 @@ typedef struct {
         [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(offerExtras) name:SGLyricsPiPDidChangeNotification object:nil];
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped:)]];
     [self addGestureRecognizer:[[UILongPressGestureRecognizer alloc] initWithTarget:self action:@selector(held:)]];
+    _editMenu = [[UIEditMenuInteraction alloc] initWithDelegate:self];
+    [self addInteraction:_editMenu];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(playerTransitionChanged:) name:SGPlayerTransitionEndedNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(restyle) name:SGRLyricsTextDidChangeNotification object:nil];
@@ -1874,22 +1917,149 @@ typedef struct {
 
 - (void)held:(UILongPressGestureRecognizer *)hold {
     [self stir];
-    if (hold.state != UIGestureRecognizerStateBegan || !_meanings.count) return;
-    if (_sing.userInteractionEnabled && [_sing pointInside:[hold locationInView:_sing] withEvent:nil]) return;
-    CGPoint point = [hold locationInView:_scroll];
-    for (SGRKaraokeLineView *view in _shown.allValues) {
-        if (!CGRectContainsPoint(CGRectInset(view.frame, -_margin, -_lineGap / 2), point)) continue;
-        [self explainLine:view];
+    // Changed and Ended carry on with the line the press opened the menu on: the menu keeps its anchor until it is
+    // dismissed, not until the finger moves.
+    if (hold.state != UIGestureRecognizerStateBegan || _sample) return;   // a preview is a picture of the page
+    // The page's own controls take their own touches; a press behind them gets no menu of a line's.
+    CGPoint point = [hold locationInView:self];
+    SGRKaraokeLineView *view = nil;
+    if (!(_extrasBox && !_extrasBox.hidden && CGRectContainsPoint(_extrasBox.frame, point))
+        && !(_status.showsNote && _statusBox.userInteractionEnabled && CGRectContainsPoint(_statusBox.frame, point))
+        && !(_sing.userInteractionEnabled && [_sing pointInside:[hold locationInView:_sing] withEvent:nil]))
+        view = [self lineUnder:[hold locationInView:_scroll]];
+    if (!view || !heldLineText(view.line).length) {
+        // A press that offers nothing of its own takes the last menu away rather than leaving it on that line.
+        [self letGoOfHeldLine];
         return;
     }
+    // The line is held under this menu's own identifier: a press while this menu is up presents another one, which
+    // UIKit does after telling the delegate this one is gone, and that dismissal is not the new line's to answer.
+    NSString *key = [[NSUUID UUID] UUIDString];
+    _heldLine = view;
+    _heldKey = key;
+    SGPlayFeedback(SGFeedbackGrab);
+    UIEditMenuConfiguration *configuration = [UIEditMenuConfiguration configurationWithIdentifier:key
+        sourcePoint:[self convertPoint:[hold locationInView:_scroll] fromView:_scroll]];
+    configuration.preferredArrowDirection = UIEditMenuArrowDirectionAutomatic;
+    [_editMenu presentEditMenuWithConfiguration:configuration];
+}
+
+// The line whose room a touch in the scroll is in: of the lines whose room holds it, the one it is nearest, so a
+// line with nothing to say (an empty one) is the one held and not the line beside it.
+- (SGRKaraokeLineView *)lineUnder:(CGPoint)point {
+    SGRKaraokeLineView *nearest = nil;
+    CGFloat distance = CGFLOAT_MAX;
+    for (SGRKaraokeLineView *view in _shown.allValues) {
+        if (!CGRectContainsPoint(CGRectInset(view.frame, -_margin, -_lineGap / 2), point)) continue;
+        CGFloat away = fabs(CGRectGetMidY(view.frame) - point.y);
+        if (away >= distance) continue;
+        nearest = view;
+        distance = away;
+    }
+    return nearest;
+}
+
+// The meanings of a line, nil for one Genius has not explained.
+- (NSArray<SGLyricsMeaning *> *)meaningsOf:(SGRKaraokeLineView *)view {
+    NSNumber *index = [_shown allKeysForObject:view].firstObject;
+    return index ? _meanings[index] : nil;
 }
 
 - (void)explainLine:(SGRKaraokeLineView *)view {
-    NSNumber *index = [_shown allKeysForObject:view].firstObject;
-    NSArray<SGLyricsMeaning *> *meanings = index ? _meanings[index] : nil;
+    NSArray<SGLyricsMeaning *> *meanings = [self meaningsOf:view];
     if (!meanings.count) return;
     SGPlayFeedback(SGFeedbackSkip);
     SGRShowMeanings(SGKaraokeLineText(view.line), meanings);
+}
+
+#pragma mark - the held line's menu
+
+NSString *SGRLyricsShareText(NSString *line, NSString *title, NSString *artist, NSString *trackID, BOOL playing) {
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    if (line.length) [lines addObject:line];
+    if (title.length) [lines addObject:artist.length ? [NSString stringWithFormat:@"\u2014 %@ \u00B7 %@", title, artist]
+                                                     : [NSString stringWithFormat:@"\u2014 %@", title]];
+    // The link goes with the song it names: an episode's, a podcast's or a local file's has none of its own here.
+    if (playing && [trackID hasPrefix:@"spotify:track:"]) {
+        [lines addObject:[@"https://open.spotify.com/track/" stringByAppendingString:[trackID substringFromIndex:@"spotify:track:".length]]];
+    }
+    return [lines componentsJoinedByString:@"\n"];
+}
+
+// Copy, Share and, where the line has one already, Meaning: the system's edit menu on the held line, and the
+// same three as VoiceOver's actions on the line (markMeaning:). Nothing here asks any source for anything.
+- (UIMenu *)editMenuInteraction:(UIEditMenuInteraction *)interaction menuForConfiguration:(UIEditMenuConfiguration *)configuration
+                suggestedActions:(NSArray<UIMenuElement *> *)suggestedActions {
+    SGRKaraokeLineView *view = [self lineOfConfiguration:configuration];
+    NSString *text = view ? heldLineText(view.line) : nil;
+    if (!text.length) return [UIMenu menuWithChildren:@[]];
+    NSMutableArray<UIMenuElement *> *items = [NSMutableArray array];
+    NSArray<SGLyricsMeaning *> *meanings = [self meaningsOf:view];
+    if (meanings.count) {
+        [items addObject:[UIAction actionWithTitle:SGL(@"settings.lyrics.hold.meaning", @"Meaning") image:nil identifier:nil
+                                           handler:^(UIAction *action) { SGRShowMeanings(text, meanings); }]];
+    }
+    [items addObject:[UIAction actionWithTitle:SGL(@"settings.lyrics.hold.copy", @"Copy") image:nil identifier:nil
+                                       handler:^(UIAction *action) { [self copyLine:text]; }]];
+    __weak SGRKaraokeView *weakSelf = self;
+    [items addObject:[UIAction actionWithTitle:SGL(@"settings.lyrics.hold.share", @"Share") image:nil identifier:nil
+                                       handler:^(UIAction *action) { [weakSelf shareLine:text from:view]; }]];
+    return [UIMenu menuWithChildren:items];
+}
+
+- (CGRect)editMenuInteraction:(UIEditMenuInteraction *)interaction targetRectForConfiguration:(UIEditMenuConfiguration *)configuration {
+    SGRKaraokeLineView *view = [self lineOfConfiguration:configuration];
+    if (!view || view.superview != _scroll) return CGRectNull;
+    return [view convertRect:view.bounds toView:self];
+}
+
+// The line a configuration is for: the held line, while the configuration is the held line's own menu's. Anything
+// else has no line here, so a menu left over from before cannot answer for the one that replaced it.
+- (SGRKaraokeLineView *)lineOfConfiguration:(UIEditMenuConfiguration *)configuration {
+    return [self configurationIsHeld:configuration] ? _heldLine : nil;
+}
+
+// Whether a configuration is the held line's own menu's: its dismissal is the one that lets the line go, and it is
+// the only one that offers the line's items and anchor.
+- (BOOL)configurationIsHeld:(UIEditMenuConfiguration *)configuration {
+    id key = configuration.identifier;
+    return _heldKey != nil && (key == _heldKey || [(NSObject *)key isEqual:_heldKey]);
+}
+
+// The line is held for as long as its menu is up, its Changed and Ended included; it is let go with that menu, and
+// with its own view when that goes (letGoOfLineView:). A menu replaced by another one goes too, and says so here
+// before the new one is presented: only the menu that is the held line's own can let it go.
+- (void)editMenuInteraction:(UIEditMenuInteraction *)interaction willDismissMenuForConfiguration:(UIEditMenuConfiguration *)configuration
+                   animator:(id<UIEditMenuInteractionAnimating>)animator {
+    if ([self configurationIsHeld:configuration]) {
+        _heldLine = nil;
+        _heldKey = nil;
+    }
+}
+
+// The line's own words, and nothing else: no translation, pronunciation, title or artist.
+- (void)copyLine:(NSString *)text {
+    if (!text.length) return;
+    UIPasteboard.generalPasteboard.string = text;
+    SGLog(@"lyrics: copied the held line");
+}
+
+// What a shared line says: the line, then the song on the line after it, and the song's public link under that
+// while the lines shown are the playing track's own and it is not a local file's.
+- (void)shareLine:(NSString *)text from:(UIView *)view {
+    if (!text.length) return;
+    SPTPlayerTrack *song = SGKaraokeTrackFor(_track);
+    NSString *body = SGRLyricsShareText(text, song.trackTitle, song.artistName, _track,
+                                       [SGKaraokePlayingTrack() isEqualToString:_track]);
+    UIViewController *top = SGTopController();
+    if (!top) return;
+    UIActivityViewController *sheet = [[UIActivityViewController alloc] initWithActivityItems:@[body] applicationActivities:nil];
+    sheet.popoverPresentationController.sourceView = self;
+    sheet.popoverPresentationController.sourceRect = view && view.superview ? [view convertRect:view.bounds toView:self]
+                                                                          : CGRectMake(CGRectGetMidX(self.bounds), CGRectGetMidY(self.bounds), 1, 1);
+    SGPresentDark(sheet);
+    [top presentViewController:sheet animated:YES completion:nil];
+    SGLog(@"lyrics: shared the held line");
 }
 
 // Genius is asked once the song's lines are in; lines that change under it are matched again.
@@ -2142,8 +2312,23 @@ typedef struct {
     [CATransaction commit];
 }
 
+// A line's view going away takes the menu with it: the menu's arrow points at a view that is gone otherwise, and
+// its Copy and Share would offer a line the page no longer shows. Every removal path goes through here or through
+// dropLineViews, which goes through it.
+- (void)letGoOfLineView:(SGRKaraokeLineView *)view {
+    if (view == _heldLine) [self letGoOfHeldLine];
+    [view removeFromSuperview];
+}
+
+- (void)letGoOfHeldLine {
+    _heldLine = nil;
+    _heldKey = nil;
+    [_editMenu dismissMenu];
+}
+
 - (void)dropLineViews {
-    for (UIView *view in _shown.allValues) [view removeFromSuperview];
+    for (UIView *view in _shown.allValues) [self letGoOfLineView:(SGRKaraokeLineView *)view];
+    [self letGoOfHeldLine];
     [_shown removeAllObjects];
     _tops = nil;
     _sightArrangement = NSUIntegerMax;
@@ -2304,7 +2489,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     fade.type = kCATransitionFade;
     fade.duration = kRestyleFade;
     [_scroll.layer addAnimation:fade forKey:@"restyle"];
-    for (UIView *view in _shown.allValues) [view removeFromSuperview];
+    for (UIView *view in _shown.allValues) [self letGoOfLineView:(SGRKaraokeLineView *)view];
     [_shown removeAllObjects];
     _style = style;
     [self takeTops:tops];
@@ -2904,6 +3089,23 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
             [owner seekToLine:line];
             return YES;
         };
+        // A preview is a picture of the page: nothing on it is held for a menu or a share.
+        if (!self->_sample) {
+            view.copyText = ^BOOL {
+                SGRKaraokeView *owner = page;
+                NSString *text = heldLineText(line);
+                if (!owner || !text.length) return NO;
+                [owner copyLine:text];
+                return YES;
+            };
+            view.shareText = ^BOOL {
+                SGRKaraokeView *owner = page;
+                NSString *text = heldLineText(line);
+                if (!owner || !text.length) return NO;
+                [owner shareLine:text from:owner->_shown[@(index)]];
+                return YES;
+            };
+        }
         if (self->_plain) [view showPlain];
         [view markMeaning:self->_meanings[@(index)]];
         [self->_scroll addSubview:view];
@@ -2936,7 +3138,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
         if (!focused && ![self isSung:index] && (bottom < from - slack || top > to + slack)) [gone addObject:key];
     }
     for (NSNumber *key in gone) {
-        [_shown[key] removeFromSuperview];
+        [self letGoOfLineView:_shown[key]];
         [_shown removeObjectForKey:key];
     }
     NSInteger count = (NSInteger)_tops.count;

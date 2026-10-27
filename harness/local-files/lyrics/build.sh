@@ -15,7 +15,7 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     -I"$SRC" -isysroot "$SDK" \
     "$HERE/main.m" "$HERE/../../scene.m" "$HERE/viewer.m" \
     "$SRC/Shared/LocalFiles/LocalLyricsPage.m" "$SRC/Shared/LocalFiles/LocalLyrics.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
-    "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
+    "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/LyricsSources/SGTTML.m" "$SRC/Shared/AdBlock/Protobuf.m" \
     "$SRC/Settings/SGPage.m" "$SRC/Settings/SGPageStyle.m" "$SRC/Core/SGGlass.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGLocalize.m" "$SRC/Core/SGPrefs.m" "$SRC/Core/SGViewTree.m" "$SRC/Core/SGUIMode.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework ImageIO -framework UniformTypeIdentifiers -framework Foundation \
     -o "$OUT/LocalLyricsHarness.app/LocalLyricsHarness"
