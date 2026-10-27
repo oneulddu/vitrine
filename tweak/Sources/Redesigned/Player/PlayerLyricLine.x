@@ -11,16 +11,22 @@
 // line and a gap either side, a player wider than it is tall, or Spotify's own lyric preview under the cover,
 // it is not shown.
 //
-// It reads the line on a timer of a tenth of a second while it is in a window and Spotify is in front, not a
-// display link (a CADisplayLink capped at 60 Hz drags the player's 120 Hz transitions down), and changes only
-// when the line does: the new line crosses over the old one.
+// A line too wide for the room shrinks a little, and then shows in successive portions, each of whole words: the
+// line being sung's portion while it is timed by the word, else its share of the line's time (PlayerLyricFit.h).
+//
+// It reads the line on a one-shot timer armed again after every update, aimed at the next portion or the next line,
+// not a display link (a CADisplayLink capped at 60 Hz drags the player's 120 Hz transitions down), and changes only
+// when the line does: the new line crosses over the old one. Seeks, rate changes, lyrics changes and coming back to
+// the foreground re-aim it.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Player/PlayerState.h"
+#import <math.h>
 #import "Player.h"
 #import "PlayerLyricLine.h"
+#import "PlayerLyricFit.h"
 
-static const NSTimeInterval kTick = 0.1;
 static const CGFloat kTapHeight = 44;
 
 static char kLineKey, kStackKey;
@@ -39,14 +45,24 @@ BOOL SGRPlayerLyricLineOn(void) {
 - (void)tick;
 @end
 
+@interface SGRLyricLineView () <SGPlayerStateObserver>
+@end
+
 @implementation SGRLyricLineView {
     UILabel *_label;
-    NSTimer *_timer;
+    NSTimer *_timer;   // one-shot, armed again after every update
+    BOOL _running;     // in a window and Spotify in front: the timer runs
     NSArray<SGKaraokeLine *> *_source, *_ordered;
     BOOL _timed;
     NSInteger _index;
-    NSString *_text;   // the line being sung, nil for none
+    NSString *_text;   // the line being sung, nil for none: what the label and VoiceOver name
+    NSArray<SGRLyricPortion *> *_portions;   // that line's portions for the label's width and font
+    CGFloat _portionWidth;                   // the width they were measured for
     BOOL _shown;
+    // Where the timer was armed, to tell a seek, a pause or resume and a speed change from the report that follows.
+    BOOL _armed;
+    double _armedMs, _armedRate;
+    CFAbsoluteTime _armedAt;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -70,6 +86,10 @@ BOOL SGRPlayerLyricLineOn(void) {
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center addObserver:self selector:@selector(clock) name:UIApplicationDidBecomeActiveNotification object:nil];
     [center addObserver:self selector:@selector(clock) name:UIApplicationDidEnterBackgroundNotification object:nil];
+    // Lyrics kept for the track, or the Lyrics page's Delay changed: the line and its portions are read again.
+    [center addObserver:self selector:@selector(linesChanged) name:SGKaraokeLinesKeptNotification object:nil];
+    [center addObserver:self selector:@selector(linesChanged) name:SGLyricsOffsetsDidChangeNotification object:nil];
+    SGAddPlayerStateObserver(self);
     return self;
 }
 
@@ -78,13 +98,14 @@ BOOL SGRPlayerLyricLineOn(void) {
 }
 
 - (CGFloat)lineHeight {
-    return ceil(_label.font.lineHeight);
+    return ceil([SGRLyricLineView font].lineHeight);
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {
     [super traitCollectionDidChange:previous];
     _label.font = [SGRLyricLineView font];
     _label.textColor = SGRSecondary();
+    _portions = nil;
     [self.superview setNeedsLayout];
 }
 
@@ -113,20 +134,71 @@ BOOL SGRPlayerLyricLineOn(void) {
     [_timer invalidate];
 }
 
-// Runs while the line is in a window and Spotify is in front; stopped otherwise.
+// Runs while the line is in a window and Spotify is in front; stopped otherwise. Coming back starts it over, which
+// catches up with where the song went while it was away.
 - (void)clock {
     BOOL run = self.window && UIApplication.sharedApplication.applicationState != UIApplicationStateBackground;
-    if (run == (_timer != nil)) return;
+    if (run == _running) return;
+    _running = run;
     if (!run) {
         [_timer invalidate];
         _timer = nil;
+        _armed = NO;
         return;
     }
-    __weak SGRLyricLineView *weakSelf = self;
-    _timer = [NSTimer timerWithTimeInterval:kTick repeats:YES block:^(NSTimer *timer) { [weakSelf tick]; }];
-    _timer.tolerance = kTick / 2;
-    [NSRunLoop.mainRunLoop addTimer:_timer forMode:NSRunLoopCommonModes];
     [self tick];
+}
+
+// The next update, one shot, at the next portion or line the line being sung turns over at. Nothing nearer than
+// SGRLyricMaxWait is a look every SGRLyricMaxWait, with its tolerance; a wait aimed at a boundary is not late.
+- (void)armTimer:(SGRLyricWait)next {
+    [_timer invalidate];
+    _armedMs = SGKaraokePositionMs();
+    _armedRate = [self rate];
+    _armedAt = CFAbsoluteTimeGetCurrent();
+    _armed = _armedMs >= 0;
+    __weak SGRLyricLineView *weakSelf = self;
+    _timer = [NSTimer timerWithTimeInterval:next.wait repeats:NO block:^(NSTimer *timer) { [weakSelf tick]; }];
+    _timer.tolerance = next.tolerance;
+    [NSRunLoop.mainRunLoop addTimer:_timer forMode:NSRunLoopCommonModes];
+}
+
+// The rate the song's time runs at: 0 while the player is paused or has not said, so nothing is aimed at.
+- (double)rate {
+    SPTPlayerState *state = SGPlayerState();
+    if (!state || state.isPaused) return 0;
+    double rate = state.playbackSpeed;
+    return rate > 0 ? rate : 1;
+}
+
+// A report from the player: a seek re-aims the timer, and so does a speed change. A paused report carries the exact
+// place the song was put, so any move of it while paused is a seek, however small: it can cross a portion's boundary.
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    [self rearmForState:state];
+}
+
+- (void)playerStateDidReport:(SPTPlayerState *)state {
+    [self rearmForState:state];
+}
+
+- (void)rearmForState:(SPTPlayerState *)state {
+    if (!_running) return;
+    if (!_armed || !_timer) {
+        [self tick];
+        return;
+    }
+    // Whole milliseconds, as SGKaraokePositionMs counts the position the timer was armed at.
+    double position = (state.isPaused ? state.positionAsOfTimestamp : state.position) * 1000;
+    if (SGRLyricRearmNeeded((NSInteger)_armedMs, _armedRate, (NSInteger)position, [self rate],
+                            CFAbsoluteTimeGetCurrent() - _armedAt)) {
+        [self tick];
+    }
+}
+
+// The lines were kept or the Delay moved: read again from here, and aimed again from what is read. While the line is
+// stopped the next clock does it.
+- (void)linesChanged {
+    if (_running) [self tick];
 }
 
 // The playing track's synced lines in time order, and the one being sung; NSNotFound when there is none to show.
@@ -144,6 +216,11 @@ BOOL SGRPlayerLyricLineOn(void) {
     return index < 0 ? NSNotFound : index;
 }
 
+// The width the words have to fit in: the line's own, less a gap either side.
+- (CGFloat)textWidth {
+    return MAX(CGRectGetWidth(self.bounds) - 2 * SGRGrid, 0);
+}
+
 - (void)tick {
     NSArray<SGKaraokeLine *> *before = _source;
     NSInteger index = [self currentIndex];
@@ -152,21 +229,40 @@ BOOL SGRPlayerLyricLineOn(void) {
         NSString *text = index == NSNotFound ? nil
             : [SGKaraokeLineText(_ordered[(NSUInteger)index]) stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         _text = text.length ? text : nil;
+        _portions = nil;
         self.accessibilityLabel = _text;
-        [self showText:_text];
+    }
+    // The portion of the line the label has room for, measured once for the line, the width and the font.
+    SGKaraokeLine *line = _index == NSNotFound ? nil : _ordered[(NSUInteger)_index];
+    if (line && (!_portions || _portionWidth != [self textWidth])) {
+        _portionWidth = [self textWidth];
+        _portions = SGRLyricPortions(line, _portionWidth, [SGRLyricLineView font]);
+    }
+    if (_portions.count) {
+        // The portion holding the position, which is the first for a line just begun and after a seek back into it.
+        SGRLyricPortion *shown = _portions[(NSUInteger)SGRLyricPortionAt(_portions, SGKaraokePositionMs() - SGKaraokeDelayMs())];
+        [self showText:shown.text scale:shown.scale];
     }
     UIView *covers = SGRPlayerCoverList();
     BOOL shown = _fits && _text && !SGRPlayerLyricsOpen() && (!covers || covers.alpha > 0.01);
-    if (shown == _shown) return;
-    _shown = shown;
-    self.userInteractionEnabled = shown;
-    self.accessibilityElementsHidden = !shown;
-    SGRAnimate(shown ? SGRMotionFade : SGRMotionRespond, ^{ self.alpha = shown ? 1 : 0; }, nil);
+    if (shown != _shown) {
+        _shown = shown;
+        self.userInteractionEnabled = shown;
+        self.accessibilityElementsHidden = !shown;
+        SGRAnimate(shown ? SGRMotionFade : SGRMotionRespond, ^{ self.alpha = shown ? 1 : 0; }, nil);
+    }
+    // Armed again from every update, whether or not the line changed: the clock is the only thing that moves it.
+    if (_running) {
+        [self armTimer:SGRLyricLineWait(_ordered, SGKaraokePositionMs(), SGKaraokeDelayMs(),
+                                        [self textWidth], [SGRLyricLineView font], [self rate])];
+    }
 }
 
-// A new line crosses over the one before; one coming while the line is out of sight is set at once. With no line
-// the last one stays in the label for the fade out.
-- (void)showText:(NSString *)text {
+// A new line, or a new portion of it, crosses over the one before; one coming while the line is out of sight is set
+// at once. With no line the last one stays in the label for the fade out.
+- (void)showText:(NSString *)text scale:(CGFloat)scale {
+    UIFont *font = SGRLyricFontAtScale([SGRLyricLineView font], scale);
+    if (![_label.font isEqual:font]) _label.font = font;
     if (!text || [text isEqualToString:_label.text]) return;
     UILabel *label = _label;
     if (!_shown) {
@@ -205,14 +301,19 @@ static CGRect chipsIn(UIView *host) {
     return chips;
 }
 
-// Spotify's own lyric preview under the cover (Lyrics_NPVContainerKit.LyricsContainerView, beside the tilt
-// view), shown when Spotify's lyrics setting has it.
+// Spotify's own lyric preview under the cover, beside the tilt view, shown when Spotify's lyrics setting has it:
+// Lyrics_NPVContainerKit.LyricsContainerView, and in 9.1.90 Lyrics_NPVElementsKitImpl.LyricsElementWrapperView.
 static BOOL previewShowing(UIView *tilt, UIView *host) {
-    static Class preview;
-    if (!preview) preview = NSClassFromString(@"_TtC22Lyrics_NPVContainerKit19LyricsContainerView");
-    if (!preview) return NO;
+    static Class preview, wrapper;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        preview = NSClassFromString(@"_TtC22Lyrics_NPVContainerKit19LyricsContainerView");
+        wrapper = NSClassFromString(@"_TtC25Lyrics_NPVElementsKitImpl24LyricsElementWrapperView");
+    });
+    if (!preview && !wrapper) return NO;
     for (UIView *sub in tilt.superview.subviews) {
-        if ([sub isKindOfClass:preview] && sub.bounds.size.height > 1 && showsIn(sub, host)) return YES;
+        BOOL spotifys = (preview && [sub isKindOfClass:preview]) || (wrapper && [sub isKindOfClass:wrapper]);
+        if (spotifys && sub.bounds.size.height > 1 && showsIn(sub, host)) return YES;
     }
     return NO;
 }
@@ -257,6 +358,16 @@ static void placeLine(void) {
 // The cover's own layout (PlayerArtwork.x sizes it there): the line follows where the cover now is. Only the
 // player's covers, not the now playing bar's.
 %hook _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView
+- (void)layoutSubviews {
+    %orig;
+    UIView *host = sg_host;
+    if (host && [(UIView *)self isDescendantOfView:host]) placeLine();
+}
+%end
+
+// Spotify's own lyric preview (9.1.90) gets its height when its lyrics arrive, after the cover's last pass: the line
+// stands down there and then rather than on the player's next layout.
+%hook _TtC25Lyrics_NPVElementsKitImpl24LyricsElementWrapperView
 - (void)layoutSubviews {
     %orig;
     UIView *host = sg_host;

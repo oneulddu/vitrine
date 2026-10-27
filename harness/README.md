@@ -55,6 +55,8 @@ their check executable in the workflow.
 | Script | Mode / reason |
 | --- | --- |
 | `album-credits/build.sh` | Artist-credit matching assertions. |
+| `album-notes/build.sh` | Album notes against replayed catalog fixtures, and the page's note placement and footer heights over Spotify collection doubles. |
+| `artist-artwork/build.sh` | Artist match and one-attempt identity rules against replayed catalog fixtures, plus the 30 MB clip cap and the Low Data policy. |
 | `audio-effects/build.sh` | `route`, `presets` and `format`: isolated settings, preset-file and audio-format text assertions. |
 | `auto-translation-settings/check.sh` | Real Catalyst settings callbacks with fake providers. |
 | `autoeq/build.sh` | Default offline index/preset fixtures, not `online`. |
@@ -84,10 +86,13 @@ their check executable in the workflow.
 | `player/title-notification-check.sh` | Real Logos controller with offline notification fixtures. |
 | `player/repeat-check.sh` | Production repeat-mode transition (`SGPlayerAdvanceRepeat`) extracted from `PlayerState.x`: every flag combination, command order and returned answer; no simulator. |
 | `player/upcoming-tracks-check.sh` | Production upcoming-track parsing (`SGURIString`, `SGPlayerUpcomingTracks`) extracted from `PlayerState.x` and run against Foundation doubles; no simulator. |
+| `player-lyric-line/build.sh` | Catalyst fitting (shrink and whole-word portions) and the line's wait/re-arm rules for synthetic lines and positions. |
+| `player-refinements/check.sh` | Catalyst rolling-digit rules and the real roll on a label in a window, plus Star add button and Plain checkmark through Logos; no simulator. |
 | `prefs/check.sh` | Foundation preference validation plus counter persistence and file-hash checks (`counters.m`). |
 | `radio-modes/build.sh` | Foundation Spotify mocks, spoofing off/on. |
 | `sing/build.sh` | `spatial`: model-free lead, spatial and decoder assertions. |
 | `sleep-timer/build.sh` | Fake player and timer/fade assertions. |
+| `song-audio/build.sh` | Per-song speed, pitch, pitch-follow and reverb records in two processes, with the player and the audio setters as doubles. |
 | `spicy-lyrics/build.sh` | Offline parser, cache and retry fixtures. |
 | `update/offline-check.sh` | Catalyst cached-release selection, no network. |
 | `visualiser/build.sh` | Synthetic spectrum and PCM waveform assertions. |
@@ -131,6 +136,7 @@ scenarios are not promoted to CI by merely compiling them.
 | `morph/build.sh` | iOS simulator visual rendering. |
 | `native-player/build.sh` | iOS simulator UI. |
 | `onboarding/build.sh` | iOS simulator UI; also generates product release notes. |
+| `page-previews/build.sh` | iOS simulator: the five page settings with their preview cards, in a simulator of the run's own; asserts what VoiceOver reads and writes PNGs. |
 | `player/build.sh` | iOS simulator player UI. |
 | `playlist/build.sh` | iOS simulator UI. |
 | `shortcuts/build.sh` | iOS simulator App Intents. |

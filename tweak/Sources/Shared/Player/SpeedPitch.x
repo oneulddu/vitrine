@@ -67,6 +67,7 @@
 #import "Headers/SPTPlayer.h"
 #import "PlayerState.h"
 #import "SpeedPitch.h"
+#import "SpeedPitchSongs.h"
 #import "SGTimePitch.h"
 #import "SGRenderGate.h"
 #import "SGOutputControl.h"
@@ -1270,6 +1271,7 @@ void SGSetPlayerSpeed(double speed) {
     sg_speed = (float)speed;
     storeFloat(&sg_speedBits, sg_speed);
     apply();
+    SGSpeedPitchSongValuesChanged(@"speed");
 }
 
 float SGPlayerPitch(void) {
@@ -1280,6 +1282,7 @@ void SGSetPlayerPitch(float semitones) {
     if (!sg_reachable && !tapped()) return;
     sg_semitones = semitones;
     apply();
+    SGSpeedPitchSongValuesChanged(@"pitch");
 }
 
 BOOL SGPlayerPitchFollowsSpeed(void) {
@@ -1291,6 +1294,7 @@ void SGSetPlayerPitchFollowsSpeed(BOOL follows) {
     SGTimePitch *unit = atomic_load(&sg_pull);
     if (unit) SGTimePitchSetFollows(unit, follows);
     apply();
+    SGSpeedPitchSongValuesChanged(@"follows");
 }
 
 BOOL SGPlayerPitchAvailable(void) {

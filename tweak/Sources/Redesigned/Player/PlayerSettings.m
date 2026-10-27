@@ -28,6 +28,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRFluid.h"
 #import "Redesigned/Kit/SGRFluidGPU.h"
+#import "Redesigned/Kit/SGRRefinements.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Shared/Player/SGLastTrack.h"
@@ -469,7 +470,13 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
                                       SGOptionRow(SGL(@"settings.player.follows_cover.title", @"Follow the cover"), nil, SGRKeyPlayerFollowsCover),
                                       SGWithNew(SGSwitchRow(SGL(@"settings.player.lyric_line.title", @"Lyrics Line"),
                                                   SGL(@"settings.player.lyric_line.subtitle", @"The line being sung, under the cover. Tap it to open the lyrics."),
-                                                  SGRKeyPlayerLyricLine), @"playerLyricLine")],
+                                                  SGRKeyPlayerLyricLine), @"playerLyricLine"),
+                                      SGWithNew(SGSwitchRow(SGL(@"settings.player.rolling_digits.title", @"Rolling time digits"),
+                                                  SGL(@"settings.player.rolling_digits.subtitle", @"The digits that change under the progress bar roll into place."),
+                                                  SGRKeyPlayerRollingDigits), @"playerRollingDigits"),
+                                      SGWithNew(SGOptionRow(SGL(@"settings.player.star_add.title", @"Star add button"),
+                                                  SGL(@"settings.player.star_add.subtitle", @"The add button as a star, filled in the accent once the song is saved. In the player it takes the place of Plain checkmark."),
+                                                  SGRKeyPlayerStarAdd), @"playerStarAdd")],
                        SGL(@"settings.player.controls.footer", @"Volume puts a slider under the controls for this iPhone, or the speaker's while Spotify plays on another device. "
                        @"Follow the cover paints the like, shuffle and repeat in the color of the song playing.")),
         SGNotedSection(SGL(@"settings.player.mini_player.header", @"Mini player"), SGRNowPlayingBarRows(),

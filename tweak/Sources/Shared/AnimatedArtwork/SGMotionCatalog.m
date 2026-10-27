@@ -3,6 +3,7 @@
 // kept until it is about to expire. Answers are kept for the launch, and an album's for a week on disk.
 #import "Core/SGCore.h"
 #import "AnimatedArtwork.h"
+#import "SGMotionCatalog.h"
 
 static NSString *const kTokenKey = @"spotifyglass.motion.token";
 static NSString *const kBrowse = @"https://music.apple.com/us/browse";
@@ -18,6 +19,13 @@ static NSUInteger sg_logoBytes;
 static const NSUInteger kKeptEntries = 200, kLogoBytes = 16 * 1024 * 1024, kAlbumAnswers = 200;
 static NSMutableDictionary<NSString *, NSMutableArray *> *sg_waiting;
 static NSMutableArray<void (^)(NSString *)> *sg_tokenWaiting;
+static NSMutableSet<NSString *> *sg_catalogDiagnostics;
+
+// Only metadata decisions call this, never a layout or playback tick.
+static void catalogDiagnostic(NSString *identity, NSString *event, NSString *detail) {
+    if (SGLogFirst(&sg_catalogDiagnostics, [NSString stringWithFormat:@"%@\n%@", identity, event]))
+        SGLog(@"catalog %@: %@", identity, detail);
+}
 
 // An album's answer, its clip's address or that it has none, kept on disk so that an album opened before starts at
 // once after a relaunch, without the token and the search. Older answers are asked again.
@@ -74,8 +82,10 @@ static void pruneAlbumAnswers(void) {
     for (NSUInteger i = 0; i < excess; i++) [sg_albumAnswers removeObjectForKey:oldest[i]];
 }
 
-static void keepAlbumAnswer(NSString *key, NSURL *remote) {
-    sg_albumAnswers[key] = @{@"url": remote.absoluteString ?: @"", @"at": NSDate.date};
+static void keepAlbumAnswer(NSString *key, id value) {
+    sg_albumAnswers[key] = [value isKindOfClass:NSArray.class]
+        ? @{@"records": value, @"at": NSDate.date}
+        : @{@"url": [value absoluteString] ?: @"", @"at": NSDate.date};
     pruneAlbumAnswers();
     // Catalog answers arrive on main. Keep its dictionary there, but serialize
     // immutable snapshots off main in order so an older write cannot win.
@@ -102,14 +112,14 @@ static void setUp(void) {
         for (NSString *key in stored) {
             NSDictionary *answer = stored[key];
             NSDate *at = [answer isKindOfClass:NSDictionary.class] ? answer[@"at"] : nil;
-            NSString *url = [at isKindOfClass:NSDate.class] ? answer[@"url"] : nil;
-            if (![url isKindOfClass:NSString.class] || -at.timeIntervalSinceNow > kAlbumAnswerLife) continue;
+            if (![at isKindOfClass:NSDate.class] || -at.timeIntervalSinceNow > kAlbumAnswerLife) continue;
+            if (![answer[@"url"] isKindOfClass:NSString.class] && ![answer[@"records"] isKindOfClass:NSArray.class]) continue;
             sg_albumAnswers[key] = answer;
         }
         pruneAlbumAnswers();
         for (NSString *key in sg_albumAnswers) {
             NSString *url = sg_albumAnswers[key][@"url"];
-            keepValue(key, url.length ? [NSURL URLWithString:url] : nil);
+            keepValue(key, sg_albumAnswers[key][@"records"] ?: (url.length ? [NSURL URLWithString:url] : nil));
         }
         sg_waiting = [NSMutableDictionary dictionary];
         sg_tokenWaiting = [NSMutableArray array];
@@ -172,6 +182,163 @@ static BOOL sameArtist(NSString *a, NSString *b) {
     if (!a.length || !b.length) return NO;
     NSString *x = [NSString stringWithFormat:@" %@ ", a], *y = [NSString stringWithFormat:@" %@ ", b];
     return [x containsString:y] || [y containsString:x];
+}
+
+// Text, never a web view or HTML attributed-string importer. Strip markup before
+// decoding entities, so an escaped "<..." remains literal text. Block boundaries
+// survive, including notes with several paragraphs.
+NSString *SGMotionEditorialText(id html) {
+    if (![html isKindOfClass:NSString.class] || [html length] > 65536) return nil;
+    NSString *text = html;
+    for (NSArray *replacement in @[
+        @[@"(?is)<(script|style)\\b[^>]*>.*?</\\1\\s*>", @""],
+        @[@"(?is)<!--.*?-->", @""],
+        @[@"(?i)</?(p|div|br|li|h[1-6])\\b[^>]*>", @"\n"],
+        @[@"(?s)<[^>]*>", @""],
+    ]) {
+        text = [text stringByReplacingOccurrencesOfString:replacement[0] withString:replacement[1]
+                                                 options:NSRegularExpressionSearch range:NSMakeRange(0, text.length)];
+    }
+    NSDictionary *entities = @{@"amp": @"&", @"lt": @"<", @"gt": @">", @"quot": @"\"", @"apos": @"'",
+        @"nbsp": @" ", @"ndash": @"–", @"mdash": @"—", @"hellip": @"…", @"lsquo": @"‘", @"rsquo": @"’",
+        @"ldquo": @"“", @"rdquo": @"”"};
+    NSMutableString *decoded = [text mutableCopy];
+    NSRegularExpression *entity = [NSRegularExpression regularExpressionWithPattern:@"&(#x[0-9a-fA-F]+|#[0-9]+|[A-Za-z]+);"
+                                                                           options:0 error:nil];
+    for (NSTextCheckingResult *match in [[entity matchesInString:text options:0 range:NSMakeRange(0, text.length)] reverseObjectEnumerator]) {
+        NSString *name = [text substringWithRange:[match rangeAtIndex:1]];
+        NSString *value = entities[name];
+        if ([name hasPrefix:@"#"]) {
+            BOOL hex = [name hasPrefix:@"#x"];
+            unsigned long code = strtoul([[name substringFromIndex:hex ? 2 : 1] UTF8String], NULL, hex ? 16 : 10);
+            if (code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff)) {
+                UTF32Char scalar = (UTF32Char)code;
+                value = [[NSString alloc] initWithBytes:&scalar length:sizeof(scalar) encoding:NSUTF32LittleEndianStringEncoding];
+            }
+        }
+        if (value) [decoded replaceCharactersInRange:match.range withString:value];
+    }
+    NSMutableArray *paragraphs = [NSMutableArray array];
+    for (NSString *line in [decoded componentsSeparatedByCharactersInSet:NSCharacterSet.newlineCharacterSet]) {
+        NSString *clean = [line stringByReplacingOccurrencesOfString:@"\\s+" withString:@" " options:NSRegularExpressionSearch range:NSMakeRange(0, line.length)];
+        clean = [clean stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        if (clean.length) [paragraphs addObject:clean];
+    }
+    return paragraphs.count ? [paragraphs componentsJoinedByString:@"\n\n"] : nil;
+}
+
+static NSNumber *albumExplicit(id rating) {
+    if ([rating isEqual:@"explicit"]) return @YES;
+    if (!rating || rating == NSNull.null || [rating isEqual:@"clean"]) return @NO;
+    return nil;
+}
+
+NSDictionary *SGMotionAlbumNotesIn(NSArray *records, NSString *artist, NSString *album, NSDictionary *edition) {
+    NSString *artistKey = plain(artist), *editionKey = plain(album);
+    NSString *identity = [NSString stringWithFormat:@"notes %@ by %@", album, artist];
+    NSString *missing = !artistKey.length || !editionKey.length ? @"missing identity" : nil;
+    for (NSString *key in @[@"trackCount", @"releaseYear"])
+        if (![edition[key] isKindOfClass:NSNumber.class] || [edition[key] integerValue] <= 0)
+            missing = [@"missing Spotify " stringByAppendingString:key];
+    if (![edition[@"explicit"] isKindOfClass:NSNumber.class]) missing = @"unknown Spotify rating";
+    if (missing) {
+        catalogDiagnostic(identity, missing, [@"refuse: " stringByAppendingString:missing]);
+        return nil;
+    }
+    catalogDiagnostic(identity, records.count ? @"records-present" : @"records-absent",
+        [NSString stringWithFormat:@"records=%lu (%@)", (unsigned long)records.count, records ? @"catalog answered" : @"unavailable/error"]);
+    NSDictionary *match = nil;
+    NSString *reason = @"no exact artist/title edition";
+    for (id record in records) {
+        id attributes = dig(record, @"attributes");
+        id name = dig(attributes, @"name"), creator = dig(attributes, @"artistName");
+        if (![name isKindOfClass:NSString.class] || ![creator isKindOfClass:NSString.class]) continue;
+        // Motion can borrow another edition. Editorial content cannot. Do not use
+        // SGMotionNameKey here: it deliberately discards edition qualifiers.
+        if (![plain(name) isEqual:editionKey] || ![plain(creator) isEqual:artistKey]) continue;
+        id count = dig(attributes, @"trackCount"), date = dig(attributes, @"releaseDate"), rating = dig(attributes, @"contentRating");
+        catalogDiagnostic(identity, [NSString stringWithFormat:@"record-%@", dig(record, @"id")],
+            [NSString stringWithFormat:@"Apple id=%@ trackCount=%@ releaseDate=%@ contentRating=%@ editorialNotes.short=%d standard=%d",
+                dig(record, @"id"), count, date, rating ?: @"absent (clean)",
+                dig(attributes, @"editorialNotes/short") != nil, dig(attributes, @"editorialNotes/standard") != nil]);
+        NSNumber *explicit = albumExplicit(rating), *year = nil;
+        if ([date isKindOfClass:NSString.class] && [date rangeOfString:@"^[0-9]{4}(-[0-9]{2}(-[0-9]{2})?)?$"
+            options:NSRegularExpressionSearch].location != NSNotFound) year = @([[date substringToIndex:4] integerValue]);
+        if (![count isKindOfClass:NSNumber.class] || ![edition[@"trackCount"] isEqualToNumber:count] ||
+            !year || ![edition[@"releaseYear"] isEqualToNumber:year]) {
+            reason = @"trackCount/releaseYear missing or mismatch";
+            continue;
+        }
+        if (!explicit || ![edition[@"explicit"] isEqualToNumber:explicit]) {
+            reason = @"contentRating missing/unsupported or mismatch";
+            continue;
+        }
+        if (match) {
+            catalogDiagnostic(identity, @"ambiguous", @"refuse: multiple edition matches");
+            return nil;
+        }
+        match = attributes;
+    }
+    NSString *shortText = SGMotionEditorialText(dig(match, @"editorialNotes/short"));
+    NSString *standard = SGMotionEditorialText(dig(match, @"editorialNotes/standard"));
+    BOOL accepted = shortText.length && standard.length;
+    if (match && !accepted) reason = @"short/standard editorial text missing or empty after cleanup";
+    catalogDiagnostic(identity, accepted ? @"accepted" : reason,
+        accepted ? @"accept: exact edition and editorial text" : [@"refuse: " stringByAppendingString:reason]);
+    return accepted ? @{@"short": shortText, @"standard": standard} : nil;
+}
+
+static NSString *artistFold(NSString *text) {
+    if (![text isKindOfClass:NSString.class]) return @"";
+    NSString *folded = [text stringByFoldingWithOptions:NSCaseInsensitiveSearch | NSWidthInsensitiveSearch locale:nil].lowercaseString;
+    return [folded stringByReplacingOccurrencesOfString:@"\\p{Cf}" withString:@"" options:NSRegularExpressionSearch range:NSMakeRange(0, folded.length)];
+}
+
+static NSString *artistNameKey(NSString *name) { return plain(artistFold(name)); }
+
+static NSString *artistReleaseKey(NSString *title) {
+    NSString *key = artistFold(title);
+    // Bare "with" is part of a title ("Stay with Me"), never proof of a credit.
+    NSString *suffix = @"(?:\\s+-\\s+(?:single|ep)|\\s*\\(deluxe(?: edition)?\\)|\\s*\\((?:with|feat\\.|ft\\.)\\s+[^()]+\\)|\\s*\\[(?:with|feat\\.|ft\\.)\\s+[^\\[\\]]+\\]|\\s+(?:feat\\.|ft\\.)\\s+.+)\\s*$";
+    while (YES) {
+        NSRange range = [key rangeOfString:suffix options:NSRegularExpressionSearch];
+        if (range.location == NSNotFound) break;
+        key = [key substringToIndex:range.location];
+    }
+    return plain(key);
+}
+
+NSDictionary *SGMotionArtistMatch(NSArray *records, NSString *artist, NSArray<NSString *> *titles) {
+    NSMutableSet *evidence = [NSMutableSet set];
+    for (NSString *title in titles) {
+        NSString *key = artistReleaseKey(title);
+        if (key.length) [evidence addObject:key];
+    }
+    if (evidence.count < 2) return nil;
+    NSDictionary *match = nil;
+    for (id record in records) {
+        id name = dig(record, @"attributes/name");
+        if (![name isKindOfClass:NSString.class] || ![artistNameKey(name) isEqual:artistNameKey(artist)]) continue;
+        id albums = dig(record, @"relationships/albums/data");
+        if (![albums isKindOfClass:NSArray.class]) continue;
+        NSMutableSet *overlap = [NSMutableSet set];
+        for (id album in albums) {
+            NSString *key = artistReleaseKey(dig(album, @"attributes/name"));
+            if ([evidence containsObject:key]) [overlap addObject:key];
+        }
+        NSMutableArray *sample = [NSMutableArray array];
+        for (id album in albums) {
+            id title = dig(album, @"attributes/name");
+            if ([title isKindOfClass:NSString.class] && sample.count < 4) [sample addObject:title];
+        }
+        SGLog(@"catalog artist %@: candidate id=%@ name=%@ releases=%lu overlap=%lu first=%@",
+            artist, dig(record, @"id"), name, (unsigned long)[albums count], (unsigned long)overlap.count,
+            [sample componentsJoinedByString:@" | "]);
+        if (overlap.count < 2) continue;
+        if (match) return nil;
+        match = record;
+    }
+    return match;
 }
 
 #pragma mark - playlists
@@ -336,16 +503,16 @@ static NSString *escaped(NSString *value) {
     return [value stringByAddingPercentEncodingWithAllowedCharacters:unreserved] ?: @"";
 }
 
-// The array at `path` in the catalog's answer, empty when it has none; `answered` is NO when the catalog
-// could not be asked, so the caller does not remember the absence. A refused token is read again once.
-static void askCatalog(NSString *address, NSString *path, BOOL renew, void (^done)(NSArray *found, BOOL answered)) {
+// Keep the catalog envelope so relationship consumers can follow `next`.
+// Status is HTTP or zero on transport/unavailability failure. A refused token is read again once.
+static void askCatalogJSON(NSString *address, BOOL renew, void (^done)(NSDictionary *json, NSInteger status)) {
     if (sg_catalogPausedUntil.timeIntervalSinceNow > 0) {
-        dispatch_async(dispatch_get_main_queue(), ^{ done(nil, NO); });
+        dispatch_async(dispatch_get_main_queue(), ^{ done(nil, 0); });
         return;
     }
     withToken(^(NSString *token) {
         if (!token) {
-            done(nil, NO);
+            done(nil, 0);
             return;
         }
         NSMutableURLRequest *request = requestFor([NSURL URLWithString:address]);
@@ -354,21 +521,28 @@ static void askCatalog(NSString *address, NSString *path, BOOL renew, void (^don
         [request setValue:@"https://music.apple.com" forHTTPHeaderField:@"Origin"];
         fetch(request, ^id(NSData *data) {
             id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-            id found = dig(json, path);
-            return [found isKindOfClass:NSArray.class] ? found : @[];
-        }, ^(NSArray *found, NSInteger status) {
+            return [json isKindOfClass:NSDictionary.class] ? json : nil;
+        }, ^(NSDictionary *found, NSInteger status) {
             if (status == 401 && renew) {
                 SGLog(@"motion: token refused, reading it again");
                 forgetToken(token);
-                askCatalog(address, path, NO, done);
+                askCatalogJSON(address, NO, done);
                 return;
             }
             if (status == 403 || status == 429) {
                 sg_catalogPausedUntil = [NSDate dateWithTimeIntervalSinceNow:kCatalogPause];
                 SGLog(@"motion: the catalog answered %ld, not asked for %.0f minutes", (long)status, kCatalogPause / 60);
             }
-            done(found, status == 200);
+            done(found, status);
         });
+    });
+}
+
+static void askCatalog(NSString *address, NSString *path, BOOL renew, void (^done)(NSArray *, BOOL)) {
+    askCatalogJSON(address, renew, ^(NSDictionary *json, NSInteger status) {
+        BOOL answered = status == 200;
+        id found = dig(json, path);
+        done(answered ? ([found isKindOfClass:NSArray.class] ? found : @[]) : nil, answered);
     });
 }
 
@@ -395,7 +569,8 @@ static void lookUp(NSString *key, void (^done)(id value), void (^look)(void (^an
     sg_waiting[key] = [NSMutableArray arrayWithObject:[done copy]];
     look(^(id value, BOOL keep) {
         if (keep) keepValue(key, value);
-        if (keep && [key hasPrefix:@"album\n"] && (!value || [value isKindOfClass:NSURL.class])) keepAlbumAnswer(key, value);
+        if (keep && (([key hasPrefix:@"album\n"] && (!value || [value isKindOfClass:NSURL.class]))
+                  || ([key hasPrefix:@"album-records\n"] && [value isKindOfClass:NSArray.class]))) keepAlbumAnswer(key, value);
         NSArray *callers = sg_waiting[key];
         [sg_waiting removeObjectForKey:key];
         for (void (^caller)(id) in callers) caller(value);
@@ -403,6 +578,28 @@ static void lookUp(NSString *key, void (^done)(id value), void (^look)(void (^an
 }
 
 #pragma mark - album covers
+
+// Both consumers join this lookup, even when notes are requested before motion
+// or motion is disabled. The complete search result preserves edition ambiguity.
+static void albumRecords(NSString *artist, NSString *album, void (^done)(NSArray *records)) {
+    NSString *key = [NSString stringWithFormat:@"album-records\n%@\n%@", SGMotionNameKey(artist), SGMotionNameKey(album)];
+    setUp();
+    catalogDiagnostic([NSString stringWithFormat:@"notes %@ by %@", album, artist], @"lookup",
+        [NSString stringWithFormat:@"shared record lookup=%@", sg_kept[key] ? @"cached" : sg_waiting[key] ? @"in flight" : @"absent; search"]);
+    lookUp(key, done, ^(void (^answer)(id, BOOL)) {
+        search(@"albums", [NSString stringWithFormat:@"%@ %@", artist, SGMotionSearchName(album)],
+               @"editorialVideo,editorialNotes", YES, ^(NSArray *found, BOOL answered) { answer(found, answered); });
+    });
+}
+
+void SGMotionAlbumNotes(NSString *artist, NSString *album, NSDictionary *edition, void (^done)(NSDictionary *notes)) {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ SGMotionAlbumNotes(artist, album, edition, done); });
+        return;
+    }
+    if (!SGMotionNameKey(artist).length || !SGMotionNameKey(album).length) { done(nil); return; }
+    albumRecords(artist, album, ^(NSArray *records) { done(SGMotionAlbumNotesIn(records, artist, album, edition)); });
+}
 
 static NSString *videoOf(NSDictionary *editorialVideo) {
     NSArray<NSString *> *names = @[@"motionTallVideo3x4", @"motionDetailTall", @"motionSquareVideo1x1", @"motionDetailSquare"];
@@ -446,9 +643,8 @@ void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void 
     NSString *key = [NSString stringWithFormat:@"album\n1\n%@\n%@", artistKey, albumKey];
     // The remote file is what is kept: the store may drop its local copy later in the launch.
     lookUp(key, ^(NSURL *remote) { SGMotionFile(remote, done); }, ^(void (^answer)(id, BOOL)) {
-        NSString *term = [NSString stringWithFormat:@"%@ %@", artist, SGMotionSearchName(album)];
-        search(@"albums", term, @"editorialVideo", YES, ^(NSArray *found, BOOL answered) {
-            if (!answered) {
+        albumRecords(artist, album, ^(NSArray *found) {
+            if (!found) {
                 answer(nil, NO);
                 return;
             }
@@ -479,6 +675,13 @@ void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void 
 
 #pragma mark - artist logos
 
+static void artistRecords(NSString *artist, void (^done)(NSArray *records)) {
+    lookUp([@"artist-records\n" stringByAppendingString:artistNameKey(artist)], done, ^(void (^answer)(id, BOOL)) {
+        search(@"artists", artist, @"editorialArtwork,editorialVideo", YES,
+               ^(NSArray *found, BOOL answered) { answer(found, answered); });
+    });
+}
+
 // The URL is a template ending in {w}x{h}bb.jpg; the same image comes as a PNG with its transparency.
 static NSURL *logoURL(id logo, CGFloat pixels) {
     id url = dig(logo, @"url"), width = dig(logo, @"width"), height = dig(logo, @"height");
@@ -502,8 +705,8 @@ void SGMotionArtistLogo(NSString *artist, CGFloat pixels, void (^done)(UIImage *
         return;
     }
     lookUp([@"logo\n" stringByAppendingString:artistKey], ^(UIImage *logo) { done(logo); }, ^(void (^answer)(id, BOOL)) {
-        search(@"artists", artist, @"editorialArtwork", YES, ^(NSArray *found, BOOL answered) {
-            if (!answered) {
+        artistRecords(artist, ^(NSArray *found) {
+            if (!found) {
                 answer(nil, NO);
                 return;
             }
@@ -521,6 +724,165 @@ void SGMotionArtistLogo(NSString *artist, CGFloat pixels, void (^done)(UIImage *
             }
             fetch(requestFor(url), ^id(NSData *data) { return [UIImage imageWithData:data]; }, ^(UIImage *logo, NSInteger status) {
                 answer(logo, status == 200);
+            });
+        });
+    });
+}
+
+static const NSUInteger kArtistCandidateLimit = 3, kArtistAlbumPages = 3;
+
+// Search relationships may only contain the first 25 releases. Follow the
+// relationship endpoint's actual cursor, never infer completeness from count.
+static void artistAlbumPage(NSString *identifier, NSURL *url, NSUInteger page,
+                            NSMutableArray *albums, void (^done)(NSArray *, BOOL)) {
+    SGLog(@"catalog artist id=%@: albums request page=%lu/%lu", identifier, (unsigned long)page, (unsigned long)kArtistAlbumPages);
+    askCatalogJSON(url.absoluteString, YES, ^(NSDictionary *json, NSInteger status) {
+        SGLog(@"catalog artist id=%@: albums page=%lu HTTP=%ld%@", identifier, (unsigned long)page, (long)status,
+            status ? @"" : @" (network/unavailable)");
+        if (status == 404 && page == 1) {
+            SGLog(@"catalog artist id=%@: albums complete pages=1 releases=0 (HTTP 404)", identifier);
+            done(@[], YES);
+            return;
+        }
+        id data = json[@"data"], next = json[@"next"];
+        if (status != 200 || ![data isKindOfClass:NSArray.class]) { done(nil, NO); return; }
+        [albums addObjectsFromArray:data];
+        if (![data count] || !next || next == NSNull.null || [next isEqual:@""]) {
+            SGLog(@"catalog artist id=%@: albums complete pages=%lu releases=%lu", identifier, (unsigned long)page, (unsigned long)albums.count);
+            done(albums, YES);
+            return;
+        }
+        if (page == kArtistAlbumPages) {
+            SGLog(@"catalog artist id=%@: refuse: album page budget exhausted", identifier);
+            done(nil, YES);
+            return;
+        }
+        NSURL *following = [next isKindOfClass:NSString.class] ? [NSURL URLWithString:next relativeToURL:url].absoluteURL : nil;
+        if (![following.scheme isEqual:@"https"] || ![following.host isEqual:url.host] ||
+            following.port || ![following.path isEqual:url.path] || following.user || following.password) {
+            SGLog(@"catalog artist id=%@: refuse: invalid album cursor", identifier);
+            done(nil, YES);
+            return;
+        }
+        artistAlbumPage(identifier, following, page + 1, albums, done);
+    });
+}
+
+void SGMotionArtistArtwork(NSString *artist, NSArray<NSString *> *titles, CGFloat pixels,
+                          BOOL photo, BOOL motion, void (^done)(UIImage *, NSURL *, SGMotionArtistArtworkOutcome)) {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ SGMotionArtistArtwork(artist, titles, pixels, photo, motion, done); });
+        return;
+    }
+    if ((!photo && !motion) || titles.count < 2 || !artist.length) {
+        done(nil, nil, titles.count < 2 ? SGMotionArtistArtworkNeedsEvidence : SGMotionArtistArtworkFinished); return;
+    }
+    artistRecords(artist, ^(NSArray *records) {
+        NSString *identity = [@"artist " stringByAppendingString:artist];
+        catalogDiagnostic(identity, @"records", [NSString stringWithFormat:@"artist search records=%lu extend=editorialArtwork,editorialVideo", (unsigned long)records.count]);
+        if (!records) {
+            catalogDiagnostic(identity, @"selection", @"no Apple artist chosen: catalog unavailable/error");
+            done(nil, nil, SGMotionArtistArtworkMetadataFailed); return;
+        }
+        NSMutableArray *namesakes = [NSMutableArray array];
+        // A non-exact normalized name is not a namesake; its missing/failed
+        // discography cannot veto the verified artist. Exact names still can.
+        for (id record in records)
+            if ([artistNameKey(dig(record, @"attributes/name")) isEqual:artistNameKey(artist)]) [namesakes addObject:record];
+        if (namesakes.count > kArtistCandidateLimit) {
+            catalogDiagnostic(identity, @"candidate-budget", @"refuse: namesake budget exceeded");
+            done(nil, nil, SGMotionArtistArtworkMetadataFailed);
+            return;
+        }
+        catalogDiagnostic(identity, @"request-budget", [NSString stringWithFormat:@"request budget search=1 albums<=%lu (%lu per namesake) resource<=1; cached results reused",
+            (unsigned long)(kArtistCandidateLimit * kArtistAlbumPages), (unsigned long)kArtistAlbumPages]);
+        NSMutableArray *candidates = [NSMutableArray array];
+        dispatch_group_t group = dispatch_group_create();
+        __block BOOL failed = NO;
+        for (id record in namesakes) {
+            id name = dig(record, @"attributes/name"), identifier = dig(record, @"id");
+            catalogDiagnostic(identity, [NSString stringWithFormat:@"search-fields-%@", identifier],
+                [NSString stringWithFormat:@"search candidate id=%@ name=%@ editorialArtwork=%d editorialVideo=%d motionArtistSquare1x1=%d",
+                    identifier, name, dig(record, @"attributes/editorialArtwork") != nil,
+                    dig(record, @"attributes/editorialVideo") != nil,
+                    dig(record, @"attributes/editorialVideo/motionArtistSquare1x1/video") != nil]);
+            if (![identifier isKindOfClass:NSString.class] || ![identifier length]) { failed = YES; continue; }
+            dispatch_group_enter(group);
+            lookUp([@"artist-albums\n" stringByAppendingString:identifier], ^(NSArray *albums) {
+                if (!albums) failed = YES;
+                else {
+                    NSMutableDictionary *candidate = [record mutableCopy];
+                    candidate[@"relationships"] = @{@"albums": @{@"data": albums}};
+                    [candidates addObject:candidate];
+                }
+                dispatch_group_leave(group);
+            }, ^(void (^answer)(id, BOOL)) {
+                NSString *url = [NSString stringWithFormat:@"https://amp-api.music.apple.com/v1/catalog/us/artists/%@/albums?limit=100", escaped(identifier)];
+                artistAlbumPage(identifier, [NSURL URLWithString:url], 1, [NSMutableArray array],
+                    ^(NSArray *albums, BOOL answered) { answer(albums, answered); });
+            });
+        }
+        dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+            NSDictionary *match = SGMotionArtistMatch(candidates, artist, titles);
+            if (failed) match = nil; // still log successful candidates' overlaps
+            SGLog(@"catalog %@: %@", identity, match ?
+                [NSString stringWithFormat:@"chosen Apple artist id=%@", dig(match, @"id")] :
+                [NSString stringWithFormat:@"no Apple artist chosen: %@", failed ? @"release lookup failed/incomplete" : @"wait: no unique namesake with two release matches"]);
+            if (!match) {
+                done(nil, nil, failed ? SGMotionArtistArtworkMetadataFailed : SGMotionArtistArtworkNeedsEvidence);
+                return;
+            }
+            void (^assetsForResource)(NSDictionary *) = ^(NSDictionary *resource) {
+            dispatch_group_t assets = dispatch_group_create();
+            __block UIImage *image = nil;
+            __block NSURL *file = nil;
+            NSURL *imageURL = photo ? logoURL(dig(match, @"attributes/artwork"), pixels) : nil;
+            if (imageURL) {
+                dispatch_group_enter(assets);
+                lookUp([@"artist-photo\n" stringByAppendingString:imageURL.absoluteString], ^(UIImage *value) {
+                    image = value;
+                    dispatch_group_leave(assets);
+                }, ^(void (^answer)(id, BOOL)) {
+                    fetch(requestFor(imageURL), ^id(NSData *data) { return [UIImage imageWithData:data]; },
+                          ^(UIImage *value, NSInteger status) { answer(value, status == 200); });
+                });
+            }
+            id video = dig(resource, @"attributes/editorialVideo/motionArtistSquare1x1/video");
+            if (![video isKindOfClass:NSString.class]) video = dig(resource, @"attributes/editorialVideo/motionSquareVideo1x1/video");
+            catalogDiagnostic(identity, @"fields", [NSString stringWithFormat:@"artwork=%d editorialArtwork=%d editorialVideo=%d motionArtistSquare1x1=%d squareVideo=%d",
+                dig(match, @"attributes/artwork") != nil, dig(match, @"attributes/editorialArtwork") != nil,
+                dig(resource, @"attributes/editorialVideo") != nil,
+                dig(resource, @"attributes/editorialVideo/motionArtistSquare1x1/video") != nil,
+                dig(resource, @"attributes/editorialVideo/motionSquareVideo1x1/video") != nil]);
+            NSURL *master = motion && [video isKindOfClass:NSString.class] ? [NSURL URLWithString:video] : nil;
+            if (master) {
+                dispatch_group_enter(assets);
+                NSString *key = [NSString stringWithFormat:@"artist-motion\n%@\n%.0f", master.absoluteString, pixels];
+                lookUp(key, ^(NSURL *remote) {
+                    SGMotionFile(remote, ^(NSURL *local) { file = local; dispatch_group_leave(assets); });
+                }, ^(void (^answer)(id, BOOL)) { wholeFileOf(master, pixels, answer); });
+            }
+            dispatch_group_notify(assets, dispatch_get_main_queue(), ^{
+                catalogDiagnostic(identity, @"assets", [NSString stringWithFormat:@"assets photo=%@ motion=%@ LowDataDownloads=%@",
+                    !photo ? @"off" : image ? @"ready" : imageURL ? @"failed" : @"absent",
+                    !motion ? @"off" : file ? @"ready (download/cache)" : master ? @"failed (playlist/download)" : @"absent",
+                    SGFlag(SGKeyMotionLowData, NO) ? @"allowed" : @"blocked on constrained networks"]);
+                done(image, file, motion && !resource ? SGMotionArtistArtworkMetadataFailed : SGMotionArtistArtworkFinished);
+            });
+            };
+            if (!motion) { assetsForResource(nil); return; }
+            NSString *identifier = dig(match, @"id");
+            lookUp([@"artist-resource\n" stringByAppendingString:identifier], assetsForResource, ^(void (^answer)(id, BOOL)) {
+                SGLog(@"catalog artist %@: resource request id=%@ extend=editorialVideo", artist, identifier);
+                NSString *url = [NSString stringWithFormat:@"https://amp-api.music.apple.com/v1/catalog/us/artists/%@?extend=editorialVideo", escaped(identifier)];
+                askCatalog(url, @"data", YES, ^(NSArray *found, BOOL answered) {
+                    NSDictionary *resource = nil;
+                    for (id item in found) if ([dig(item, @"id") isEqual:identifier]) { resource = item; break; }
+                    SGLog(@"catalog artist %@: resource id=%@ answered=%d editorialVideo=%d motionArtistSquare1x1=%d",
+                        artist, identifier, answered, dig(resource, @"attributes/editorialVideo") != nil,
+                        dig(resource, @"attributes/editorialVideo/motionArtistSquare1x1/video") != nil);
+                    answer(resource, answered && resource != nil);
+                });
             });
         });
     });

@@ -1,6 +1,7 @@
 // Player redesign: previous, play and next as bare glyphs, the way the Music app draws them, shuffle and
 // repeat left out on request, and the timestamps under the slider in digits of one width, so they stop
-// twitching every second.
+// twitching every second, their changed characters rolling into place unless Rolling time digits is off
+// (SGRRefinements.h).
 //
 // The glyphs are drawn over Spotify's controls rather than instead of them: each button keeps its
 // action, its enabled state, its accessibility and the Gestures zones around it, and the glyph takes no
@@ -22,6 +23,7 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRPress.h"
+#import "Redesigned/Kit/SGRRefinements.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "Player.h"
@@ -345,13 +347,17 @@ static SGRPlayerControlsWatcher *sg_controlsWatcher;
 
 #pragma mark - times
 
+// Rolling time digits (SGRRefinements.h), read at launch.
+static BOOL sg_rollingDigits;
+
 static UILabel *monospaced(UIView *host, NSString *identifier, const void *findKey) {
     UILabel *label = (UILabel *)SGRFindByIdentifier(host, identifier, findKey);
     if (![label isKindOfClass:UILabel.class]) {
         SGLogOnce(&sg_loggedMessages, identifier, kLogFormat);
         return nil;
     }
-    SGRMonospacedDigits(label);
+    if (sg_rollingDigits) SGRRollDigits(label);
+    else SGRMonospacedDigits(label);
     return label;
 }
 
@@ -729,6 +735,7 @@ static void durationLaidOut(UIViewController *unit) {
     %init;
     sg_hideShuffle = SGHidden(SGRKeyPlayerHideShuffle);
     sg_hideRepeat = SGHidden(SGRKeyPlayerHideRepeat);
+    sg_rollingDigits = SGEnabled(SGRKeyPlayerRollingDigits);
     Class djDuration = SGRDJClass(@"DJMDurationElementsUnit");
     if (djDuration) { %init(SGRDJControlsDurationHooks, SGRDJControlsDurationUnit = djDuration); }
     sg_controlsWatcher = [SGRPlayerControlsWatcher new];

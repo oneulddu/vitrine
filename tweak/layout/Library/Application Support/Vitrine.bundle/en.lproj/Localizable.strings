@@ -22,6 +22,29 @@
 
 "common.save" = "Save";
 
+"player.speed_pitch.animated_artwork" = "Animated artwork";
+"player.speed_pitch.collapsed" = "Collapsed";
+"player.speed_pitch.expanded" = "Expanded";
+"player.speed_pitch.follows_speed" = "Follows speed";
+"player.speed_pitch.keep_song" = "Keep for This Song";
+"player.speed_pitch.off" = "Off";
+"player.speed_pitch.original_pitch" = "Original pitch";
+"player.speed_pitch.percent" = "%.0f percent";
+"player.speed_pitch.pitch" = "Pitch";
+"player.speed_pitch.pitch_follows_speed" = "Pitch follows speed";
+"player.speed_pitch.pitch_value" = "%@%.0f st";
+"player.speed_pitch.reset_hint" = "Resets it";
+"player.speed_pitch.reverb" = "Reverb";
+"player.speed_pitch.reverb_value" = "%.0f%%";
+"player.speed_pitch.semitones_down" = "%.0f semitones down";
+"player.speed_pitch.semitones_up" = "%.0f semitones up";
+"player.speed_pitch.speed" = "Speed";
+"player.speed_pitch.speed_value" = "%.2f×";
+"player.speed_pitch.summary" = "Speed and pitch, %@";
+"player.speed_pitch.title" = "Speed and pitch";
+"player.speed_pitch.unavailable" = "Unavailable";
+"player.speed_pitch.unavailable_here" = "Unavailable here";
+
 "settings.addtab.action.use_link" = "Use Link";
 "settings.addtab.add_tab.title" = "Add a Tab";
 "settings.addtab.all_glyphs.header" = "All glyphs";
@@ -85,6 +108,11 @@
 "settings.album.motion_low_data.title" = "Download in Low Data Mode";
 "settings.album.native.hide_on_page.header" = "Hide on the page";
 "settings.album.native.title" = "Album";
+"settings.album.notes.off" = "Off";
+"settings.album.notes.open" = "Read the full album note";
+"settings.album.notes.title" = "Album notes";
+"settings.album.notes.under_play" = "Under Play";
+"settings.album.notes.under_tracks" = "Under tracks";
 "settings.album.play_counts.choice.in_menu" = "In menu";
 "settings.album.play_counts.choice.in_row" = "In the row";
 "settings.album.play_counts.choice.off" = "Off";
@@ -93,6 +121,7 @@
 "settings.album.play_counts.note" = "Counted from Listening stats on this phone, matched by the album's and the track's names. With Record plays off, the counts stay as they are.";
 "settings.album.play_counts.subtitle" = "How many times you played each track";
 "settings.album.play_counts.title" = "Play counts";
+"settings.album.preview.a11y" = "Preview of an album";
 "settings.album.title" = "Albums";
 "settings.album.tracks.header" = "Tracks";
 
@@ -115,6 +144,7 @@
 
 "settings.artist.apple_music.header" = "Apple Music";
 "settings.artist.apple_music.note" = "Only the artist's name is sent to Apple Music.";
+"settings.artist.apple_photo.title" = "Apple Music artist photo";
 "settings.artist.artist_facts.title" = "Artist facts";
 "settings.artist.hide.about.title" = "About";
 "settings.artist.hide.appears_on.title" = "Appears on";
@@ -145,11 +175,13 @@
 "settings.artist.logos.subtitle" = "In place of the name on an artist's page";
 "settings.artist.logos.title" = "Artist logos";
 "settings.artist.more_in_nav.title" = "More options in the navigation bar";
+"settings.artist.motion.title" = "Animated artist artwork";
 "settings.artist.native.hide.music_videos.title" = "Music videos";
 "settings.artist.native.hide_on_page.header" = "Hide on the page";
 "settings.artist.native.title" = "Artist";
 "settings.artist.photo.header" = "Photo";
 "settings.artist.photo_fade.title" = "Fade into a blur";
+"settings.artist.preview.a11y" = "Preview of an artist";
 "settings.artist.share_in_header.title" = "Share button in the header";
 "settings.artist.spotify_own.header" = "Spotify's own";
 "settings.artist.tabs.header" = "Tabs";
@@ -633,6 +665,7 @@
 "settings.home.look.title" = "Home look";
 "settings.home.on_home.header" = "On Home";
 "settings.home.playlists.row.title" = "Playlists";
+"settings.home.preview.a11y" = "Preview of Home";
 "settings.home.previews.subtitle" = "The cards that play as Home scrolls";
 "settings.home.previews.title" = "Video and playlist previews";
 "settings.home.pull_to_refresh.title" = "Pull to refresh";
@@ -1766,9 +1799,13 @@
 "settings.player.queue_devices.title" = "Queue & devices";
 "settings.player.queue_flip.title" = "Queue flip transition";
 "settings.player.redesigned_header.title" = "Redesigned header";
+"settings.player.rolling_digits.subtitle" = "The digits that change under the progress bar roll into place.";
+"settings.player.rolling_digits.title" = "Rolling time digits";
 "settings.player.sheet_style.title" = "Sheet style player";
 "settings.player.sleep_fade.subtitle" = "While Labs' Fade out is forced on, Spotify's own timer fades its own way.";
 "settings.player.sound_menu" = "Speed, Pitch & Reverb";
+"settings.player.star_add.subtitle" = "The add button as a star, filled in the accent once the song is saved. In the player it takes the place of Plain checkmark.";
+"settings.player.star_add.title" = "Star add button";
 "settings.player.title" = "Player";
 "settings.player.visualizer_style.title" = "Visualizer style";
 "settings.player.visualizers.footer" = "The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence and stops in the background, during player transitions, in Low Power Mode or when the device is hot.";
@@ -1801,6 +1838,9 @@
 "settings.playlist.hide_in_header.header" = "Hide in the playlist header";
 "settings.playlist.hide_on_page.header" = "Hide on a playlist's page";
 "settings.playlist.more_menu.header" = "More menu";
+"settings.playlist.preview.a11y" = "Preview of a playlist";
+"settings.playlist.preview.mix" = "Mix";
+"settings.playlist.preview.sort" = "Sort";
 "settings.playlist.sort_mix.note" = "The two curation pills the ⋯ menu does not already offer, so they stay a tap away with the pills hidden.";
 "settings.playlist.sort_mix.subtitle" = "At the top of a playlist's ⋯ menu";
 "settings.playlist.sort_mix.title" = "Sort and Mix";
@@ -1916,6 +1956,7 @@
 "settings.search_tab.hide.other.title" = "Everything else";
 "settings.search_tab.hide.watch_feeds.subtitle" = "Playlists you can watch, Explore episodes for you";
 "settings.search_tab.hide.watch_feeds.title" = "Video carousels";
+"settings.search_tab.preview.a11y" = "Preview of Search";
 "settings.search_tab.title" = "Search";
 
 "settings.signing.action.copy_bundle_id" = "Copy the bundle id";

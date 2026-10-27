@@ -164,7 +164,9 @@ only, no code); the notes give no numbers, so the limits below are Vitrine's own
 
 ### Chroma 1.0.0-beta.4 (described by behavior)
 
-The first batch taken from beta.4, described by behavior only and built against Vitrine's own code.
+The first batch taken from beta.4, described by behavior only and built against Vitrine's own code, and the second
+round under it: per-song speed and pitch, the player's line under the cover, album notes, artist artwork, the player
+refinements and the page previews.
 
 | Item | Where Vitrine stands |
 |---|---|
@@ -177,6 +179,23 @@ The first batch taken from beta.4, described by behavior only and built against 
 | With shuffle and repeat both hidden, previous and next move out to where the Music app keeps them | Done (Redesigned/Player/PlayerControls.x); a device check on a narrow and a wide iPhone is outstanding |
 | Recent accent colors, up to 8, each look keeping its own | Done (Native/Appearance/AccentHistory.m, Redesigned/Kit/SGRAccentHistory.m); harness/ui-refinements/ |
 | Album play counts Off, In the row or In menu, the switch it replaced migrated | Done (Redesigned/Album/AlbumPlaysPlace.m, AlbumPlaysMenu.x); harness/ui-refinements/; the sheet in Spotify itself is a device check |
+| Speed, pitch, pitch-follow and reverb kept per song, and the speed menu localized | Done (Shared/Player/SpeedPitchSongs.m, SpeedPitchMenu.x, SpeedPitchEvents.h): Keep for This Song on the menu, the newest 200 records, the pre-keep values restored for every other song; harness/song-audio/ (two processes, so the relaunch is real); the menu itself is a device check |
+| The line being sung under the cover: a long line shrinks and then splits into portions of whole words, read on a one-shot timer aimed at the next portion or line, and standing down where Spotify's own lyric preview shows | Done (Redesigned/Player/PlayerLyricFit.m, PlayerLyricLine.x); harness/player-lyric-line/ |
+| Album editorial notes from Apple Music's catalog, under Play, under the tracks or off | Done (Redesigned/Album/AlbumNotes.m, AlbumSections.x; SGMotionCatalog.m's SGMotionAlbumNotesIn): exact artist, edition, count, year and rating only; harness/album-notes/ |
+| Artist page: Apple Music's artist photo and animated artist artwork | Done (Redesigned/Artist/ArtistArtwork.m, ArtistHeader.x; SGMotionArtistMatch): two agreeing releases and one namesake only; harness/artist-artwork/ |
+| The player's time digits rolling only the characters that changed, and the add button as a star | Done (Redesigned/Kit/SGRRefinements.m, SGRRollingDigits.m, SGRPlainCheck.x, PlayerControls.x, PlayerSettings.m); harness/player-refinements/ |
+| A live preview at the top of the redesign's page settings, following the switches as they are flipped | Done (Redesigned/Kit/SGRPagePreview.m in the Playlists, Home, Search, Albums and Artists pages); harness/page-previews/ |
+
+Judged equal, already there, or not taken, from the same beta.4 round:
+
+| Item | Why |
+|---|---|
+| Lyric-layer ordering, the two-column lyrics and the press highlight | Already in Vitrine: the lines sung over each other are lit together and the stack moves on in order (Redesigned/Lyrics), and a press on a line opens the edit menu (harness/lyrics-hold/) |
+| Glass on the full-height Queue and Connect sheets | Tried and dropped: on the iPhone 13 Pro (iOS 27.2) UIKit's `_nonLargeBackground` is nil for Spotify's sheet, so there was no material to carry to the large detent, and Spotify paints its own content opaque (#1F1F1F) there over a #1C1C1E drop shadow view; kept as a follow-up |
+| A translucent download badge | Not built: the download state is not readable from Objective-C, so only a color heuristic was possible, and a wrong badge is worse than none |
+| The iPad full-screen player | Not adopted: no iPad was available to verify it |
+| Separate album and playlist cover settings | Deferred |
+| A Library preview card | None: the redesign has no Library settings page to lead |
 
 Judged not better, or not ours to take:
 
@@ -218,3 +237,7 @@ Judged not better, or not ours to take:
   VoiceOver. Each commit body lists what to check.
 - From beta.4, on a phone: the hardware keyboard's keys, holding a lyric line, the player's spacing with shuffle and
   repeat both hidden on a narrow and a wide iPhone, and an album's ⋯ sheet with Play counts In menu.
+- From the second round, on a phone: Keep for This Song across a relaunch, the line under the cover with Spotify's own
+  lyric preview on, the album notes' two placements and their sheet, an artist's photo and animated artwork, and the
+  rolling digits and star. The Queue and Connect sheets' glass is not checkable until UIKit hands the sheet a
+  background below full height on iOS 27.

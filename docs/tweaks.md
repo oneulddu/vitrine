@@ -422,7 +422,10 @@ Shared:
     AnimatedArtwork/ moving artwork (AnimatedArtwork.h): the track's Canvas, else Apple Music's animated album cover
                   (SGMotionCatalog.m: searched without the album's edition, the edition of the same name first, and
                   left alone for 10 minutes after a 403 or 429; an album's answer kept on disk for a week, so a relaunch skips the search), kept as local files (SGMotionStore.m, a download that
-                  fails on the way tried once more), on iOS 26 the lock screen's full-screen
+                  fails on the way tried once more, its body streamed to a temporary partial that is moved into the store only when the whole
+                  30 MB (decimal) has arrived — an advertised length over it is refused at the headers and a body that passes it
+                  is cut off, so neither a lying nor a chunked server can fill the disk, and a cancellation, a size refusal or a
+                  failed write is not retried), on iOS 26 the lock screen's full-screen
                   artwork (LockScreenMotion.x). With Every song, a song with neither gets the selected background
                   as a gentle 4 s 3:4 loop, using the shared lyric encoder without text (SGFluidClip.m).
                   Cache keys include cover content, background settings and output size. Pending presentations
@@ -511,7 +514,25 @@ Shared:
                   another one) makes the unit again for it, and until then the sound passes as it is. harness/speed's
                   `two` runs a 44.1 and a 48 kHz chain at once. Under the
                   sliders a Reverb slider sets the audio effects' reverb amount (spotifyglass.dsp.reverb.amount), turning
-                  the effects and the reverb on with it. The block goes into Spotify's own context menu sheet
+                  the effects and the reverb on with it; a reverb set from the Audio effects page posts
+                  SGSpeedPitchReverbDidChange (SpeedPitchEvents.h) from the effects' own setters on main, so a song keeps
+                  that reverb too. Every text of the block is read through SGL (player.speed_pitch.*), so the sheet is
+                  localized like the mod's own pages. A second switch under Pitch follows speed, Keep for This Song,
+                  gives this song its own speed, pitch, pitch-follow and reverb (SpeedPitchSongs.m; the records under
+                  spotifyglass.speedPitch.songs, the newest 200 by timestamp). Keeping writes at once; a slider then
+                  updates the record and writes it half a second after the last change, the newest change's generation
+                  alone allowed to write, and a skip flushes a pending edit. A track is keyed by its URI, and a local
+                  file by its four form-decoded fields (artist, album, title, duration, each decoded on its own so an
+                  encoded colon cannot move a boundary) composed and cut to 128 bits of SHA-256, so it is the same key
+                  at every launch and for every encoding of it. A stored record is checked before it is used (speed
+                  0.5 to 2, pitch within 12 semitones, pitch-follow 0 or 1, reverb 0 to 100, a finite number each and
+                  a timestamp), and one that is not is dropped. The values in effect before the first kept song are
+                  kept as a baseline (spotifyglass.speedPitch.baseline) and put back as each unkept song comes, so
+                  speed and pitch no longer only last until Spotify quits; a control the player has not admitted yet
+                  stays pending and is retried on the next report, and the baseline keeps just those controls until they
+                  are restored, so an edit made meanwhile is not lost. A song changing while a finger is still on a
+                  slider shows the new song's values and rejects the old gesture's callbacks. Checked on the Mac by
+                  harness/song-audio/, in two processes, so the relaunch path is real. The block goes into Spotify's own context menu sheet
                   and is drawn from its own measures, not the Kit's, so it sits there under either look. Tested on the
                   Mac against harness/pitch/ and in the simulator against harness/speed/ and harness/menu/. Under the
                   redesign, with the player's background Fluid or Animated, a row under the block switches Animated
@@ -801,7 +822,27 @@ Redesigned:
                   it, SGRHardTopEdge), AMOLED black (always on, SGRAmoled.x) and its own accent color (SGRAccent.x, stored
                   apart from the native look's). The playlist, album and artist pages take their field's color from the
                   cover's main color (checked on the Mac by harness/palette/), and come in whole: a black veil over the
-                  page until the cover has been read, at most SGRFieldHoldLimit (1 s), then faded away (SGRField.h)
+                  page until the cover has been read, at most SGRFieldHoldLimit (1 s), then faded away (SGRField.h).
+                  Two of the player controls' own refinements live here too (SGRRefinements.h, whose decisions are
+                  plain functions the views follow): a label SGRRollDigits marks is monospaced and has each change of
+                  its text shown by SGRDigitsChangeFor's rules — the characters that differ roll up into place over
+                  0.25 s, by cutting their columns out of the label and drawing them in an overlay of its own that no
+                  accessibility sees, so Spotify's text, its accessibility and its drawing stay Spotify's; the first
+                  value, a label just moved into its window, a change within 0.15 s of the last (a seek or a scrub) and
+                  a text with a right-to-left run are shown at once, Reduce Motion crossfades in place, and nothing runs
+                  between changes (SGRRollingDigits.m; SGRRestyle.m's monospaced label reports each text setter and each
+                  move to or out of a window), checked on the Mac by harness/player-refinements/. And a live preview
+                  card that leads the redesign's Playlists, Home, Search, Albums and Artists pages (SGRPagePreview.h):
+                  a plain-view mock of the page those settings change, drawn over local placeholder art, that follows
+                  the page's switches as they are flipped, at the top of the page in the table's header with the page's
+                  note under it (SGRPagePreviewPage). A hidden part fades where it is and the parts under it move up
+                  into its room; the card reads the page's own preference readers in two steps (state, then apply), and
+                  while it is in sight redraws only for a value unlike the last one drawn, in the redesign's layout
+                  motion; out of sight a change is only noted and is drawn when the card is back, and coming into a
+                  window it draws at once from the top of the page. A change to a part below the card's foot scrolls
+                  the mock to it. Its text grows with the reader's to half again the size and the card with it; VoiceOver
+                  reads the card as one image naming the parts shown. Checked in an iOS simulator of its own by
+                  harness/page-previews/, which writes each card's states to PNGs
     Navbar/       the glass tab bar (TabBar.x) over its own composition (Navbar.x, NavbarLayout.m) and editor, the glass search field.
                   Spotify is made to leave the glass bar its height where its own bar is shorter (a phone with a home button,
                   Offline or Private Session under the bar), so the now playing bar and the pages move up with it. Under both
@@ -845,8 +886,8 @@ Redesigned:
                   and a close with no pick dismisses the hidden sheet. Checked in the simulator against
                   harness/system-menu/
     Player/       the redesigned full screen player (Player.h lists its files); its more button opens the system
-                  menu (ContextMenu/), Spotify's rows and then Speed, Pitch & Reverb, which opens the sliders and
-                  Pitch follows speed in a popover from the ⋯ (SpeedPitchMenu.x), and the backgrounds it can switch
+                  menu (ContextMenu/), Spotify's rows and then Speed, Pitch & Reverb, which opens the sliders, Pitch
+                  follows speed and Keep for This Song in a popover from the ⋯ (SpeedPitchMenu.x, Shared/Player), and the backgrounds it can switch
                   to (PlayerMenu.m), and a hold on either side of the
                   cover plays at 2x until the finger lifts (PlayerArtwork.x), an octave higher while Pitch follows
                   speed is on. Hide on the player's Shuffle and Repeat (spotifyglass.redesign.player.hideShuffle,
@@ -856,7 +897,15 @@ Redesigned:
                   button past the row's edge and not at all where it is already farther out; play stays centered and
                   every button keeps its size, and the move is a translation set in the unit's own layout pass, so
                   Spotify's layout stays underneath and comes back exactly when a button is shown again. With one of
-                  the two hidden, on a podcast's row without them, or in landscape, the slots stay Spotify's. A Free account gets it too: Spotify's Reinvented Free player mode, whose units none of
+                  the two hidden, on a podcast's row without them, or in landscape, the slots stay Spotify's. The
+                  timestamps under the slider are metered (SGRMonospacedDigits) and, with Rolling time digits on (the
+                  Player page, on until switched off), their changed characters roll into place (SGRRefinements.h,
+                  described under Redesigned/Kit/), checked on the Mac by harness/player-refinements/. Star add button (off until switched on, also the
+                  Player page) draws the player's add button as a star — outlined in the primary color until the song
+                  is saved, filled in the accent once it is — and in the player it wins over Plain checkmark, which
+                  keeps every other add button; a disabled player button goes back to Spotify's own glyph, which shows
+                  it disabled, and gets the star again once enabled (SGRPlainCheck.x, which owns the add button's glyph
+                  and finds the player's by the InformationElementsUnit its button answers to). A Free account gets it too: Spotify's Reinvented Free player mode, whose units none of
                   the hooks reach, declines while the redesign runs, so the track falls to Spotify's other Free mode,
                   built from the units the redesign styles (PlayerFree.x, read from the binary, not yet seen on a Free
                   account). Animated artwork (PlayerMotion.x)
@@ -890,7 +939,27 @@ Redesigned:
                   with Reduce Motion, where the bands ease over seconds) draws them while the player is on screen,
                   Spotify is in front, the player is not opening or closing and Low Power Mode is off, and stops once
                   a paused song's hills have settled. The spectrum is checked on the Mac against harness/visualiser/,
-                  the view in the simulator against harness/player/ (`visualiser`)
+                  the view in the simulator against harness/player/ (`visualiser`). The line under the cover (Lyrics Line on the Player
+                  page, on until switched off; PlayerLyricLine.x, PlayerLyricFit.h) is the one line a place with room for
+                  one shows, centered across the cover's width in the room between the cover and Spotify's bottom stack
+                  (a chip over the title ends that room where it starts), at the player's position less the Lyrics page's
+                  Delay; a tap opens the lyrics. It stands down where Spotify shows its own lyric preview under the cover,
+                  which in 9.1.90 is Lyrics_NPVElementsKitImpl.LyricsElementWrapperView beside the tilt view, hooked apart
+                  from the other placements because that preview gets its height when its lyrics arrive, after the cover's
+                  last pass. A line too wide for the label shrinks to no less than 0.85 of its font (SGRLyricMinScale);
+                  still too wide, it is shown in successive portions of whole words — cut at word boundaries where the
+                  text spaces them, and character by character through an unspaced Chinese or Japanese run — the portion
+                  holding the word being sung while the line is word timed, else the even share of the line's time; no
+                  portion is ever cut mid-word. Portions are kept per line, width and font (the font whole, so Bold Text
+                  or a text-size change measures again), the newest 32. It reads the line on a one-shot timer armed
+                  again from every update at the next thing that can change what it draws — the next portion, the next
+                  line's start, or any later line's sung end — never nearer than 20 ms and never aimed further than
+                  0.5 s (a look twice a second with 0.1 s tolerance when nothing is near, or while the song is paused),
+                  with song time turned to wall time by the playback rate; no display link, which at 60 Hz would drag the
+                  player's 120 Hz transitions down. A player report re-aims it when the rate changed (a pause or a
+                  resume), and, paused, on any move of the place, else only when the position is more than 500 ms off
+                  where the armed timer was heading; kept lines, the Delay and coming back to the foreground re-aim it
+                  too. Checked on the Mac against harness/player-lyric-line/
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
                   which the player shows in itself too, Player/PlayerLyrics.x, where with Hide the controls set to
                   Everything, everything else -- the header row, the thumbnail, the title row and the controls --
@@ -994,7 +1063,24 @@ Redesigned:
                   everything the server sends is dropped -- more by the artist, videos, concerts, merch, you might also
                   like, and whatever it adds next -- but the album's own line and its copyright, each section back
                   once its switch on the Albums page is off (told apart by its English heading; in another
-                  language Everything else covers them all; Album.h lists its files). Play counts, from Listening
+                  language Everything else covers them all; Album.h lists its files). Album notes, from Apple Music's catalog, have a
+                  place of their own on the Albums page (Under Play, Under tracks — the default — or Off; AlbumNotes.m):
+                  Under Play an arranged sibling after the header in the page's own scrolling stack, Under tracks the
+                  footer under the copyright cell, whose lead grows by the note's height, and Off asks for nothing. The
+                  note is Apple's editorial text read as plain text, never a web view or an attributed-string importer:
+                  script, style and comments go, block boundaries become paragraph breaks, the markup goes, then the
+                  common entities and numeric references are decoded, so an escaped "<…" stays literal text; a document
+                  over 64 KB gives nothing. Only an exact, unambiguous match is used, and only for an album whose own
+                  edition is known on the page: the artist and the album's name as Spotify spells it (no edition
+                  qualifier borrowed, unlike motion), with the track count from the page's consumption cell (read as
+                  the leading number of the localized "count · duration"), the release year from the header's metadata
+                  row (and only when no two labels disagree) and the explicit rating the page proves (an explicit track
+                  seen, or every track loaded with none). A second record that fits equally well gives nothing, as does a
+                  missing count, year or rating; the count and year change, or the page identity changing, recomputes
+                  once, and the tracks are remembered by index path plus title within one collection snapshot, so a
+                  reload or a batch rebuilds that evidence rather than mixing two snapshots. The short note sits under
+                  the header or the tracks and a tap opens the full one in a page sheet on black (SGRPresentDark).
+                  Checked on the Mac by harness/album-notes/, against replayed catalog-shaped fixtures. Play counts, from Listening
                   stats, have a place of their own on the Albums page (Off, In the row — the default and what the
                   switch it replaced meant when on — or In menu), read at launch: In the row draws "12 plays" after
                   the title in the locale's grouping, never 1.2K, and nothing for a track with none; In menu leaves
@@ -1013,7 +1099,24 @@ Redesigned:
                   its content carries in any language (Components.UI.PinnedItemUI, Components.UI.UpcomingReleaseRow,
                   Components.UI.CreatorBiographyCard; strings of the 9.1.78 and 9.1.90 binaries) and dropped with its
                   heading and spacer (ArtistSections.x). Laid out on the simulator against harness/artist/, whose
-                  recorded artist has no countdown
+                  recorded artist has no countdown. Apple Music's artist photo (off until switched on) and animated
+                  artist artwork (on until switched off) are found by name and by the artist's own releases: the rows
+                  of the Music list whose subtitle carries a year and which are not an add button or an undo button
+                  give the release titles (never a localized section heading), at least two distinct titles must
+                  agree, and only one namesake in Apple Music's results may agree — two artists of the same name leave
+                  the page as Spotify drew it (SGMotionArtistMatch). The catalog's artists search asks for its
+                  editorial artwork and its editorial video, and an artist record without its albums is asked for them
+                  by id, so one search and one request per artist cover it. The photo is the studio logo read at the
+                  header's width and the motion is motionArtistSquare1x1's video, else motionSquareVideo1x1's, cut to
+                  the header's shape and looped in an AVQueuePlayer that plays only while the header is on screen, the
+                  app is in front, Reduce Motion and Low Power are off and Auto-Play Video Previews is on
+                  (SGMotionHeaderMayPlay, shared with the album's cover), fading in once its first frame is ready. One
+                  attempt is made per page: evidence arriving later, from release rows laid out after the header's last
+                  pass, never retries it, and the delivered answer is dropped unless the page's identity — the ⋯
+                  button's own identifier, never a generic one — is still the one it was asked for
+                  (ArtistArtwork.m; ArtistHeader.x drives it from the header's passes and from the release rows'
+                  layout). Checked on the Mac by harness/artist-artwork/, both the catalog match and the request's
+                  identity and one-attempt rules
 
 App:
 
@@ -1180,7 +1283,13 @@ Spotify's font comes back when its files are gone. Then the App icon. Everything
 first row, is the one switch between the two looks (see Layers): it glows (Settings/SGGlowSwitch), its ⓘ says what
 it changes, and flipping it offers to restart Spotify. The pages show only what the stored look has: a page opened
 after flipping the switch already shows what the restart will bring, and the main page swaps Home & Library for
-Home as it is flipped. Albums and Artists open each look's own pages. Libraries & presets collects Vitrine's existing local and open libraries: audio presets,
+Home as it is flipped. Albums and Artists open each look's own pages. In the redesign, the Playlists, Home, Search,
+Albums and Artists pages lead with a live preview of the page their settings change (Kit/SGRPagePreview.h, drawn
+over local placeholder art and following the switches as they are flipped, in the table's header with the page's
+intro note under it, as the Lyrics page keeps its preview), described under Redesigned/Kit/. The Albums page's
+Album notes row picks Under Play, Under tracks or Off for Apple's editorial notes, and its Artists counterpart adds
+Animated artist artwork and Apple Music artist photo under Artist logos. The Player page's Controls section has
+Lyrics Line, Rolling time digits and Star add button beside Volume and Follow the cover. Libraries & presets collects Vitrine's existing local and open libraries: audio presets,
 shared as files, public AutoEq headphone corrections, free fonts to download and on-device custom fonts
 under either look, plus visualizer styles when Redesigned UI is selected. Lyrics looks stay on Lyrics. Tab bar: the tab editor of the stored look, each with
 its own list of tabs. Lyrics, on the main page of its own: in the redesign a live preview of the lyrics first, with the presets of their look

@@ -1,0 +1,128 @@
+{
+  "results": {
+    "artists": {
+      "data": [
+        {
+          "id": "echo-wrong",
+          "type": "artists",
+          "attributes": {
+            "name": "Fixture Echo",
+            "artwork": { "url": "https://fixture.invalid/wrong-{w}x{h}.jpg", "width": 1000, "height": 1000 }
+          }
+        },
+        {
+          "id": "echo-right",
+          "type": "artists",
+          "attributes": {
+            "name": "Fixture Echo",
+            "artwork": { "url": "https://fixture.invalid/right-{w}x{h}.jpg", "width": 1000, "height": 1000 },
+            "editorialArtwork": { "musicContentColorLogoTrimmed": { "url": "https://fixture.invalid/logo.png", "width": 1000, "height": 1000 } }
+          }
+        },
+        {
+          "id": "still-only",
+          "type": "artists",
+          "attributes": { "name": "Fixture Still", "artwork": { "url": "https://fixture.invalid/still-{w}x{h}.jpg", "width": 1000, "height": 1000 } }
+        },
+        {
+          "id": "479756766", "type": "artists",
+          "attributes": { "name": "The Weeknd", "artwork": { "url": "https://fixture.invalid/weeknd-{w}x{h}.jpg", "width": 1000, "height": 1000 } }
+        },
+        {
+          "id": "6791230700", "type": "artists",
+          "attributes": { "name": "\u200eThe \u200eWeeknd \u200e" }
+        },
+        {
+          "id": "1688395229", "type": "artists",
+          "attributes": { "name": "The Weeknd" }
+        },
+        {
+          "id": "budget", "type": "artists",
+          "attributes": { "name": "Budget Artist" }
+        },
+        {
+          "id": "nonexact-error", "type": "artists",
+          "attributes": { "name": "The Weeknd Tribute" }
+        },
+        {
+          "id": "retry-main", "type": "artists",
+          "attributes": { "name": "Failure Artist" }
+        },
+        {
+          "id": "retry-error", "type": "artists",
+          "attributes": { "name": "\u200eFailure Artist" }
+        }
+      ]
+    }
+  },
+  "artistAlbums": {
+    "echo-wrong": { "data": [
+      { "attributes": { "name": "Unrelated" } },
+      { "attributes": { "name": "Elsewhere" } }
+    ] },
+    "echo-right": { "data": [
+      { "attributes": { "name": "Signals" } },
+      { "attributes": { "name": "Quiet" } }
+    ] },
+    "still-only": { "data": [
+      { "attributes": { "name": "First" } },
+      { "attributes": { "name": "Second" } }
+    ] },
+    "479756766": { "next": "/v1/catalog/us/artists/479756766/albums?offset=25&limit=100", "data": [
+      { "attributes": { "name": "Fixture recent 01" } },
+      { "attributes": { "name": "Fixture recent 02" } },
+      { "attributes": { "name": "Fixture recent 03" } },
+      { "attributes": { "name": "Fixture recent 04" } },
+      { "attributes": { "name": "Fixture recent 05" } },
+      { "attributes": { "name": "Fixture recent 06" } },
+      { "attributes": { "name": "Fixture recent 07" } },
+      { "attributes": { "name": "Fixture recent 08" } },
+      { "attributes": { "name": "Fixture recent 09" } },
+      { "attributes": { "name": "Fixture recent 10" } },
+      { "attributes": { "name": "Fixture recent 11" } },
+      { "attributes": { "name": "Fixture recent 12" } },
+      { "attributes": { "name": "Fixture recent 13" } },
+      { "attributes": { "name": "Fixture recent 14" } },
+      { "attributes": { "name": "Fixture recent 15" } },
+      { "attributes": { "name": "Fixture recent 16" } },
+      { "attributes": { "name": "Fixture recent 17" } },
+      { "attributes": { "name": "Fixture recent 18" } },
+      { "attributes": { "name": "Fixture recent 19" } },
+      { "attributes": { "name": "Fixture recent 20" } },
+      { "attributes": { "name": "Fixture recent 21" } },
+      { "attributes": { "name": "Fixture recent 22" } },
+      { "attributes": { "name": "Fixture recent 23" } },
+      { "attributes": { "name": "Fixture recent 24" } },
+      { "attributes": { "name": "Fixture recent 25" } }
+    ] },
+    "6791230700": { "data": [{ "attributes": { "name": "After Hours - Single" } }] },
+    "1688395229": { "data": [] },
+    "budget": { "next": "/v1/catalog/us/artists/budget/albums?offset=1", "data": [{ "attributes": { "name": "Unrelated" } }] },
+    "nonexact-error": { "data": [] },
+    "retry-main": { "data": [{ "attributes": { "name": "First" } }, { "attributes": { "name": "Second" } }] },
+    "retry-error": { "data": [] }
+  },
+  "artistAlbumPages": {
+    "479756766": { "25": { "data": [
+      { "attributes": { "name": "After Hours (Deluxe Edition)" } },
+      { "attributes": { "name": "Out of Time - Single" } }
+    ] } },
+    "budget": { "1": { "next": "/v1/catalog/us/artists/budget/albums?offset=1", "data": [{ "attributes": { "name": "Unrelated" } }] } }
+  },
+  "artistAlbumStatuses": { "1688395229": 404, "retry-error": 0, "nonexact-error": 0 },
+  "artistResources": {
+    "echo-right": { "data": [{
+      "id": "echo-right",
+      "attributes": { "editorialVideo": { "motionArtistSquare1x1": { "video": "https://fixture.invalid/right/master.m3u8" } } }
+    }] },
+    "still-only": { "data": [{ "id": "still-only", "attributes": {} }] },
+    "479756766": { "data": [{
+      "id": "479756766",
+      "attributes": { "editorialVideo": { "motionArtistSquare1x1": { "video": "https://fixture.invalid/weeknd/master.m3u8" } } }
+    }] },
+    "retry-main": { "data": [{
+      "id": "retry-main",
+      "attributes": { "editorialVideo": { "motionArtistSquare1x1": { "video": "https://fixture.invalid/retry/master.m3u8" } } }
+    }] }
+  }
+}

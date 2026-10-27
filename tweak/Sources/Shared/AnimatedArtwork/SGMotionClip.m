@@ -4,6 +4,10 @@
 #import "Shared/AdBlock/Protobuf.h"
 #import "SGMotionClip.h"
 
+BOOL SGMotionHeaderMayPlay(BOOL visible, BOOL active, BOOL reduceMotion, BOOL lowPower, BOOL autoplay) {
+    return visible && active && !reduceMotion && !lowPower && autoplay;
+}
+
 static NSString *const kCanvas = @"canvas";
 
 CGSize SGMotionClipCut(CGSize shown, CGFloat ratio) {

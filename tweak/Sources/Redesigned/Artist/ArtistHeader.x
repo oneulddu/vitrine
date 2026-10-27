@@ -26,12 +26,14 @@
 // section. The Kit's SGRHeaderInfo reads the name and the listeners off Spotify's concealed labels and draws
 // and fires Spotify's shuffle, play and Follow, Follow as a glyph from the collection (ArtistFollow.x). More stays in Spotify's row, where the row needs it (ArtistField.x), and the Kit's pinned ⋯
 // (SGRPinnedMore) draws and fires it from the top trailing corner of the page, level with the back button.
+#ifndef SG_ARTIST_HEADER_ARTWORK_TEST
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Redesigned/Album/Album.h"
 #import "Artist.h"
+#import "ArtistArtwork.h"
 
 // How much of the photo's height the dissolve into the field covers, and the scrim over the top of it that
 // keeps the status bar and the back button legible on a bright picture. The playlist's and the album's.
@@ -43,6 +45,12 @@ static const CGFloat kBar = 100, kFade = 150;
 
 static char kInfoKey, kHeroKey, kHeroHeightKey, kContainerHeightKey, kRowWatchedKey, kSizeKey;
 static char kTitleKey, kMetaKey, kShuffleKey, kPlayKey, kFollowKey, kArtworkKey, kBarKey, kMoreKey, kMoreButtonKey;
+static char kPageHeaderKey;
+
+@interface SGRArtistHeaderReference : NSObject
+@property (nonatomic, weak) UIView *header;
+@end
+@implementation SGRArtistHeaderReference @end
 
 #pragma mark - Spotify's views
 
@@ -86,11 +94,19 @@ static UIView *containerOf(UIView *header) {
 // right, rather than being handed a picture on each of the header's passes and staying empty between them.
 // The same view again only re-reads it.
 - (void)followArtwork:(UIImageView *)source;
+- (void)updateAppleArtwork:(UIView *)header name:(NSString *)name;
 @end
+#endif
 
-@implementation SGRArtistHero {
+@implementation SGRArtistHero
+#ifndef SG_ARTIST_HEADER_ARTWORK_TEST
+{
     CAGradientLayer *_scrim, *_dissolve;
     __weak UIImageView *_artwork;
+    UIImage *_applePhoto;
+    NSString *_artistIdentity;
+    SGRArtistArtworkRequest *_request;
+    SGRArtistMotionView *_motion;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -104,6 +120,10 @@ static UIView *containerOf(UIView *header) {
     _picture.clipsToBounds = YES;
     _picture.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self addSubview:_picture];
+    _request = [SGRArtistArtworkRequest new];
+    _motion = [[SGRArtistMotionView alloc] initWithFrame:self.bounds];
+    _motion.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self addSubview:_motion];
 
     _scrim = [CAGradientLayer layer];
     _scrim.zPosition = 1;
@@ -154,9 +174,12 @@ static UIView *containerOf(UIView *header) {
 
 - (void)followArtwork:(UIImageView *)source {
     if (!source) return;
-    [self takeArtwork:source late:NO];
-    if (_artwork == source) return;
+    if (_artwork == source) {
+        [self takeArtwork:source late:NO];
+        return;
+    }
     _artwork = source;
+    [self takeArtwork:source late:NO];
     __weak SGRArtistHero *weakSelf = self;
     SGRObserveImage(source, ^(UIImageView *view) { [weakSelf takeArtwork:view late:YES]; });
 }
@@ -165,7 +188,8 @@ static UIView *containerOf(UIView *header) {
 // whose picture is still being fetched while the page is already on screen (issue #52). The log line says
 // once that the watch, and not one of the header's passes, is what filled the hero.
 - (void)takeArtwork:(UIImageView *)source late:(BOOL)late {
-    UIImage *image = source.image;
+    if (_artwork && source != _artwork) return;
+    UIImage *image = _applePhoto ?: source.image;
     if (!image || _picture.image == image) return;
     _picture.image = image;
     // The page's field takes its color from the same picture.
@@ -177,8 +201,54 @@ static UIView *containerOf(UIView *header) {
     }
 }
 
+#endif
+- (void)updateAppleArtwork:(UIView *)header name:(NSString *)name {
+    BOOL photo = SGHidden(SGRKeyArtistApplePhoto);
+    BOOL motion = SGEnabled(SGRKeyArtistMotion) && SGMotionAppleMusicOn();
+    if (!photo && !motion) return;
+    UIView *more = SGRFindByIdentifier(header, @"Components.UI.ContextMenuButton*", &kMoreKey);
+    NSString *identity = more.accessibilityIdentifier;
+    // A generic identifier is not a page identity.
+    if (![identity hasPrefix:@"Components.UI.ContextMenuButton-"]) identity = nil;
+    if (!identity) return; // a transient missing button must not erase displayed artwork
+    if (![_artistIdentity isEqual:identity]) {
+        _artistIdentity = [identity copy];
+        _applePhoto = nil;
+        [_motion showFile:nil];
+        _picture.image = _artwork.image;
+        if (_picture.image) SGRArtistSetArtwork(self, _picture.image);
+    }
+    static NSMutableSet<NSString *> *logged;
+    NSString *gateKey = [NSString stringWithFormat:@"%@-%@", name, identity ?: @"missing-identity"];
+    if (SGLogFirst(&logged, gateKey))
+        SGLog(@"artist artwork: %@: identity=%@ photoSetting=%d motionSetting=%d AppleMusicSource=%d LowPower=%d ReduceMotion=%d autoplay=%d LowDataDownloads=%@",
+            name, identity ?: @"missing; refuse", SGHidden(SGRKeyArtistApplePhoto), SGEnabled(SGRKeyArtistMotion),
+            SGMotionAppleMusicOn(), NSProcessInfo.processInfo.lowPowerModeEnabled, SGRReduceMotion(),
+            UIAccessibilityIsVideoAutoplayEnabled(), SGFlag(SGKeyMotionLowData, NO) ? @"allowed" : @"blocked on constrained networks");
+    __weak SGRArtistHero *weakSelf = self;
+    void (^apply)(UIImage *, NSURL *) = ^(UIImage *photo, NSURL *file) {
+        SGRArtistHero *hero = weakSelf;
+        if (!hero) return;
+        hero->_applePhoto = photo;
+        [hero takeArtwork:hero->_artwork late:NO];
+        [hero->_motion showFile:file];
+    };
+    [_request applyPendingResultForIdentity:identity apply:apply];
+    if (![_request needsReleaseEvidenceForIdentity:identity]) return;
+    UIView *page = SGRArtistPageOf(header);
+    NSArray<NSString *> *titles = SGRArtistReleaseTitles(page);
+    __weak UIView *weakHeader = header, *weakPage = page;
+    [_request updateIdentity:identity name:name titles:titles photo:photo
+        motion:motion currentIdentity:^NSString *{
+            if (!weakHeader || SGRArtistPageOf(weakHeader) != weakPage) return nil;
+            NSString *live = SGRFindByIdentifier(weakHeader, @"Components.UI.ContextMenuButton*", &kMoreKey).accessibilityIdentifier;
+            return [live hasPrefix:@"Components.UI.ContextMenuButton-"] ? live : nil;
+        } apply:apply];
+}
+
 @end
 
+#ifndef SG_ARTIST_HEADER_ARTWORK_TEST
 // The picture from the top of the container down to `bottom`, which comes from the container at rest and only
 // ever grows, so it does not change size while the page loads or scrolls.
 static void applyHero(UIView *container, UIView *artwork, CGFloat bottom, UIColor *fieldColor) {
@@ -233,6 +303,13 @@ static void applyHeader(UIView *header, BOOL full) {
     UIView *container = containerOf(header);
     UIView *artwork = SGRFindByIdentifier(header, @"Components.Header.UI.ArtworkImage", &kArtworkKey);
     if (!container || !artwork || !SGRArtistPageOf(container)) return;
+    UIView *page = SGRArtistPageOf(container);
+    SGRArtistHeaderReference *reference = objc_getAssociatedObject(page, &kPageHeaderKey);
+    if (!reference) {
+        reference = [SGRArtistHeaderReference new];
+        objc_setAssociatedObject(page, &kPageHeaderKey, reference, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    reference.header = header;
     objc_setAssociatedObject(header, &kSizeKey, [NSValue valueWithCGSize:size], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     UIView *bar = keepBar(header);
@@ -284,6 +361,7 @@ static void applyHeader(UIView *header, BOOL full) {
     objc_setAssociatedObject(container, &kContainerHeightKey, @(rest), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     CGFloat bottom = rest - SGRHeaderInfoBottom - [info contentHeightForWidth:container.bounds.size.width] + SGRHeaderInfoTitleRise;
     applyHero(container, artwork, bottom, fieldColor);
+    [(SGRArtistHero *)objc_getAssociatedObject(container, &kHeroKey) updateAppleArtwork:header name:name];
 }
 
 // What the header shows besides its text: the logo, the buttons, More, and the watch on the buttons' row.
@@ -356,8 +434,24 @@ static void clearNavigationBar(UIView *header) {
 }
 %end
 
+// Release rows can land after the header's last pass. Read their evidence then,
+// rather than a timer which either guesses too early or keeps a page alive.
+%hook _TtC12Element_List18CollectionViewCell
+- (void)layoutSubviews {
+    %orig;
+    UIView *page = SGRArtistPageOf((UIView *)self);
+    SGRArtistHeaderReference *reference = objc_getAssociatedObject(page, &kPageHeaderKey);
+    UIView *header = reference.header;
+    if (!header) return;
+    UIView *container = containerOf(header);
+    UIView *title = SGRFindByIdentifier(header, @"Encore.AdaptiveTitle", &kTitleKey);
+    [(SGRArtistHero *)objc_getAssociatedObject(container, &kHeroKey) updateAppleArtwork:header name:SGRFirstLabelText(title)];
+}
+%end
+
 %ctor {
     if (!SGRedesignedUI()) return;
     %init;
     SGRequireClasses(@[@"_TtC35CreativeWorkPlatform_ImageHeaderKit15ImageHeaderView"]);
 }
+#endif

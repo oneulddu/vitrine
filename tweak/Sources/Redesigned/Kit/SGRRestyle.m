@@ -3,6 +3,7 @@
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
 #import "SGRRestyle.h"
+#import "SGRRefinements.h"
 #import "SGRTokens.h"
 
 static char kPlateKey, kImageObserverKey, kLayoutObserverKey, kSuppressedKey;
@@ -260,11 +261,20 @@ void SGRMonospacedDigits(UILabel *label) {
         for (NSString *name in @[@"setText:", @"setAttributedText:", @"setFont:"]) {
             SEL selector = NSSelectorFromString(name);
             addOverride(subclass, original, selector, ^(UILabel *self, id value) {
+                // A label SGRRollDigits marked shows the change by SGRRefinements.h's rules.
+                BOOL watched = SGRRollingDigitsWatched(self);
+                NSAttributedString *before = watched ? self.attributedText : nil;
                 struct objc_super parent = {self, original};
                 ((void (*)(struct objc_super *, SEL, id))objc_msgSendSuper)(&parent, selector, value);
                 keepMonospaced(self, original);
+                if (watched) SGRRollingDigitsTextChanged(self, before);
             });
         }
+        addOverride(subclass, original, @selector(didMoveToWindow), ^(UILabel *self) {
+            struct objc_super parent = {self, original};
+            ((void (*)(struct objc_super *, SEL))objc_msgSendSuper)(&parent, @selector(didMoveToWindow));
+            if (SGRRollingDigitsWatched(self)) SGRRollingDigitsMovedToWindow(self);
+        });
     });
     Class original = kept ? class_getSuperclass(object_getClass(label)) : object_getClass(label);
     keepMonospaced(label, original);

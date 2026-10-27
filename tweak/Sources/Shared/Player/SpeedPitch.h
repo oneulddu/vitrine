@@ -8,7 +8,7 @@
 //                        Spotify's outputs kept apart, one of them the music's (SGPlayerMusicOutput)
 //     SGTimePitch.m      Apple's time and pitch unit, pulling the mixer or working in place
 //
-// Speed and pitch last until Spotify quits; neither is stored.
+// Speed and pitch last until Spotify quits unless opted into a song record (SpeedPitchSongs.h).
 // Threading: main thread only, except what SGTimePitch.h says runs on the render thread.
 #import <UIKit/UIKit.h>
 #import <AudioToolbox/AudioToolbox.h>

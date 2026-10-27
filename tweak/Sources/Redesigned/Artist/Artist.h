@@ -21,6 +21,9 @@
 
 // Apple Music's logo in place of the artist's name (ArtistHeader.x); on until switched off.
 #define SGRKeyArtistLogo @"spotifyglass.redesign.artist.logo"
+// Motion is independent of the still-photo choice. On / off respectively.
+#define SGRKeyArtistMotion @"spotifyglass.redesign.artist.motion"
+#define SGRKeyArtistApplePhoto @"spotifyglass.redesign.artist.applePhoto"
 // What the redesign takes off the page, on until switched off: the videos in the Music list (ArtistSections.x)
 // and the Music / Video / Merch strip (ArtistField.x).
 #define SGRKeyArtistHideVideos @"spotifyglass.redesign.artist.hide.videos"

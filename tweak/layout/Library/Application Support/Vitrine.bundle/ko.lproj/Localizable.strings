@@ -22,6 +22,29 @@
 
 "common.save" = "저장";
 
+"player.speed_pitch.animated_artwork" = "움직이는 아트워크";
+"player.speed_pitch.collapsed" = "접힘";
+"player.speed_pitch.expanded" = "펼쳐짐";
+"player.speed_pitch.follows_speed" = "속도에 맞춤";
+"player.speed_pitch.keep_song" = "이 곡에 유지";
+"player.speed_pitch.off" = "끔";
+"player.speed_pitch.original_pitch" = "원래 피치";
+"player.speed_pitch.percent" = "%.0f퍼센트";
+"player.speed_pitch.pitch" = "피치";
+"player.speed_pitch.pitch_follows_speed" = "피치가 속도를 따름";
+"player.speed_pitch.pitch_value" = "%@%.0f st";
+"player.speed_pitch.reset_hint" = "초기화합니다";
+"player.speed_pitch.reverb" = "리버브";
+"player.speed_pitch.reverb_value" = "%.0f%%";
+"player.speed_pitch.semitones_down" = "%.0f반음 내림";
+"player.speed_pitch.semitones_up" = "%.0f반음 올림";
+"player.speed_pitch.speed" = "속도";
+"player.speed_pitch.speed_value" = "%.2f×";
+"player.speed_pitch.summary" = "속도 및 피치, %@";
+"player.speed_pitch.title" = "속도 및 피치";
+"player.speed_pitch.unavailable" = "사용할 수 없음";
+"player.speed_pitch.unavailable_here" = "여기서는 사용할 수 없음";
+
 "settings.addtab.action.use_link" = "링크 사용";
 "settings.addtab.add_tab.title" = "탭 추가";
 "settings.addtab.all_glyphs.header" = "모든 글리프";
@@ -85,6 +108,11 @@
 "settings.album.motion_low_data.title" = "저데이터 모드에서 다운로드";
 "settings.album.native.hide_on_page.header" = "페이지에서 숨기기";
 "settings.album.native.title" = "앨범";
+"settings.album.notes.off" = "끔";
+"settings.album.notes.open" = "전체 앨범 소개 읽기";
+"settings.album.notes.title" = "앨범 소개";
+"settings.album.notes.under_play" = "재생 버튼 아래";
+"settings.album.notes.under_tracks" = "트랙 아래";
 "settings.album.play_counts.choice.in_menu" = "메뉴에";
 "settings.album.play_counts.choice.in_row" = "목록에";
 "settings.album.play_counts.choice.off" = "끔";
@@ -93,6 +121,7 @@
 "settings.album.play_counts.note" = "이 iPhone의 청취 통계에서 앨범과 트랙 이름으로 찾아 셉니다. 재생 기록이 꺼져 있어도 지금까지의 횟수는 그대로 보입니다.";
 "settings.album.play_counts.subtitle" = "각 트랙을 재생한 횟수";
 "settings.album.play_counts.title" = "재생 횟수";
+"settings.album.preview.a11y" = "앨범 미리보기";
 "settings.album.title" = "앨범";
 "settings.album.tracks.header" = "트랙";
 
@@ -115,6 +144,7 @@
 
 "settings.artist.apple_music.header" = "Apple Music";
 "settings.artist.apple_music.note" = "아티스트 이름만 Apple Music으로 전송됩니다.";
+"settings.artist.apple_photo.title" = "Apple Music 아티스트 사진";
 "settings.artist.artist_facts.title" = "아티스트 관련 정보";
 "settings.artist.hide.about.title" = "정보";
 "settings.artist.hide.appears_on.title" = "수록 앨범";
@@ -145,11 +175,13 @@
 "settings.artist.logos.subtitle" = "아티스트 페이지에서 이름 대신 표시";
 "settings.artist.logos.title" = "아티스트 로고";
 "settings.artist.more_in_nav.title" = "내비게이션 막대의 추가 옵션";
+"settings.artist.motion.title" = "움직이는 아티스트 아트워크";
 "settings.artist.native.hide.music_videos.title" = "뮤직비디오";
 "settings.artist.native.hide_on_page.header" = "페이지에서 숨기기";
 "settings.artist.native.title" = "아티스트";
 "settings.artist.photo.header" = "사진";
 "settings.artist.photo_fade.title" = "흐림 효과로 페이드";
+"settings.artist.preview.a11y" = "아티스트 미리보기";
 "settings.artist.share_in_header.title" = "헤더의 공유 버튼";
 "settings.artist.spotify_own.header" = "Spotify 자체 기능";
 "settings.artist.tabs.header" = "탭";
@@ -633,6 +665,7 @@
 "settings.home.look.title" = "홈 화면 모양";
 "settings.home.on_home.header" = "홈 화면 표시 항목";
 "settings.home.playlists.row.title" = "플레이리스트";
+"settings.home.preview.a11y" = "홈 미리보기";
 "settings.home.previews.subtitle" = "홈 화면을 스크롤할 때 재생되는 카드";
 "settings.home.previews.title" = "비디오 및 플레이리스트 미리보기";
 "settings.home.pull_to_refresh.title" = "당겨서 새로고침";
@@ -1766,9 +1799,13 @@
 "settings.player.queue_devices.title" = "대기열 및 기기";
 "settings.player.queue_flip.title" = "대기열 뒤집기 전환 효과";
 "settings.player.redesigned_header.title" = "재설계 헤더";
+"settings.player.rolling_digits.subtitle" = "진행 막대 아래에서 바뀌는 숫자가 롤링 효과로 제자리에 표시됩니다.";
+"settings.player.rolling_digits.title" = "롤링 시간 숫자";
 "settings.player.sheet_style.title" = "시트 스타일 플레이어";
 "settings.player.sleep_fade.subtitle" = "실험실의 페이드 아웃을 강제로 켜 두면 Spotify 자체 타이머는 Spotify 방식으로 페이드됩니다.";
 "settings.player.sound_menu" = "속도, 음정 및 리버브";
+"settings.player.star_add.subtitle" = "별 모양 추가 버튼으로, 곡이 저장되면 강조 색상으로 채워집니다. 플레이어에서는 단순 체크표시를 대신합니다.";
+"settings.player.star_add.title" = "별 모양 추가 버튼";
 "settings.player.title" = "플레이어";
 "settings.player.visualizer_style.title" = "비주얼라이저 스타일";
 "settings.player.visualizers.footer" = "기존 플레이어 및 미리보기 비주얼라이저에 스타일이 즉시 적용됩니다. 스타일을 표시하려면 플레이어 > 배경에서 비주얼라이저를 선택하십시오. 이 페이지에서는 배경 선택이 변경되지 않습니다. 모션은 일시 정지나 무음 상태일 때 정지하며, 백그라운드 환경, 플레이어 전환 중, 저전력 모드 또는 기기가 뜨거울 때 중단됩니다.";
@@ -1801,6 +1838,9 @@
 "settings.playlist.hide_in_header.header" = "플레이리스트 헤더에서 숨기기";
 "settings.playlist.hide_on_page.header" = "플레이리스트 페이지에서 숨기기";
 "settings.playlist.more_menu.header" = "더보기 메뉴";
+"settings.playlist.preview.a11y" = "플레이리스트 미리보기";
+"settings.playlist.preview.mix" = "믹스";
+"settings.playlist.preview.sort" = "정렬";
 "settings.playlist.sort_mix.note" = "⋯ 메뉴에 원래 없는 두 큐레이션 버튼이라, 버튼을 숨겨도 탭 한 번으로 쓸 수 있습니다.";
 "settings.playlist.sort_mix.subtitle" = "플레이리스트 ⋯ 메뉴 맨 위";
 "settings.playlist.sort_mix.title" = "정렬 및 믹스";
@@ -1916,6 +1956,7 @@
 "settings.search_tab.hide.other.title" = "기타 모든 항목";
 "settings.search_tab.hide.watch_feeds.subtitle" = "볼 수 있는 플레이리스트, 추천 에피소드 둘러보기";
 "settings.search_tab.hide.watch_feeds.title" = "동영상 캐러셀";
+"settings.search_tab.preview.a11y" = "검색 미리보기";
 "settings.search_tab.title" = "검색";
 
 "settings.signing.action.copy_bundle_id" = "번들 ID 복사";

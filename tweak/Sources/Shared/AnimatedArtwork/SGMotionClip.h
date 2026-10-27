@@ -20,3 +20,7 @@ NSString *SGMotionCanvasInReply(NSData *reply);
 // Whether a Canvas found after a track's walk began is asked for: Canvas is in `order` (source keys, asked
 // first to last) and `source`, the source of the clip showing, nil for none, comes after it.
 BOOL SGMotionCanvasOutranks(NSArray<NSString *> *order, NSString *source);
+
+// The same eligibility rule for album and artist header playback. Low Data
+// controls downloads at the catalog/store boundary, not playback of a local file.
+BOOL SGMotionHeaderMayPlay(BOOL visible, BOOL active, BOOL reduceMotion, BOOL lowPower, BOOL autoplay);

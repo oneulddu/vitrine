@@ -7,6 +7,8 @@
 // SpeedPitch.x reads the player for its clock away from 1x; the harness has no player.
 void *SGPlayerState(void) { return NULL; }
 void SGAddPlayerStateObserver(id observer) {}
+// No songs are kept here: exercise the real audio handoff without the per-song persistence owner.
+void SGSpeedPitchSongValuesChanged(NSString *control) {}
 
 static int failures;
 static SGPreparedPCM *asset;

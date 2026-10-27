@@ -29,7 +29,9 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRCoverViewer.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "Shared/AnimatedArtwork/SGMotionClip.h"
 #import "Album.h"
+#import "AlbumNotes.h"
 
 // How much of the cover's height the dissolve into the field covers, and the scrim over the top of it that
 // keeps the status bar and the back button legible on a bright picture. The playlist's numbers: one page.
@@ -359,8 +361,8 @@ static void *kReadyContext = &kReadyContext;
 // navigation stack would otherwise keep decoding.
 - (void)sgr_updateMotion {
     BOOL front = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-    BOOL may = self.window && front && !SGRReduceMotion() && !NSProcessInfo.processInfo.lowPowerModeEnabled
-            && UIAccessibilityIsVideoAutoplayEnabled();
+    BOOL may = SGMotionHeaderMayPlay(self.window != nil, front, SGRReduceMotion(),
+                                   NSProcessInfo.processInfo.lowPowerModeEnabled, UIAccessibilityIsVideoAutoplayEnabled());
     if (may) [_player play];
     else [_player pause];
 }
@@ -654,6 +656,7 @@ static void applyHeader(UIView *header, UIView *page) {
     if (cover) applyHero(header, cover, bottom);
     SGRAlbumHero *hero = objc_getAssociatedObject(header, &kHeroKey);
     [hero playMotionForArtist:artist album:album];
+    SGRAlbumNotesUpdate(header, page, artist, album);
 }
 
 static void applyPage(UIView *page) {

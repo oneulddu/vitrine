@@ -3,6 +3,7 @@
 #import "Core/SGCore.h"
 #import "AudioEffects.h"
 #import "AudioEffectsApply.h"
+#import "Shared/Player/SpeedPitchEvents.h"
 
 const double SGDSPEqualizerFrequencies[15] = {25, 40, 63, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10000, 16000};
 const double SGDSPEqualizerGainLimit = 12;
@@ -80,6 +81,8 @@ BOOL SGDSPSwitch(NSString *key) {
 void SGDSPSetSwitch(NSString *key, BOOL on) {
     SGSetEnabled(key, on);
     SGDSPApply(SGDSPEffectOf(key));
+    if (NSThread.isMainThread && ([key isEqualToString:SGKeyDSP] || [key isEqualToString:SGKeyDSPReverb]))
+        [NSNotificationCenter.defaultCenter postNotificationName:SGSpeedPitchReverbDidChange object:nil];
 }
 
 double SGDSPNumber(NSString *key) {
@@ -93,6 +96,8 @@ void SGDSPSetNumber(NSString *key, double value) {
     SGDSPRange range = SGDSPRangeFor(key);
     [store() setDouble:MAX(range.min, MIN(range.max, value)) forKey:key];
     SGDSPApply(SGDSPEffectOf(key));
+    if (NSThread.isMainThread && [key isEqualToString:SGKeyDSPReverbAmount])
+        [NSNotificationCenter.defaultCenter postNotificationName:SGSpeedPitchReverbDidChange object:nil];
 }
 
 NSString *SGDSPString(NSString *key) {

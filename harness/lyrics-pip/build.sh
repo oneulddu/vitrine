@@ -15,6 +15,8 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \
     "$SRC/Shared/LyricsPiP/LyricsPiPStyle.m" "$HERE/typography.m" \
     "$SRC/Shared/LyricsPiP/LyricsPiPBackground.m" "$HERE/background.m" \
     "$HERE/lifecycle.m" "$HERE/native-menu.m" "$HERE/redesign-menu.m" \
+    "$SRC/Shared/Player/SpeedPitchSongs.m" \
+    "$SRC/Shared/AudioEffects/AudioEffectsSettings.m" \
     "$HERE/settings.m" "$SRC/Shared/LyricsPiP/LyricsPiPSettings.m" \
     "$SRC/Shared/LyricsBackground/LyricsBackgroundSettings.m" \
     "$SRC/Shared/LyricsBackground/LyricsBackground.m" \

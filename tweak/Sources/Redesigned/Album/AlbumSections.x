@@ -27,11 +27,21 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Album.h"
+#import "AlbumNotes.h"
 
 // Over the album's own line, and between it and the copyright: the spacers they sat between are gone.
 static const CGFloat kLead = 16;
 
 static char kSettledKey; // the cell's settled height, its lead, and the width and text size it was measured at
+
+void SGRAlbumNotesChanged(UIView *page) {
+    SGForEachView(page, ^(UIView *view) {
+        if ([view isKindOfClass:UICollectionViewCell.class] && objc_getAssociatedObject(view, &kSettledKey))
+            SGRRestoreCell((UICollectionViewCell *)view, &kSettledKey);
+        if ([view isKindOfClass:UICollectionView.class])
+            [((UICollectionView *)view).collectionViewLayout invalidateLayout];
+    });
+}
 
 static BOOL isFooterContent(UIView *content) {
     return SGClassNamed(object_getClass(content), @"Album_PageImpl20FooterStructuredData");
@@ -72,6 +82,7 @@ static void settle(UICollectionViewCell *cell, CGFloat natural, CGFloat lead, CG
     if (content.hidden != dropped) content.hidden = dropped;
     if (!cell.clipsToBounds) cell.clipsToBounds = YES;
     cell.accessibilityElementsHidden = dropped;
+    SGRAlbumNotesLayoutFooter(cell);
 }
 
 #pragma mark - the switches
@@ -175,6 +186,7 @@ static NSMutableSet<NSString *> *sg_loggedMessages;
     UIView *content = cell.contentView.subviews.firstObject;
     // Cells are reused across kinds, and one settled before can hold a track row now.
     if (!isFooterContent(content) || !SGRAlbumPageOf(cell)) {
+        SGRAlbumNotesForgetFooter(cell);
         if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);
         return %orig;
     }
@@ -188,6 +200,8 @@ static NSMutableSet<NSString *> *sg_loggedMessages;
         // shown() records what the cell is for its section and reads what the switches say, as its own %orig
         // path does on every pass, so re-asking it here costs no more than the measure the cache replaces.
         BOOL holds = kept ? isKept(content) : (!isKept(content) && !shown(cell, content, attributes.indexPath, NO));
+        CGFloat notesHeight = SGRAlbumNotesFooterHeight(cell, attributes.size.width);
+        if (kept && fabs([settled[1] doubleValue] - (kLead + notesHeight)) > 0.5) holds = NO;
         if (holds) {
             UICollectionViewLayoutAttributes *again = [attributes copy];
             again.size = CGSizeMake(attributes.size.width, settledHeight([settled[0] doubleValue], [settled[1] doubleValue]));
@@ -200,8 +214,9 @@ static NSMutableSet<NSString *> *sg_loggedMessages;
     CGFloat width = attributes.size.width;
     if (isKept(content)) {
         shown(cell, content, attributes.indexPath, YES);
-        settle(cell, natural, kLead, width, textSize);
-        result.size = CGSizeMake(result.size.width, natural + kLead);
+        CGFloat lead = kLead + SGRAlbumNotesFooterHeight(cell, width);
+        settle(cell, natural, lead, width, textSize);
+        result.size = CGSizeMake(result.size.width, natural + lead);
         SGLogOnce(&sg_loggedMessages, @"the album's own line and its copyright kept under the tracks", kLogFormat);
     } else if (shown(cell, content, attributes.indexPath, NO)) {
         if (objc_getAssociatedObject(cell, &kSettledKey)) SGRRestoreCell(cell, &kSettledKey);
@@ -217,6 +232,7 @@ static NSMutableSet<NSString *> *sg_loggedMessages;
 // The cell's own passes size the content to the cell again.
 - (void)layoutSubviews {
     %orig;
+    SGRAlbumNotesObserveCell((UICollectionViewCell *)self);
     NSArray *settled = objc_getAssociatedObject(self, &kSettledKey);
     if (settled) settle((UICollectionViewCell *)self, [settled[0] doubleValue], [settled[1] doubleValue],
                         [settled[2] doubleValue], (NSString *)settled[3]);
@@ -224,12 +240,100 @@ static NSMutableSet<NSString *> *sg_loggedMessages;
 
 - (void)prepareForReuse {
     %orig;
+    SGRAlbumNotesForgetFooter((UICollectionViewCell *)self);
     if (objc_getAssociatedObject(self, &kSettledKey)) SGRRestoreCell((UICollectionViewCell *)self, &kSettledKey);
+}
+%end
+
+%hook UICollectionView
+- (void)layoutSubviews {
+    if (!objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey)) {
+        %orig;
+        return;
+    }
+    SGRAlbumNotesObserveSnapshot((UICollectionView *)self);
+    %orig;
+}
+- (void)reloadData {
+    if (!objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey)) {
+        %orig;
+        return;
+    }
+    SGRAlbumNotesWillReload((UICollectionView *)self);
+    %orig;
+    SGRAlbumNotesDidChangeSnapshot((UICollectionView *)self);
+}
+- (void)insertItemsAtIndexPaths:(NSArray<NSIndexPath *> *)paths {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeItems((UICollectionView *)self, paths);
+    %orig;
+}
+- (void)deleteItemsAtIndexPaths:(NSArray<NSIndexPath *> *)paths {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeItems((UICollectionView *)self, paths);
+    %orig;
+}
+- (void)reloadItemsAtIndexPaths:(NSArray<NSIndexPath *> *)paths {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeItems((UICollectionView *)self, paths);
+    %orig;
+}
+- (void)moveItemAtIndexPath:(NSIndexPath *)from toIndexPath:(NSIndexPath *)to {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeItems((UICollectionView *)self, @[from, to]);
+    %orig;
+}
+- (void)insertSections:(NSIndexSet *)sections {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeSections((UICollectionView *)self, sections, YES);
+    %orig;
+}
+- (void)deleteSections:(NSIndexSet *)sections {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeSections((UICollectionView *)self, sections, YES);
+    %orig;
+}
+- (void)reloadSections:(NSIndexSet *)sections {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeSections((UICollectionView *)self, sections, NO);
+    %orig;
+}
+- (void)moveSection:(NSInteger)from toSection:(NSInteger)to {
+    if (objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey))
+        SGRAlbumNotesWillChangeSections((UICollectionView *)self,
+            [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(MIN(from, to), MAX(from, to) - MIN(from, to) + 1)], NO);
+    %orig;
+}
+- (void)performBatchUpdates:(void (^)(void))updates completion:(void (^)(BOOL))completion {
+    if (!objc_getAssociatedObject(self, &SGRAlbumNotesCollectionOwnerKey)) {
+        %orig;
+        return;
+    }
+#ifdef SG_ALBUM_NOTES_TEST_PROBE
+    extern void SGRAlbumNotesTestDidWrapBatch(void);
+    SGRAlbumNotesTestDidWrapBatch();
+#endif
+    UICollectionView *list = (UICollectionView *)self;
+    SGRAlbumNotesWillChangeSnapshot(list);
+    %orig(updates, ^(BOOL finished) {
+        SGRAlbumNotesDidChangeSnapshot(list);
+        if (completion) completion(finished);
+    });
 }
 %end
 
 %ctor {
     if (!SGRedesignedUI()) return;
-    %init;
+    Class collection = UICollectionView.class;
+    Class cell = NSClassFromString(@"_TtC12Element_List18CollectionViewCell");
+#ifdef SG_ALBUM_NOTES_TEST_PROBE
+    // Run these same hooks against deterministic collection/cell boundaries on
+    // the host, without Spotify's classes or UIKit's animated data source.
+    collection = NSClassFromString(@"NotesCollection");
+    cell = NSClassFromString(@"NotesCell");
+#endif
+    %init(UICollectionView = collection, _TtC12Element_List18CollectionViewCell = cell);
+#ifndef SG_ALBUM_NOTES_TEST_PROBE
     SGRequireClasses(@[@"_TtC12Element_List18CollectionViewCell"]);
+#endif
 }

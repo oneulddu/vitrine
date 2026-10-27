@@ -4,6 +4,8 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <objc/runtime.h>
+#import <stdlib.h>
+#import <string.h>
 #import "Core/SGCore.h"
 #import "AnimatedArtwork.h"
 
@@ -101,39 +103,100 @@ void SGMotionMakeFile(NSURL *file, BOOL (^write)(void), void (^done)(BOOL)) {
 
 static NSMutableDictionary<NSURL *, NSMutableArray *> *sg_waiting;
 
-// A download that failed on the way (the lock screen and the player can share one, and iOS can cancel it with
-// the lock screen's request) or met a busy server is tried `retries` more times before its waiters hear nil;
-// an answer that says the file is not there is final.
+// Decimal MB, shared by every remote clip consumer. Reject advertised oversize
+// bodies at the headers, and enforce the same ceiling for chunked/lying servers.
+static const uint64_t kMaximumClipBytes = 30 * 1000 * 1000;
+static void download(NSURL *remote, NSURL *local, NSUInteger retries);
+
+@interface SGMotionDownload : NSObject <NSURLSessionDataDelegate>
+@property (nonatomic, strong) NSURL *remote, *local, *temporary;
+@property (nonatomic, strong) NSFileHandle *output;
+@property (nonatomic) NSUInteger retries;
+@property (nonatomic) uint64_t received;
+@property (nonatomic) NSInteger status;
+@property (nonatomic) BOOL rejected;
+@end
+
+@implementation SGMotionDownload
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task
+    didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition))completion {
+    self.status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+    if (response.expectedContentLength > (int64_t)kMaximumClipBytes) {
+        self.rejected = YES;
+        completion(NSURLSessionResponseCancel);
+        return;
+    }
+    if (self.status != 200) { completion(NSURLSessionResponseAllow); return; }
+    // A unique partial outside the cache: trimming cannot remove an active write.
+    NSString *pattern = [NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-motion-XXXXXX"];
+    char *path = strdup(pattern.fileSystemRepresentation);
+    int descriptor = mkstemp(path);
+    if (descriptor >= 0) {
+        self.temporary = [NSURL fileURLWithPath:@(path)];
+        self.output = [[NSFileHandle alloc] initWithFileDescriptor:descriptor closeOnDealloc:YES];
+    }
+    free(path);
+    if (!self.output) self.rejected = YES;
+    completion(self.rejected ? NSURLSessionResponseCancel : NSURLSessionResponseAllow);
+}
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task didReceiveData:(NSData *)data {
+    if (self.rejected) return;
+    if (data.length > kMaximumClipBytes - self.received) {
+        self.rejected = YES;
+        [task cancel];
+        return;
+    }
+    self.received += data.length;
+    if (self.status != 200) return;
+    NSError *error = nil;
+    if (![self.output writeData:data error:&error]) {
+        SGLog(@"motion: cannot write clip: %@", error.localizedDescription);
+        self.rejected = YES;
+        [task cancel];
+    }
+}
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    NSError *closeError = nil;
+    BOOL closed = self.output && [self.output closeAndReturnError:&closeError];
+    self.output = nil;
+    __block BOOL kept = NO;
+    if (!self.rejected && !error && closed && self.status == 200 && self.received > 0) dispatch_sync(storeQueue(), ^{
+        if (![NSFileManager.defaultManager createDirectoryAtURL:folder() withIntermediateDirectories:YES attributes:nil error:nil]) return;
+        kept = [NSFileManager.defaultManager moveItemAtURL:self.temporary toURL:self.local error:nil];
+        if (kept) { handOff(self.local); trim(); }
+    });
+    if (!kept && self.temporary) {
+        NSError *cleanup = nil;
+        if (![NSFileManager.defaultManager removeItemAtURL:self.temporary error:&cleanup])
+            SGLog(@"motion: cannot remove partial clip: %@", cleanup.localizedDescription);
+    }
+    BOOL cancelled = [error.domain isEqual:NSURLErrorDomain] && error.code == NSURLErrorCancelled;
+    BOOL again = !kept && !self.rejected && !cancelled && self.retries > 0 &&
+        (error || self.status == 0 || self.status == 408 || self.status == 429 || self.status >= 500);
+    SGLog(@"motion: %@ %@ (%llu bytes, HTTP %ld)%@", self.remote.lastPathComponent, kept ? @"kept" : @"failed",
+          (unsigned long long)self.received, (long)self.status, self.rejected ? @", size or write rejected" : @"");
+    [session finishTasksAndInvalidate];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (again) { download(self.remote, self.local, self.retries - 1); return; }
+        NSArray *waiting = sg_waiting[self.remote];
+        [sg_waiting removeObjectForKey:self.remote];
+        for (void (^waiter)(NSURL *) in waiting) waiter(kept ? self.local : nil);
+    });
+}
+@end
+
 static void download(NSURL *remote, NSURL *local, NSUInteger retries) {
+    SGMotionDownload *owner = [SGMotionDownload new];
+    owner.remote = remote;
+    owner.local = local;
+    owner.retries = retries;
+    NSOperationQueue *queue = [NSOperationQueue new];
+    queue.maxConcurrentOperationCount = 1;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.defaultSessionConfiguration
+                                                        delegate:owner delegateQueue:queue];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:remote];
     request.allowsConstrainedNetworkAccess = SGFlag(SGKeyMotionLowData, NO);
-    [[NSURLSession.sharedSession downloadTaskWithRequest:request completionHandler:^(NSURL *temporary, NSURLResponse *response, NSError *error) {
-        NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
-        // The temporary file is gone once this handler returns, so it moves before the hop to main.
-        __block BOOL kept = NO;
-        if (temporary && status == 200) dispatch_sync(storeQueue(), ^{
-            if (![NSFileManager.defaultManager createDirectoryAtURL:folder() withIntermediateDirectories:YES attributes:nil error:nil]) return;
-            kept = [NSFileManager.defaultManager moveItemAtURL:temporary toURL:local error:nil];
-            if (kept) { handOff(local); trim(); }
-        });
-        BOOL again = !kept && retries > 0 && (error || status == 0 || status == 408 || status == 429 || status >= 500);
-        if (kept) {
-            NSNumber *bytes = nil;
-            [local getResourceValue:&bytes forKey:NSURLFileSizeKey error:nil];
-            SGLog(@"motion: %@ kept, %.1f MB", local.lastPathComponent, bytes.doubleValue / 1e6);
-        }
-        else SGLog(@"motion: %@ not downloaded (%ld, %@)%@", remote.lastPathComponent, (long)status, error.localizedDescription,
-                   again ? @", tried again" : @"");
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (again) {
-                download(remote, local, retries - 1);
-                return;
-            }
-            NSArray *waiting = sg_waiting[remote];
-            [sg_waiting removeObjectForKey:remote];
-            for (void (^waiter)(NSURL *) in waiting) waiter(kept ? local : nil);
-        });
-    }] resume];
+    [[session dataTaskWithRequest:request] resume];
 }
 
 void SGMotionFile(NSURL *remote, void (^done)(NSURL *file)) {

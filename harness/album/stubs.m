@@ -29,6 +29,9 @@ SGPlayLog *SGListeningLog(void) {
 // Shared/AlbumQueue/AlbumQueueMenu.x: the ⋯ menu's album queue is a part of a native menu, not of the page.
 void SGAlbumQueueMarkSource(UIView *view) {}
 
+// Redesigned/Album/AlbumPlaysMenu.x: a track's plays in its ⋯ menu belong to the native menu, not to the page.
+void SGRAlbumPlaysMarkMenu(NSString *album, NSString *title) {}
+
 // SGPageStyle.m: the cover viewer is presented over whatever is on top of the harness's window.
 UIViewController *SGTopController(void) {
     UIWindowScene *scene = (UIWindowScene *)UIApplication.sharedApplication.connectedScenes.anyObject;

@@ -15,3 +15,4 @@ void SGRObservePlayerTransition(id owner, void (^changed)(id owner)) {}
 
 // Shared/AlbumQueue/AlbumQueueMenu.x: a tapped album header ⋯ records its album for the menu; no menu here.
 void SGAlbumQueueMarkSource(UIView *view) {}
+BOOL SGMotionAppleMusicOn(void) { return YES; }

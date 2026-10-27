@@ -20,8 +20,7 @@
 // The block is drawn from its own measures and type (below), not from the redesign's Kit, so it sits on
 // Spotify's sheet under either look.
 //
-// The block keeps whether it was open for the rest of the session; speed and pitch last until Spotify
-// quits.
+// The block keeps whether it was open for the rest of the session. Song retention is opt-in.
 //
 // Under the redesign, with the player's background Fluid or Animated, a row under the block switches
 // Animated artwork (SpeedPitch.h), which the redesign's PlayerMotion.x defines.
@@ -35,6 +34,8 @@
 #import "Shared/AudioEffects/AudioEffects.h"
 #import "Shared/Haptics/Haptics.h"
 #import "SpeedPitch.h"
+#import "SpeedPitchSongs.h"
+#import "Core/SGLocalize.h"
 #import "Shared/LyricsPiP/LyricsPiP.h"
 
 // A menu this soon after the more button's tap is the player's.
@@ -139,6 +140,8 @@ static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
     UISlider *_speed, *_pitch, *_reverb;
     UILabel *_followsName;
     UISwitch *_follows;
+    UILabel *_keepName;
+    UISwitch *_keep;
     UIView *_animatedRow;
     UIImageView *_animatedIcon;
     UILabel *_animatedName;
@@ -146,7 +149,10 @@ static char kBlockKey, kDecidedKey, kWatchedKey, kShownAtKey, kRowsInKey;
     float _shownSpeed, _shownPitch, _shownReverb;
     NSTimeInterval _speedSentAt;
     BOOL _speedPending;
+    NSUInteger _songGeneration;
 }
+
+static char kSliderSongGeneration;
 
 static UIImage *symbol(NSString *name, CGFloat size, UIImageSymbolWeight weight) {
     return [UIImage systemImageNamed:name withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:size weight:weight]];
@@ -173,7 +179,7 @@ static UILabel *makeLabel(UIFont *font, UIColor *color) {
     [button setTitleColor:[primary() colorWithAlphaComponent:0.4] forState:UIControlStateHighlighted];
     [button setTitleColor:primary() forState:UIControlStateDisabled];
     button.contentHorizontalAlignment = UIControlContentHorizontalAlignmentRight;
-    button.accessibilityHint = @"Resets it";
+    button.accessibilityHint = SGL(@"player.speed_pitch.reset_hint", @"Resets it");
     [button addTarget:self action:reset forControlEvents:UIControlEventTouchUpInside];
     return button;
 }
@@ -204,6 +210,7 @@ static UIImage *endImage(NSString *name, CGFloat size) {
     tick.userInteractionEnabled = NO;
     tick.tag = (NSInteger)(normal * 1000);
     [slider insertSubview:tick atIndex:0];
+    [slider addTarget:self action:@selector(sliderStarted:) forControlEvents:UIControlEventTouchDown];
     [slider addTarget:self action:@selector(sliderMoved:) forControlEvents:UIControlEventValueChanged];
     [slider addTarget:self action:@selector(sliderReleased:) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel];
     return slider;
@@ -241,7 +248,7 @@ static void placeTick(UISlider *slider) {
     _icon = [[UIImageView alloc] initWithImage:paintedSymbol(@"slider.horizontal.3", 20, UIImageSymbolWeightRegular, secondary())];
     _icon.contentMode = UIViewContentModeCenter;
     _title = makeLabel(SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), primary());
-    _title.text = @"Speed and pitch";
+    _title.text = SGL(@"player.speed_pitch.title", @"Speed and pitch");
     _summary = makeLabel(SGMonospacedDigitsFont(SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge)), secondary());
     _summary.textAlignment = NSTextAlignmentRight;
     _chevron = [[UIImageView alloc] initWithImage:paintedSymbol(@"chevron.down", 13, UIImageSymbolWeightSemibold, secondary())];
@@ -255,36 +262,41 @@ static void placeTick(UISlider *slider) {
     [self addSubview:_panel];
     UIFont *nameFont = SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
     _speedName = makeLabel(nameFont, secondary());
-    _speedName.text = @"Speed";
+    _speedName.text = SGL(@"player.speed_pitch.speed", @"Speed");
     _pitchName = makeLabel(nameFont, secondary());
-    _pitchName.text = @"Pitch";
+    _pitchName.text = SGL(@"player.speed_pitch.pitch", @"Pitch");
     _speedValue = [self valueButton:@selector(resetSpeed)];
     _pitchValue = [self valueButton:@selector(resetPitch)];
     _speed = [self slider:kMinSpeed max:kMaxSpeed normal:1 minImage:@"tortoise.fill" maxImage:@"hare.fill"];
-    _speed.accessibilityLabel = @"Speed";
+    _speed.accessibilityLabel = _speedName.text;
     _pitch = [self slider:-kMaxPitch max:kMaxPitch normal:0 minImage:@"arrow.down" maxImage:@"arrow.up"];
-    _pitch.accessibilityLabel = @"Pitch";
+    _pitch.accessibilityLabel = _pitchName.text;
     _reverbName = makeLabel(nameFont, secondary());
-    _reverbName.text = @"Reverb";
+    _reverbName.text = SGL(@"player.speed_pitch.reverb", @"Reverb");
     _reverbValue = [self valueButton:@selector(resetReverb)];
     _reverb = [self slider:0 max:100 normal:0 minImage:@"speaker" maxImage:@"building.columns"];
-    _reverb.accessibilityLabel = @"Reverb";
+    _reverb.accessibilityLabel = _reverbName.text;
     _followsName = makeLabel(nameFont, primary());
-    _followsName.text = @"Pitch follows speed";
+    _followsName.text = SGL(@"player.speed_pitch.pitch_follows_speed", @"Pitch follows speed");
     _follows = [UISwitch new];
-    _follows.accessibilityLabel = @"Pitch follows speed";
+    _follows.accessibilityLabel = _followsName.text;
     [_follows addTarget:self action:@selector(followsChanged) forControlEvents:UIControlEventValueChanged];
+    _keepName = makeLabel(nameFont, primary());
+    _keepName.text = SGL(@"player.speed_pitch.keep_song", @"Keep for This Song");
+    _keep = [UISwitch new];
+    _keep.accessibilityLabel = _keepName.text;
+    [_keep addTarget:self action:@selector(keepChanged) forControlEvents:UIControlEventValueChanged];
     for (UIView *view in @[_speedName, _speedValue, _speed, _pitchName, _pitchValue, _pitch, _reverbName, _reverbValue, _reverb,
-                           _followsName, _follows]) [_panel addSubview:view];
+                           _followsName, _follows, _keepName, _keep]) [_panel addSubview:view];
 
     if (SGPlayerMenuOffersAnimatedArtwork()) {
         _animatedRow = [UIView new];
         _animatedIcon = [[UIImageView alloc] initWithImage:paintedSymbol(@"play.rectangle.on.rectangle", 18, UIImageSymbolWeightRegular, secondary())];
         _animatedIcon.contentMode = UIViewContentModeCenter;
         _animatedName = makeLabel(SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge), primary());
-        _animatedName.text = @"Animated artwork";
+        _animatedName.text = SGL(@"player.speed_pitch.animated_artwork", @"Animated artwork");
         _animated = [UISwitch new];
-        _animated.accessibilityLabel = @"Animated artwork";
+        _animated.accessibilityLabel = _animatedName.text;
         [_animated addTarget:self action:@selector(animatedChanged) forControlEvents:UIControlEventValueChanged];
         for (UIView *view in @[_animatedIcon, _animatedName, _animated]) [_animatedRow addSubview:view];
         [self addSubview:_animatedRow];
@@ -303,12 +315,14 @@ static void placeTick(UISlider *slider) {
     [self addSubview:_pipRow];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(refreshPiP)
         name:SGLyricsPiPDidChangeNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(songChanged)
+        name:SGSpeedPitchSongDidChange object:nil];
     [self refresh];
     return self;
 }
 
 + (CGFloat)heightOpen:(BOOL)open {
-    return 2 * kRowHeight + (open ? 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom : 0)
+    return 2 * kRowHeight + (open ? 3 * kSliderBlockHeight + 2 * kSwitchRowHeight + kPanelBottom : 0)
          + (SGPlayerMenuOffersAnimatedArtwork() ? kRowHeight : 0);
 }
 
@@ -335,7 +349,7 @@ static void placeTick(UISlider *slider) {
 
     _row.hidden = self.panelOnly;
     _animatedRow.hidden = self.panelOnly;
-    _panel.frame = CGRectMake(0, self.panelOnly ? kGrid : kRowHeight, width, 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom);
+    _panel.frame = CGRectMake(0, self.panelOnly ? kGrid : kRowHeight, width, 3 * kSliderBlockHeight + 2 * kSwitchRowHeight + kPanelBottom);
     CGFloat y = 0;
     for (NSArray<UIView *> *line in @[@[_speedName, _speedValue, _speed], @[_pitchName, _pitchValue, _pitch],
                                        @[_reverbName, _reverbValue, _reverb]]) {
@@ -349,6 +363,10 @@ static void placeTick(UISlider *slider) {
     CGSize toggle = [_follows sizeThatFits:CGSizeZero];
     _follows.frame = CGRectMake(width - side - toggle.width, y + (kSwitchRowHeight - toggle.height) / 2, toggle.width, toggle.height);
     _followsName.frame = CGRectMake(side, y, CGRectGetMinX(_follows.frame) - side - kGrid, kSwitchRowHeight);
+    y += kSwitchRowHeight;
+    toggle = [_keep sizeThatFits:CGSizeZero];
+    _keep.frame = CGRectMake(width - side - toggle.width, y + (kSwitchRowHeight - toggle.height) / 2, toggle.width, toggle.height);
+    _keepName.frame = CGRectMake(side, y, CGRectGetMinX(_keep.frame) - side - kGrid, kSwitchRowHeight);
 
     // Under the panel while it is open, under the row while it is closed.
     _animatedRow.frame = CGRectMake(0, sg_open ? CGRectGetMaxY(_panel.frame) : kRowHeight, width, kRowHeight);
@@ -382,12 +400,13 @@ static float snappedSpeed(float value) {
 }
 
 static NSString *speedText(float speed) {
-    return [NSString stringWithFormat:@"%.2f×", speed];
+    return [NSString stringWithFormat:SGL(@"player.speed_pitch.speed_value", @"%.2f×"), speed];
 }
 
 static NSString *pitchText(float pitch) {
     if (pitch == 0) return @"0";
-    return [NSString stringWithFormat:@"%@%.0f", pitch > 0 ? @"+" : @"−", fabsf(pitch)];
+    return [NSString stringWithFormat:SGL(@"player.speed_pitch.pitch_value", @"%@%.0f st"),
+            pitch > 0 ? @"+" : @"−", fabsf(pitch)];
 }
 
 // What the player and the pitch say now, onto the controls (not while a finger is on one).
@@ -408,6 +427,9 @@ static NSString *pitchText(float pitch) {
     _follows.enabled = speedAllowed;
     _follows.alpha = _followsName.alpha = speedAllowed ? 1 : 0.4;
     _animated.on = SGPlayerMenuAnimatedArtwork();
+    _keep.on = SGPlayerSongKept();
+    _keep.enabled = SGPlayerSongCanKeep();
+    _keep.alpha = _keepName.alpha = _keep.enabled ? 1 : 0.4;
     [self showValues];
 }
 
@@ -417,9 +439,12 @@ static NSString *pitchText(float pitch) {
     // played (SGTimePitch.h), so the slider stands aside and nothing claims them.
     BOOL following = speedAllowed && _follows.on && _shownSpeed != 1;
     float pitch = following ? 0 : _shownPitch;
+    NSString *unavailable = SGL(@"player.speed_pitch.unavailable", @"Unavailable");
+    NSString *followsSpeed = SGL(@"player.speed_pitch.follows_speed", @"Follows speed");
+    NSString *off = SGL(@"player.speed_pitch.off", @"Off");
     [UIView performWithoutAnimation:^{
-        [_speedValue setTitle:speedAllowed ? speedText(_shownSpeed) : @"Unavailable here" forState:UIControlStateNormal];
-        [_pitchValue setTitle:!pitchAvailable ? @"Unavailable" : following ? @"Follows speed" : [pitchText(pitch) stringByAppendingString:pitch ? @" st" : @""]
+        [_speedValue setTitle:speedAllowed ? speedText(_shownSpeed) : SGL(@"player.speed_pitch.unavailable_here", @"Unavailable here") forState:UIControlStateNormal];
+        [_pitchValue setTitle:!pitchAvailable ? unavailable : following ? followsSpeed : pitchText(pitch)
                      forState:UIControlStateNormal];
         [_speedValue layoutIfNeeded];
         [_pitchValue layoutIfNeeded];
@@ -430,22 +455,24 @@ static NSString *pitchText(float pitch) {
     _speedValue.enabled = speedAllowed && _shownSpeed != 1;
     _pitchValue.enabled = pitchFree && pitch != 0;
     [UIView performWithoutAnimation:^{
-        [_reverbValue setTitle:_shownReverb > 0 ? [NSString stringWithFormat:@"%.0f%%", _shownReverb] : @"Off" forState:UIControlStateNormal];
+        [_reverbValue setTitle:_shownReverb > 0 ? [NSString stringWithFormat:SGL(@"player.speed_pitch.reverb_value", @"%.0f%%"), _shownReverb] : off forState:UIControlStateNormal];
         [_reverbValue layoutIfNeeded];
     }];
     _reverbValue.enabled = _shownReverb > 0;
-    _reverb.accessibilityValue = _shownReverb > 0 ? [NSString stringWithFormat:@"%.0f percent", _shownReverb] : @"Off";
-    _speed.accessibilityValue = speedAllowed ? speedText(_shownSpeed) : @"Unavailable";
-    _pitch.accessibilityValue = following ? @"Follows speed" : pitch == 0 ? @"Original pitch"
-                                : [NSString stringWithFormat:@"%.0f semitones %@", fabsf(pitch), pitch > 0 ? @"up" : @"down"];
+    _reverb.accessibilityValue = _shownReverb > 0 ? [NSString stringWithFormat:SGL(@"player.speed_pitch.percent", @"%.0f percent"), _shownReverb] : off;
+    _speed.accessibilityValue = speedAllowed ? speedText(_shownSpeed) : unavailable;
+    _pitch.accessibilityValue = following ? followsSpeed : pitch == 0 ? SGL(@"player.speed_pitch.original_pitch", @"Original pitch")
+        : [NSString stringWithFormat:pitch > 0 ? SGL(@"player.speed_pitch.semitones_up", @"%.0f semitones up")
+                                               : SGL(@"player.speed_pitch.semitones_down", @"%.0f semitones down"), fabsf(pitch)];
 
     NSMutableArray<NSString *> *changed = [NSMutableArray array];
     if (_shownSpeed != 1) [changed addObject:speedText(_shownSpeed)];
-    if (pitch != 0) [changed addObject:[pitchText(pitch) stringByAppendingString:@" st"]];
-    if (_shownReverb > 0) [changed addObject:@"Reverb"];
+    if (pitch != 0) [changed addObject:pitchText(pitch)];
+    if (_shownReverb > 0) [changed addObject:_reverbName.text];
     _summary.text = sg_open ? nil : [changed componentsJoinedByString:@"  "];
-    _row.accessibilityLabel = changed.count ? [@"Speed and pitch, " stringByAppendingString:[changed componentsJoinedByString:@", "]] : @"Speed and pitch";
-    _row.accessibilityValue = sg_open ? @"Expanded" : @"Collapsed";
+    _row.accessibilityLabel = changed.count ? [NSString stringWithFormat:SGL(@"player.speed_pitch.summary", @"Speed and pitch, %@"),
+        [changed componentsJoinedByString:@", "]] : _title.text;
+    _row.accessibilityValue = sg_open ? SGL(@"player.speed_pitch.expanded", @"Expanded") : SGL(@"player.speed_pitch.collapsed", @"Collapsed");
     _chevron.transform = sg_open ? CGAffineTransformMakeRotation(M_PI) : CGAffineTransformIdentity;
     _panel.alpha = sg_open || self.panelOnly ? 1 : 0;
     _panel.accessibilityElementsHidden = !sg_open && !self.panelOnly;
@@ -459,6 +486,23 @@ static NSString *pitchText(float pitch) {
 }
 
 - (void)togglePiP { SGLyricsPiPToggle(self); }
+
+- (void)songChanged {
+    ++_songGeneration;
+    _speedPending = NO;
+    // A finger may still be down. Show the new song's values, but reject the old gesture's callbacks.
+    _shownSpeed = snappedSpeed(SGPlayerSpeed());
+    _shownPitch = SGPlayerPitch();
+    _shownReverb = SGPlayerReverb();
+    [self refresh];
+}
+
+- (void)keepChanged {
+    if (_speedPending) [self sendSpeed];
+    SGPlayerSongSetKept(_keep.on);
+    SGPlayFeedback(SGFeedbackDetent);
+    [self refresh];
+}
 
 - (void)rowHighlight {
     _row.backgroundColor = [UIColor colorWithWhite:1 alpha:0.08];
@@ -531,7 +575,13 @@ static NSString *pitchText(float pitch) {
     SGSetPlayerSpeed(_shownSpeed);
 }
 
+- (void)sliderStarted:(UISlider *)slider {
+    objc_setAssociatedObject(slider, &kSliderSongGeneration, @(_songGeneration), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 - (void)sliderMoved:(UISlider *)slider {
+    NSNumber *generation = objc_getAssociatedObject(slider, &kSliderSongGeneration);
+    if (generation && generation.unsignedIntegerValue != _songGeneration) return;
     if (slider == _speed) {
         float speed = snappedSpeed(slider.value);
         if (speed == _shownSpeed) return;
@@ -541,10 +591,11 @@ static NSString *pitchText(float pitch) {
         if (wait <= 0) [self sendSpeed];
         else if (!_speedPending) {
             _speedPending = YES;
+            NSUInteger generation = _songGeneration;
             __weak SGSpeedPitchView *weakSelf = self;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(wait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 SGSpeedPitchView *view = weakSelf;
-                if (view && view->_speedPending) [view sendSpeed];
+                if (view && view->_speedPending && view->_songGeneration == generation) [view sendSpeed];
             });
         }
     } else if (slider == _reverb) {
@@ -564,6 +615,9 @@ static NSString *pitchText(float pitch) {
 }
 
 - (void)sliderReleased:(UISlider *)slider {
+    NSNumber *generation = objc_getAssociatedObject(slider, &kSliderSongGeneration);
+    objc_setAssociatedObject(slider, &kSliderSongGeneration, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (generation && generation.unsignedIntegerValue != _songGeneration) return;
     if (slider == _speed) {
         slider.value = _shownSpeed;
         if (_speedPending || snappedSpeed(SGPlayerSpeed()) != _shownSpeed) [self sendSpeed];
@@ -625,7 +679,7 @@ static NSString *pitchText(float pitch) {
 
 void SGPlayerShowSpeedPitchPanel(UIView *from) {
     SGSpeedPitchPanel *panel = [SGSpeedPitchPanel new];
-    panel.preferredContentSize = CGSizeMake(320, kGrid + 3 * kSliderBlockHeight + kSwitchRowHeight + kPanelBottom);
+    panel.preferredContentSize = CGSizeMake(320, kGrid + 3 * kSliderBlockHeight + 2 * kSwitchRowHeight + kPanelBottom);
     SGPresentPopover(panel, from);
 }
 
@@ -822,5 +876,6 @@ static void install(UIViewController *menu) {
 
 %ctor {
     %init;
+    dispatch_async(dispatch_get_main_queue(), ^{ SGSpeedPitchSongsStart(); });
     SGRequireClasses(@[@"_TtC24ContextMenu_InternalImpl25ContextMenuViewController", @"_TtC20NowPlaying_ModesImpl18HeaderElementsUnit"]);
 }
