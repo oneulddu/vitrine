@@ -9,10 +9,20 @@
 #   SIGN_P12=/path/to/cert.p12
 #   SIGN_PROFILE=/path/to/profile.mobileprovision
 #   SIGN_P12_PASSWORD=...
+# With more than one iPhone paired, name the one to install to in .phone.env (gitignored, see
+# .phone.env.example) as PHONE_UDID, or export PHONE_UDID for a single run.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 [ -f "$ROOT/.signing.env" ] && . "$ROOT/.signing.env"
+# .phone.env also holds your phone's Tailscale address and bundle id for scripts/phone.py, and a
+# PHONE_UDID already exported here wins over the file.
+_exported_udid="${PHONE_UDID-}"
+[ -f "$ROOT/.phone.env" ] && . "$ROOT/.phone.env"
+# A copy of .phone.env.example keeps the comment after the value; only the UDID before it counts.
+PHONE_UDID="${_exported_udid:-${PHONE_UDID-}}"
+PHONE_UDID="$(printf '%s' "${PHONE_UDID%%#*}" | tr -d '[:space:]')"
+unset _exported_udid
 cd "$ROOT"
 : "${SIGN_P12:?set SIGN_P12 in .signing.env}" "${SIGN_PROFILE:?set SIGN_PROFILE in .signing.env}" "${SIGN_P12_PASSWORD:?set SIGN_P12_PASSWORD in .signing.env}"
 
@@ -42,8 +52,44 @@ sign() {  # sign [bundle id]
 }
 
 if [ -n "$APP_ID" ] && [ "$APP_ID" != "*" ]; then sign "$APP_ID"; else sign; fi
-# The paired iPhone's UDID; its state reads "connected" over USB and "available (paired)" over Wi-Fi.
-phone() { xcrun devicectl list devices 2>/dev/null | awk '/physical/ && /iPhone/ && (/connected/ || /available/) { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9A-F]+-[0-9A-F]+$/) { print $i; exit } }'; }
+# devicectl promises its table only to humans; scripts read the JSON, which it keeps stable.
+# One tab separated line per paired, physical iPhone: hardware UDID, marketing name, and its tunnel state,
+# which reads "connected" over USB and "disconnected" when the phone is only paired, over the network.
+phone_candidates() {  # json file
+  python3 - "$1" <<'PY'
+import json, sys
+for device in json.load(open(sys.argv[1]))["result"]["devices"]:
+    connection = device.get("connectionProperties") or {}
+    hardware = device.get("hardwareProperties") or {}
+    if connection.get("pairingState") != "paired" or connection.get("tunnelState") == "unavailable":
+        continue
+    if hardware.get("reality") != "physical" or hardware.get("deviceType") != "iPhone":
+        continue
+    if not hardware.get("udid"):
+        continue
+    print("\t".join([hardware["udid"], hardware.get("marketingName") or "iPhone",
+                     connection.get("tunnelState") or "disconnected"]))
+PY
+}
+
+# The phone to install to, as its hardware UDID: devicectl takes that one form for install, device info
+# apps and device info processes alike.
+phone() {
+  local list candidates count
+  if [ -n "$PHONE_UDID" ]; then printf '%s\n' "$PHONE_UDID"; return 0; fi
+  list="$(mktemp)"
+  xcrun devicectl list devices --json-output "$list" >/dev/null 2>&1 || { rm -f "$list"; return 0; }
+  candidates="$(phone_candidates "$list")" || candidates=""
+  rm -f "$list"
+  count="$(printf '%s' "$candidates" | grep -c . || true)"
+  case "$count" in
+    0) return 0 ;;
+    1) printf '%s\n' "$candidates" | cut -f1; return 0 ;;
+  esac
+  echo "more than one iPhone is paired; set PHONE_UDID in .phone.env to the one to install to:" >&2
+  printf '%s\n' "$candidates" | awk -F'\t' '{ printf "  PHONE_UDID=%s  %s (%s)\n", $1, $2, $3 }' >&2
+  return 1
+}
 
 # An install waits on the app while it runs, so a copy already on the phone is quit first.
 quit_app() {
@@ -68,7 +114,7 @@ PY
   xcrun devicectl device process terminate --device "$udid" --pid "$pid" >/dev/null 2>&1 || true
 }
 
-UDID="$(phone)"
+UDID="$(phone)" || exit 1
 [ -n "$UDID" ] || { echo "no paired iPhone over USB or the network" >&2; exit 1; }
 quit_app
 echo "==> installing $SIGNED to $UDID"
