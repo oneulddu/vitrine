@@ -32,6 +32,7 @@ static const CGFloat kTapHeight = 44;
 static char kLineKey, kStackKey;
 static __weak UIView *sg_host;              // SPTNowPlayingView
 static __weak UIViewController *sg_floating; // the chips over the title (FloatingElementsUnit)
+static BOOL previewInFront(void);
 
 BOOL SGRPlayerLyricLineOn(void) {
     static BOOL on;
@@ -243,6 +244,10 @@ BOOL SGRPlayerLyricLineOn(void) {
         SGRLyricPortion *shown = _portions[(NSUInteger)SGRLyricPortionAt(_portions, SGKaraokePositionMs() - SGKaraokeDelayMs())];
         [self showText:shown.text scale:shown.scale];
     }
+    // Spotify's own preview can come up with no pass of a view this file hooks (its cover cell unhidden as the song
+    // changes), so every update looks again: the line stands down by its next portion at the latest. The layout gives
+    // the room back once the preview goes.
+    if (_fits && previewInFront()) _fits = NO;
     UIView *covers = SGRPlayerCoverList();
     BOOL shown = _fits && _text && !SGRPlayerLyricsOpen() && (!covers || covers.alpha > 0.01);
     if (shown != _shown) {
@@ -316,6 +321,12 @@ static BOOL previewShowing(UIView *tilt, UIView *host) {
         if (spotifys && sub.bounds.size.height > 1 && showsIn(sub, host)) return YES;
     }
     return NO;
+}
+
+// Spotify's preview shows under the cover on screen now.
+static BOOL previewInFront(void) {
+    UIView *host = sg_host, *tilt = SGRPlayerShowingCover().superview;
+    return host && tilt && [tilt isDescendantOfView:host] && previewShowing(tilt, host);
 }
 
 static void placeLine(void) {
