@@ -39,7 +39,7 @@ element framework behind the avatar, the list's rows (`LibraryRows.x`) and the f
 
 builds the app, runs it in a simulator of its own (made for the run, deleted after it) and exits nonzero on the
 first failed check. The mock has what Compact library (`spotifyglass.redesign.library.hideChips`, `LibraryMenu.m`)
-works with, under the identifiers Chroma 1.0 reads on 9.1.x: the chips as a collection view `Layout.CollectionView`
+works with, under Spotify 9.1.x's identifiers: the chips as a collection view `Layout.CollectionView`
 whose delegate selects and clears a filter, a clear chip whose class name holds `ClearChip`, and the list's sort row
 (`YourLibraryContent.sort`, `YourLibraryContent.gridToggle`) with grid cards (`Components.UI.CardLibrary`) or rows.
 The sort button cycles the order where Spotify opens its sheet; the toggle switches the view.
@@ -63,5 +63,5 @@ left, and `look`, the menu opened by a finger (`../tabbar/touch.m`), screenshott
 `$HARNESS_BUILD_DIR/png`.
 
 What it does not cover: Spotify's real chips, sort sheet and list, whose identifiers and class names come from
-Chroma's binary rather than a recorded tree; whether the real list's content size changes once its rows arrive (the
+static reading rather than a recorded tree; whether the real list's content size changes once its rows arrive (the
 hook that has the page look again); and where Spotify draws a selected chip (a selected trait or a selected control).

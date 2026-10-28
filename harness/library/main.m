@@ -228,7 +228,7 @@ static UIView *spotifyTitle(void) {
 #pragma mark - the chips
 
 // The chips: a collection view, Layout.CollectionView, in YourLibraryHeaderContentFiltersView (the identifier and
-// the clear chip's class name as Chroma 1.0 reads them on 9.1.x). With a filter on, a clear chip comes first, then the
+// the clear chip's class name as Spotify 9.1.x has them). With a filter on, a clear chip comes first, then the
 // chosen chip drawn as chosen; selecting the clear chip clears the filter, through the collection's delegate.
 @interface SGRHarnessChipCell : UICollectionViewCell
 @property (nonatomic, strong) UILabel *label;

@@ -3,7 +3,7 @@
 // order, a view or a filter of its own: each item finds Spotify's control as the menu opens and fires it the way a
 // tap does, so Spotify's sheet, its list and its chips' model stay the only ones.
 //
-// The controls, by Spotify's identifiers and class names (Spotify 9.1.x, as Chroma 1.0 reads them): the sort row's
+// The controls, by Spotify's identifiers and class names (Spotify 9.1.x): the sort row's
 // sort button YourLibraryContent.sort and its list or grid toggle YourLibraryContent.gridToggle, in the list
 // (YourLibraryContent.collectionView), which reuses them away as it scrolls; a grid card is
 // Components.UI.CardLibrary; the chips are a collection view, Layout.CollectionView, under

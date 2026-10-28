@@ -9,7 +9,7 @@ Numbers are the line's position in the three release notes, in order. Status:
 - **done**: built and on main. "Device" means it still needs a check on a phone inside Spotify.
 - **in progress**: being built on its own branch
 - **todo**: to build
-- **n/a**: depends on chroma.pw, Plus or the upstream server, so Vitrine leaves it out
+- **n/a**: depends on upstream's account site, Plus or the upstream server, so Vitrine leaves it out
 
 A completeness audit on 2026-10-05 checked every done item below against its release note. Its gaps were
 fixed in the commits that follow `956e65c`.
@@ -145,25 +145,25 @@ Rebuilt from behavior-only descriptions; each commit credits the PR's author.
 | 138 | The now playing bar's glass stays on the card in a Jam |
 | 180, 187, 134 | Clean shared links, dead code removed, Mix row fix |
 
-### Chroma 1.0.0-beta.1 and 0.51.0 (described by behavior)
+### Upstream 1.0.0-beta.1 and 0.51.0 (described by behavior)
 
-Upstream renamed itself Chroma. A describer read the two release notes, the open issues and chroma.pw (behavior
-only, no code); the notes give no numbers, so the limits below are Vitrine's own.
+A describer read the two release notes, the open issues and upstream's site (behavior only, no code); the notes
+give no numbers, so the limits below are Vitrine's own.
 
 | Item | Where Vitrine stands |
 |---|---|
 | The player grows out of the mini player and follows the finger | Already done (PlayerMorph.x) |
 | Square animated covers play inside the cover | Done (PlayerMotion.x); device check outstanding |
-| Chroma Settings searchable | Done: search on the Mod Settings page, two pages deep, read a page at a time, with keywords and recent places (SGSettingsSearch.m, SGSettingsIndex.m) |
+| Mod Settings searchable | Done: search on the Mod Settings page, two pages deep, read a page at a time, with keywords and recent places (SGSettingsSearch.m, SGSettingsIndex.m) |
 | KuGou and QQ Music lyrics, pronunciation for most scripts | Already done (QQMusic.m, KuGou.m, Romanise.m, Pronunciation by AI) |
 | Lyrics kept for offline listening | Done (LyricsStore.m): 1000 tracks, 30 MB, oldest first |
 | Your own photo or pure black behind the player | Done (PlayerBackdrop.m); device check outstanding |
 | An automatic accent colour, the accent following the song | Already done (Follow the cover) |
 | A volume slider in the player; the DJ's redesigned player; tinted Home shortcuts | Already done |
 | Album, artist and playlist pages like the Music app; more Appearance options; lock screen styles | Open: the notes and site name them without a behavior to build from |
-| Web Player, Siri and Shortcuts, settings backup, Workshop, sign-in | Leave out: Plus, the chroma.pw account or its server |
+| Web Player, Siri and Shortcuts, settings backup, Workshop, sign-in | Leave out: Plus, upstream's account or its server |
 
-### Chroma 1.0.0-beta.4 (described by behavior)
+### Upstream 1.0.0-beta.4 (described by behavior)
 
 The first batch taken from beta.4, described by behavior only and built against Vitrine's own code, and the second
 round under it: per-song speed and pitch, the player's line under the cover, album notes, artist artwork, the player
@@ -204,10 +204,10 @@ Judged not better, or not ours to take:
 | Rewriting an MP3's metadata tags | Left out for its data-loss risk: it edits the user's own files, and the gain is cosmetic |
 | Account, Plus, server and telemetry features | Out of scope, as in Leave out: no account, no paid tier, no upstream server |
 
-### Chroma 1.0.0-beta.4, the whole feature set (compared with Vitrine's code)
+### Upstream 1.0.0-beta.4, the whole feature set (compared with Vitrine's code)
 
 The earlier rounds took what was new in beta.4 and judged the older features from Vitrine's documentation. This round
-compared the whole feature set with Vitrine's code at the logic level (Chroma's side by static reading only, behavior
+compared the whole feature set with Vitrine's code at the logic level (upstream's side by static reading only, behavior
 described and no code taken): edge cases, limits, retries, caching and where work runs.
 
 | Item | Where Vitrine stands |
@@ -240,10 +240,10 @@ Judged equal, already there, or not taken, from the same round:
 | Writing an MP3's metadata tags | Left out: data loss in the user's own files |
 | A translucent download badge | Not built: there is no reliable download state to read |
 | Visualizer Auto and shuffle | Not taken: they cross paid-gated paths |
-| Car suppression | Not taken: Chroma's behavior is untraced, so there is nothing to build from |
+| Car suppression | Not taken: upstream's behavior is untraced, so there is nothing to build from |
 | Glass on the full-height sheets | Unchanged from the last round (see the Queue and Connect row above) |
 | Lock screen styles and the clock | Not taken: they are interleaved with Plus |
-| Home snapshot replay, and the Library settings button in the header | Unresolved: Chroma's behavior was not traced to the end |
+| Home snapshot replay, and the Library settings button in the header | Unresolved: upstream's behavior was not traced to the end |
 
 Debt from this round:
 
@@ -271,7 +271,7 @@ Debt from this round:
 |---|---|---|
 | 19, 35, 86 | Certificate offer, Arctic Sign card, usage ping | Third-party signing upsell and upstream telemetry |
 | 91, 99, 100, 102, 131 | Plus categories, locks and offer | No paid tier |
-| 95 (Account page) | chroma.pw account | No account. The system Settings style is below |
+| 95 (Account page) | Upstream account | No account. The system Settings style is below |
 | 129 | "sing limit" | Says nothing buildable |
 | 96 | "More visualisations" | One commit in upstream's private repo after 0.23.0-beta. Nothing public says what it adds |
 

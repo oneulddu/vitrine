@@ -3,8 +3,8 @@
 static const NSUInteger kMaxTracksPerAlbum = 500, kMaxCachedAlbums = 64, kMaxCacheBytes = 2 * 1024 * 1024;
 static const NSUInteger kMaxPendingAlbums = 16, kMaxAlbumWaiters = 16;
 static const NSTimeInterval kCountLifetimeSeconds = 24 * 60 * 60, kUnavailableLifetimeSeconds = 5 * 60;
-// Extended-metadata request and response fact: Chroma 0x160084 requests kind 185;
-// 0x160e98 reads payload field 3 (varint or a message with varint field 1).
+// Extended-metadata play count: the request asks for kind 185; the response carries it in payload field 3
+// (a varint, or a message with varint field 1).
 static const uint64_t kPlayCountExtension = 185;
 static NSString *const kBase62 = @"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 

@@ -324,7 +324,7 @@
 * Hide controls automatically leaves only the lyrics ([e145ea5](https://github.com/oneulddu/vitrine/commit/e145ea5e8ba12aea2f8186d262b962c185dfa5b7))
 * holding either side of the cover plays faster until your finger lifts ([9e62178](https://github.com/oneulddu/vitrine/commit/9e62178d71f20b2e2df3467f05033155e8b97663))
 * import LRC files for local and Spotify tracks under either look ([82cd8d1](https://github.com/oneulddu/vitrine/commit/82cd8d1e26899ed485b87a5ba8304c7dda622a15))
-* Import reads settings exported by Chroma under their own names ([d76eec6](https://github.com/oneulddu/vitrine/commit/d76eec66491e1970563faee8bd3a6521048afff6))
+* Import reads settings exported by the earlier tweak under their own names ([d76eec6](https://github.com/oneulddu/vitrine/commit/d76eec66491e1970563faee8bd3a6521048afff6))
 * iOS Music Haptics keeps playing in the background and on the lock screen ([7991028](https://github.com/oneulddu/vitrine/commit/79910289e0c4c0f14500ab091cc108807360b00c))
 * K-pop with a verse in Korean gets the translate menu, and any song can ([a74efe4](https://github.com/oneulddu/vitrine/commit/a74efe48e2d09094ccd5b4d85b361da2203fcedb))
 * Karaoke can ignore memory warnings ([e471bac](https://github.com/oneulddu/vitrine/commit/e471bac2ac6ab41ec44125eefda0d50599daf196))
@@ -423,7 +423,7 @@
 * Updates offers Vitrine releases and lets release builds include betas ([b9b1f5f](https://github.com/oneulddu/vitrine/commit/b9b1f5fe3ccadbdcbb8405adeec9e40245ddbea8))
 * Vibrations previews each tap on rings that ripple ([32e5e25](https://github.com/oneulddu/vitrine/commit/32e5e25e2e10134132d85bb398a7919391fe5ef3))
 * Vitrine has its own app icon ([5d86e6e](https://github.com/oneulddu/vitrine/commit/5d86e6e82a61b6aa8ff83178d483277efd105c02))
-* Vitrine offers to delete what Chroma left in Spotify's storage ([c9e0d21](https://github.com/oneulddu/vitrine/commit/c9e0d2113d0f3d880f7b21ec667d3b3fc5bf2bc3))
+* Vitrine offers to delete what the earlier tweak left in Spotify's storage ([c9e0d21](https://github.com/oneulddu/vitrine/commit/c9e0d2113d0f3d880f7b21ec667d3b3fc5bf2bc3))
 * Vitrine says when the redesign runs without the IPA's app changes ([bbb9931](https://github.com/oneulddu/vitrine/commit/bbb9931b0d75f4613ec561594d45ae7b7727dd19))
 
 
@@ -784,7 +784,7 @@
 
 ### Features
 
-* Vitrine offers to delete what Chroma left in Spotify's storage ([c9e0d21](https://github.com/My-Name-Is-Jeff/vitrine/commit/c9e0d2113d0f3d880f7b21ec667d3b3fc5bf2bc3))
+* Vitrine offers to delete what the earlier tweak left in Spotify's storage ([c9e0d21](https://github.com/My-Name-Is-Jeff/vitrine/commit/c9e0d2113d0f3d880f7b21ec667d3b3fc5bf2bc3))
 
 
 ### Fixes
@@ -828,7 +828,7 @@
 * Font offers iOS families and imports a whole family from Files ([1ee10bf](https://github.com/My-Name-Is-Jeff/vitrine/commit/1ee10bf5dd72a22eff92a844fb37940a9f01ce7e))
 * holding either side of the cover plays faster until your finger lifts ([9e62178](https://github.com/My-Name-Is-Jeff/vitrine/commit/9e62178d71f20b2e2df3467f05033155e8b97663))
 * import LRC files for local and Spotify tracks under either look ([82cd8d1](https://github.com/My-Name-Is-Jeff/vitrine/commit/82cd8d1e26899ed485b87a5ba8304c7dda622a15))
-* Import reads settings exported by Chroma under their own names ([d76eec6](https://github.com/My-Name-Is-Jeff/vitrine/commit/d76eec66491e1970563faee8bd3a6521048afff6))
+* Import reads settings exported by the earlier tweak under their own names ([d76eec6](https://github.com/My-Name-Is-Jeff/vitrine/commit/d76eec66491e1970563faee8bd3a6521048afff6))
 * iOS Music Haptics keeps playing in the background and on the lock screen ([7991028](https://github.com/My-Name-Is-Jeff/vitrine/commit/79910289e0c4c0f14500ab091cc108807360b00c))
 * Karaoke turns a song's vocals down from the lyrics or its own page ([f2b936d](https://github.com/My-Name-Is-Jeff/vitrine/commit/f2b936d529865ad9574cfa79823f0d82d7bb8a04))
 * Karaoke uses one voice model on the Neural Engine and CPU ([b8a50bb](https://github.com/My-Name-Is-Jeff/vitrine/commit/b8a50bb8e3d80e8b177fb91832c82dc84ed1ed6a))
