@@ -3,12 +3,19 @@
 #import <objc/runtime.h>
 #import <CommonCrypto/CommonDigest.h>
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "Shared/AnimatedArtwork/SGMotionTicket.h"
 
 #define CHECK(value) do { if (!(value)) { fprintf(stderr, "FAIL %d: %s\n", __LINE__, #value); exit(1); } } while (0)
 static NSURL *root;
 static BOOL watch;
 BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
-static void offMain(NSString *path) { if (watch && [path hasPrefix:root.path]) CHECK(!NSThread.isMainThread); }
+static void offMain(NSString *path) {
+    if (watch && [path hasPrefix:root.path] && NSThread.isMainThread) {
+        fprintf(stderr, "main-thread filesystem access: %s\n%s\n", path.UTF8String,
+                [NSThread.callStackSymbols componentsJoinedByString:@"\n"].UTF8String);
+        CHECK(NO);
+    }
+}
 
 @interface NSFileManager (StoreCheck)
 - (NSArray *)testURLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domains;
@@ -45,6 +52,191 @@ static void writeFile(NSURL *file) {
         return [@"clip" writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil];
     }, ^(BOOL ok) { CHECK(ok); dispatch_async(dispatch_get_main_queue(), ^{ done = YES; }); });
     waitFor(^BOOL { return done; });
+}
+
+// Controlled NSURLSession boundary: progress, cancellation, stale completion and retry.
+@interface StoreTask : NSObject
+@property (nonatomic) int64_t countOfBytesExpectedToReceive, countOfBytesReceived;
+@property (nonatomic) BOOL cancelled;
+- (void)resume;
+- (void)cancel;
+@end
+@implementation StoreTask
+- (void)resume {}
+- (void)cancel { self.cancelled = YES; }
+@end
+@interface StoreSession : NSObject
+@property (nonatomic, strong) id<NSURLSessionDataDelegate> delegate;
+@property (nonatomic, strong) StoreTask *task;
+@property (nonatomic, strong) NSURL *url;
+- (id)dataTaskWithRequest:(NSURLRequest *)request;
+- (void)finishTasksAndInvalidate;
+- (void)receive:(NSUInteger)bytes expected:(int64_t)expected;
+- (void)finish:(NSError *)error;
+@end
+static NSMutableArray<StoreSession *> *sessions;
+@implementation StoreSession
+- (id)dataTaskWithRequest:(NSURLRequest *)request {
+    self.url = request.URL;
+    self.task = [StoreTask new];
+    self.task.countOfBytesExpectedToReceive = -1;
+    return self.task;
+}
+- (void)finishTasksAndInvalidate {}
+- (void)receive:(NSUInteger)bytes expected:(int64_t)expected {
+    self.task.countOfBytesExpectedToReceive = expected;
+    NSDictionary *headers = expected >= 0 ? @{@"Content-Length": [@(expected) stringValue]} : @{};
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.url statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:headers];
+    [self.delegate URLSession:(id)self dataTask:(id)self.task didReceiveResponse:response
+        completionHandler:^(NSURLSessionResponseDisposition disposition) {}];
+    if (bytes) [self.delegate URLSession:(id)self dataTask:(id)self.task didReceiveData:[NSMutableData dataWithLength:bytes]];
+    self.task.countOfBytesReceived = bytes;
+}
+- (void)finish:(NSError *)error {
+    // NSURLSession invokes delegates off-main; dispatch_sync to the store may run inline
+    // on its caller, so a main-thread fake would violate the real transport contract.
+    // Drain its main-queue delivery before returning: tests choose the completion order,
+    // including stale-before-replacement, rather than racing independent background tasks.
+    __block BOOL finished = NO;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+        [self.delegate URLSession:(id)self task:(id)self.task didCompleteWithError:error];
+        dispatch_async(dispatch_get_main_queue(), ^{ finished = YES; });
+    });
+    waitFor(^BOOL { return finished; });
+}
+@end
+static id sessionFactory(id self, SEL cmd, id configuration, id delegate, id queue) {
+    StoreSession *session = [StoreSession new];
+    session.delegate = delegate;
+    [sessions addObject:session];
+    return session;
+}
+static NSError *cancelError(void) {
+    return [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil];
+}
+static StoreSession *latestAfter(NSUInteger count) {
+    waitFor(^BOOL { return sessions.count > count; });
+    return sessions.lastObject;
+}
+static void checkCancellation(void) {
+    sessions = [NSMutableArray array];
+    __block BOOL delivered = NO;
+    Method method = class_getClassMethod(NSURLSession.class, @selector(sessionWithConfiguration:delegate:delegateQueue:));
+    IMP original = method_setImplementation(method, (IMP)sessionFactory);
+    NSURL *url = [NSURL URLWithString:@"https://fixture.invalid/shared.mp4"];
+    __block NSURL *retainedFile;
+    SGMotionTicket *first = SGMotionRequestFile(url, ^(NSURL *file) { CHECK(NO); });
+    SGMotionRequestFile(url, ^(NSURL *file) { retainedFile = file; });
+    StoreSession *shared = latestAfter(0);
+    [shared receive:49 expected:100];
+    [first cancel];
+    CHECK(!shared.task.cancelled);
+    [shared finish:nil];
+    waitFor(^BOOL { return retainedFile != nil; });
+    // The remaining consumer's lease survives pressure after the cancelled peer is gone.
+    for (NSUInteger i = 0; i < 41; i++)
+        @autoreleasepool { writeFile(SGMotionMadeFile([NSString stringWithFormat:@"lease-%lu", (unsigned long)i])); }
+    watch = NO;
+    CHECK([NSFileManager.defaultManager fileExistsAtPath:retainedFile.path]);
+    watch = YES;
+
+    // Both waiters have already been captured for delivery when the first callback cancels
+    // the second. Removing it from the transfer's original array alone cannot suppress it.
+    NSUInteger deliveryCount = sessions.count;
+    __block BOOL firstDelivered = NO, secondDelivered = NO;
+    __block SGMotionTicket *second;
+    NSURL *deliveryURL = [NSURL URLWithString:@"https://fixture.invalid/cancel-during-delivery.mp4"];
+    SGMotionRequestFile(deliveryURL, ^(NSURL *file) {
+        CHECK(file);
+        [second cancel];
+        firstDelivered = YES;
+    });
+    second = SGMotionRequestFile(deliveryURL, ^(NSURL *file) { secondDelivered = YES; });
+    StoreSession *delivery = latestAfter(deliveryCount);
+    [delivery receive:100 expected:100];
+    [delivery finish:nil];
+    CHECK(firstDelivered && !secondDelivered);
+
+    for (NSNumber *progress in @[@49, @50, @51, @(-1), @0]) {
+        NSString *address = [NSString stringWithFormat:@"https://fixture.invalid/progress-%@.mp4", progress];
+        NSURL *remote = [NSURL URLWithString:address];
+        NSUInteger count = sessions.count;
+        SGMotionTicket *ticket = SGMotionRequestFile(remote, ^(NSURL *file) { CHECK(NO); });
+        StoreSession *old = latestAfter(count);
+        [old receive:progress.intValue <= 0 ? 0 : progress.unsignedIntegerValue expected:progress.intValue <= 0 ? progress.intValue : 100];
+        [ticket cancel];
+        CHECK(old.task.cancelled == (progress.intValue != 51));
+        __block NSURL *replacementFile;
+        SGMotionRequestFile(remote, ^(NSURL *file) { CHECK(file); replacementFile = file; });
+        if (progress.intValue == 51) {
+            CHECK(sessions.count == count + 1);
+            [old finish:nil];
+        } else {
+            StoreSession *replacement = latestAfter(count + 1);
+            // Intentionally cancelled requests must not retry, even if a timeout races cancel.
+            [old finish:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]];
+            CHECK(replacementFile == nil);
+            [replacement receive:100 expected:100];
+            [replacement finish:nil];
+        }
+        CHECK(replacementFile != nil);
+        CHECK(sessions.count == count + (progress.intValue == 51 ? 1 : 2));
+    }
+    // A stale completion must leave the replacement joinable. Without that ownership
+    // guard, each orphaned transfer can still deliver its own waiters, hiding the defect
+    // until a later consumer asks for the same remote.
+    NSUInteger staleCount = sessions.count;
+    NSURL *staleURL = [NSURL URLWithString:@"https://fixture.invalid/stale-before-join.mp4"];
+    SGMotionTicket *staleTicket = SGMotionRequestFile(staleURL, ^(NSURL *file) { CHECK(NO); });
+    StoreSession *stale = latestAfter(staleCount);
+    [staleTicket cancel];
+    __block BOOL replacementDelivered = NO, joinedDelivered = NO;
+    SGMotionRequestFile(staleURL, ^(NSURL *file) { CHECK(!file); replacementDelivered = YES; });
+    StoreSession *replacement = latestAfter(staleCount + 1);
+    [stale finish:cancelError()];
+    SGMotionRequestFile(staleURL, ^(NSURL *file) { CHECK(!file); joinedDelivered = YES; });
+    // An error leaves no cache file that could accidentally satisfy an orphaned joiner.
+    [replacement finish:cancelError()];
+    CHECK(replacementDelivered && joinedDelivered);
+    CHECK(sessions.count == staleCount + 2);
+
+    // An abandoned >half transfer finishes into cache without any completion.
+    NSUInteger count = sessions.count;
+    NSURL *cacheURL = [NSURL URLWithString:@"https://fixture.invalid/finish-to-cache.mp4"];
+    SGMotionTicket *ticket = SGMotionRequestFile(cacheURL, ^(NSURL *file) { CHECK(NO); });
+    StoreSession *cacheSession = latestAfter(count);
+    [cacheSession receive:51 expected:100]; [ticket cancel]; [cacheSession finish:nil];
+    __block NSURL *cached;
+    dispatch_async(dispatch_get_main_queue(), ^{ SGMotionFile(cacheURL, ^(NSURL *file) { cached = file; }); });
+    waitFor(^BOOL { return cached != nil; });
+    CHECK(sessions.count == count + 1);
+    count = sessions.count; delivered = NO;
+    SGMotionRequestFile([NSURL URLWithString:@"https://fixture.invalid/certificate.mp4"], ^(NSURL *file) { CHECK(!file); delivered = YES; });
+    StoreSession *permanent = latestAfter(count);
+    [permanent finish:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorServerCertificateUntrusted userInfo:nil]];
+    waitFor(^BOOL { return delivered; });
+    CHECK(sessions.count == count + 1);
+    // Two transient failures terminate the request; there must be no third transfer.
+    count = sessions.count; delivered = NO;
+    SGMotionRequestFile([NSURL URLWithString:@"https://fixture.invalid/retry.mp4"], ^(NSURL *file) {
+        CHECK(!file && !delivered);
+        delivered = YES;
+    });
+    StoreSession *attempt = latestAfter(count);
+    [attempt finish:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]];
+    StoreSession *retry = latestAfter(count + 1);
+    [retry finish:[NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:nil]];
+    CHECK(sessions.count == count + 2);
+    CHECK(delivered);
+    // The header ceiling still applies after introducing consumer tickets.
+    count = sessions.count; delivered = NO;
+    SGMotionRequestFile([NSURL URLWithString:@"https://fixture.invalid/oversize.mp4"], ^(NSURL *file) { CHECK(!file); delivered = YES; });
+    StoreSession *oversize = latestAfter(count);
+    [oversize receive:0 expected:30000001]; [oversize finish:cancelError()];
+    waitFor(^BOOL { return delivered; });
+    CHECK(sessions.count == count + 1);
+    method_setImplementation(method, original);
+    sessions = nil;
 }
 int main(int argc, const char **argv) {
     @autoreleasepool {
@@ -99,6 +291,7 @@ int main(int argc, const char **argv) {
         }
         CHECK(dispatch_semaphore_wait(written, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
         waitFor(^BOOL { return replies == 2; });
+        checkCancellation();
         watch = NO;
         CHECK([NSFileManager.defaultManager removeItemAtURL:root error:nil]);
         puts("motion store: pure names, background creation/trim and asynchronous cached lookup passed");

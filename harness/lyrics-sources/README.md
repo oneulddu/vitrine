@@ -12,6 +12,12 @@
   word and line ends;
 - the QQ Music and KuGou asks against made-up search replies: titles, singers and lengths that do not
   fit are passed over, the closest KuGou lengths are tried first and at most three, and QQ's LRC is read;
+- QQ QRC XML/UTF-8 and zlib payloads, absolute unequal word clocks, joined pieces, entities, non-ASCII,
+  malformed clocks and the 1 MiB expansion limit; a failed QRC reply falls back to the old LRC request.
+  Short catalog names reject IU/MIURA while keeping exact names, edge aliases and middle joined credits;
+- the actual shared JSON transport with a worker session double: JSON decode and pure transforms
+  precede main delivery, including large input, malformed JSON and HTTP error bodies. NetEase rejects
+  same-artist/same-duration wrong titles and keeps normalized title matches;
 - Bugs' second-to-millisecond rounding, malformed and backwards sheets, plain fallback, and title,
   artist and four-second duration matching (a music video's length does not stand in for the track's);
 - Genie's bounded HTML rows and entity decoding, browser headers, JSONP removal, numeric-key
@@ -51,6 +57,16 @@ not the live services, transport size cancellation, real Deezer authentication, 
 settings alert on a phone. This binary does not walk the source order or draw lyrics on a device. The state check below covers the walk. The shared
 transport and settings integration can be checked with clang's syntax-only mode without a Theos build.
 No replies containing real lyrics are stored in the fixtures.
+The QRC grammar follows https://docs.betterlyrics.org/docs/qrc-format (text before each absolute
+millisecond clock). Current QQ wire encoding remains a device/provider check: crypt=0,qrc=1 must
+return base64 UTF-8 QRC or base64 zlib QRC in `lyric`; otherwise crypt=0,qrc=0 must still return LRC.
+This harness does not establish encrypted QRC compatibility or transition-frame timing on a phone.
+Build products use a unique temporary directory removed on exit; `LYRICS_SOURCE_ROOT` can point to
+an isolated source copy for mutation checks without changing the checkout.
+`python3 -B harness/lyrics-sources/mutation-check.py` from the Project root checks seven isolated
+mutations: absolute QRC clocks, expansion bound, mixed malformed clocks falling back to LRC,
+short-name containment, aliases within joined credits, main-thread parsing and missing NetEase
+title validation. Every mutation must fail at its own behavior assertion.
 
 `sh ./state-build.sh` checks the actual keeper and source walk as a second Mac Catalyst binary. Only
 Spotify's Logos hooks are omitted; the route getter and the pinned/provider replies are replaced by

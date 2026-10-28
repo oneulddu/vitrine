@@ -6,7 +6,10 @@
 // so the Blur, Saturation and Brightness settings and the contrast with the player's text are the Light renderer's
 // own. The shader only moves pixels around and mixes two such pictures, which never makes one brighter: a cubic
 // B-spline's weights and the transition's mix are all positive, and sRGB's curve is convex, so every color drawn
-// stays under the ceiling. A little noise breaks up the banding a smooth gradient shows in eight bits.
+// stays under the ceiling. A little noise breaks up the banding a smooth gradient shows in eight bits: half an
+// eight-bit step either way at the standard Grain. Grain scales it, to none at 0 and to a visible grain of
+// kGrainMostSteps (SGRFluidGPU.m) at 200%; above the standard only darker, so no pixel rises more than the standard's
+// half step over the ceiling and the text's contrast holds.
 //
 // Drawn at one pixel a point (the picture is a blur), at most 30 times a second by a display link that allows
 // 120 Hz UI motion. Only while it moves or a new cover runs in, and never in the background or during the
@@ -30,6 +33,8 @@ BOOL SGRFluidGPUAvailable(void);
 @property (nonatomic) BOOL held;
 // The Speed and Warp settings as factors (1 is standard; Warp 0 leaves a picture turning, nothing flowing).
 @property (nonatomic) float rate, warp;
+// The Grain setting as a factor: 1 is the standard dither, 0 none, 2 the most.
+@property (nonatomic) float grain;
 // As SGRFluidLayer's: the part on screen, in this layer's coordinates. The whole layer while empty.
 @property (nonatomic) CGRect visibleRect;
 // Called once, after the first frame has been handed to the screen.

@@ -9,11 +9,20 @@
 const CGFloat SGRHeaderInfoBottom = 14;
 const CGFloat SGRHeaderInfoTitleRise = 56;
 
-BOOL SGRFullBleedCovers(void) {
-    static BOOL on;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ on = SGEnabled(SGRKeyFullBleedCovers); });
-    return on;
+BOOL SGRPageFullCover(NSString *key) {
+    NSUserDefaults *prefs = NSUserDefaults.standardUserDefaults;
+    id legacy = [prefs objectForKey:SGRKeyFullBleedCovers];
+    if (![prefs boolForKey:SGRKeyFullCoverMigrated]) {
+        if (legacy) {
+            for (NSString *destination in @[SGRKeyAlbumFullCover, SGRKeyPlaylistFullCover]) {
+                if (![prefs objectForKey:destination]) [prefs setObject:legacy forKey:destination];
+            }
+        }
+        // Older builds still own this key. Keep it unchanged for rollback, but never consult it again.
+        [prefs setBool:YES forKey:SGRKeyFullCoverMigrated];
+        SGPrefsChanged();
+    }
+    return SGEnabled(key);
 }
 
 // The text kSide in from the edges; Play at least kPlayWidth wide, the Music app's; the gaps between.

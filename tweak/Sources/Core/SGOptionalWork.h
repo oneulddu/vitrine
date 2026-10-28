@@ -1,5 +1,10 @@
 #import <Foundation/Foundation.h>
 
+#define SGKeyLoadAhead @"spotifyglass.loadAhead"
+@class SGModRow;
+// Defined by Shared's settings composition, not Core.
+SGModRow *SGLoadAheadRow(void);
+
 typedef NS_ENUM(NSUInteger, SGOptionalWorkReason) {
     SGOptionalWorkAllowed,
     SGOptionalWorkLowPower,

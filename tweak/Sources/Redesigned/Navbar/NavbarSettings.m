@@ -5,6 +5,7 @@
 #import "BarGeometry.h"
 #import "Shared/Navigation/AddTabSheet.h"
 #import "Redesigned/Kit/SGRTokens.h"
+#import "Redesigned/Kit/SGRPagePreview.h"
 
 // What "Add a tab" offers: URIs Spotify's own router resolves to a page of its own, each with the
 // name of the SPTEncoreIcon class method that draws its glyph. Playlists was spotify:collection:playlists
@@ -333,26 +334,83 @@ static UITabBar *previewBar(void) {
     return bar;
 }
 
+// A page's rows behind the preview's bars, so the fade under them has something to darken: a cover and two lines of
+// text each, from the top of the preview to its foot.
+static const CGFloat kPreviewRow = 44, kPreviewCover = 32, kPreviewTitleBar = 8, kPreviewDetailBar = 6, kPreviewTextGap = 6;
+static const CGFloat kPreviewTitleShare = 0.45, kPreviewDetailShare = 0.3;   // of the room beside the cover
+
+@interface SGRFadePreview : UIView
+@end
+
+@implementation SGRFadePreview
++ (Class)layerClass {
+    return CAGradientLayer.class;
+}
+@end
+
 // The glass bar as it will look, drawn by the same system UITabBar TabBar.x puts over Spotify's bar, from the
 // list as it stands on the page: the shown tabs in order, the first selected, the split tabs on a bar of
-// their own, names under the glyphs unless Icons only is picked. It takes no touches.
+// their own, names under the glyphs unless Icons only is picked, over a page's rows darkened by the fade under the
+// bars while it is on. It takes no touches.
 @interface SGRTabBarPreview : UIView
 - (void)showEntries:(NSArray<NSDictionary *> *)entries;
 @end
 
 @implementation SGRTabBarPreview {
     UITabBar *_main, *_apart;
+    UIView *_rows;
+    SGRFadePreview *_fade;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
+    _rows = [UIView new];
+    _rows.backgroundColor = UIColor.blackColor;
+    _rows.clipsToBounds = YES;
+    [self addSubview:_rows];
+    _fade = [SGRFadePreview new];
+    SGRStyleBarFade((CAGradientLayer *)_fade.layer);
+    [self addSubview:_fade];
     _main = previewBar();
     _apart = previewBar();
     [self addSubview:_main];
     [self addSubview:_apart];
+    self.userInteractionEnabled = NO;
     self.isAccessibilityElement = YES;
     self.accessibilityLabel = SGL(@"settings.tabbar.preview.a11y", @"Tab bar preview");
     return self;
+}
+
+// As many rows as the height takes, made once each and kept.
+- (void)layoutRows {
+    CGFloat width = _rows.bounds.size.width, height = _rows.bounds.size.height;
+    NSUInteger count = (NSUInteger)ceil(height / kPreviewRow);
+    while (_rows.subviews.count < count) {
+        NSUInteger index = _rows.subviews.count;
+        UIView *row = [UIView new];
+        UIImageView *cover = SGRPreviewCover(index);
+        cover.layer.cornerRadius = SGRRadiusThumb;
+        [row addSubview:cover];
+        [row addSubview:SGRPreviewBar(SGRPrimary())];
+        [row addSubview:SGRPreviewBar(SGRSecondary())];
+        [_rows addSubview:row];
+    }
+    BOOL rtl = self.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+    [_rows.subviews enumerateObjectsUsingBlock:^(UIView *row, NSUInteger i, BOOL *stop) {
+        row.frame = CGRectMake(0, i * kPreviewRow, width, kPreviewRow);
+        CGFloat margin = SGRSideMargin, middle = kPreviewRow / 2;
+        CGFloat room = width - 2 * margin - kPreviewCover - SGRGrid;
+        CGFloat textX = margin + kPreviewCover + SGRGrid;
+        CGRect cover = CGRectMake(margin, middle - kPreviewCover / 2, kPreviewCover, kPreviewCover);
+        CGRect title = CGRectMake(textX, middle - kPreviewTextGap / 2 - kPreviewTitleBar, room * kPreviewTitleShare, kPreviewTitleBar);
+        CGRect detail = CGRectMake(textX, middle + kPreviewTextGap / 2, room * kPreviewDetailShare, kPreviewDetailBar);
+        NSArray<NSValue *> *frames = @[[NSValue valueWithCGRect:cover], [NSValue valueWithCGRect:title], [NSValue valueWithCGRect:detail]];
+        for (NSUInteger part = 0; part < frames.count; part++) {
+            CGRect frame = frames[part].CGRectValue;
+            if (rtl) frame.origin.x = width - CGRectGetMaxX(frame);
+            row.subviews[part].frame = frame;
+        }
+    }];
 }
 
 static NSArray<UITabBarItem *> *itemsFor(NSArray<NSDictionary *> *entries, BOOL names) {
@@ -385,18 +443,32 @@ static NSArray<UITabBarItem *> *itemsFor(NSArray<NSDictionary *> *entries, BOOL 
     [_apart setItems:itemsFor(apart, names) animated:NO];
     _apart.selectedItem = nil;
     _apart.hidden = !apart.count;
-    self.accessibilityValue = [[[main arrayByAddingObjectsFromArray:apart] valueForKey:SGRNavbarTitle] componentsJoinedByString:@", "];
+    _fade.hidden = !SGEnabled(SGRKeyNavbarFade);
+    NSMutableArray<NSString *> *read = [[[main arrayByAddingObjectsFromArray:apart] valueForKey:SGRNavbarTitle] mutableCopy];
+    if (!_fade.hidden) [read addObject:SGL(@"settings.tabbar.fade.title", @"Fade under the bar")];
+    self.accessibilityValue = [read componentsJoinedByString:@", "];
     [self setNeedsLayout];
 }
 
+- (CGFloat)barHeight:(CGFloat)width {
+    return [_main sizeThatFits:CGSizeMake(width, 49)].height;
+}
+
+// The bars at the foot, with the room the fade takes above them.
 - (CGSize)sizeThatFits:(CGSize)size {
-    return CGSizeMake(size.width, [_main sizeThatFits:CGSizeMake(size.width, 49)].height);
+    return CGSizeMake(size.width, SGRBarFadeAbovePt + [self barHeight:size.width]);
 }
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+    CGRect bounds = self.bounds;
+    CGFloat barHeight = [self barHeight:bounds.size.width];
+    CGRect bars = CGRectMake(0, CGRectGetMaxY(bounds) - barHeight, bounds.size.width, barHeight);
+    _rows.frame = bounds;
+    [self layoutRows];
+    _fade.frame = CGRectMake(0, CGRectGetMinY(bars) - SGRBarFadeAbovePt, bounds.size.width, barHeight + SGRBarFadeAbovePt);
     CGRect main, apart;
-    SGRExpandedBarFrames(self.bounds, _apart.hidden ? 0 : _apart.items.count, &main, &apart);
+    SGRExpandedBarFrames(bars, _apart.hidden ? 0 : _apart.items.count, &main, &apart);
     _main.frame = main;
     _apart.frame = apart;
     for (UITabBar *bar in @[_main, _apart]) {
@@ -523,6 +595,7 @@ static const CGFloat kPictureHeight = 76;
 typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     SGRNavbarSectionSwitch,
     SGRNavbarSectionLabels,
+    SGRNavbarSectionFade,
     SGRNavbarSectionTabs,
     SGRNavbarSectionLinks,   // Add a tab, Use Spotify's tabs
     SGRNavbarSectionSplit,
@@ -558,7 +631,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 
 @end
 
-// The tab editor: a preview of the bar, how it labels its tabs, the tabs in the order the bar shows them
+// The tab editor: a preview of the bar, how it labels its tabs, whether the page fades under it, the tabs in the order the bar shows them
 // (the circle shows or hides one, the handle drags it, a tap on one of the mod's own opens it in the Add a
 // Tab sheet to edit or remove), then adding one, going back to Spotify's tabs and splitting tabs apart.
 // Spotify's own tabs are named by their label and drawn by Spotify, so they can be hidden but not renamed,
@@ -759,6 +832,16 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
             cell.accessoryView = toggle;
             break;
         }
+        case SGRNavbarSectionFade: {
+            SGFillCell(cell, SGL(@"settings.tabbar.fade.title", @"Fade under the bar"),
+                       SGL(@"settings.tabbar.fade.subtitle", @"The page darkens toward the foot of the screen, behind the tab bar and the now playing bar"), nil, nil);
+            UISwitch *toggle = [UISwitch new];
+            toggle.onTintColor = SGGreen();
+            toggle.on = SGEnabled(SGRKeyNavbarFade);
+            [toggle addTarget:self action:@selector(fadeToggled:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle;
+            break;
+        }
         case SGRNavbarSectionLinks:
             // Links in the accent color, as the system's own actions in a list are.
             SGFillCell(cell, path.row == 0 ? SGL(@"settings.tabbar.add_tab.title", @"Add a tab") : SGL(@"settings.tabbar.use_spotify_tabs.title", @"Use Spotify's tabs"), nil, SGRAccent(), nil);
@@ -878,6 +961,12 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     SGSetEnabled(SGRKeyNavbarHideLabels, !card.names);
     [[UISelectionFeedbackGenerator new] selectionChanged];
     SGRRefreshTabBar();
+    [self showChoices];
+}
+
+- (void)fadeToggled:(UISwitch *)toggle {
+    SGSetEnabled(SGRKeyNavbarFade, toggle.on);
+    SGRRefreshBarFade();
     [self showChoices];
 }
 

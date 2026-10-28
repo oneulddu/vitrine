@@ -3,6 +3,7 @@
 // kept until it is about to expire. Answers are kept for the launch, and an album's for a week on disk.
 #import "Core/SGCore.h"
 #import "AnimatedArtwork.h"
+#import "SGMotionTicket.h"
 #import "SGMotionCatalog.h"
 
 static NSString *const kTokenKey = @"spotifyglass.motion.token";
@@ -634,15 +635,26 @@ void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void 
         dispatch_async(dispatch_get_main_queue(), ^{ SGMotionAlbumCover(artist, album, pixels, done); });
         return;
     }
+    SGMotionRequestAlbumCover(artist, album, pixels, done);
+}
+
+SGMotionTicket *SGMotionRequestAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *file)) {
+    SGMotionTicket *ticket = [SGMotionTicket new];
     NSString *artistKey = SGMotionNameKey(artist), *albumKey = SGMotionNameKey(album);
     if (!artistKey.length || !albumKey.length) {
-        done(nil);
-        return;
+        dispatch_async(dispatch_get_main_queue(), ^{ if (!ticket.cancelled) done(nil); });
+        return ticket;
     }
     // The persisted key retains the tall-first catalog choice's numeric value.
     NSString *key = [NSString stringWithFormat:@"album\n1\n%@\n%@", artistKey, albumKey];
     // The remote file is what is kept: the store may drop its local copy later in the launch.
-    lookUp(key, ^(NSURL *remote) { SGMotionFile(remote, done); }, ^(void (^answer)(id, BOOL)) {
+    lookUp(key, ^(NSURL *remote) {
+        if (ticket.cancelled) return;
+        ticket.child = SGMotionRequestFile(remote, ^(NSURL *file) {
+            ticket.child = nil;
+            if (!ticket.cancelled) done(file);
+        });
+    }, ^(void (^answer)(id, BOOL)) {
         albumRecords(artist, album, ^(NSArray *found) {
             if (!found) {
                 answer(nil, NO);
@@ -671,6 +683,7 @@ void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void 
             wholeFileOf(master, pixels, answer);
         });
     });
+    return ticket;
 }
 
 #pragma mark - artist logos

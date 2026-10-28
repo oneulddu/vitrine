@@ -10,6 +10,19 @@
 // they are; with them back the header keeps the height Spotify gives it and the list keeps Spotify's own inset,
 // and there is nothing here to resize or to hold.
 //
+// Unless Compact library is on (Library.h). Then the root header has a menu button before its trailing controls
+// (LibraryMenu.m), and while that menu can stand in for them the chips go and the header closes up by the band
+// they leave: the header is shrunk to the bottom of its control row, which hangs off the safe area and so answers
+// the same on every pass, and the list's top inset is lowered by the band, taken once from the live frames and
+// then held against Spotify setting it again from its own pass. When the menu can no longer stand in -- a filter
+// on with no clear chip, a control it fired gone -- the chips, the header's height and the inset come back. A
+// filter can change in the chips or the list alone, on passes of their own that reach neither the header nor the
+// page, so a change there, and the menu opening, have the page look again at once. A folder keeps its chips and
+// its own controls either way.
+//
+// The row reads from its leading edge, so in a right-to-left language the title is at the right, the avatar at the
+// left, and the menu button on the title's side of the controls.
+//
 // Tree (trees/clean/library/03.txt:1159-1247): YourLibraryView holds YourLibraryContentView, the size of the
 // page, and after it -- so over it -- YourLibraryHeaderView 402x159.33: LiquidGlass.GradientView (the scrim), a
 // 402x48 row at {0, 62} holding an AutoLayoutStackView {8, 0} 390x48 of
@@ -50,7 +63,7 @@
 // 24pt glyph 20pt from the screen, and the 32pt avatar inside its own 48pt box 16pt from it, which is the
 // margin Home gives the avatar.
 static const CGFloat kRowInset = 8;
-static char kTitleKey, kRowWatchedKey;
+static char kTitleKey, kRowWatchedKey, kListKey, kInsetKey, kHeightKey, kFoldedKey;
 static char kRecentsKey, kSearchKey, kPlusKey, kHeaderTitleKey;
 static char kBackKey, kMenuKey, kFolderPlusKey, kPlayKey, kPauseKey, kFolderTitleKey;
 
@@ -63,6 +76,11 @@ static void vanish(UIView *view) {
 
 void SGRLibraryClearScrim(UIView *header) {
     vanish(SGRChildNamed(header, @"GradientView"));
+}
+
+UIScrollView *SGRLibraryListIn(UIView *page) {
+    UIView *found = SGRFindByIdentifier(page, @"YourLibraryContent.collectionView", &kListKey);
+    return [found isKindOfClass:UIScrollView.class] ? (UIScrollView *)found : nil;
 }
 
 #pragma mark - the controls
@@ -78,19 +96,35 @@ static NSMutableArray<UIView *> *controlsIn(UIView *header, NSArray<NSString *> 
     return found;
 }
 
+// The header's row reads from its leading edge: the right one in a right-to-left language. Places along the row are
+// worked out as distances from that edge and turned into x only as a frame or a move is set.
+static BOOL rightToLeft(UIView *header) {
+    return header.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+}
+
+// The x of a span `width` wide starting `fromLeading` from the header's leading edge.
+static CGFloat xAt(UIView *header, CGFloat fromLeading, CGFloat width) {
+    return rightToLeft(header) ? header.bounds.size.width - fromLeading - width : fromLeading;
+}
+
+// How far from the header's leading edge `frame` ends.
+static CGFloat endFromLeading(UIView *header, CGRect frame) {
+    return rightToLeft(header) ? header.bounds.size.width - CGRectGetMinX(frame) : CGRectGetMaxX(frame);
+}
+
 // Puts the controls at the header's trailing edge, the last of them flush against it and each keeping the width
-// it has, and answers where the leading edge of the first of them fell.
+// it has, and answers how far from the leading edge the first of them starts.
 static CGFloat placeTrailing(UIView *header, NSArray<UIView *> *controls) {
-    CGFloat right = header.bounds.size.width - kRowInset;
+    CGFloat end = header.bounds.size.width - kRowInset;
     for (UIView *control in controls.reverseObjectEnumerator) {
         CGFloat width = control.bounds.size.width;
         // The center is where Auto Layout put the control, whatever transform is on it; its frame is not.
         CGFloat natural = [control.superview convertPoint:CGPointZero toView:header].x + control.center.x - width / 2;
-        CGAffineTransform move = CGAffineTransformMakeTranslation(right - width - natural, 0);
+        CGAffineTransform move = CGAffineTransformMakeTranslation(xAt(header, end - width, width) - natural, 0);
         if (!CGAffineTransformEqualToTransform(control.transform, move)) control.transform = move;
-        right -= width;
+        end -= width;
     }
-    return right;
+    return end;
 }
 
 // `place` again after every pass of the row the controls stand in (see the top of the file), for as long as it
@@ -129,7 +163,8 @@ static NSString *textIn(UIView *label) {
     return text;
 }
 
-// The title Spotify's own says, so it follows the app's language, in the Music app's size on the row's middle.
+// The title Spotify's own says, so it follows the app's language, in the Music app's size on the row's middle,
+// from `leading` to `trailing`, both measured from the header's leading edge.
 static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, CGFloat trailing, CGFloat middle) {
     UILabel *title = SGRLargeTitleIn(header, &kTitleKey);
     NSString *text = textIn(spotifyTitle);
@@ -141,7 +176,8 @@ static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, C
     if (![title.font isEqual:font]) title.font = font;
 
     CGFloat height = ceil(font.lineHeight);
-    CGRect frame = CGRectMake(leading, round(middle - height / 2), MAX(0, trailing - SGRGrid - leading), height);
+    CGFloat width = MAX(0, trailing - SGRGrid - leading);
+    CGRect frame = CGRectMake(xAt(header, leading, width), round(middle - height / 2), width, height);
     if (!CGRectEqualToRect(title.frame, frame)) title.frame = frame;
 }
 
@@ -165,6 +201,14 @@ static NSArray<UIView *> *placeRoot(UIView *header) {
 
     CGFloat leading = placeTrailing(header, trailing);
     CGRect row = SGFrameIn(trailing.firstObject, header);
+    // Compact library's menu, as tall and as wide as the row's controls, before the first of them.
+    if (SGRLibraryCompact() && header.superview) {
+        UIButton *menu = SGRLibraryMenuButton(header, header.superview);
+        CGFloat side = row.size.height;
+        CGRect frame = CGRectMake(xAt(header, leading - side, side), CGRectGetMidY(row) - side / 2, side, side);
+        if (!CGRectEqualToRect(menu.frame, frame)) menu.frame = frame;
+        leading -= side;
+    }
     layoutTitle(header, spotifyTitle, SGRSideMargin, leading, CGRectGetMidY(row));
     for (UIView *control in trailing) watchRow(control.superview, header, placeRoot);
     return trailing;
@@ -186,10 +230,80 @@ static NSArray<UIView *> *placeFolder(UIView *header) {
     CGFloat trailingEdge = placed.count ? placeTrailing(header, placed) : header.bounds.size.width - kRowInset;
     if (back) [placed insertObject:back atIndex:0];
     CGRect rowFrame = SGFrameIn(placed.firstObject, header);
-    CGFloat leading = back ? CGRectGetMaxX(rowFrame) + SGRGrid : SGRSideMargin;
+    CGFloat leading = back ? endFromLeading(header, rowFrame) + SGRGrid : SGRSideMargin;
     layoutTitle(header, spotifyTitle, leading, trailingEdge, CGRectGetMidY(rowFrame));
     for (UIView *control in placed) watchRow(control.superview, header, placeFolder);
     return placed;
+}
+
+#pragma mark - Compact library
+
+// The chips gone and the page closed up by the band they leave (see the top of the file). `control` is any of the
+// header's controls: they fill its row, so the bottom of one is the bottom of the row. What Spotify had -- the
+// chips' alpha, the header's height and the band, the list's inset -- is kept for unfoldChips.
+static void foldChips(UIView *header, UIView *control, UIView *filters, UIScrollView *list) {
+    if (!objc_getAssociatedObject(filters, &kFoldedKey)) {
+        objc_setAssociatedObject(filters, &kFoldedKey, @(filters.alpha), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    vanish(filters);
+
+    CGFloat wanted = CGRectGetMaxY(SGFrameIn(control, header));
+    NSArray<NSNumber *> *spotify = objc_getAssociatedObject(header, &kHeightKey);   // its height, the band
+    if (!spotify) {
+        // Taken once, from a header laid out with its chips under its row.
+        CGRect chips = SGFrameIn(filters, header);
+        CGFloat height = header.bounds.size.height, band = CGRectGetMaxY(chips) - wanted;
+        if (CGRectGetMinY(chips) < wanted - 0.5 || height < wanted + band - 0.5 || band < 1) return;
+        spotify = @[@(height), @(band)];
+        objc_setAssociatedObject(header, &kHeightKey, spotify, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    CGRect frame = header.frame;
+    if (fabs(frame.size.height - wanted) > 0.5) {
+        frame.size.height = wanted;
+        header.frame = frame;
+    }
+
+    // The list rests under the header by an inset of its own, which counts the whole header Spotify made. It is
+    // lowered by the band once and then held (the setter hook below), so Spotify setting it again from its own pass
+    // does not undo it pass after pass.
+    if (!list || objc_getAssociatedObject(list, &kInsetKey)) return;
+    CGFloat top = list.contentInset.top, band = spotify[1].doubleValue;
+    if (top < spotify[0].doubleValue - 0.5) return;
+    BOOL atTop = list.contentOffset.y <= -top + 0.5;
+    objc_setAssociatedObject(list, &kInsetKey, @[@(top - band), @(top)], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    UIEdgeInsets inset = list.contentInset;
+    inset.top = top - band;
+    list.contentInset = inset;
+    // A list resting at its top rests that much higher; one scrolled into its rows does not move at all.
+    if (atTop) list.contentOffset = CGPointMake(list.contentOffset.x, -inset.top);
+    SGLog(@"redesign library: compact, the chips' %.0fpt taken off the header, the list rests at %.0f", band, inset.top);
+}
+
+// The chips, the header's height and the list's inset as Spotify had them, once the menu cannot stand in for them.
+static void unfoldChips(UIView *header, UIView *filters, UIScrollView *list) {
+    NSNumber *alpha = objc_getAssociatedObject(filters, &kFoldedKey);
+    if (alpha) {
+        objc_setAssociatedObject(filters, &kFoldedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        filters.alpha = alpha.doubleValue;
+        filters.userInteractionEnabled = YES;
+        filters.accessibilityElementsHidden = NO;
+    }
+    NSArray<NSNumber *> *spotify = objc_getAssociatedObject(header, &kHeightKey);
+    if (spotify) {
+        objc_setAssociatedObject(header, &kHeightKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        CGRect frame = header.frame;
+        frame.size.height = spotify[0].doubleValue;
+        header.frame = frame;
+    }
+    NSArray<NSNumber *> *held = list ? objc_getAssociatedObject(list, &kInsetKey) : nil;   // held, Spotify's
+    if (!held) return;
+    objc_setAssociatedObject(list, &kInsetKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    BOOL atTop = list.contentOffset.y <= -list.contentInset.top + 0.5;
+    UIEdgeInsets inset = list.contentInset;
+    inset.top = held[1].doubleValue;
+    list.contentInset = inset;
+    if (atTop) list.contentOffset = CGPointMake(list.contentOffset.x, -inset.top);
+    SGLog(@"redesign library: compact, the chips back, the list rests at %.0f", inset.top);
 }
 
 static void layoutRoot(UIView *page) {
@@ -201,6 +315,13 @@ static void layoutRoot(UIView *page) {
     NSArray<UIView *> *trailing = placeRoot(header);
     if (!trailing.count) return;
 
+    UIView *filters = SGRChildNamed(header, @"YourLibraryHeaderContentFiltersView");
+    if (SGRLibraryCompact() && filters) {
+        UIScrollView *list = SGRLibraryListIn(page);
+        if (SGRLibraryMenuStandsIn(page, filters)) foldChips(header, trailing.firstObject, filters, list);
+        else unfoldChips(header, filters, list);
+    }
+
     // The first pass that laid the header out, not the first pass at all: a page appearing lays out before
     // its controls have a size, and a line off that pass would say the header was left as Spotify's.
     UIView *face = SGRIsAvatar(trailing.lastObject) ? trailing.lastObject : nil;
@@ -209,7 +330,7 @@ static void layoutRoot(UIView *page) {
         logged = YES;
         SGLog(@"redesign library: header %@, %lu controls at the trailing edge, avatar %@, chips %@",
               NSStringFromCGRect(header.frame), (unsigned long)trailing.count, face ? @"found" : @"not found",
-              SGRChildNamed(header, @"YourLibraryHeaderContentFiltersView") ? @"Spotify's" : @"not found");
+              !filters ? @"not found" : objc_getAssociatedObject(filters, &kFoldedKey) ? @"folded" : @"Spotify's");
     }
 }
 
@@ -247,12 +368,51 @@ static void layoutFolder(UIView *page) {
 }
 %end
 
+// Spotify works the list's top inset out from the header it made, chips and all, and sets it again whenever it lays
+// the page out. While the chips are folded the list keeps the one foldChips took instead, so the two never take
+// turns setting it: a scroll view laying out again from every set of ours is a loop the page cannot settle out of.
+%group CompactLibrary
+%hook _TtC21YourLibrary_CommonKit25YourLibraryCollectionView
+- (void)setContentInset:(UIEdgeInsets)inset {
+    NSArray<NSNumber *> *held = objc_getAssociatedObject(self, &kInsetKey);
+    if (held) inset.top = held[0].doubleValue;
+    %orig(inset);
+}
+
+// The list's rows, and its sort row with them, come in after the page first laid out, on passes of the list's own,
+// and a filter changes them the same way. A list whose content changed has the page look again.
+- (void)setContentSize:(CGSize)size {
+    BOOL changed = !CGSizeEqualToSize(size, ((UIScrollView *)self).contentSize);
+    %orig;
+    if (changed) [SGRLibraryPageAbove((UIView *)self) setNeedsLayout];
+}
+%end
+
+// The chips' collection and the list, after each pass of their own (LibraryMenu.m tells them from every other).
+%hook UICollectionView
+- (void)layoutSubviews {
+    %orig;
+    SGRLibraryCollectionLaidOut((UICollectionView *)self);
+}
+%end
+%end
+
+UIView *SGRLibraryPageAbove(UIView *view) {
+    Class pageClass = objc_getClass("_TtC28YourLibrary_YourLibraryXImpl15YourLibraryView");
+    for (UIView *up = view.superview; up; up = up.superview) {
+        if ([up isKindOfClass:pageClass]) return up;
+    }
+    return nil;
+}
+
 %ctor {
     if (!SGRedesignedUI()) return;
     %init;
+    if (SGRLibraryCompact()) %init(CompactLibrary);
     SGRequireClasses(@[
         @"_TtC28YourLibrary_YourLibraryXImpl15YourLibraryView",
         @"_TtC22YourLibrary_FolderImpl10FolderView",
+        @"_TtC21YourLibrary_CommonKit25YourLibraryCollectionView",
         @"_TtC21YourLibrary_CommonKit35YourLibraryHeaderContentFiltersView",
         @"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer",
     ]);

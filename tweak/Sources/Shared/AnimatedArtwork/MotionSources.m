@@ -10,6 +10,7 @@
 #import "Shared/Lyrics/Lyrics.h"
 #import "AnimatedArtwork.h"
 #import "SGMotionClip.h"
+#import "SGMotionTicket.h"
 
 static NSString *const kCanvas = @"canvas", *const kAppleMusic = @"applemusic";
 
@@ -109,35 +110,49 @@ static void canvasFromService(NSString *uri, void (^done)(NSURL *canvas)) {
 
 void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
                      void (^done)(NSURL *file, NSString *source)) {
+    SGMotionRequestClip(uri, canvas, artist, album, pixels, done);
+}
+
+SGMotionTicket *SGMotionRequestClip(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
+                                   void (^done)(NSURL *file, NSString *source)) {
+    SGMotionTicket *ticket = [SGMotionTicket new];
     NSArray<NSString *> *order = SGMotionSourceOrder();
     // The walk holds itself until it ends, when it lets go.
     __block void (^ask)(NSUInteger) = nil;
+    ticket.onCancel = ^{ ask = nil; };
     void (^finish)(NSURL *, NSString *) = ^(NSURL *file, NSString *source) {
         ask = nil;
+        ticket.onCancel = nil;
+        ticket.child = nil;
+        if (ticket.cancelled) return;
         done(file, source);
     };
     void (^step)(NSUInteger) = ^(NSUInteger index) {
+        if (ticket.cancelled) return;
         if (index >= order.count) {
             finish(nil, nil);
             return;
         }
         NSString *source = order[index];
         void (^next)(NSURL *) = ^(NSURL *file) {
+            if (ticket.cancelled) return;
             if (file) finish(file, source);
             else ask(index + 1);
         };
         if ([source isEqualToString:kCanvas]) {
-            if (canvas) SGMotionFile(canvas, next);
+            if (canvas) ticket.child = SGMotionRequestFile(canvas, next);
             else canvasFromService(uri, ^(NSURL *found) {
-                if (found) SGMotionFile(found, next);
+                if (ticket.cancelled) return;
+                if (found) ticket.child = SGMotionRequestFile(found, next);
                 else next(nil);
             });
         } else {
-            SGMotionAlbumCover(artist, album, pixels, next);
+            ticket.child = SGMotionRequestAlbumCover(artist, album, pixels, next);
         }
     };
     ask = step;
     step(0);
+    return ticket;
 }
 
 SGModRow *SGMotionSourcesRow(void) {

@@ -152,6 +152,23 @@ static NSString *disabled(void) {
 }
 @end
 
+// Runs the batches for texts already checked. `memo` is the song and language a kept answer belongs to; text that
+// is not a song's lyrics passes nil, and nothing is kept for it.
+static void startGoogle(NSString *target, NSArray<NSString *> *texts, NSMutableArray *out,
+                        NSArray<NSArray<NSNumber *> *> *batches, NSString *memo, void (^done)(NSArray<NSString *> *, NSString *)) {
+    SGGoogleTranslation *job = [SGGoogleTranslation new];
+    job.target = target; job.texts = texts; job.out = out; job.batches = [batches mutableCopy];
+    job.done = ^(NSArray *translated, NSString *problem) {
+        if (translated && memo) {
+            if (!sg_done) sg_done = [NSMutableDictionary dictionary];
+            if (sg_done.count >= 32) [sg_done removeAllObjects];
+            sg_done[memo] = @{@"texts": [texts copy], @"translations": translated};
+        }
+        done(translated, problem);
+    };
+    [job advance];
+}
+
 void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                 void (^done)(NSArray<NSString *> *, NSString *)) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -164,20 +181,27 @@ void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *li
         if (!texts) { done(nil, tooLong ? SGL(@"settings.translation.google.error.toolong", @"The song is too long to send to Google Translate.") : unreadable()); return; }
         NSArray *batches = SGLyricsTranslationBatches(send, 2000, 3500);
         if (!batches) { done(nil, unreadable()); return; }
-        if (!sg_done) sg_done = [NSMutableDictionary dictionary];
-        NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
-        NSDictionary *cached = trackID ? sg_done[memo] : nil;
+        NSString *memo = trackID ? [NSString stringWithFormat:@"%@|%@", trackID, languageTag] : nil;
+        NSDictionary *cached = memo ? sg_done[memo] : nil;
         if ([cached[@"texts"] isEqual:texts]) { done(cached[@"translations"], nil); return; }
-        SGGoogleTranslation *job = [SGGoogleTranslation new];
-        job.target = target; job.texts = texts; job.out = out; job.batches = [batches mutableCopy];
-        job.done = ^(NSArray *translated, NSString *problem) {
-            if (translated && trackID) {
-                if (sg_done.count >= 32) [sg_done removeAllObjects];
-                sg_done[memo] = @{@"texts": [texts copy], @"translations": translated};
-            }
-            done(translated, problem);
-        };
-        [job advance];
+        startGoogle(target, texts, out, batches, memo, done);
+    });
+}
+
+// Text that is not a song's lyrics: the same endpoint and batching, with nothing kept for a later call.
+void SGGoogleTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, void (^done)(NSArray<NSString *> *, NSString *)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!SGFlag(SGKeyLyricsGoogleTranslate, NO)) { done(nil, disabled()); return; }
+        NSString *target = SGGoogleTargetLanguage(languageTag);
+        if (!target) { done(nil, SGL(@"settings.translation.google.error.language", @"Choose a valid language for Google Translate.")); return; }
+        const NSUInteger maxTextUTF16Units = 3500;
+        SGLyricsTranslateSegments(texts, maxTextUTF16Units, SGProseSegmentUTF16, ^(NSArray *segments, void (^finish)(NSArray *, NSString *)) {
+            NSArray *batches = SGLyricsTranslationBatches(segments, 2000, maxTextUTF16Units);
+            if (!batches) { finish(nil, unreadable()); return; }
+            NSMutableArray *out = [NSMutableArray array];
+            for (NSUInteger i = 0; i < segments.count; i++) [out addObject:@""];
+            startGoogle(target, segments, out, batches, nil, finish);
+        }, done);
     });
 }
 

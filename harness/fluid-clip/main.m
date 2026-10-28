@@ -1,7 +1,8 @@
 // Renders the lock screen's Fluid artwork through the tweak's own SGFluidClip.m and reads the file back
 // with AVFoundation: its length, its size, its codec and frames, that the field moves, that the loop has
 // no seam, and that the cover sits sharp in the middle. The first frame is kept beside it as a PNG to look
-// at. Exits 1 on any failure.
+// at. Exits 1 on any failure. The player clip's failure recovery is checked by recovery-check.sh, which
+// compiles the policy out of Redesigned/Player/PlayerMotion.x.
 #import <AVFoundation/AVFoundation.h>
 #import <ImageIO/ImageIO.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>

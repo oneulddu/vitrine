@@ -17,6 +17,8 @@
 extern NSNotificationName const SGRFieldColorDidChangeNotification;
 
 @interface SGRArtworkField : UIView
+// Set by SGRPageFieldIn, not by the player. Only an actually resolved color is published.
+@property (nonatomic, weak) UIView *accentPage;
 // Where the color, the fade to black and the backdrop reach past the bounds (overscroll, a plane
 // that does not clip): positive values draw outside. The field never clips.
 @property (nonatomic) UIEdgeInsets bleed;

@@ -12,6 +12,10 @@ static NSInteger valid(NSInteger rgb) {
 NSInteger SGAccentRGB(void) { NSInteger rgb = valid(SGInt(SGKeyAccent, -1)); return rgb < 0 ? SGSpotifyGreen : rgb; }
 UIColor *SGRAccentColor(void) { return valid(SGInt(SGRKeyAccent, SGRDefaultAccent)) < 0 ? nil : UIColor.redColor; }
 NSInteger SGRAccentRGB(void) { NSInteger rgb = valid(SGInt(SGRKeyAccent, SGRDefaultAccent)); return rgb < 0 ? SGSpotifyGreen : rgb; }
+NSInteger SGRPickedAccentRGB(void) { return SGRAccentRGB(); }
+void SGRAccentPreferencesChanged(void) {}
+void SGRefreshExplicitBadges(void) {}
+void SGRRefreshExplicitBadges(void) {}
 
 SGAppFont SGAppFontChosen(void) {
     NSInteger font = SGInt(SGKeyAppFont, SGAppFontSpotify);

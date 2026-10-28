@@ -1,9 +1,8 @@
 // SGHapticTrack.h says what this reads and where its field numbers come from.
 #import "SGHapticTrack.h"
 #import "Shared/AdBlock/Protobuf.h"
+#import "Shared/SpotifyMetadata/SGSpotifyMetadata.h"
 
-// BatchedEntityRequest.entity_request, EntityRequest.entity_uri and .query, ExtensionQuery.extension_kind.
-enum { kRequestEntity = 2, kEntityURI = 1, kEntityQuery = 2, kQueryKind = 1 };
 // BatchedExtensionResponse.extended_metadata; EntityExtensionDataArray.header, .extension_kind and
 // .extension_data; its header's provider_error_status.
 enum { kReplyArrays = 2, kArrayHeader = 1, kArrayKind = 2, kArrayData = 3, kArrayStatus = 1 };
@@ -27,9 +26,7 @@ BOOL SGHapticIsTrackURI(NSString *uri) {
 }
 
 NSData *SGHapticTrackRequest(NSString *trackURI) {
-    NSData *query = SGPBSerialize(@[SGPBVarint(kQueryKind, kTrackV4)]);
-    NSData *entity = SGPBSerialize(@[SGPBString(kEntityURI, trackURI), SGPBBytes(kEntityQuery, query)]);
-    return SGPBSerialize(@[SGPBBytes(kRequestEntity, entity)]);
+    return SGSpotifyExtensionRequest(@[trackURI], @[@(kTrackV4)]);
 }
 
 static NSArray<SGPBField *> *allOf(NSArray<SGPBField *> *fields, uint32_t number, uint8_t wire) {

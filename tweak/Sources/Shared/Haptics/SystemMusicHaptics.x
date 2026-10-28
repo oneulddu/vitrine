@@ -44,8 +44,8 @@
 #import "Shared/Player/PlayerState.h"
 #import "Haptics.h"
 #import "SGHapticTrack.h"
+#import "Shared/SpotifyMetadata/SGSpotifyMetadata.h"
 
-static NSString *const kExtendedMetadata = @"https://spclient.wg.spotify.com/extended-metadata/v0/extended-metadata";
 // A request that got no answer is sent this many times in all, this far apart.
 static const NSUInteger kSpotifyTries = 3;
 static const NSTimeInterval kSpotifyRetryAfter = 4;
@@ -63,17 +63,7 @@ static NSCache<NSString *, id> *sg_isrcs;
 // `done` gets the ISRC, or nil, on the main queue. The headers are read again for every try: a refused one
 // may have expired, and Spotify's next request of its own brings a fresh one. They are never logged.
 static void askSpotify(NSString *uri, NSUInteger triesLeft, void (^done)(NSString *isrc)) {
-    SGSpclientHeaders(^(NSDictionary<NSString *, NSString *> *headers) {
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:kExtendedMetadata]];
-        request.HTTPMethod = @"POST";
-        [headers enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSString *value, BOOL *stop) {
-            [request setValue:value forHTTPHeaderField:name];
-        }];
-        [request setValue:@"application/x-protobuf" forHTTPHeaderField:@"Content-Type"];
-        [request setValue:@"application/x-protobuf" forHTTPHeaderField:@"Accept"];
-        request.HTTPBody = SGHapticTrackRequest(uri);
-        [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
+    SGSpotifyMetadataRequest(SGSpotifyExtendedMetadataPath, SGHapticTrackRequest(uri), ^(NSData *data, NSInteger status, NSError *error) {
             BOOL answered = NO;
             NSString *isrc = status == 200 ? SGHapticISRCInReply(data, uri, &answered) : nil;
             dispatch_async(dispatch_get_main_queue(), ^{
@@ -92,7 +82,6 @@ static void askSpotify(NSString *uri, NSUInteger triesLeft, void (^done)(NSStrin
                     askSpotify(uri, triesLeft - 1, done);
                 });
             });
-        }] resume];
     });
 }
 

@@ -36,6 +36,18 @@ TWEAK = "tweak/Sources"
 HARNESSES = [
     {"name": "Album notes", "dir": "album-notes", "theos": True,
      "run": "bash harness/album-notes/build.sh"},
+    {"name": "Album counts", "dir": "album-counts",
+     "run": "bash harness/album-counts/check.sh"},
+    {"name": "Appearance accent", "dir": "appearance-accent", "theos": True,
+     "run": "bash harness/appearance-accent/check.sh"},
+    {"name": "Appearance rows", "dir": "appearance-page",
+     "run": "bash harness/appearance-page/rows-check.sh"},
+    {"name": "Explicit badges", "dir": "ui-refinements", "theos": True,
+     "run": "bash harness/ui-refinements/badge-check.sh"},
+    {"name": "Settings search", "dir": "settings-search",
+     "run": "sh harness/settings-search/build.sh"},
+    {"name": "Meaning translation", "dir": "meaning-translate",
+     "run": "sh harness/meaning-translate/build.sh"},
     {"name": "Artist artwork", "dir": "artist-artwork",
      "run": "bash harness/artist-artwork/build.sh"},
     {"name": "Album credits", "dir": "album-credits",
@@ -146,9 +158,9 @@ SKIP_PARTS = {"build", ".build"}
 # use their process name even when CFFIXED_USER_HOME points somewhere else.
 SHARED_PREFERENCE_DOMAINS = {
     "check": {
-        "driver", "genius-lyrics", "local-files", "lyrics-sources",
+        "appearance-page", "driver", "genius-lyrics", "local-files", "lyrics-sources",
         "lyrics-translation", "lyrics-walk", "native-declutter", "player",
-        "prefs", "radio-modes", "spicy-lyrics", "update",
+        "prefs", "radio-modes", "spicy-lyrics", "ui-refinements", "update",
     },
     "now-playing": {"local-files", "now-playing"},
     "state-check": {"lyrics-sources", "motion"},

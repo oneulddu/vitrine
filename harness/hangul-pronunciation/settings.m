@@ -42,7 +42,6 @@ SGModRow *SGMenuRow(NSString *title, NSArray<NSString *> *choices, NSString *(^v
 SGModSection *SGSection(NSString *title, NSArray<SGModRow *> *rows) {
     SGModSection *section = [SGModSection new]; section.title = title; section.rows = rows; return section;
 }
-NSString *SGKaraokeLineText(SGKaraokeLine *line) { return nil; }
 
 static NSUInteger failures;
 static void check(BOOL ok, NSString *name) {

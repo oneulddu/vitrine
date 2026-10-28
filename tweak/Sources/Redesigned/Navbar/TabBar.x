@@ -363,24 +363,42 @@ static void logBarOnce(UITabBar *bar) {
 @end
 
 // The now playing card (56), its gap over the bar (8) and 24 more, whether a song is playing or not.
-static const CGFloat kFadeAbove = 88;
+const CGFloat SGRBarFadeAbovePt = 88;
 
+void SGRStyleBarFade(CAGradientLayer *layer) {
+    // Eased rather than straight, so the fade has no edge where it starts.
+    layer.colors = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor, (id)[UIColor colorWithWhite:0 alpha:0.3].CGColor,
+                     (id)[UIColor colorWithWhite:0 alpha:0.5].CGColor];
+    layer.locations = @[@0, @0.5, @1];
+}
+
+// Switched off (SGRKeyNavbarFade), the fade leaves the bar and is let go, so the bar holds no fade of the redesign's
+// at all, and switching it on again makes one anew.
 static void placeFade(UIView *stockBar, CGRect glass) {
     SGRBarFade *fade = objc_getAssociatedObject(stockBar, &kFadeKey);
+    if (!SGEnabled(SGRKeyNavbarFade)) {
+        if (!fade) return;
+        [fade removeFromSuperview];
+        objc_setAssociatedObject(stockBar, &kFadeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return;
+    }
     if (!fade) {
         fade = [SGRBarFade new];
         fade.userInteractionEnabled = NO;
-        CAGradientLayer *layer = (CAGradientLayer *)fade.layer;
-        // Eased rather than straight, so the fade has no edge where it starts.
-        layer.colors = @[(id)[UIColor colorWithWhite:0 alpha:0].CGColor, (id)[UIColor colorWithWhite:0 alpha:0.3].CGColor,
-                         (id)[UIColor colorWithWhite:0 alpha:0.5].CGColor];
-        layer.locations = @[@0, @0.5, @1];
+        SGRStyleBarFade((CAGradientLayer *)fade.layer);
         objc_setAssociatedObject(stockBar, &kFadeKey, fade, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    CGFloat top = CGRectGetMinY(glass) - kFadeAbove;
+    CGFloat top = CGRectGetMinY(glass) - SGRBarFadeAbovePt;
     CGRect frame = CGRectMake(0, top, stockBar.bounds.size.width, CGRectGetMaxY(glass) - top);
     if (!CGRectEqualToRect(fade.frame, frame)) fade.frame = frame;
     if (fade.superview != stockBar || stockBar.subviews.firstObject != fade) [stockBar insertSubview:fade atIndex:0];
+}
+
+// The bar the glass was last laid out on lays out again, and its pass puts the fade on or takes it off. The bar is
+// the one this file follows rather than the one Navbar.x composed (SGRRefreshTabBar): the fade is this file's, and
+// it is on that bar whether or not the composition found its row.
+void SGRRefreshBarFade(void) {
+    [sg_stockBar setNeedsLayout];
 }
 
 #pragma mark - room for the glass bar

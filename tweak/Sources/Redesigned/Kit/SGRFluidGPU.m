@@ -2,6 +2,7 @@
 #import <UIKit/UIKit.h>
 #import <simd/simd.h>
 #import "Core/SGCore.h"
+#import "SGRFluid.h"
 #import "SGRFluidGPU.h"
 #import "SGRTokens.h"
 #import "SGRBridges.h"
@@ -18,14 +19,27 @@ typedef struct {
     float warp;            // the Warp setting as a factor
     float progress;        // how far the new cover has run in, 0 to 1
     float flows;           // 1 while it runs in flowing, 0 while it fades
+    float grain;           // the noise's spread, peak to peak, in eight-bit steps (grainSteps)
 } Uniforms;
+
+// The noise's spread at the standard Grain, the dither against banding the shader always had (half a step either
+// way), and at the setting's most, a grain that shows over the blurred cover. Between none and the standard it
+// scales to the setting, and on from there to the most.
+static const float kGrainStandardSteps = 1, kGrainMostSteps = 24;
+
+static float grainSteps(float factor) {
+    SGRFluidLimits limits = SGRFluidLimitsOf(SGRFluidGrain);
+    float most = (float)limits.most / (float)limits.standard;
+    if (factor <= 1) return factor * kGrainStandardSteps;
+    return kGrainStandardSteps + (MIN(factor, most) - 1) / (most - 1) * (kGrainMostSteps - kGrainStandardSteps);
+}
 
 // ZOOM: the visible rect's longer side reads this share of the cover, about what the Light renderer's copies,
 // twice the screen's size and more, show of theirs.
 static NSString *const kShader = @"#include <metal_stdlib>\n"
 "using namespace metal;\n"
 "#define ZOOM 0.55\n"
-"struct U { float4 visible; float2 aspect; float time; float warp; float progress; float flows; };\n"
+"struct U { float4 visible; float2 aspect; float time; float warp; float progress; float flows; float grain; };\n"
 "struct V { float4 position [[position]]; float2 uv; };\n"
 // One triangle past the corners covers the drawable; uv runs 0 to 1 down and across it.
 "vertex V fluidVertex(uint id [[vertex_id]]) {\n"
@@ -71,13 +85,14 @@ static NSString *const kShader = @"#include <metal_stdlib>\n"
 "    float4 a = smoothRead(from, s, (r + bend * u.progress) * ZOOM + 0.5);\n"
 "    float4 b = smoothRead(to, s, (r - bend * (1.0 - u.progress)) * ZOOM + 0.5);\n"
 "    float3 c = mix(a.rgb, b.rgb, m);\n"
-// Half a step of noise against the banding a slow gradient shows in eight bits.
+// Noise against the banding a slow gradient shows in eight bits, spread over u.grain steps; past the standard's half
+// step up it only darkens, so the brightness ceiling holds as it did.
 "    uint2 ip = uint2(in.position.xy);\n"
 "    uint h = ip.x * 1973u + ip.y * 9277u;\n"
 "    h = (h ^ (h >> 13)) * 1274126177u;\n"
 "    h ^= h >> 16;\n"
 "    float noise = float(h & 0xffffu) / 65535.0 - 0.5;\n"
-"    return float4(c + noise / 255.0, 1.0);\n"
+"    return float4(c + min(noise * u.grain, 0.5) / 255.0, 1.0);\n"
 "}\n";
 
 BOOL SGRFluidGPUAvailable(void) {
@@ -197,6 +212,7 @@ static BOOL mayDraw(void) {
     if (!(self = [super init])) return nil;
     _rate = 1;
     _warp = 1;
+    _grain = 1;
     _progress = 1;
     self.pixelFormat = MTLPixelFormatBGRA8Unorm;
     self.framebufferOnly = YES;
@@ -269,6 +285,13 @@ static BOOL mayDraw(void) {
 - (void)setWarp:(float)warp {
     if (warp == _warp) return;
     _warp = warp;
+    _dirty = YES;
+    [self update];
+}
+
+- (void)setGrain:(float)grain {
+    if (grain == _grain) return;
+    _grain = grain;
     _dirty = YES;
     [self update];
 }
@@ -373,6 +396,7 @@ static BOOL mayDraw(void) {
         .warp = _warp,
         .progress = _from ? _progress : 1,
         .flows = _flows ? 1 : 0,
+        .grain = grainSteps(_grain),
     };
 
     MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];

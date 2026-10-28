@@ -32,3 +32,36 @@ recorded on). Each moment is logged with where every control landed in the heade
 
 What it does not cover: the real stack's constraints and when its coalesced update actually runs, the
 element framework behind the avatar, the list's rows (`LibraryRows.x`) and the folder page.
+
+## Compact library
+
+    THEOS=$HOME/theos HARNESS_BUILD_DIR=/tmp/<dir> ./compact-check.sh
+
+builds the app, runs it in a simulator of its own (made for the run, deleted after it) and exits nonzero on the
+first failed check. The mock has what Compact library (`spotifyglass.redesign.library.hideChips`, `LibraryMenu.m`)
+works with, under the identifiers Chroma 1.0 reads on 9.1.x: the chips as a collection view `Layout.CollectionView`
+whose delegate selects and clears a filter, a clear chip whose class name holds `ClearChip`, and the list's sort row
+(`YourLibraryContent.sort`, `YourLibraryContent.gridToggle`) with grid cards (`Components.UI.CardLibrary`) or rows.
+The sort button cycles the order where Spotify opens its sheet; the toggle switches the view.
+
+`check` launches (main.m) assert: off, the header is Spotify's and has no menu; on, the chips fold once the sort row
+has been seen (`late`: the list loads after the page, on its own pass), the header shrinks to its row, the list's inset
+drops by the chips' band and holds through Spotify's next pass; the row reads title, menu button, controls, avatar
+from the leading edge, each starting where the one before ends and the avatar 8pt from the trailing edge, mirrored
+right to left, the menu with its VoiceOver label, hint and large content; the menu reads `Sort (Recents) | List,
+Grid*`. Sorted on the mock's own row and the row then scrolled away, the menu names no order rather than the old one;
+Sort picked then scrolls the list to its top in sight, fires the row's control only once it is there, and the list is
+still at its top after the reload the sort makes; with the row on screen Sort fires in place, the list left where it
+is; a view already shown fires nothing; a filter on keeps the chips folded and Clear all filters clears it through
+the delegate; a list with no sort row (`nosort`) and a sort row gone when fired give the chips back; a folder keeps its
+chips. `noclear` chooses a filter with no clear chip the menu knows in the chips alone, with no pass of the page's:
+the chips come back on the chips' own pass, fold again when it is cleared there, and with no pass at all are back by
+the time the menu opens. The same run at the largest accessibility text size and right to left, then `settings`
+(settings-check.m: the Library page's preview reads the chips or the menu with the switch, its title and sort rows
+read from the leading edge, the switch stores the key, the card grows with the text) left to right and right to
+left, and `look`, the menu opened by a finger (`../tabbar/touch.m`), screenshotted with simctl. PNGs are in
+`$HARNESS_BUILD_DIR/png`.
+
+What it does not cover: Spotify's real chips, sort sheet and list, whose identifiers and class names come from
+Chroma's binary rather than a recorded tree; whether the real list's content size changes once its rows arrive (the
+hook that has the page look again); and where Spotify draws a selected chip (a selected trait or a selected control).

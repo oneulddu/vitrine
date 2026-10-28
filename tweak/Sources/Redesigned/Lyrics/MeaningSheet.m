@@ -2,10 +2,13 @@
 #import "Settings/SGPageStyle.h"
 #import "MeaningSheet.h"
 #import "Redesigned/Kit/SGRTokens.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 
 static const CGFloat kSide = 24, kTop = 28, kGap = 12;
 // The footer's row is drawn 22pt tall; its buttons take touches over 44, centered on it.
 static const CGFloat kRow = 22, kTouch = 44;
+// One annotation's translation is asked for only when its reader taps for it, and the sheet keeps this many.
+static const NSUInteger kKeptTranslations = 24;
 
 static NSString *authorName(SGLyricsMeaningAuthor author) {
     switch (author) {
@@ -45,9 +48,18 @@ static NSAttributedString *linkedBody(NSString *body) {
     NSArray<SGLyricsMeaning *> *_meanings;
     NSUInteger _index;
     UIScrollView *_scroll;
-    UILabel *_quote, *_count;
+    UILabel *_quote, *_count, *_status;
     UITextView *_body;
-    UIButton *_author, *_next, *_open;
+    UIButton *_author, *_next, *_open, *_translate;
+    // The sheet's own: an explanation's translation lives as long as this sheet does, never as a song's line.
+    // Each is @[body, quote] for one keyOnScreen.
+    NSMutableDictionary<NSArray *, NSArray<NSString *> *> *_translations;
+    NSMutableArray<NSArray *> *_translationOrder;
+    NSMutableSet<NSArray *> *_inFlight;
+    // Only the latest failure needs a message, not an unbounded history of failed languages.
+    NSArray *_failedKey;
+    // The annotation on screen shows its own words rather than its translation.
+    BOOL _original;
 }
 
 - (instancetype)initWithLine:(NSString *)lineText meanings:(NSArray<SGLyricsMeaning *> *)meanings {
@@ -55,6 +67,9 @@ static NSAttributedString *linkedBody(NSString *body) {
     if (!self) return nil;
     _lineText = [lineText copy];
     _meanings = [meanings copy];
+    _translations = [NSMutableDictionary dictionary];
+    _translationOrder = [NSMutableArray array];
+    _inFlight = [NSMutableSet set];
     self.modalPresentationStyle = UIModalPresentationPageSheet;
     SGPresentDark(self);
     UISheetPresentationController *sheet = self.sheetPresentationController;
@@ -82,12 +97,16 @@ static NSAttributedString *linkedBody(NSString *body) {
     config.title = title;
     config.contentInsets = NSDirectionalEdgeInsetsZero;
     config.baseForegroundColor = SGRAccent();
+    __weak SGRMeaningSheet *weakSelf = self;
     config.titleTextAttributesTransformer = ^NSDictionary *(NSDictionary *attributes) {
         NSMutableDictionary *out = [attributes mutableCopy];
-        out[NSFontAttributeName] = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+        out[NSFontAttributeName] = [[UIFontMetrics metricsForTextStyle:UIFontTextStyleSubheadline]
+            scaledFontForFont:[UIFont systemFontOfSize:15 weight:UIFontWeightSemibold]
+            compatibleWithTraitCollection:weakSelf.traitCollection];
         return out;
     };
     UIButton *button = [UIButton buttonWithConfiguration:config primaryAction:nil];
+    button.titleLabel.adjustsFontForContentSizeCategory = YES;
     [button addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
     [_scroll addSubview:button];
     return button;
@@ -132,20 +151,44 @@ static NSAttributedString *linkedBody(NSString *body) {
     [_scroll addSubview:_body];
     _count = [self labelWithFont:[UIFont systemFontOfSize:13 weight:UIFontWeightRegular] color:SGRTertiary()];
     _count.numberOfLines = 1;
-    _next = [self buttonWithTitle:@"Next" action:@selector(showNext)];
-    _open = [self buttonWithTitle:@"View on Genius" action:@selector(openGenius)];
+    // Said under the words rather than in place of them, so a translation is never taken for Genius's own text.
+    _status = [self labelWithFont:[UIFont systemFontOfSize:13 weight:UIFontWeightRegular] color:SGRTertiary()];
+    _status.numberOfLines = 0;
+    // The target language and the services are read per drawing: another language's answer is not this
+    // language's, and a service that goes is no longer offered.
+    for (NSNotificationName name in @[SGLyricsTranslationsDidChangeNotification, SGLyricsTranslationServiceSettingsDidChangeNotification]) {
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(settingsChanged) name:name object:nil];
+    }
+    _next = [self buttonWithTitle:SGL(@"settings.lyrics.meaning.next", @"Next") action:@selector(showNext)];
+    _open = [self buttonWithTitle:SGL(@"settings.lyrics.meaning.genius", @"View on Genius") action:@selector(openGenius)];
+    _translate = [self buttonWithTitle:SGL(@"settings.lyrics.meaning.translate", @"Translate") action:@selector(toggleTranslation)];
     [self show];
 }
 
 - (void)show {
     SGLyricsMeaning *meaning = _meanings[_index];
-    _quote.text = [NSString stringWithFormat:@"“%@”", _lineText];
+    NSArray *key = [self keyOnScreen];
+    NSArray<NSString *> *translated = _original ? nil : _translations[key];
+    NSString *body = translated.count == 2 ? translated[0] : meaning.body;
+    NSString *quote = translated.count == 2 ? translated[1] : _lineText;
+    _quote.text = [NSString stringWithFormat:@"“%@”", quote ?: @""];
     UIButtonConfiguration *badge = _author.configuration;
     badge.title = authorName(meaning.author);
     badge.image = [UIImage systemImageNamed:authorSymbol(meaning.author)
                           withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:11 weight:UIImageSymbolWeightSemibold]];
     _author.configuration = badge;
-    _body.attributedText = linkedBody(meaning.body);
+    _body.attributedText = linkedBody(body);
+    // The Genius writing above stays Genius's own: a translation says so, and the action says how to go back.
+    // A refused one says so under the words, and the action stays for another try.
+    _status.text = translated.count == 2 ? SGL(@"settings.lyrics.meaning.status.translated", @"Translated")
+                  : [_failedKey isEqual:key]
+                      ? SGL(@"settings.lyrics.meaning.error.translate", @"Couldn't translate") : nil;
+    UIButtonConfiguration *action = _translate.configuration;
+    action.title = translated.count == 2 ? SGL(@"settings.lyrics.meaning.showoriginal", @"Show Original")
+                                        : SGL(@"settings.lyrics.meaning.translate", @"Translate");
+    _translate.configuration = action;
+    // Offered only while a translator the user set up takes the target language: nothing is asked for otherwise.
+    _translate.hidden = !SGLyricsTranslateTextsAvailable();
     _count.text = _meanings.count > 1 ? [NSString stringWithFormat:@"Genius · %lu of %lu", (unsigned long)_index + 1, (unsigned long)_meanings.count]
                                       : @"Genius";
     _next.hidden = _meanings.count < 2;
@@ -165,7 +208,18 @@ static NSAttributedString *linkedBody(NSString *body) {
     _author.frame = CGRectMake(left, y, MIN(width, badge.width), badge.height);
     y = CGRectGetMaxY(_author.frame) + kGap + 4;
     _body.frame = CGRectMake(left, y, width, [_body sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height);
-    y = CGRectGetMaxY(_body.frame) + kGap * 2;
+    y = CGRectGetMaxY(_body.frame) + kGap;
+    CGFloat statusHeight = _status.text.length ? [_status sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height : 0;
+    _status.frame = CGRectMake(left, y, width, statusHeight);
+    if (statusHeight) y += statusHeight + kGap;
+    if (_translate.isHidden) {
+        _translate.frame = CGRectZero;
+    } else {
+        CGFloat actionWidth = MAX(kTouch, [_translate sizeThatFits:CGSizeZero].width);
+        _translate.frame = CGRectMake(left, y, MIN(width, actionWidth), kTouch);
+        y += kTouch;
+    }
+    y += kGap;
     _count.frame = CGRectMake(left, y, [_count sizeThatFits:CGSizeMake(width, kRow)].width, kRow);
     CGFloat right = left + width, touchTop = y - (kTouch - kRow) / 2;
     if (!_next.hidden) {
@@ -182,9 +236,80 @@ static NSAttributedString *linkedBody(NSString *body) {
 
 - (void)showNext {
     _index = (_index + 1) % _meanings.count;
+    // Another annotation shows its own cached answer, if one is available.
+    _original = NO;
     [UIView transitionWithView:_scroll duration:0.2 options:UIViewAnimationOptionTransitionCrossDissolve
                     animations:^{ [self show]; [self.view layoutIfNeeded]; } completion:nil];
     [_scroll setContentOffset:CGPointMake(0, -_scroll.adjustedContentInset.top) animated:NO];
+}
+
+#pragma mark - the translation
+
+// A translation already kept for this annotation shows, or the annotation's own words come back. Otherwise the
+// explanation and the line it quotes leave the phone once, on this tap alone; a second tap while that is running
+// does nothing.
+- (void)toggleTranslation {
+    if (!SGLyricsTranslateTextsAvailable()) return;
+    SGLyricsMeaning *meaning = _meanings[_index];
+    NSString *language = SGLyricsGeminiLanguage();
+    NSArray *key = [self keyOnScreen];
+    if (_translations[key]) {
+        _original = !_original;
+        [self show];
+        [_scroll setContentOffset:CGPointMake(0, -_scroll.adjustedContentInset.top) animated:NO];
+        return;
+    }
+    if ([_inFlight containsObject:key]) return;
+    NSString *body = meaning.body ?: @"";
+    if (!body.length) return;
+    [_inFlight addObject:key];
+    _failedKey = nil;
+    _original = NO;
+    [self show];
+    __weak SGRMeaningSheet *weakSelf = self;
+    SGLyricsTranslateTexts(@[body, _lineText ?: @""], language, self.view, ^(NSArray<NSString *> *translations, NSString *error) {
+        SGRMeaningSheet *self = weakSelf;
+        if (!self) return;
+        [self->_inFlight removeObject:key];
+        // Only a sheet still on screen with this annotation in it is redrawn; the answer is kept for its own
+        // either way, so coming back to it needs no second request.
+        BOOL shown = self.viewIfLoaded.window != nil && !self.isBeingDismissed && [[self keyOnScreen] isEqual:key];
+        if (!translations || error) {
+            self->_failedKey = key;
+            if (shown) [self show];
+            return;
+        }
+        if ([self->_failedKey isEqual:key]) self->_failedKey = nil;
+        [self keep:translations forKey:key];
+        if (!shown) return;
+        [self show];
+        [self->_scroll setContentOffset:CGPointMake(0, -self->_scroll.adjustedContentInset.top) animated:NO];
+    });
+}
+
+// The target language or the services changed: the words drawn again are the ones the sheet now has to offer.
+- (void)settingsChanged {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ [self settingsChanged]; }); return; }
+    if (self.viewIfLoaded.window && !self.isBeingDismissed) [self show];
+}
+
+// The index identifies this annotation within the sheet; the tuple cannot collide on delimiters in prose.
+- (NSArray *)keyOnScreen {
+    SGLyricsMeaning *meaning = _meanings[_index];
+    return @[@(_index), meaning.url ?: @"", meaning.fragment ?: @"", meaning.body ?: @"",
+             _lineText ?: @"", SGLyricsGeminiLanguage()];
+}
+
+// Bounded: the oldest answer goes once the sheet holds this many, so a long read cannot grow without end.
+- (void)keep:(NSArray<NSString *> *)translated forKey:(NSArray *)key {
+    if (!_translations[key] && _translationOrder.count >= kKeptTranslations) {
+        NSArray *oldest = _translationOrder.firstObject;
+        [_translationOrder removeObjectAtIndex:0];
+        [_translations removeObjectForKey:oldest];
+    }
+    [_translationOrder removeObject:key];
+    [_translationOrder addObject:key];
+    _translations[key] = translated;
 }
 
 - (void)openGenius {

@@ -45,6 +45,18 @@ BOOL SGLyricsLooksJapanese(NSArray<SGKaraokeLine *> *lines);
 @property (nonatomic, copy) NSString *reading;
 @end
 NSArray<SGLyricsRuby *> *SGLyricsFurigana(NSString *text);
+// Worker-only preparation, shared by lyric views. Explicit reading choices are a snapshot of the
+// settings, never reread during a job. Results are bounded and reused by source text AND word clocks.
+// Treat the returned models as immutable. Provider/AI pronunciation remains the caller's first choice.
+@interface SGLyricsPreparedExtras : NSObject
+@property (nonatomic, readonly) SGKaraokeLine *pronunciation;
+@property (nonatomic, readonly) NSArray<NSValue *> *sourceRanges;
+// Original lyric-word spans in the same UTF-16 coordinate space as sourceRanges.
+@property (nonatomic, readonly) NSArray<NSValue *> *wordRanges;
+@property (nonatomic, readonly) NSArray<SGLyricsRuby *> *ruby;
+@end
+SGLyricsPreparedExtras *SGLyricsPrepareExtras(SGKaraokeLine *line, BOOL japanese, BOOL hangul,
+                                             BOOL hiragana, BOOL pronunciation, BOOL ruby);
 #define SGKeyLyricsFurigana @"spotifyglass.lyricsFurigana"
 SGModRow *SGLyricsFuriganaRow(void);
 

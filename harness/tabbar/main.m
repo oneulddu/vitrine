@@ -2,7 +2,10 @@
 // screen, laid out with the constraints 9.1.78 makes (see the README for the addresses), under Spotify's
 // class names, with Spotify's message bar (Offline, Private Session) able to come in under the tab bar.
 #import <UIKit/UIKit.h>
+#import "../harness-fail.h"
 #import "Core/SGViewTree.h"
+#import "Core/SGPrefs.h"
+#import "Redesigned/Navbar/Navbar.h"
 
 #pragma mark - Spotify's classes, by the names the hooks look for
 
@@ -43,8 +46,14 @@
 @implementation _TtGC7SwiftUI14_UIHostingViewV19Jam_AttachmentsImpl13JamHatElement_
 @end
 
-static BOOL sgJam;
+static BOOL sgJam, sgColorful;
 static __weak UIView *sgJamStrip;
+
+// Spotify's own fade under its bar (9.1.90), which the redesign keeps clear whatever its own fade does (`fade`).
+@interface _TtC23NavigationUI_TabBarImpl18TabBarGradientView : UIView
+@end
+@implementation _TtC23NavigationUI_TabBarImpl18TabBarGradientView
+@end
 
 @interface _TtC18NowPlaying_BarImpl27NowPlayingBarViewController : UIViewController
 @end
@@ -161,6 +170,8 @@ static __weak UIView *sgJamStrip;
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"row" forIndexPath:path];
     cell.backgroundColor = path.row == 29 ? [UIColor colorWithRed:0.1 green:0.3 blue:0.6 alpha:1] : UIColor.blackColor;
+    // `fade`: rows in color, so the fade under the bars shows on them.
+    if (sgColorful) cell.backgroundColor = [UIColor colorWithHue:fmod(path.row * 0.11, 1) saturation:0.6 brightness:0.75 alpha:1];
     cell.textLabel.textColor = UIColor.whiteColor;
     cell.textLabel.text = path.row == 29 ? @"Last row of the list" : [NSString stringWithFormat:@"Row %ld", (long)path.row + 1];
     return cell;
@@ -222,6 +233,21 @@ static UIView *item(Class cls, NSString *title, NSString *symbol, BOOL active) {
     [view addSubview:page.view];
     [page didMoveToParentViewController:self];
     page.additionalSafeAreaInsets = UIEdgeInsetsMake(0, 0, 49, 0);
+
+    // `fade`: Spotify's own fade over the page's foot, drawn black here so it would show if it came back.
+    if (sgColorful) {
+        UIView *spotifyFade = [_TtC23NavigationUI_TabBarImpl18TabBarGradientView new];
+        spotifyFade.translatesAutoresizingMaskIntoConstraints = NO;
+        spotifyFade.backgroundColor = UIColor.blackColor;
+        spotifyFade.userInteractionEnabled = NO;
+        [view addSubview:spotifyFade];
+        [NSLayoutConstraint activateConstraints:@[
+            [spotifyFade.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
+            [spotifyFade.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],
+            [spotifyFade.bottomAnchor constraintEqualToAnchor:view.bottomAnchor],
+            [spotifyFade.heightAnchor constraintEqualToConstant:219],
+        ]];
+    }
 
     UIView *stack = [UIView new];
     stack.accessibilityIdentifier = @"TabBarContainer.stackView";
@@ -494,6 +520,108 @@ static void report(SGHarnessChrome *chrome, NSString *moment) {
     }
 }
 
+#pragma mark - the fade under the bars
+
+static NSArray<UIView *> *viewsNamed(UIView *root, NSString *name) {
+    NSMutableArray<UIView *> *found = [NSMutableArray array];
+    SGForEachView(root, ^(UIView *v) {
+        if ([NSStringFromClass(v.class) isEqualToString:name]) [found addObject:v];
+    });
+    return found;
+}
+
+// What the Tab bar page does when its switch flips (NavbarSettings.m): the setting stored, the bar laid out again.
+static void setFade(SGHarnessChrome *chrome, BOOL on) {
+    SGSetEnabled(SGRKeyNavbarFade, on);
+    [chrome.tabs.bar setNeedsLayout];
+    [chrome.tabs.bar layoutIfNeeded];
+}
+
+// The fade there once, behind the glass, from SGRBarFadeAbovePt over the glass bar's top to its foot, taking no
+// touches; or no fade of the redesign's anywhere in the window. Either way Spotify's own stays clear, and a finger in
+// the fade's band over the now playing card lands on the page.
+static void expectFade(SGHarnessChrome *chrome, BOOL on, NSString *moment) {
+    UIWindow *window = chrome.view.window;
+    UIView *stock = chrome.tabs.bar;
+    NSArray<UIView *> *fades = viewsNamed(window, @"SGRBarFade");
+    UIView *host = viewsNamed(stock, @"SGRTabBarHost").firstObject;
+    CGRect glass = [host convertRect:host.bounds toView:window];
+    if (on) {
+        UIView *fade = fades.firstObject;
+        CGRect frame = [fade convertRect:fade.bounds toView:window];
+        if (fades.count != 1 || fade.superview != stock || stock.subviews.firstObject != fade || fade.userInteractionEnabled
+            || fabs(CGRectGetMinY(frame) - (CGRectGetMinY(glass) - SGRBarFadeAbovePt)) > 0.5 || fabs(CGRectGetMaxY(frame) - CGRectGetMaxY(glass)) > 0.5) {
+            HARNESS_FAIL(@"%@: %lu fades, the first %@ under %@ (first subview %d, touches %d), glass %@", moment, (unsigned long)fades.count,
+                         NSStringFromCGRect(frame), NSStringFromClass(fade.superview.class), stock.subviews.firstObject == fade,
+                         fade.userInteractionEnabled, NSStringFromCGRect(glass));
+        }
+    } else if (fades.count) {
+        HARNESS_FAIL(@"%@: %lu fades left with the fade off", moment, (unsigned long)fades.count);
+    }
+    for (UIView *spotify in viewsNamed(window, @"_TtC23NavigationUI_TabBarImpl18TabBarGradientView")) {
+        if (spotify.alpha > 0) HARNESS_FAIL(@"%@: Spotify's fade is back (alpha %.2f)", moment, spotify.alpha);
+    }
+    CGPoint above = CGPointMake(CGRectGetMidX(glass), CGRectGetMinY(glass) - SGRBarFadeAbovePt + 10);
+    UIView *hit = [window hitTest:above withEvent:nil];
+    UIView *list = chrome.tabs.childViewControllers.firstObject.view;
+    if (!CGRectIsEmpty(glass) && !stock.hidden && !chrome.presentedViewController && ![hit isDescendantOfView:list]) {
+        HARNESS_FAIL(@"%@: a finger at %@ lands on %@, not the page", moment, NSStringFromCGPoint(above), NSStringFromClass(hit.class));
+    }
+    printf("PASS %s: %s\n", moment.UTF8String, on ? "one fade behind the glass, no touches taken" : "no fade");
+    fflush(stdout);
+}
+
+// `fade toggle`: the switch flipped live, over and over, minimized and with the bar hidden; nothing kept from a
+// fade switched off. With `split` the bar has a split tab.
+static void runFadeChecks(SGHarnessChrome *chrome) {
+    expectFade(chrome, YES, @"on");
+    __weak UIView *first = viewsNamed(chrome.tabs.bar, @"SGRBarFade").firstObject;
+    @autoreleasepool { setFade(chrome, NO); }
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+    expectFade(chrome, NO, @"switched off");
+    if (first) HARNESS_FAIL(@"the fade switched off is still alive");
+    setFade(chrome, YES);
+    expectFade(chrome, YES, @"switched on again");
+
+    NSPointerArray *made = [NSPointerArray weakObjectsPointerArray];
+    for (NSUInteger i = 0; i < 20; i++) {
+        @autoreleasepool {
+            [made addPointer:(__bridge void *)viewsNamed(chrome.tabs.bar, @"SGRBarFade").firstObject];
+            setFade(chrome, NO);
+            setFade(chrome, YES);
+        }
+    }
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+    expectFade(chrome, YES, @"after 20 turns");
+    NSUInteger alive = 0;
+    for (NSUInteger i = 0; i < made.count; i++) alive += [made pointerAtIndex:i] != NULL;
+    if (alive) HARNESS_FAIL(@"%lu fades switched off are still alive", (unsigned long)alive);
+    printf("PASS no fade kept after 20 turns\n");
+
+    SGRSetTabBarMinimized(YES, NO);
+    [chrome.view layoutIfNeeded];
+    if (!SGRTabBarMinimized()) HARNESS_FAIL(@"the bar did not minimize");
+    expectFade(chrome, YES, @"minimized");
+    setFade(chrome, NO);
+    expectFade(chrome, NO, @"minimized, switched off");
+    setFade(chrome, YES);
+    expectFade(chrome, YES, @"minimized, switched on");
+    SGRSetTabBarMinimized(NO, NO);
+    [chrome.view layoutIfNeeded];
+
+    // A page that hides the bar: the switch still takes the fade away and brings it back.
+    chrome.tabs.bar.hidden = YES;
+    setFade(chrome, NO);
+    expectFade(chrome, NO, @"bar hidden, switched off");
+    setFade(chrome, YES);
+    chrome.tabs.bar.hidden = NO;
+    [chrome.tabs.bar layoutIfNeeded];
+    expectFade(chrome, YES, @"bar shown again");
+    printf("PASS all fade\n");
+    fflush(stdout);
+    exit(0);
+}
+
 // Every title the glass bars show, and whether UIKit cut it short: the width its text needs at the
 // smallest size the label may shrink to, against the width it was given.
 static void reportNames(SGHarnessChrome *chrome, NSString *moment) {
@@ -669,10 +797,15 @@ static NSString *const kWatched[4] = {@"platter", @"glyph", @"split platter", @"
 
 #pragma mark - the app
 
-// Before every %ctor, so the redesign's gate reads on.
+// Before every %ctor, so the redesign's gate reads on; the fade under the bars on unless the launch line says `off`.
 __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"spotifyglass.redesign"];
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    [store setBool:YES forKey:@"spotifyglass.redesign"];
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"off"]) [store setBool:NO forKey:SGRKeyNavbarFade];
+    else [store removeObjectForKey:SGRKeyNavbarFade];
 }
+
+void SGHarnessRunNavbarPage(SGHarnessChrome *chrome, void (^barChecked)(BOOL on));
 
 @interface SGHarnessApp : UIResponder <UIApplicationDelegate>
 @end
@@ -747,6 +880,27 @@ static void after(double seconds, dispatch_block_t block) {
             NSLog(@"[harness] PASS single-tab minimization, composition change and icon replacement");
             exit(0);
         });
+        return;
+    }
+    // `fade`: the page in color under the bars with the fade on (`off`: off from the launch), checked at 1.5 s and
+    // then held for a screenshot (READY); `mini` minimizes the bar first. `fade toggle` runs runFadeChecks instead.
+    if ([mode isEqualToString:@"fade"]) {
+        if ([args containsObject:@"mini"]) after(1.0, ^{ SGRSetTabBarMinimized(YES, NO); });
+        after(1.5, ^{
+            if ([args containsObject:@"toggle"]) {
+                runFadeChecks(chrome);
+                return;
+            }
+            expectFade(chrome, ![args containsObject:@"off"], [[args subarrayWithRange:NSMakeRange(1, args.count - 1)] componentsJoinedByString:@" "]);
+            printf("READY\n");
+            fflush(stdout);
+            after(4.0, ^{ exit(0); });
+        });
+        return;
+    }
+    // `navsettings`: the Tab bar page over the bar (navsettings.m).
+    if ([mode isEqualToString:@"navsettings"]) {
+        after(1.0, ^{ SGHarnessRunNavbarPage(chrome, ^(BOOL on) { expectFade(chrome, on, on ? @"the page's switch on" : @"the page's switch off"); }); });
         return;
     }
     // `jam`: in a Jam from the start, and out of it at 3.5 s.
@@ -971,5 +1125,6 @@ static void after(double seconds, dispatch_block_t block) {
 
 int main(int argc, char *argv[]) {
     sgJam = argc > 1 && strcmp(argv[1], "jam") == 0;
+    sgColorful = argc > 1 && (strcmp(argv[1], "fade") == 0 || strcmp(argv[1], "navsettings") == 0);
     @autoreleasepool { return UIApplicationMain(argc, argv, nil, NSStringFromClass(SGHarnessApp.class)); }
 }

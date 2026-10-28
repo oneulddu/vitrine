@@ -5,6 +5,7 @@
 #import "Settings/SGModPage.h"
 #import "Redesigned/Kit/SGRTokens.h"
 #import "Redesigned/Kit/SGRPagePreview.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Playlist.h"
 
 // The mock playlist's cover, whose color the page's field takes, and its tracks.
@@ -49,10 +50,13 @@ static SGRPagePreview *playlistPreview(NSString *coverName, NSString *pillsName,
                                              @[SGL(@"settings.playlist.preview.sort", @"Sort"), SGL(@"settings.playlist.preview.mix", @"Mix")]);
 
     card.state = ^id<NSObject> {
-        return @[@(SGEnabled(SGRKeyPlaylistCoverViewer)), @(SGEnabled(SGRKeyPlaylistHideCuration)), @(SGEnabled(SGRKeyPlaylistMenuSortMix))];
+        return @[@(SGEnabled(SGRKeyPlaylistCoverViewer)), @(SGEnabled(SGRKeyPlaylistHideCuration)), @(SGEnabled(SGRKeyPlaylistMenuSortMix)),
+                 @(SGRPageFullCover(SGRKeyPlaylistFullCover))];
     };
     card.apply = ^(SGRPagePreview *preview, NSArray<NSNumber *> *state) {
         BOOL viewer = state[0].boolValue, hidePills = state[1].boolValue, sortMix = state[2].boolValue;
+        if (header.fullCover != state[3].boolValue) [preview revealPart:header.part];
+        header.fullCover = state[3].boolValue;
         if (header.badge.alpha != viewer) [preview revealPart:header.part];
         header.badge.alpha = viewer;
         header.part.accessibilityLabel = viewer ? coverName : nil;
@@ -65,11 +69,14 @@ static SGRPagePreview *playlistPreview(NSString *coverName, NSString *pillsName,
 }
 
 UIViewController *SGRPlaylistSettingsPage(void) {
-    NSString *coverName = SGL(@"settings.playlist.full_screen_cover.title", @"Full screen cover");
+    NSString *coverName = SGL(@"settings.playlist.open_cover_on_tap.title", @"Open cover on tap");
     NSString *pillsName = SGL(@"settings.playlist.hide.pills.title", @"Curation pills");
     NSString *sortMixName = SGL(@"settings.playlist.sort_mix.title", @"Sort and Mix");
     return SGRPagePreviewPage(SGL(@"settings.playlist.title", @"Playlists"), playlistPreview(coverName, pillsName, sortMixName), SGRestartNote, @[
         SGSection(SGL(@"settings.playlist.cover.header", @"Cover"), @[
+            SGChoiceRow(SGL(@"settings.playlist.cover_layout", @"Cover layout"), nil, SGRKeyPlaylistFullCover,
+                @[SGL(@"settings.cover_layout.card", @"Card"), SGL(@"settings.cover_layout.full_screen", @"Full screen")],
+                SGRPageFullCover(SGRKeyPlaylistFullCover)),
             SGSwitchRow(coverName, SGL(@"settings.playlist.full_screen_cover.subtitle", @"Tap the picture at the top of a playlist to zoom in or share it"),
                         SGRKeyPlaylistCoverViewer),
         ]),

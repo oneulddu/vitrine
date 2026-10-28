@@ -172,7 +172,8 @@ void SGLyricsSetRouteOffsetMs(NSInteger ms) {
 }
 
 static void rememberHeaders(NSURLSession *session, NSURLRequest *request) {
-    if (![request.URL.host containsString:@"spclient"]) return;
+    if (![request.URL.scheme.lowercaseString isEqualToString:@"https"] ||
+        ![request.URL.host.lowercaseString isEqualToString:@"spclient.wg.spotify.com"]) return;
     NSMutableDictionary<NSString *, NSString *> *all = [NSMutableDictionary dictionary];
     [session.configuration.HTTPAdditionalHeaders enumerateKeysAndObjectsUsingBlock:^(id key, id value, BOOL *stop) {
         if ([key isKindOfClass:NSString.class] && [value isKindOfClass:NSString.class]) all[[key lowercaseString]] = value;
@@ -205,13 +206,6 @@ void SGSpclientHeaders(void (^use)(NSDictionary<NSString *, NSString *> *headers
 
 static SPTPlayerState *playerState(void);
 static NSString *idOf(SPTPlayerTrack *track);
-
-// The track after this one, when the player knows it.
-static SPTPlayerTrack *upNextIn(SPTPlayerState *state) {
-    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
-    id next = [future isKindOfClass:NSArray.class] ? [(NSArray *)future firstObject] : nil;
-    return [next isKindOfClass:objc_getClass("SPTPlayerTrack")] ? next : nil;
-}
 
 // Lines with no translation of their own take Musixmatch's community ones in the Lyrics page's language,
 // whichever source they came from, Spotify's own included, matched by their text. Only the redesign shows
@@ -272,7 +266,7 @@ static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL fromStor
     if (sg_lyrics.count >= kKeptTracks && !sg_lyrics[track]) {
         NSMutableSet<NSString *> *spared = [sg_asking mutableCopy];
         SPTPlayerState *state = playerState();
-        NSString *playing = idOf(state.track), *next = idOf(upNextIn(state));
+        NSString *playing = idOf(state.track), *next = idOf(SGPlayerUpNextIn(state));
         if (playing) [spared addObject:playing];
         if (next) [spared addObject:next];
         for (NSString *kept in sg_lyrics.allKeys) {
@@ -776,7 +770,7 @@ void SGKaraokeRememberTrack(SPTPlayerTrack *track, NSString *trackID) {
 // for the track after it, while this one still plays: Spotify asks for a track's lyrics within a
 // beat of starting it and gives its card list about a second to load, so an answer that is already
 // in is what puts the card there. The track is named here, so no walk waits for a name.
-static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *state) {
+static void prefetch(NSString *trackID) {
     // Spotify never asks for a local file's lyrics, so they are asked for and kept here, a source of the
     // mod's on or not (SGKaraokeRequestLyrics). The state is read on any thread, and the kept lines are
     // the main queue's.
@@ -784,12 +778,6 @@ static void prefetch(SPTPlayerTrack *track, NSString *trackID, SPTPlayerState *s
     if (local) dispatch_async(dispatch_get_main_queue(), ^{ SGKaraokeRequestLyrics(trackID); });
     if (!sg_ownSources) return;
     if (!local) SGLyricsPrefetch(trackID);
-    SPTPlayerTrack *next = upNextIn(state);
-    NSString *nextID = idOf(next);
-    if (!nextID || [nextID isEqualToString:trackID]) return;
-    if (!SGOptionalWorkMayRun(YES)) return;
-    remember(next, nextID);
-    SGLyricsPrefetch(nextID);
 }
 
 // A state the player reported or was asked for: a new track is remembered and its walk begun. From the
@@ -813,28 +801,51 @@ static void seen(SPTPlayerState *state) {
         if ([trackID isEqualToString:SGKaraokePlayingTrack()] && resumeSourceRetries(trackID))
             SGKaraokeRequestLyrics(trackID);
     });
-    prefetch(track, trackID, state);
+    prefetch(trackID);
 }
 
 // The -state hook runs only when something asks the player, which nothing may do with the app in the
 // background and nothing on screen. The player's own reports come there too, so the next track's walk
 // begins as it starts and its lines are in for the lock screen.
 @interface SGKaraokeTrackWatcher : NSObject <SGPlayerStateObserver>
+@property (nonatomic, copy) NSString *ahead;
 @end
 
 @implementation SGKaraokeTrackWatcher
 - (instancetype)init {
     if (!(self = [super init])) return nil;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(becameActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(defaultsChanged:) name:NSUserDefaultsDidChangeNotification object:nil];
     return self;
 }
 - (void)becameActive:(NSNotification *)note {
     NSString *playing = SGKaraokePlayingTrack();
     resumeSourceRetries(playing);
     if (playing && !sg_lyrics[playing] && !SGKaraokeLooking(playing)) SGKaraokeRequestLyrics(playing);
+    [self playerUpNextDidChange:SGPlayerState()];
 }
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     seen(state);
+    [self playerUpNextDidChange:state];
+}
+- (void)playerUpNextDidChange:(SPTPlayerState *)state {
+    SPTPlayerTrack *next = SGPlayerUpNextIn(state);
+    NSString *nextID = idOf(next);
+    if (!sg_ownSources || !nextID || !SGOptionalWorkMayRun(YES)) {
+        self.ahead = nil;
+        return;
+    }
+    if ([nextID isEqualToString:self.ahead]) return;
+    self.ahead = nextID;
+    remember(next, nextID);
+    // The existing lyric owner coalesces by track ID and keeps late replies under that ID.
+    SGLyricsPrefetch(nextID);
+}
+- (void)defaultsChanged:(NSNotification *)note {
+    dispatch_async(dispatch_get_main_queue(), ^{ [self playerUpNextDidChange:SGPlayerState()]; });
+}
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 @end
 

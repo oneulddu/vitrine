@@ -31,6 +31,12 @@ void SGAlbumQueueMarkSource(UIView *view) {}
 
 // Redesigned/Album/AlbumPlaysMenu.x: a track's plays in its ⋯ menu belong to the native menu, not to the page.
 void SGRAlbumPlaysMarkMenu(NSString *album, NSString *title) {}
+#import "Redesigned/Album/AlbumSpotifyCounts.h"
+void SGRAlbumPlaysMarkSpotifyMenu(NSString *trackURI, SGRAlbumCountPage *page) {}
+void SGSpotifyMetadataRequest(NSString *path, NSData *body, SGSpotifyMetadataReply done) {
+    NSLog(@"[harness] unexpected Spotify network request");
+    exit(1);
+}
 
 // SGPageStyle.m: the cover viewer is presented over whatever is on top of the harness's window.
 UIViewController *SGTopController(void) {

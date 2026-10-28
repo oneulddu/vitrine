@@ -73,12 +73,22 @@ NSURL *SGMotionCanvasIn(NSDictionary *metadata);
 void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
                      void (^done)(NSURL *file, NSString *source));
 
+// Main queue consumer handle. Explicit cancellation suppresses completion; dropping the handle
+// alone preserves the completion-only API's lifetime. Other consumers keep their shared transfer.
+@interface SGMotionTicket : NSObject
+- (void)cancel;
+@end
+SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *file));
+SGMotionTicket *SGMotionRequestAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *file));
+SGMotionTicket *SGMotionRequestClip(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
+                                   void (^done)(NSURL *file, NSString *source));
+
 // Follows the player for one user of moving artwork, the lock screen or the redesign's player
 // (SGMotionFollower.m). Each track's sources are walked once, and again when its Canvas turns up in a later
 // state, as it does on a skip, where Spotify reports the track before its extended metadata, unless the clip
 // showing came from a source above Canvas. `begin` runs as a walk starts, to take the last clip off, and
 // says whether to walk at all; `found` gets the walk's clip, nil for none, and never runs for a walk a newer
-// one overtook. Once a walk has ended, the next track's clip is fetched ahead. Main queue.
+// one overtook. The next track's clip follows queue changes independently of the current walk. Main queue.
 @class SPTPlayerState;
 @interface SGMotionFollower : NSObject
 - (instancetype)initWithBegin:(BOOL (^)(NSString *uri, SPTPlayerState *state))begin

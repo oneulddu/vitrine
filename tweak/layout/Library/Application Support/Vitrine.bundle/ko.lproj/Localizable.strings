@@ -1,4 +1,4 @@
-/* Vitrine in Korean. Keys and format specifiers follow en.lproj (scripts/check-strings.py). */
+/* Vitrine's Korean. Follow existing terminology and tone. */
 
 "common.add" = "추가";
 
@@ -84,6 +84,8 @@
 "settings.album.apple_music.header" = "Apple Music";
 "settings.album.apple_music.note" = "앨범 이름만 Apple Music으로 전송됩니다. 저전력 모드에서는 커버가 움직이지 않습니다.";
 "settings.album.artwork_background.title" = "아트워크 배경";
+"settings.album.cover.header" = "커버";
+"settings.album.cover_layout" = "커버 레이아웃";
 "settings.album.cover_viewer.cover" = "앨범 커버";
 "settings.album.header" = "헤더";
 "settings.album.hide.add_to_library.title" = "라이브러리에 추가";
@@ -116,24 +118,30 @@
 "settings.album.play_counts.choice.in_menu" = "메뉴에";
 "settings.album.play_counts.choice.in_row" = "목록에";
 "settings.album.play_counts.choice.off" = "끔";
-"settings.album.play_counts.count.plural" = "%@회 재생";
-"settings.album.play_counts.count.singular" = "%@회 재생";
-"settings.album.play_counts.note" = "이 iPhone의 청취 통계에서 앨범과 트랙 이름으로 찾아 셉니다. 재생 기록이 꺼져 있어도 지금까지의 횟수는 그대로 보입니다.";
-"settings.album.play_counts.subtitle" = "각 트랙을 재생한 횟수";
+"settings.album.play_counts.source" = "재생 횟수 출처";
+"settings.album.play_counts.sources_note" = "내 재생 횟수는 이 iPhone의 감상 통계에서 앨범 및 트랙 이름으로 찾아 표시합니다. Spotify 재생 횟수는 Spotify의 트랙 메타데이터를 사용하며 표시되지 않을 수 있습니다.";
+"settings.album.play_counts.spotify_count" = "Spotify 재생 횟수: %@";
+"settings.album.play_counts.spotify_plays" = "Spotify 재생 횟수";
 "settings.album.play_counts.title" = "재생 횟수";
+"settings.album.play_counts.your_count" = "내 재생 횟수: %@";
+"settings.album.play_counts.your_plays" = "내 재생 횟수";
 "settings.album.preview.a11y" = "앨범 미리보기";
 "settings.album.title" = "앨범";
 "settings.album.tracks.header" = "트랙";
 
 "settings.appearance.accent.choice.custom" = "사용자 지정";
+"settings.appearance.accent.mode.automatic" = "자동";
+"settings.appearance.accent.mode.picked" = "직접 선택";
+"settings.appearance.accent.mode.subtitle" = "자동은 현재 화면을 따르고 그 다음으로 재생 중인 커버를 따릅니다. 직접 선택은 지정한 색상으로 복원합니다.";
+"settings.appearance.accent.mode.title" = "강조 색상 출처";
 "settings.appearance.accent_color.title" = "강조 색상";
 "settings.appearance.accent_picker.title" = "강조 색상";
 "settings.appearance.accent_preset.choice.custom" = "사용자 지정";
 "settings.appearance.accent_preset.title" = "강조 색상 프리셋";
 "settings.appearance.accent_recent.header" = "최근 사용한 색상";
 "settings.appearance.amoled_background.title" = "AMOLED 배경";
-"settings.appearance.full_bleed.subtitle" = "앨범과 재생목록 커버를 상단 전체에 표시합니다. 끄면 정사각형으로 표시하지만 움직이는 커버는 계속 상단을 가득 채웁니다";
-"settings.appearance.full_bleed.title" = "커버를 상단 가득 채우기";
+"settings.appearance.hide_explicit.subtitle" = "콘텐츠 제한이나 VoiceOver를 변경하지 않고 E 표시를 숨깁니다";
+"settings.appearance.hide_explicit.title" = "E 표시 숨기기";
 "settings.appearance.plain_checkmark.subtitle" = "원 없이 강조 색상으로 표시되는 저장된 노래의 체크표시";
 "settings.appearance.plain_checkmark.title" = "단순 체크표시";
 "settings.appearance.title" = "화면 모양";
@@ -425,6 +433,9 @@
 "settings.background.mode.title" = "배경";
 
 "settings.common.new" = "신규";
+
+"settings.cover_layout.card" = "카드";
+"settings.cover_layout.full_screen" = "전체 화면";
 
 "settings.cover_viewer.close" = "닫기";
 "settings.cover_viewer.share" = "공유";
@@ -876,6 +887,23 @@
 "settings.labs.title" = "실험실";
 "settings.labs.widget.header" = "홈 화면 위젯";
 
+"settings.library.compact.note" = "폴더에서는 필터 칩이 유지됩니다. 메뉴가 Spotify 컨트롤에 접근할 수 없을 때마다 칩이 계속 표시됩니다.";
+"settings.library.compact.subtitle" = "제목 아래의 필터 칩을 숨깁니다. 제목 옆 메뉴에서 Spotify 기본 컨트롤을 통해 정렬, 목록 및 그리드 전환, 필터 해제를 할 수 있습니다.";
+"settings.library.compact.title" = "컴팩트 라이브러리";
+"settings.library.menu.a11y" = "정렬 및 보기";
+"settings.library.menu.change_view" = "보기 변경";
+"settings.library.menu.clear_filter" = "필터 지우기";
+"settings.library.menu.grid" = "그리드";
+"settings.library.menu.hint" = "라이브러리를 정렬하거나 보기를 전환하고 필터를 지웁니다";
+"settings.library.menu.list" = "목록";
+"settings.library.menu.sort" = "정렬";
+"settings.library.preview.a11y" = "내 라이브러리 미리보기";
+"settings.library.preview.chips" = "필터 칩";
+"settings.library.preview.menu" = "정렬 및 보기 메뉴";
+"settings.library.preview.sort_row" = "정렬 순서 및 보기";
+"settings.library.preview.title" = "내 라이브러리";
+"settings.library.title" = "라이브러리";
+
 "settings.liveactivity.alignment.choice.center" = "가운데";
 "settings.liveactivity.alignment.choice.left" = "왼쪽";
 "settings.liveactivity.alignment.title" = "정렬";
@@ -933,6 +961,9 @@
 "settings.liveactivity.withoutlyrics.choice.note" = "안내 문구";
 "settings.liveactivity.withoutlyrics.choice.track" = "트랙";
 "settings.liveactivity.withoutlyrics.title" = "가사가 없을 때";
+
+"settings.load_ahead.subtitle" = "다음 곡의 아트워크와 가사를 미리 불러옵니다. 이 설정을 꺼도 현재 곡에는 영향을 주지 않습니다.";
+"settings.load_ahead.title" = "미리 불러오기";
 
 "settings.locallyrics.error.deletefailed" = "파일을 삭제할 수 없음";
 "settings.locallyrics.error.importfailed" = "파일을 가져올 수 없음";
@@ -1067,6 +1098,12 @@
 "settings.lyrics.language_rules.title" = "언어별 규칙 지우기…";
 "settings.lyrics.lockscreen_lyrics.subtitle" = "아티스트 이름 대신 현재 가사 줄 표시";
 "settings.lyrics.lockscreen_lyrics.title" = "잠금 화면 가사";
+"settings.lyrics.meaning.error.translate" = "번역할 수 없음";
+"settings.lyrics.meaning.genius" = "Genius에서 보기";
+"settings.lyrics.meaning.next" = "다음";
+"settings.lyrics.meaning.showoriginal" = "원문 보기";
+"settings.lyrics.meaning.status.translated" = "번역됨";
+"settings.lyrics.meaning.translate" = "번역";
 "settings.lyrics.meanings.choice.artist" = "아티스트만";
 "settings.lyrics.meanings.choice.artist_editors" = "아티스트 및 편집자";
 "settings.lyrics.meanings.choice.everyone" = "모두";
@@ -1357,6 +1394,7 @@
 "settings.main.home.title" = "홈";
 "settings.main.home_library.title" = "홈 및 라이브러리";
 "settings.main.labs.title" = "실험실";
+"settings.main.library.title" = "라이브러리";
 "settings.main.listening_stats.title" = "감상 통계";
 "settings.main.live_activity.title" = "실시간 현황";
 "settings.main.lock_screen.title" = "잠금 화면";
@@ -1737,6 +1775,7 @@
 "settings.player.fluid.blur" = "흐림";
 "settings.player.fluid.brightness" = "밝기";
 "settings.player.fluid.footer" = "스무스는 커버가 물 흐르듯 움직이고 다음 노래의 커버가 그 사이로 흘러들도록 표현하며, 배터리를 조금 더 소모합니다. 밝기가 100%를 넘으면 흰색 텍스트가 읽기 어려워질 수 있습니다. 노래를 일시 정지하면 배경이 멈춥니다. 움직임과 비주얼라이저도 플루이드를 보여 줄 때 이 설정을 사용합니다.";
+"settings.player.fluid.grain" = "그레인";
 "settings.player.fluid.renderer.light" = "라이트";
 "settings.player.fluid.renderer.smooth" = "스무스";
 "settings.player.fluid.renderer.title" = "스타일";
@@ -1748,6 +1787,8 @@
 "settings.player.gestures.title" = "제스처";
 "settings.player.glass_header_buttons.title" = "글래스 헤더 버튼";
 "settings.player.glass_lyrics.title" = "글래스 가사";
+"settings.player.header_glass.subtitle" = "플레이어 상단의 닫기 및 ⋯ 버튼 뒤에 글래스 원형 배경을 표시합니다.";
+"settings.player.header_glass.title" = "헤더 글래스";
 "settings.player.hide.about_artist.title" = "아티스트 정보";
 "settings.player.hide.add_to_playlist.title" = "플레이리스트에 추가";
 "settings.player.hide.connect.title" = "기기에 연결";
@@ -1783,6 +1824,8 @@
 "settings.player.mini_player.header" = "미니 플레이어";
 "settings.player.motion_low_data.subtitle" = "노래당 최대 약 7MB. Vitrine 전체의 움직이는 아트워크에 적용됩니다.";
 "settings.player.motion_low_data.title" = "저데이터 모드에서 다운로드";
+"settings.player.music_icons.subtitle" = "컨트롤 아래에 Spotify 아이콘 대신 음악 앱 스타일의 AirPlay 및 대기열 아이콘을 표시합니다.";
+"settings.player.music_icons.title" = "음악 앱 아이콘";
 "settings.player.new_slider.title" = "새로운 진행 슬라이더";
 "settings.player.not_playing" = "재생 중이 아님";
 "settings.player.now_playing_bar.title" = "재생 중 막대";
@@ -1817,9 +1860,9 @@
 
 "settings.playlist.artwork_background.title" = "아트워크 배경";
 "settings.playlist.cover.header" = "커버";
+"settings.playlist.cover_layout" = "커버 레이아웃";
 "settings.playlist.cover_viewer.cover" = "플레이리스트 커버";
 "settings.playlist.full_screen_cover.subtitle" = "플레이리스트 맨 위의 사진을 탭해 확대하거나 공유합니다";
-"settings.playlist.full_screen_cover.title" = "전체 화면 커버";
 "settings.playlist.header" = "헤더";
 "settings.playlist.hide.add_to_library.title" = "라이브러리에 추가";
 "settings.playlist.hide.artwork.title" = "커버 아트워크";
@@ -1838,6 +1881,7 @@
 "settings.playlist.hide_in_header.header" = "플레이리스트 헤더에서 숨기기";
 "settings.playlist.hide_on_page.header" = "플레이리스트 페이지에서 숨기기";
 "settings.playlist.more_menu.header" = "더보기 메뉴";
+"settings.playlist.open_cover_on_tap.title" = "탭하여 커버 열기";
 "settings.playlist.preview.a11y" = "플레이리스트 미리보기";
 "settings.playlist.preview.mix" = "믹스";
 "settings.playlist.preview.sort" = "정렬";
@@ -1944,8 +1988,36 @@
 "settings.report.what.placeholder" = "무엇이 잘못됐나요?";
 "settings.report.what.title" = "무엇이 잘못됐나요";
 
+"settings.search.airpods.keywords" = "머리 제스처 끄덕이기 흔들기 헤드폰 이어폰 airpods 에어팟";
+"settings.search.albums.keywords" = "앨범 커버 소개 크레딧 노트";
+"settings.search.all_flags.keywords" = "원격 구성 피처 플래그 오버라이드 remote config feature flags";
+"settings.search.appearance.everywhere.keywords" = "서체 글꼴 폰트 typeface font 앱 아이콘";
+"settings.search.appearance.keywords" = "테마 색상 컬러 강조 색 서체 글꼴 폰트 amoled 아몰레드 블랙 다크 아이콘";
+"settings.search.appearance.look.keywords" = "테마 색상 컬러 강조 색 서체 글꼴 폰트 amoled 아몰레드 블랙 다크";
+"settings.search.artists.keywords" = "아티스트 헤더 사진 바이오 정보 프로필";
+"settings.search.audio_effects.keywords" = "이퀄라이저 eq 이큐 베이스 고음 크로스피드 리버브 컴프레서 리미터 음향 효과";
+"settings.search.automix.keywords" = "오토믹스 크로스페이드 갭리스 트랜지션 믹스 automix";
+"settings.search.home.keywords" = "라이브러리 내 라이브러리 홈 페이지 그라데이션 그라디언트";
+"settings.search.labs.keywords" = "실험실 실험 플래그 labs flags";
+"settings.search.library.keywords" = "내 라이브러리 필터 칩 정렬 그리드 격자 목록 컴팩트 보관함";
+"settings.search.listening_stats.keywords" = "통계 감상 기록 최다 재생 순위 연속 재생 차트";
+"settings.search.live_activity.keywords" = "다이내믹 아일랜드 잠금 화면 애플워치 카플레이 카드 액티비티 dynamic island lock screen apple watch carplay";
+"settings.search.lock_screen.keywords" = "잠금 화면 배경화면 움직이는 아트워크 가사 위젯 wallpaper widget";
+"settings.search.lyrics.keywords" = "가사 노래방 번역 발음 후리가나 루비 동기화 싱크 딜레이";
+"settings.search.mod.keywords" = "정보 버전 업데이트 내보내기 가져오기 백업 진단";
 "settings.search.none" = "결과 없음";
 "settings.search.placeholder" = "검색";
+"settings.search.player.keywords" = "지금 재생 중 셔플 순서 섞기 반복 제스처 취침 타이머 재생 대기열 큐";
+"settings.search.playlists.keywords" = "플레이리스트 재생목록 페이지 앨범 커버";
+"settings.search.premium_ads_privacy.keywords" = "광고 배너 차단 텔레메트리 추적 프라이버시 개인정보 스폰서";
+"settings.search.recent.clear" = "지우기";
+"settings.search.recent.header" = "최근 검색한 페이지";
+"settings.search.search.keywords" = "검색 둘러보기 카테고리 칩 탐색";
+"settings.search.sing.keywords" = "싱 가라오케 노래방 보컬 음성 제거 반주 보컬 컷";
+"settings.search.spatial_voice.keywords" = "공간 음향 공간 오디오 서라운드 헤드 트래킹 헤드폰 모션";
+"settings.search.tabbar.keywords" = "내비게이션 바 탐색 탭 막대 하단 바 하단 탭";
+"settings.search.vibrations.keywords" = "햅틱 진동 햅틱 피드백 진동 세기";
+"settings.search.workshop.keywords" = "프리셋 헤드폰 autoeq 오토이큐 서체 폰트 비주얼라이저 다운로드 워크숍";
 
 "settings.search_tab.cards.header" = "카테고리 카드";
 "settings.search_tab.glass_cards.subtitle" = "각 카드를 고유 색상의 Liquid Glass로 표시합니다. 끄면 Spotify 기본 카드로 표시됩니다.";
@@ -2090,6 +2162,8 @@
 "settings.tabbar.custom_bar.title" = "사용자 지정 탭 막대";
 "settings.tabbar.custom_off.footer" = "끄면 막대에 Spotify 고유 탭이 원래 순서대로 표시됩니다. 직접 구성한 목록은 다시 켤 때를 위해 유지됩니다.";
 "settings.tabbar.custom_on.footer" = "탭을 드래그하여 이동할 수 있습니다. 추가한 탭을 탭하여 이름을 바꾸거나 아이콘을 변경하고, Spotify의 탭을 탭하여 숨길 수 있습니다.";
+"settings.tabbar.fade.subtitle" = "화면 하단으로 갈수록 탭 막대와 지금 재생 중 막대 뒤의 페이지가 어두워집니다";
+"settings.tabbar.fade.title" = "막대 아래 페이드 효과";
 "settings.tabbar.intro" = "드래그하여 순서를 변경하고, 탭하여 표시하거나 숨깁니다.";
 "settings.tabbar.item.hidden.a11y" = "숨김";
 "settings.tabbar.item.hint_edit" = "탭을 열어 편집합니다";
@@ -2314,6 +2388,9 @@
 "settings.translation.savedtranslations.title" = "저장된 번역";
 "settings.translation.savedtranslations.value.format" = "%lu · %@";
 "settings.translation.savedtranslations.value.none" = "없음";
+"settings.translation.text.noservice" = "먼저 가사 설정에서 번역 서비스를 설정해 주세요.";
+"settings.translation.text.error.unreadable" = "번역 응답을 읽을 수 없습니다. 다시 시도하십시오.";
+"settings.translation.text.error.toolong" = "이 해설은 이 서비스로 번역하기에 너무 깁니다.";
 "settings.translation.thinking.high" = "높음";
 "settings.translation.thinking.low" = "낮음";
 "settings.translation.thinking.medium" = "중간";

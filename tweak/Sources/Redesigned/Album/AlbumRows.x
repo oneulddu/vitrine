@@ -4,7 +4,8 @@
 // Tree (trees/clean/album/03.txt:524-575): every row of the page is an Element_List.CollectionViewCell
 // holding an Encore.ListRow, id=Components.UI.RetrievalRowElementUI, with the title
 // (EncoreConsumerMobile.View.Granular.Title), the artists under it (…Granular.Subtitle) and, at the
-// trailing edge, Components.UI.ContextMenuButton. An album row carries no artwork -- every track on the
+// trailing edge, Components.UI.ContextMenuButton. A loaded 9.1.90 row carries neither Granular identifier: its
+// title and artists are RetrievalRowKit's TitleView and SubtitleView (titleOf, subtitleOf). An album row carries no artwork -- every track on the
 // page shares the cover the header is already showing -- so the hairline runs from the page's own margin,
 // where the text starts.
 //
@@ -38,6 +39,12 @@
 #import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Album.h"
+#import "AlbumSpotifyCounts.h"
+
+// The existing Shared/AlbumQueue Swift identity reader; no title or navigation-stack guessing.
+@interface SGAlbumQueuePage : NSObject
++ (NSString *)albumURI:(id)controller;
+@end
 
 // Under the text rather than the whole row, as the Music app draws it; the trailing end clears the page
 // margin.
@@ -108,6 +115,27 @@ static UILabel *onlyLabel(UIView *view) {
         count++;
     });
     return count == 1 ? found : nil;
+}
+
+static char kLoadedTitleKey, kLoadedSubtitleKey;
+
+// A loading row names its title Granular.Title; a loaded 9.1.90 row has no such identifier and draws it in
+// RetrievalRowKit's TitleView instead (AlbumNotes.m reads both the same way).
+static UILabel *titleOf(UIView *row) {
+    static Class loaded;
+    if (!loaded) loaded = NSClassFromString(@"_TtCC36CreativeWorkPlatform_RetrievalRowKit21RetrievalRowElementUI9TitleView");
+    UIView *title = SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Title", &kTitleKey)
+        ?: SGFindRemembered(row, &kLoadedTitleKey, ^BOOL(UIView *v) { return loaded && [v isKindOfClass:loaded]; });
+    return onlyLabel(title);
+}
+
+// The artist line the same way: Granular.Subtitle, or a loaded 9.1.90 row's SubtitleView. Only the count keeps clear
+// of it; the artist line's change needs the Granular wrapper, whose sibling the explicit badge is.
+static UIView *subtitleOf(UIView *row) {
+    static Class loaded;
+    if (!loaded) loaded = NSClassFromString(@"_TtCC36CreativeWorkPlatform_RetrievalRowKit21RetrievalRowElementUI12SubtitleView");
+    return SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Subtitle", &kSubtitleKey)
+        ?: SGFindRemembered(row, &kLoadedSubtitleKey, ^BOOL(UIView *v) { return loaded && [v isKindOfClass:loaded]; });
 }
 
 // The badge as it draws, rendered the moment before it goes: an unplayable row's is grayed, so it is not cached.
@@ -236,8 +264,34 @@ static NSHashTable<UIView *> *countedPages(void) {
     return pages;
 }
 
+static SGRAlbumCountPage *spotifyCountsForPage(UIView *page) {
+    static char key;
+    SGRAlbumCountPage *counts = objc_getAssociatedObject(page, &key);
+    if (!counts) {
+        counts = [[SGRAlbumCountPage alloc] initWithStore:SGRAlbumSpotifyCountsStore()];
+        objc_setAssociatedObject(page, &key, counts, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    NSString *uri;
+    for (UIResponder *r = page.nextResponder; r; r = r.nextResponder) {
+        if (![r isKindOfClass:UIViewController.class]) continue;
+        uri = [NSClassFromString(@"SGAlbumQueuePage") albumURI:r];
+        if (uri) break;
+    }
+    __weak UIView *weakPage = page;
+    [counts followAlbum:uri changed:^{
+        UIView *page = weakPage;
+        if (page) layOutRowsAgain(page);
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRAlbumPlayCountsDidChangeNotification object:nil];
+    }];
+    return counts;
+}
+
 void SGRAlbumSetTitle(UIView *view, NSString *title) {
     UIView *page = SGRAlbumPageOf(view);
+    if (page && countsPlace() != SGRAlbumPlayCountsOff && SGRAlbumUsesSpotifyCounts()) {
+        spotifyCountsForPage(page);
+        return;
+    }
     NSString *known = objc_getAssociatedObject(page, &kAlbumKey);
     if (!page || countsPlace() == SGRAlbumPlayCountsOff || known == title || [known isEqualToString:title]) return;
     objc_setAssociatedObject(page, &kAlbumKey, title, OBJC_ASSOCIATION_COPY_NONATOMIC);
@@ -280,16 +334,18 @@ static void markIfWatched(UIControl *control) {
     NSString *album = page ? objc_getAssociatedObject(page, &kAlbumKey) : nil;
     UIView *row = control.superview;
     while (row && ![row.accessibilityIdentifier hasPrefix:@"Components.UI.RetrievalRow"]) row = row.superview;
-    UILabel *title = onlyLabel(SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Title", &kTitleKey));
+    UILabel *title = titleOf(row);
     BOOL eligible = cell && objc_getAssociatedObject(cell, &kWatchedMenuKey) == control
-        && SGRIsTrackContent(cell.contentView.subviews.firstObject) && album.length && title.text.length
+        && SGRIsTrackContent(cell.contentView.subviews.firstObject) && (SGRAlbumUsesSpotifyCounts() || album.length) && title.text.length
         && [control.accessibilityIdentifier hasPrefix:@"Components.UI.ContextMenuButton"] && [row isDescendantOfView:cell];
     if (!eligible) {
         objc_setAssociatedObject(control, &kWatchedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         if (cell && objc_getAssociatedObject(cell, &kWatchedMenuKey) == control) unwatch(cell);
         return;
     }
-    SGRAlbumPlaysMarkMenu(album, title.text);
+    if (SGRAlbumUsesSpotifyCounts()) {
+        SGRAlbumPlaysMarkSpotifyMenu(SGRAlbumTrackURIFromMenuIdentifier(control.accessibilityIdentifier), spotifyCountsForPage(page));
+    } else SGRAlbumPlaysMarkMenu(album, title.text);
 }
 
 %group SGRAlbumMenuActions
@@ -342,14 +398,20 @@ static BOOL restoreCount(UIView *cell) {
 
 static void applyCount(UIView *cell, UIView *row, UIView *page) {
     NSString *album = objc_getAssociatedObject(page, &kAlbumKey);
-    if (!album) return;
+    BOOL spotify = SGRAlbumUsesSpotifyCounts();
+    if (!album && !spotify) return;
     [((UICollectionViewCell *)cell).contentView layoutIfNeeded];
-    UILabel *title = onlyLabel(SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Title", &kTitleKey));
+    UILabel *title = titleOf(row);
     if (!title) return;
-    NSUInteger plays = SGRAlbumPlayCount(album, title.text);
-    if (!plays) return;
     UIView *menu = SGRFindByIdentifier(row, @"Components.UI.ContextMenuButton*", &kMenuKey);
     if (!menu || menu.alpha < 0.01 || CGRectIsEmpty(menu.bounds)) return;
+    NSString *text;
+    if (spotify) {
+        SGRAlbumCountPage *state = spotifyCountsForPage(page);
+        NSString *uri = SGRAlbumTrackURIFromMenuIdentifier(menu.accessibilityIdentifier);
+        text = SGRAlbumSpotifyPlaysText(uri ? state.counts[uri] : nil);
+    } else text = SGRAlbumPlaysText(SGRAlbumPlayCount(album, title.text));
+    if (!text) return;
     if (!CGAffineTransformIsIdentity(title.transform) || title.layer.animationKeys.count) return;
 
     UILabel *count = objc_getAssociatedObject(cell, &kCountKey);
@@ -362,7 +424,7 @@ static void applyCount(UIView *cell, UIView *row, UIView *page) {
     // The row is measured for Spotify's fixed type, so the count grows with Dynamic Type only up to Large.
     count.font = SGMonospacedDigitsFont(SGCategoryCappedFont(UIFontTextStyleCaption1, UIFontWeightRegular, UIContentSizeCategoryLarge));
     count.textColor = SGRSecondary();
-    count.text = SGRAlbumPlaysText(plays);
+    count.text = text;
     CGSize size = [count sizeThatFits:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)];
     size = CGSizeMake(ceil(size.width), ceil(size.height));
 
@@ -377,7 +439,7 @@ static void applyCount(UIView *cell, UIView *row, UIView *page) {
     // The title and every label of the artist line kept clear of the count; a row with no room for the title
     // goes without it.
     NSMutableArray<UILabel *> *labels = [NSMutableArray arrayWithObject:title];
-    SGForEachView(SGRFindByIdentifier(row, @"EncoreConsumerMobile.View.Granular.Subtitle", &kSubtitleKey), ^(UIView *v) {
+    SGForEachView(subtitleOf(row), ^(UIView *v) {
         if ([v isKindOfClass:UILabel.class] && ((UILabel *)v).text.length) [labels addObject:(UILabel *)v];
     });
     NSMapTable<UILabel *, NSArray<NSValue *> *> *frames = [NSMapTable weakToStrongObjectsMapTable];
@@ -403,7 +465,7 @@ static void applyCount(UIView *cell, UIView *row, UIView *page) {
     static BOOL logged;
     if (!logged) {
         logged = YES;
-        SGLog(@"redesign album: a track's plays shown, %lu, %lu label(s) narrowed", (unsigned long)plays, (unsigned long)frames.count);
+        SGLog(@"redesign album: a track's plays shown, %@, %lu label(s) narrowed", text, (unsigned long)frames.count);
     }
 }
 

@@ -7,5 +7,6 @@ OUT=$(mktemp -d "${TMPDIR:-/tmp}/vitrine-hangul.XXXXXX")
 trap 'rm -rf "$OUT"' EXIT
 xcrun --sdk macosx clang -fobjc-arc -Wall -I"$SRC" \
     "$HERE/check.m" "${ROMANISE_SOURCE:-$SRC/Shared/Lyrics/Romanise.m}" \
+    "$SRC/Shared/Lyrics/KaraokeTiming.m" "$SRC/Shared/AdBlock/Protobuf.m" \
     -I"$SRC/Shared/Lyrics" -framework Foundation -o "$OUT/hangul-pronunciation-check"
 "$OUT/hangul-pronunciation-check"

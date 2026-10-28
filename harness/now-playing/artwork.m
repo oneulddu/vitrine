@@ -125,6 +125,20 @@ void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *a
     lookups++;
     done(sourceFile, sourceFile ? @"canvas" : nil);
 }
+// The follower's ticketed lookup: the stub source answers at once, so the ticket has nothing to cancel.
+SGMotionTicket *SGMotionRequestClip(NSString *uri, NSURL *canvas, NSString *artist, NSString *album,
+                                   CGFloat pixels, void (^done)(NSURL *, NSString *)) {
+    SGMotionClipFor(uri, canvas, artist, album, pixels, done);
+    return [SGMotionTicket new];
+}
+// Shared/Player/PlayerState.x's first future track, other than the one playing.
+SPTPlayerTrack *SGPlayerUpNextIn(SPTPlayerState *state) {
+    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
+    id next = [future isKindOfClass:NSArray.class] ? [future firstObject] : nil;
+    if (![next isKindOfClass:objc_getClass("SPTPlayerTrack")]) return nil;
+    NSString *uri = SGURIString([next URI]);
+    return uri.length && ![uri isEqualToString:SGURIString(state.track.URI)] ? next : nil;
+}
 void SGMotionPoster(NSURL *file, void (^done)(UIImage *)) {
     posters++;
     if (!posterCallbacks) posterCallbacks = [NSMutableArray array];

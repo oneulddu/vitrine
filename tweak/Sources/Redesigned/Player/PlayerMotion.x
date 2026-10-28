@@ -33,6 +33,13 @@
 // On a skip the last clip stays a moment (kHandOver), so a clip already in the store (the next track's is
 // fetched ahead, SGMotionFollower) crosses over it with no cover between.
 //
+// A clip that has drawn a frame and then has its item or its looper fail is played again from the same local
+// file, the poster and the foot staying as they are, so an AVFoundation failure does not leave it frozen until
+// the track changes. At most kRebuildsMost rebuilds per clip (see SGRPlayerMotionRecovery): a file that will not
+// play is then given up as one that never drew, and the cover or the Fluid field comes back. Only the item's and
+// the looper's own failure is watched: a clip that plays but stands still, or one that never failed, is what
+// the opening count is for, and there is no timer polling its clock.
+//
 // Spotify's music video (Switch to video) draws in one of three of its units, each told by its video surface
 // as the video comes and goes: while one shows it, the clip goes and the cover comes back, as for Fluid.
 //
@@ -78,6 +85,67 @@ static const double kMeasuredAt[] = {1, 2};
 // (issue #101), so it keeps its colors as the Fluid field does; the dim keeps the text's contrast.
 static NSString *const kLyricsBlurPath = @"filters.gaussianBlur.inputRadius";
 static const CGFloat kLyricsBlurRadius = 30;
+
+// A clip that has drawn a frame and then has its item or its looper fail is played again from the same local
+// file, at most this many times: a file AVFoundation will not play stops here and the poster or the Fluid
+// field comes back, instead of a rebuild for every failure.
+static const NSUInteger kRebuildsMost = 3;
+
+typedef NS_ENUM(NSInteger, SGRPlayerMotionRecoveryStep) {
+    SGRPlayerMotionRecoveryNothing,   // nothing to do: the clip may not play, never drew, or the failure was answered
+    SGRPlayerMotionRecoveryRebuild,   // another player and looper, over the same file
+    SGRPlayerMotionRecoveryGiveUp,   // out of rebuilds
+};
+
+// One clip's rebuilds: at most kRebuildsMost, over the same local file. A clip is a view of its own, made for
+// one track's file, so a replaced track starts with its own count.
+typedef struct {
+    NSUInteger rebuilds;   // spent on this clip so far
+    BOOL drew;   // this clip has drawn a frame of its own, now or before an item swap or a rebuild
+    BOOL over;   // given up, or leaving: nothing more is rebuilt
+} SGRPlayerMotionRecovery;
+
+static void SGRPlayerMotionRecoveryBegin(SGRPlayerMotionRecovery *recovery) {
+    *recovery = (SGRPlayerMotionRecovery){0};
+}
+
+// The clip drew a frame, on the player it has now or on one it had before: kept for the life of the clip. The
+// layer's readiness goes back to NO for every item the looper swaps in, so readiness NO says nothing about a
+// clip that has played: only YES latches, and a later item failing before its own first frame is still the
+// failure of a clip that has drawn.
+static void SGRPlayerMotionRecoverySaw(SGRPlayerMotionRecovery *recovery, BOOL readyNow) {
+    if (readyNow) recovery->drew = YES;
+}
+
+// The clip leaves, or another track's replaces it: a pass already on its way does nothing.
+static void SGRPlayerMotionRecoveryCancel(SGRPlayerMotionRecovery *recovery) {
+    recovery->over = YES;
+}
+
+// Another track began while this clip plays (`same` NO: the clip is the last track's). It stays kHandOver for
+// the next one's to cross over it, but it is not played again from behind it, so a failure during the handover
+// is only the outgoing clip's, and the visual handover is untouched.
+static void SGRPlayerMotionRecoveryTrack(SGRPlayerMotionRecovery *recovery, BOOL same) {
+    if (!same) SGRPlayerMotionRecoveryCancel(recovery);
+}
+
+// A failure answered with the clip as it is: rebuilt while it has drawn a frame (`drew`: one that never did is
+// the opening count's, kGiveUp, and a rebuild would only start that count over) and may play (in a window, the
+// app in front, the song not paused), given up once the rebuilds are spent, and nothing where it may not play.
+static SGRPlayerMotionRecoveryStep SGRPlayerMotionRecoveryRuns(SGRPlayerMotionRecovery *recovery, BOOL mayPlay) {
+    if (recovery->over || !recovery->drew || !mayPlay) return SGRPlayerMotionRecoveryNothing;
+    if (recovery->rebuilds >= kRebuildsMost) {
+        recovery->over = YES;
+        return SGRPlayerMotionRecoveryGiveUp;
+    }
+    recovery->rebuilds++;
+    return SGRPlayerMotionRecoveryRebuild;
+}
+
+// What the clip's own observations tell it apart by: the player's item, that item failing, the looper failing,
+// and the layer drawing its first frame. A value someone else observes on the same object has another context,
+// so it is not taken for one of these.
+static char SGRPlayerMotionPlayerContext, SGRPlayerMotionItemContext, SGRPlayerMotionLooperContext, SGRPlayerMotionDrewContext;
 
 @interface CAFilter : NSObject
 + (instancetype)filterWithType:(NSString *)type;
@@ -159,16 +227,26 @@ static UIColor *footColor(CGImageRef poster) {
 @property (nonatomic) CGFloat screenHeight;
 // Plays inside the cover, filling it: no foot, dim or blur. Set before -playFile:poster:.
 @property (nonatomic) BOOL inCover;
-// Runs when the clip has drawn nothing kGiveUp seconds after it was first on screen in front.
-@property (nonatomic, copy) void (^gaveUp)(void);
+// Runs when the clip is given up: it drew nothing kGiveUp seconds after it was first on screen in front, or
+// its item or the looper failed kRebuildsMost times. The owner takes the clip away, so the poster or Fluid
+// shows instead; `why` says which, for the log.
+@property (nonatomic, copy) void (^gaveUp)(NSString *why);
 - (void)playFile:(NSURL *)file poster:(UIImage *)poster;
 - (void)appear:(BOOL)animated then:(void (^)(void))done;
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated;
+// The clip is leaving the player (another track's replaces it, or the background changed): it plays nothing
+// more, and no failure of it is played again.
+- (void)stop;
+// Another track began while this clip stood for the last one: it stays kHandOver for the next clip to cross
+// over it, but its recovery stops now, so a failure during the handover is not played again behind the next.
+- (void)handover;
 @end
 
 @implementation SGRPlayerMotionView {
     AVQueuePlayer *_player;
     AVPlayerLooper *_looper;
+    NSURL *_file;   // the clip's local file, played again from the start after a failure
+    SGRPlayerMotionRecovery _recovery;
     UIView *_picture;   // the clip over its foot, faded in as one
     CALayer *_still;    // the poster, with the video drawn over it
     AVPlayerLayer *_clip;
@@ -181,6 +259,9 @@ static UIColor *footColor(CGImageRef poster) {
     UIVisualEffectView *_seamBlur;
     CGFloat _aspect;
     BOOL _timing;   // the give-up's count is running
+    BOOL _checking;   // a failure's pass is on its way, so the item and the looper are read once for it
+    BOOL _drawWatched;   // the layer's readiness is observed, so it comes off once
+    AVPlayerItem *_watchedItem;   // the item the player has, watched for failing
 }
 
 // What fades is the effect views' effect, never their alpha or an ancestor's: UIKit draws a blur under a
@@ -251,10 +332,21 @@ static UIBlurEffect *blurEffect(void) {
 - (void)dealloc {
     // A looper let go while it plays is what AVFoundation minds: the player stops, the looper stops watching it,
     // and the layer lets the player go before any of them can be freed playing.
+    [self unwatch];
     [_player pause];
     [_looper disableLooping];
     _clip.player = nil;
     [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+// A clip that is leaving the player plays nothing more, and no failure of it is played again: the owner is
+// taking it off, and a rebuild would only be taken off with it.
+- (void)stop {
+    SGRPlayerMotionRecoveryCancel(&_recovery);
+}
+
+- (void)handover {
+    SGRPlayerMotionRecoveryTrack(&_recovery, NO);
 }
 
 - (void)setScreenHeight:(CGFloat)height {
@@ -303,11 +395,9 @@ static UIBlurEffect *blurEffect(void) {
     _aspect = poster.size.height / poster.size.width;
     _foot.backgroundColor = footColor(poster.CGImage).CGColor;
     _still.contents = (__bridge id)poster.CGImage;
-    _player = [AVQueuePlayer new];
-    _player.muted = YES;
-    _player.preventsDisplaySleepDuringVideoPlayback = NO;
-    _looper = [AVPlayerLooper playerLooperWithPlayer:_player templateItem:[AVPlayerItem playerItemWithURL:file]];
-    _clip.player = _player;
+    _file = file;
+    SGRPlayerMotionRecoveryBegin(&_recovery);
+    [self build];
     [self setNeedsLayout];
     [self updateMotion];
     if (_inCover) {
@@ -317,6 +407,124 @@ static UIBlurEffect *blurEffect(void) {
         return;
     }
     [self measure:file poster:poster];
+}
+
+// A player and a looper over the clip's own file. The looper hands the player its own copies of the item, so
+// the item is watched where the player takes it: an item that fails says so, and so does a looper that cannot
+// go on. What they watch goes before another is made, so an observer never outlives the object it was put on.
+- (void)build {
+    [self unwatch];
+    [_player pause];
+    [_looper disableLooping];
+    _clip.player = nil;
+    _player = [AVQueuePlayer new];
+    _player.muted = YES;
+    _player.preventsDisplaySleepDuringVideoPlayback = NO;
+    [_player addObserver:self forKeyPath:@"currentItem" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
+                 context:&SGRPlayerMotionPlayerContext];
+    _looper = [AVPlayerLooper playerLooperWithPlayer:_player templateItem:[AVPlayerItem playerItemWithURL:_file]];
+    [_looper addObserver:self forKeyPath:@"status" options:0 context:&SGRPlayerMotionLooperContext];
+    _clip.player = _player;
+    // The layer's readiness belongs to the item it has now, and goes back to NO for every one the looper swaps
+    // in: what is kept is that this clip drew a frame at all, not that this item has.
+    [_clip addObserver:self forKeyPath:@"readyForDisplay" options:NSKeyValueObservingOptionInitial | NSKeyValueObservingOptionNew
+               context:&SGRPlayerMotionDrewContext];
+    _drawWatched = YES;
+    // A looper made over a file it cannot read is failed before KVO reports anything; the item it hands the
+    // player the same way, which `watchItem` reads where the player takes it.
+    if (_looper.status == AVPlayerLooperStatusFailed) [self recover];
+}
+
+// Every observer this view added, taken off the object it was added to, and only those.
+- (void)unwatch {
+    if (_watchedItem) {
+        [_watchedItem removeObserver:self forKeyPath:@"status" context:&SGRPlayerMotionItemContext];
+        _watchedItem = nil;
+    }
+    if (_drawWatched) {
+        [_clip removeObserver:self forKeyPath:@"readyForDisplay" context:&SGRPlayerMotionDrewContext];
+        _drawWatched = NO;
+    }
+    if (_player) [_player removeObserver:self forKeyPath:@"currentItem" context:&SGRPlayerMotionPlayerContext];
+    if (_looper) [_looper removeObserver:self forKeyPath:@"status" context:&SGRPlayerMotionLooperContext];
+}
+
+// The player changed item: watch the one it has now, and let go of the one it had.
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (context != &SGRPlayerMotionPlayerContext && context != &SGRPlayerMotionItemContext
+        && context != &SGRPlayerMotionLooperContext && context != &SGRPlayerMotionDrewContext) {
+        [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+        return;
+    }
+    // AVFoundation reports these on a queue of its own, and the item a player hands over is read where it is
+    // watched: all of it on main, where the clip's own state lives.
+    __weak SGRPlayerMotionView *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf mediaChanged:object context:context]; });
+}
+
+// What changed, with the object it changed on: one of the player's, its item's, the looper's or the layer's.
+// Whoever reports it must still be the one this view plays with, so a callback from a player that a rebuild
+// replaced says nothing about the new one.
+- (void)mediaChanged:(id)object context:(void *)context {
+    if (context == &SGRPlayerMotionPlayerContext) {
+        [self watchItem:_player.currentItem];
+    } else if (context == &SGRPlayerMotionItemContext) {
+        if (object == _watchedItem && _watchedItem.status == AVPlayerItemStatusFailed) [self recover];
+    } else if (context == &SGRPlayerMotionDrewContext) {
+        // One decoded frame, on this player or an earlier one, stays this clip's. Read from the layer rather than
+        // the change, so a swap that has already taken readiness away since does not lose it.
+        if (object == _clip) SGRPlayerMotionRecoverySaw(&_recovery, _clip.readyForDisplay);
+    } else {
+        if (object == _looper && _looper.status == AVPlayerLooperStatusFailed) [self recover];
+    }
+}
+
+- (void)watchItem:(AVPlayerItem *)item {
+    if (item == _watchedItem) return;
+    if (_watchedItem) [_watchedItem removeObserver:self forKeyPath:@"status" context:&SGRPlayerMotionItemContext];
+    _watchedItem = item;
+    if (!item) return;
+    [item addObserver:self forKeyPath:@"status" options:0 context:&SGRPlayerMotionItemContext];
+    // A player can hand over an item that is failed already, which KVO does not report again.
+    if (item.status == AVPlayerItemStatusFailed) [self recover];
+}
+
+// A failure of what the clip plays with, answered on the next pass, where the item and the looper are read
+// again: a track replaced or a pause in between is seen there, so a clip that left, or one that may not play,
+// is left alone. A clip that never drew a frame is the opening count's, kGiveUp, and a rebuild would only start
+// that count over, so only one that has drawn is played again (`_recovery.drew`, kept across item swaps).
+- (void)recover {
+    // One answer at a time: the item and the looper both failing is one pass to read them.
+    if (_checking || _recovery.over) return;
+    _checking = YES;
+    __weak SGRPlayerMotionView *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{ [weakSelf answerFailure]; });
+}
+
+// The pass that answers a failure: rebuild from the same file, give up when the rebuilds are spent (the owner
+// then takes the clip away, so the poster or the Fluid field shows), or nothing where the clip may not play.
+// The item and the looper are read here, so an answer is only for what is failed now, and a rebuild that has
+// already made a healthy player is not rebuilt again.
+- (void)answerFailure {
+    _checking = NO;
+    if (_recovery.over) return;
+    if (_watchedItem.status != AVPlayerItemStatusFailed && _looper.status != AVPlayerLooperStatusFailed) return;
+    // A frame that drew since the pass was queued is the clip's too, before the policy is asked.
+    SGRPlayerMotionRecoverySaw(&_recovery, _clip.readyForDisplay);
+    switch (SGRPlayerMotionRecoveryRuns(&_recovery, [self mayPlay])) {
+        case SGRPlayerMotionRecoveryNothing:
+            return;
+        case SGRPlayerMotionRecoveryGiveUp:
+            SGLog(@"redesign player: animated artwork %@ failed %lu times, given up", _file.lastPathComponent, (unsigned long)kRebuildsMost);
+            if (self.gaveUp) self.gaveUp(@"its item or its looper kept failing");
+            return;
+        case SGRPlayerMotionRecoveryRebuild:
+            SGLog(@"redesign player: animated artwork %@ failed, played again (%lu of %lu)", _file.lastPathComponent,
+                  (unsigned long)_recovery.rebuilds, (unsigned long)kRebuildsMost);
+            [self build];
+            [self updateMotion];
+            return;
+    }
 }
 
 // The poster now, so the clip comes in already dimmed, and two later frames as they are read.
@@ -435,13 +643,28 @@ static UIBlurEffect *blurEffect(void) {
     dispatch_async(dispatch_get_main_queue(), ^{ [self updateMotion]; });
 }
 
-// A locked phone keeps the player in its window, so being in front counts as much as being in one.
+// Whether the clip plays: in a window with the app in front, the player not opening or closing, no stand-down
+// and the song not paused. A locked phone keeps the player in its window, so being in front counts as much as
+// being in one. A failure is rebuilt only while this holds, so a pause, a detachment or a stand-down cancels
+// the recovery it would have had.
+- (BOOL)mayPlay {
+    BOOL front = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+    return self.window && front && !SGRPlayerIsTransitioning() && !SGRReduceMotion() && !NSProcessInfo.processInfo.lowPowerModeEnabled
+        && !SGPlayerState().isPaused;
+}
+
 - (void)updateMotion {
     BOOL front = UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-    BOOL may = self.window && front && !SGRPlayerIsTransitioning() && !SGRReduceMotion() && !NSProcessInfo.processInfo.lowPowerModeEnabled
-        && !SGPlayerState().isPaused;
+    BOOL may = [self mayPlay];
     if (may) [_player play];
     else [_player pause];
+    // A clip that plays again is asked whether its item or looper failed while it could not: the failure is
+    // answered here, on the pass that puts it back on screen, and never behind a paused song or off screen.
+    // This reads a state, it does not poll a clock.
+    if (may) {
+        SGRPlayerMotionRecoverySaw(&_recovery, _clip.readyForDisplay);
+        if (_watchedItem.status == AVPlayerItemStatusFailed || _looper.status == AVPlayerLooperStatusFailed) [self recover];
+    }
     // A paused player still draws the clip's first frame, so the count runs whenever it is on screen in front.
     if (_player && self.window && front && !_timing && !_clip.readyForDisplay) {
         _timing = YES;
@@ -452,7 +675,8 @@ static UIBlurEffect *blurEffect(void) {
             view->_timing = NO;
             // Taken off screen meanwhile, the count starts again when it is back.
             BOOL shown = view.window && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
-            if (shown && !view->_clip.readyForDisplay && view.gaveUp) view.gaveUp();
+            if (shown && !view->_clip.readyForDisplay && view.gaveUp)
+                view.gaveUp([NSString stringWithFormat:@"drew nothing in %.0f s", kGiveUp]);
         });
     }
 }
@@ -687,6 +911,9 @@ static void clear(BOOL animated) {
     sg_shown = nil;
     sg_motionFile = nil;
     sg_motionPoster = nil;
+    // Neither plays again, whatever its item reported a moment ago: the track is replaced or the clip given up.
+    [old stop];
+    [inCover stop];
     if (animated && seen(inCover)) [inCover disappear:^{ [inCover removeFromSuperview]; }];
     else [inCover removeFromSuperview];
     // Uncovered before the clip starts to fade, so the field is there under it.
@@ -705,9 +932,9 @@ static void showInCover(NSString *track, NSURL *file, UIImage *poster) {
     sg_coverClip = clip;
     sg_shown = track;
     __weak SGRPlayerMotionView *weakClip = clip;   // the clip holds the block
-    clip.gaveUp = ^{
+    clip.gaveUp = ^(NSString *why) {
         if (!weakClip || sg_coverClip != weakClip) return;
-        SGLog(@"redesign player: animated artwork %@ drew nothing in %.0f s, given up", file.lastPathComponent, kGiveUp);
+        SGLog(@"redesign player: animated artwork %@ given up: %@", file.lastPathComponent, why);
         clear(YES);
     };
     [clip playFile:file poster:poster];
@@ -733,9 +960,9 @@ static void show(NSString *track, NSURL *file) {
         sg_shown = track;
         SGRPlayerMotionView *motion = sg_motion;
         __weak SGRPlayerMotionView *weakMotion = motion;   // the clip holds the block
-        motion.gaveUp = ^{
+        motion.gaveUp = ^(NSString *why) {
             if (!weakMotion || sg_motion != weakMotion) return;
-            SGLog(@"redesign player: animated artwork %@ drew nothing in %.0f s, given up", file.lastPathComponent, kGiveUp);
+            SGLog(@"redesign player: animated artwork %@ given up: %@", file.lastPathComponent, why);
             clear(YES);
         };
         [sg_motion playFile:file poster:poster];
@@ -779,6 +1006,10 @@ static BOOL beginTrack(NSString *track) {
     // Read on every track, since the ⋯ menu switches it.
     BOOL wanted = SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing() && motionAllowed();
     if (wanted && [track isEqualToString:sg_shown]) return YES;
+    // The clip on screen is another track's: it waits kHandOver for the next one to cross over it, but its
+    // recovery stops here, at once, so a failure during the handover is not played again behind the next track.
+    [sg_motion handover];
+    [sg_coverClip handover];
     if (!wanted || !seen(sg_motion ?: sg_coverClip)) {
         clear(YES);
         return wanted;

@@ -8,6 +8,7 @@
 #import <string.h>
 #import "Core/SGCore.h"
 #import "AnimatedArtwork.h"
+#import "SGMotionTicket.h"
 
 static const NSUInteger kFiles = 40;
 static NSCountedSet<NSString *> *sg_inUse; // store queue only; counts retained handoff URLs
@@ -101,12 +102,20 @@ void SGMotionMakeFile(NSURL *file, BOOL (^write)(void), void (^done)(BOOL)) {
     });
 }
 
-static NSMutableDictionary<NSURL *, NSMutableArray *> *sg_waiting;
-
 // Decimal MB, shared by every remote clip consumer. Reject advertised oversize
 // bodies at the headers, and enforce the same ceiling for chunked/lying servers.
 static const uint64_t kMaximumClipBytes = 30 * 1000 * 1000;
-static void download(NSURL *remote, NSURL *local, NSUInteger retries);
+static const int64_t kFinishWithoutConsumerDivisor = 2;
+
+@interface SGMotionWaiter : SGMotionTicket
+@property (nonatomic, copy) void (^done)(NSURL *);
+@end
+@implementation SGMotionWaiter
+- (void)cancel {
+    self.done = nil;
+    [super cancel];
+}
+@end
 
 @interface SGMotionDownload : NSObject <NSURLSessionDataDelegate>
 @property (nonatomic, strong) NSURL *remote, *local, *temporary;
@@ -115,7 +124,28 @@ static void download(NSURL *remote, NSURL *local, NSUInteger retries);
 @property (nonatomic) uint64_t received;
 @property (nonatomic) NSInteger status;
 @property (nonatomic) BOOL rejected;
+@property (atomic) BOOL cancelled;
+@property (nonatomic, strong) NSURLSessionDataTask *task;
+@property (nonatomic, strong) NSMutableArray<SGMotionWaiter *> *waiters;
 @end
+
+static NSMutableDictionary<NSURL *, SGMotionDownload *> *sg_downloads; // main queue
+static void download(SGMotionDownload *owner);
+
+static BOOL transientFailure(NSError *error, NSInteger status) {
+    if (!error) return status == 0 || status == 408 || status == 429 || (status >= 500 && status < 600);
+    if (![error.domain isEqual:NSURLErrorDomain]) return NO;
+    switch (error.code) {
+        case NSURLErrorTimedOut:
+        case NSURLErrorCannotFindHost:
+        case NSURLErrorCannotConnectToHost:
+        case NSURLErrorNetworkConnectionLost:
+        case NSURLErrorDNSLookupFailed:
+        case NSURLErrorNotConnectedToInternet:
+            return YES;
+        default: return NO;
+    }
+}
 
 @implementation SGMotionDownload
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)task
@@ -161,6 +191,7 @@ static void download(NSURL *remote, NSURL *local, NSUInteger retries);
     self.output = nil;
     __block BOOL kept = NO;
     if (!self.rejected && !error && closed && self.status == 200 && self.received > 0) dispatch_sync(storeQueue(), ^{
+        if (self.cancelled) return;
         if (![NSFileManager.defaultManager createDirectoryAtURL:folder() withIntermediateDirectories:YES attributes:nil error:nil]) return;
         kept = [NSFileManager.defaultManager moveItemAtURL:self.temporary toURL:self.local error:nil];
         if (kept) { handOff(self.local); trim(); }
@@ -171,56 +202,102 @@ static void download(NSURL *remote, NSURL *local, NSUInteger retries);
             SGLog(@"motion: cannot remove partial clip: %@", cleanup.localizedDescription);
     }
     BOOL cancelled = [error.domain isEqual:NSURLErrorDomain] && error.code == NSURLErrorCancelled;
-    BOOL again = !kept && !self.rejected && !cancelled && self.retries > 0 &&
-        (error || self.status == 0 || self.status == 408 || self.status == 429 || self.status >= 500);
+    BOOL again = !kept && !self.rejected && !cancelled && !self.cancelled && self.retries > 0 &&
+        transientFailure(error, self.status);
     SGLog(@"motion: %@ %@ (%llu bytes, HTTP %ld)%@", self.remote.lastPathComponent, kept ? @"kept" : @"failed",
           (unsigned long long)self.received, (long)self.status, self.rejected ? @", size or write rejected" : @"");
     [session finishTasksAndInvalidate];
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (again) { download(self.remote, self.local, self.retries - 1); return; }
-        NSArray *waiting = sg_waiting[self.remote];
-        [sg_waiting removeObjectForKey:self.remote];
-        for (void (^waiter)(NSURL *) in waiting) waiter(kept ? self.local : nil);
+        if (sg_downloads[self.remote] != self) return;
+        if (again && !self.cancelled && self.waiters.count) {
+            self.retries--;
+            download(self);
+            return;
+        }
+        NSArray *waiting = [self.waiters copy];
+        [self.waiters removeAllObjects];
+        [sg_downloads removeObjectForKey:self.remote];
+        for (SGMotionWaiter *waiter in waiting) {
+            waiter.onCancel = nil;
+            void (^done)(NSURL *) = waiter.done;
+            waiter.done = nil;
+            if (done) done(kept ? self.local : nil);
+        }
     });
 }
 @end
 
-static void download(NSURL *remote, NSURL *local, NSUInteger retries) {
-    SGMotionDownload *owner = [SGMotionDownload new];
-    owner.remote = remote;
-    owner.local = local;
-    owner.retries = retries;
+static void download(SGMotionDownload *owner) {
+    owner.received = 0;
+    owner.status = 0;
+    owner.rejected = NO;
+    owner.temporary = nil;
     NSOperationQueue *queue = [NSOperationQueue new];
     queue.maxConcurrentOperationCount = 1;
     NSURLSession *session = [NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.defaultSessionConfiguration
                                                         delegate:owner delegateQueue:queue];
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:remote];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:owner.remote];
     request.allowsConstrainedNetworkAccess = SGFlag(SGKeyMotionLowData, NO);
-    [[session dataTaskWithRequest:request] resume];
+    owner.task = [session dataTaskWithRequest:request];
+    [owner.task resume];
 }
 
-void SGMotionFile(NSURL *remote, void (^done)(NSURL *file)) {
+SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *file)) {
+    SGMotionWaiter *ticket = [SGMotionWaiter new];
     if (!remote) {
-        done(nil);
-        return;
+        dispatch_async(dispatch_get_main_queue(), ^{ if (!ticket.cancelled) done(nil); });
+        return ticket;
     }
-    if (!sg_waiting) sg_waiting = [NSMutableDictionary dictionary];
-    if (sg_waiting[remote]) {
-        [sg_waiting[remote] addObject:[done copy]];
-        return;
+    if (!sg_downloads) sg_downloads = [NSMutableDictionary dictionary];
+    SGMotionDownload *owner = sg_downloads[remote];
+    BOOL joined = owner != nil;
+    if (!owner) {
+        owner = [SGMotionDownload new];
+        owner.remote = remote;
+        owner.retries = 1;
+        owner.waiters = [NSMutableArray array];
+        sg_downloads[remote] = owner;
     }
-    sg_waiting[remote] = [NSMutableArray arrayWithObject:[done copy]];
+    ticket.done = done;
+    [owner.waiters addObject:ticket];
+    __weak SGMotionWaiter *weakTicket = ticket;
+    __weak SGMotionDownload *weakOwner = owner;
+    ticket.onCancel = ^{
+        SGMotionDownload *active = weakOwner;
+        [active.waiters removeObjectIdenticalTo:weakTicket];
+        if (!active || active.waiters.count || sg_downloads[remote] != active) return;
+        int64_t expected = active.task.countOfBytesExpectedToReceive;
+        int64_t received = active.task.countOfBytesReceived;
+        if (expected > 0 && received > expected / kFinishWithoutConsumerDivisor) return;
+        active.cancelled = YES;
+        [sg_downloads removeObjectForKey:remote];
+        [active.task cancel];
+    };
+    if (joined) return ticket;
     dispatch_async(storeQueue(), ^{
         NSURL *local = localFor(remote.absoluteString);
         BOOL exists = [NSFileManager.defaultManager fileExistsAtPath:local.path];
         if (exists) handOff(local);
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (!exists) { download(remote, local, 1); return; }
-            NSArray *waiting = sg_waiting[remote];
-            [sg_waiting removeObjectForKey:remote];
-            for (void (^waiter)(NSURL *) in waiting) waiter(local);
+            if (sg_downloads[remote] != owner) return;
+            owner.local = local;
+            if (!exists) { download(owner); return; }
+            NSArray *waiting = [owner.waiters copy];
+            [owner.waiters removeAllObjects];
+            [sg_downloads removeObjectForKey:remote];
+            for (SGMotionWaiter *waiter in waiting) {
+                waiter.onCancel = nil;
+                void (^completion)(NSURL *) = waiter.done;
+                waiter.done = nil;
+                if (completion) completion(local);
+            }
         });
     });
+    return ticket;
+}
+
+void SGMotionFile(NSURL *remote, void (^done)(NSURL *file)) {
+    SGMotionRequestFile(remote, done);
 }
 
 void SGMotionPoster(NSURL *file, void (^done)(UIImage *poster)) {

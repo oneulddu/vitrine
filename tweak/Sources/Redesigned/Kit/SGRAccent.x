@@ -1,153 +1,341 @@
-// The redesign's accent color, chosen apart from the native look's: its copy of Native/Appearance/Accent.x.
-// Accent color: Spotify's green, #1ED760, is one token. Its three components occur once in the
-// whole binary, and every green the app draws, from the play button to the "Zobrazit vše" links
-// and the progress bar, is that token or a state blended from it. So it is swapped where it is
-// born, in the UIColor initializer, and the blends follow. Lottie animations carry their own green
-// and are caught at the layer, below. Image assets with green baked in, the logo above all, are
-// out of reach.
+// The Kit owns accent provenance and global repaint. Only Spotify's brand inputs become tokens;
+// their resolved RGB is never used to infer ownership of other content.
 #import "Core/SGCore.h"
 #import "SGRAccent.h"
 
-// The greens the app is known to build from literals: the token, and the older brand green the
-// upsell backend still names.
 static const uint32_t kGreens[] = {0x1ED760, 0x1DB954};
+static char imageSourceKey, imageBaseKey, fillKey, strokeKey, backgroundKey, resolvingKey, layerOverrideKey;
+static NSHashTable *painted;
+static NSString *const kAnimationSources = @"sgr.accent.sources";
 
-static NSInteger sg_accent = -1;   // 0xRRGGBB once chosen, read at launch
-
-static NSInteger chosen(void) {
-    NSInteger rgb = SGInt(SGRKeyAccent, SGRDefaultAccent);
-    return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : -1;
-}
-
-static void unpack(uint32_t rgb, CGFloat *r, CGFloat *g, CGFloat *b) {
-    *r = ((rgb >> 16) & 0xFF) / 255.0;
-    *g = ((rgb >> 8) & 0xFF) / 255.0;
-    *b = (rgb & 0xFF) / 255.0;
-}
-
-// Made again only when another color is stored: the pick applies at once, and the key is read per call for it.
-UIColor *SGRAccentColor(void) {
-    static NSInteger madeFor = -1;
-    static UIColor *made;
-    NSInteger rgb = chosen();
-    if (rgb < 0) return nil;
-    if (made && rgb == madeFor) return made;
-    CGFloat r, g, b;
-    unpack((uint32_t)rgb, &r, &g, &b);
-    made = [UIColor colorWithRed:r green:g blue:b alpha:1];
-    madeFor = rgb;
-    return made;
-}
-
-NSInteger SGRAccentRGB(void) {
-    NSInteger rgb = chosen();
-    return rgb < 0 ? SGSpotifyGreen : rgb;
-}
-
-// A darker green than the token comes out as the accent darkened by the same amount, so the two
-// keep their relation.
-static BOOL swap(CGFloat *r, CGFloat *g, CGFloat *b) {
-    for (size_t i = 0; i < sizeof(kGreens) / sizeof(kGreens[0]); i++) {
-        CGFloat gr, gg, gb;
-        unpack(kGreens[i], &gr, &gg, &gb);
-        if (fabs(*r - gr) > 0.01 || fabs(*g - gg) > 0.01 || fabs(*b - gb) > 0.01) continue;
-        CGFloat ar, ag, ab;
-        unpack((uint32_t)sg_accent, &ar, &ag, &ab);
-        CGFloat factor = MAX(gr, MAX(gg, gb)) / (0xD7 / 255.0);
-        *r = MIN(1, ar * factor);
-        *g = MIN(1, ag * factor);
-        *b = MIN(1, ab * factor);
-        return YES;
+static CGFloat tokenShade(CGFloat r, CGFloat g, CGFloat b) {
+    if (!SGRAccentSubstitutionEnabled()) return -1;
+    for (NSUInteger i = 0; i < sizeof(kGreens)/sizeof(kGreens[0]); i++) {
+        CGFloat gr = ((kGreens[i] >> 16)&255)/255.0, gg = ((kGreens[i] >> 8)&255)/255.0, gb = (kGreens[i]&255)/255.0;
+        if (fabs(r-gr) <= .01 && fabs(g-gg) <= .01 && fabs(b-gb) <= .01) return MAX(gr,MAX(gg,gb))/(0xD7/255.0);
     }
-    return NO;
+    return -1;
 }
-
+static SGRAccentToken *componentSource(CGFloat r, CGFloat g, CGFloat b, CGFloat alpha) {
+    CGFloat shade = tokenShade(r,g,b);
+    if (shade < 0) return nil;
+    NSInteger original = (lround(r*255)<<16)|(lround(g*255)<<8)|lround(b*255);
+    return [[SGRAccentToken alloc] initWithAlpha:alpha shade:shade originalRGB:original];
+}
 BOOL SGRAccentSwap(CGFloat *r, CGFloat *g, CGFloat *b) {
-    return sg_accent >= 0 && swap(r, g, b);
+    CGFloat shade = tokenShade(*r,*g,*b);
+    if (shade < 0) return NO;
+    NSInteger rgb = SGRAccentRGB();
+    *r = ((rgb>>16)&255)/255.0 * shade; *g = ((rgb>>8)&255)/255.0 * shade; *b = (rgb&255)/255.0 * shade;
+    return YES;
+}
+SGRAccentToken *SGRAccentCGSource(CGColorRef color) {
+    if (!color || CFGetTypeID(color) != CGColorGetTypeID()) return nil;
+    SGRAccentToken *source = SGRAccentMarkedCGSource(color);
+    if (source) return source;
+    if (CGColorGetNumberOfComponents(color) != 4) return nil;
+    const CGFloat *c = CGColorGetComponents(color);
+    return componentSource(c[0],c[1],c[2],c[3]);
+}
+SGRAccentToken *SGRAccentImageSource(UIImage *image) { return objc_getAssociatedObject(image, &imageSourceKey); }
+SGRAccentToken *SGRAccentLayerSource(CAShapeLayer *layer, BOOL stroke) {
+    return objc_getAssociatedObject(layer, stroke ? &strokeKey : &fillKey);
+}
+static id resolved(SGRAccentToken *source, UIColor *override) {
+    if (!source) return nil;
+    if (!override) return CFBridgingRelease([source copyGlobalCGColor]);
+    NSInteger rgb = SGRAccentRGB();
+    if (override) {
+        CGFloat r,g,b,a;
+        [override getRed:&r green:&g blue:&b alpha:&a];
+        rgb = (lround(r*255)<<16)|(lround(g*255)<<8)|lround(b*255);
+    }
+    return CFBridgingRelease([source copyCGColorForRGB:rgb]);
+}
+static void track(id object) {
+    if (!NSThread.isMainThread) {
+        __weak id weak = object;
+        dispatch_async(dispatch_get_main_queue(), ^{ if (weak) track(weak); });
+        return;
+    }
+    if (!painted) painted = [NSHashTable weakObjectsHashTable];
+    [painted addObject:object];
 }
 
+// Metadata is stored through CAAnimation's KVC, which survives copying into a layer.
+static BOOL animationOwned(CAAnimation *animation) {
+    return [(NSDictionary *)[animation valueForKey:kAnimationSources] count] != 0;
+}
+static CAAnimation *preparedAnimation(CAAnimation *animation, UIColor *override) {
+    NSDictionary *sources = [animation valueForKey:kAnimationSources];
+    NSMutableDictionary *changes = [NSMutableDictionary dictionary];
+    for (NSString *slot in sources) {
+        id source = sources[slot];
+        if ([slot isEqualToString:@"values"]) {
+            NSArray *current = [(CAKeyframeAnimation *)animation values];
+            NSMutableArray *values = nil;
+            NSArray *tokens = source;
+            for (NSUInteger index = 0; index < tokens.count; index++) {
+                if (tokens[index] == NSNull.null) continue;
+                id value = resolved(tokens[index], override);
+                if (CGColorEqualToColor((__bridge CGColorRef)value, (__bridge CGColorRef)current[index])) continue;
+                if (!values) values = [current mutableCopy];
+                values[index] = value;
+            }
+            if (values) changes[slot] = values;
+        } else {
+            id value = resolved(source, override), current = [animation valueForKey:slot];
+            if (!CGColorEqualToColor((__bridge CGColorRef)value, (__bridge CGColorRef)current)) changes[slot] = value;
+        }
+    }
+    if (!changes.count) return animation;
+    CAAnimation *copy = [animation copy];
+    objc_setAssociatedObject(copy, &resolvingKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    for (NSString *slot in changes) [copy setValue:changes[slot] forKey:slot];
+    objc_setAssociatedObject(copy, &resolvingKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return copy;
+}
+void SGRAccentSetLayerOverride(CALayer *layer, UIColor *override) {
+    objc_setAssociatedObject(layer, &layerOverrideKey, override, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+static void recordAnimation(CAAnimation *animation, NSString *slot, id sources) {
+    NSMutableDictionary *all = [[animation valueForKey:kAnimationSources] mutableCopy] ?: [NSMutableDictionary dictionary];
+    if (sources) all[slot] = sources; else [all removeObjectForKey:slot];
+    [animation setValue:all forKey:kAnimationSources];
+}
+static id animationValue(CAAnimation *animation, NSString *slot, id value) {
+    if (objc_getAssociatedObject(animation, &resolvingKey)) return value;
+    SGRAccentToken *source = SGRAccentCGSource((__bridge CGColorRef)value);
+    recordAnimation(animation, slot, source);
+    return source ? resolved(source, nil) : value;
+}
+
+// Only UIKit's complete tint operation establishes image ownership. Arbitrary renderer callbacks
+// can also draw through CoreGraphics, so neither their output nor sampled pixels establish ownership.
+static UIImage *markImage(UIImage *image, SGRAccentToken *source, UIImage *base) {
+    if (!SGRAccentSubstitutionEnabled() || image == base || image.renderingMode == UIImageRenderingModeAlwaysTemplate) return image;
+    objc_setAssociatedObject(image, &imageSourceKey, source, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(image, &imageBaseKey, source ? base : nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return image;
+}
+UIImage *SGRAccentTintedImage(UIImage *image, UIColor *override) {
+    SGRAccentToken *source = SGRAccentImageSource(image);
+    UIImage *base = objc_getAssociatedObject(image, &imageBaseKey);
+    if (!source || !base) return image;
+    UIColor *ink = override ? [override colorWithAlphaComponent:source.alpha] : source.color;
+    return [base imageWithTintColor:ink renderingMode:UIImageRenderingModeAlwaysOriginal];
+}
+
+static void refreshPaint(void) {
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    for (id object in painted.allObjects) {
+        if ([object isKindOfClass:UIView.class]) {
+            UIView *view = object;
+            UIColor *tint = view.tintColor, *background = view.backgroundColor;
+            if (SGRAccentIsToken(tint)) { view.tintColor = nil; view.tintColor = tint; }
+            if (SGRAccentIsToken(background)) { view.backgroundColor = nil; view.backgroundColor = background; }
+            if ([view isKindOfClass:UILabel.class]) {
+                UILabel *label = (UILabel *)view; UIColor *text = label.textColor;
+                if (SGRAccentIsToken(text)) { label.textColor = nil; label.textColor = text; }
+            }
+            if ([view isKindOfClass:UIImageView.class]) {
+                UIImageView *image = (UIImageView *)view;
+                SGRAccentToken *source = SGRAccentImageSource(image.image);
+                if (source) image.image = SGRAccentTintedImage(image.image, nil);
+            }
+            [view setNeedsDisplay];
+        } else if ([object isKindOfClass:CALayer.class]) {
+            CALayer *layer = object;
+            SGRAccentToken *background = objc_getAssociatedObject(layer, &backgroundKey);
+            if (background) layer.backgroundColor = background.color.CGColor;
+            if ([layer isKindOfClass:CAShapeLayer.class]) {
+                CAShapeLayer *shape = (CAShapeLayer *)layer;
+                SGRAccentToken *fill = SGRAccentLayerSource(shape, NO), *stroke = SGRAccentLayerSource(shape, YES);
+                if (fill) shape.fillColor = fill.color.CGColor;
+                if (stroke) shape.strokeColor = stroke.color.CGColor;
+            }
+            // Never replace installed animations: even equal-looking replacements cancel delegates.
+        }
+    }
+    [CATransaction commit];
+}
+
+%group SGRAccentPaint
 %hook UIColor
 - (UIColor *)initWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a {
-    swap(&r, &g, &b);
-    return %orig(r, g, b, a);
+    SGRAccentToken *source = componentSource(r,g,b,a);
+    if (source) return (__bridge UIColor *)CFBridgingRetain(source.color);
+    return %orig;
 }
 + (UIColor *)colorWithRed:(CGFloat)r green:(CGFloat)g blue:(CGFloat)b alpha:(CGFloat)a {
-    swap(&r, &g, &b);
-    return %orig(r, g, b, a);
+    SGRAccentToken *source = componentSource(r,g,b,a);
+    if (source) return source.color;
+    return %orig;
 }
 %end
-
-// Lottie draws its animations, the play indicator and the checkmarks among them, from colors
-// in the animation file straight onto shape layers, or into color keyframes, never through
-// UIColor. The same swap goes on the CGColor. Layers get set off the main thread too, so the
-// copy is made with CoreGraphics alone; NULL when the color is not one of the greens.
-static CGColorRef swappedCopy(CGColorRef color) {
-    if (!color || CFGetTypeID(color) != CGColorGetTypeID() || CGColorGetNumberOfComponents(color) != 4) return NULL;
-    const CGFloat *c = CGColorGetComponents(color);
-    CGFloat r = c[0], g = c[1], b = c[2];
-    if (!swap(&r, &g, &b)) return NULL;
-    CGFloat out[] = {r, g, b, c[3]};
-    return CGColorCreate(CGColorGetColorSpace(color), out);
+%hook UIImage
+- (UIImage *)imageWithTintColor:(UIColor *)color renderingMode:(UIImageRenderingMode)mode {
+    UIImage *image = %orig;
+    return markImage(image, SGRAccentSource(color), self);
 }
-
-static id swappedValue(id value) {
-    CGColorRef swapped = swappedCopy((__bridge CGColorRef)value);
-    if (!swapped) return value;
-    id boxed = (__bridge_transfer id)swapped;
-    return boxed;
+- (UIImage *)imageWithTintColor:(UIColor *)color {
+    UIImage *image = %orig;
+    return markImage(image, SGRAccentSource(color), self);
 }
+- (UIImage *)imageWithRenderingMode:(UIImageRenderingMode)mode {
+    UIImage *image = %orig;
+    UIImage *base = objc_getAssociatedObject(self, &imageBaseKey);
+    return markImage(image, SGRAccentImageSource(self), [base imageWithRenderingMode:mode]);
+}
+- (UIImage *)imageWithAlignmentRectInsets:(UIEdgeInsets)insets {
+    UIImage *image = %orig;
+    UIImage *base = objc_getAssociatedObject(self, &imageBaseKey);
+    return markImage(image, SGRAccentImageSource(self), [base imageWithAlignmentRectInsets:insets]);
+}
+%end
+%hook UIImageView
+- (void)setImage:(UIImage *)image {
+    %orig;
+    if (SGRAccentImageSource(image)) track(self);
+}
+%end
+%hook UIView
+- (void)setTintColor:(UIColor *)color {
+    %orig;
+    if (SGRAccentIsToken(color)) track(self);
+}
+- (void)setBackgroundColor:(UIColor *)color {
+    %orig;
+    if (SGRAccentIsToken(color)) track(self);
+}
+%end
+%hook UILabel
+- (void)setTextColor:(UIColor *)color {
+    %orig;
+    if (SGRAccentIsToken(color)) track(self);
+}
+%end
+%end
+%group SGRAccentLifecycle
+%hook UIViewController
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    SGRAccentTrackTransition(((UIViewController *)self).transitionCoordinator);
+}
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    // Container setters finish committing their selected child after delivering appearance.
+    dispatch_async(dispatch_get_main_queue(), ^{ SGRAccentRefreshContext(); });
+}
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    dispatch_async(dispatch_get_main_queue(), ^{ SGRAccentRefreshContext(); });
+}
+%end
+%hook UINavigationController
+- (UIViewController *)popViewControllerAnimated:(BOOL)animated {
+    // During an interactive pop UIKit can deliver the destination's willAppear before attaching
+    // its coordinator. Hold the committed owner across that gap, then observe the real transition.
+    SGRAccentNavigationWillChange();
+    UIViewController *page = %orig;
+    SGRAccentNavigationDidChange(((UINavigationController *)self).transitionCoordinator);
+    return page;
+}
+%end
+%end
 
+%group SGRAccentPaint
 %hook CAShapeLayer
 - (void)setFillColor:(CGColorRef)color {
-    CGColorRef swapped = swappedCopy(color);
-    CGColorRef used = swapped ?: color;
-    %orig(used);
-    if (swapped) CGColorRelease(swapped);
+    SGRAccentToken *source = SGRAccentCGSource(color);
+    objc_setAssociatedObject(self, &fillKey, source, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    id used = source ? resolved(source,nil) : (__bridge id)color;
+    %orig((__bridge CGColorRef)used);
+    if (source) track(self);
 }
 - (void)setStrokeColor:(CGColorRef)color {
-    CGColorRef swapped = swappedCopy(color);
-    CGColorRef used = swapped ?: color;
-    %orig(used);
-    if (swapped) CGColorRelease(swapped);
+    SGRAccentToken *source = SGRAccentCGSource(color);
+    objc_setAssociatedObject(self, &strokeKey, source, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    id used = source ? resolved(source,nil) : (__bridge id)color;
+    %orig((__bridge CGColorRef)used);
+    if (source) track(self);
 }
 %end
-
 %hook CALayer
 - (void)setBackgroundColor:(CGColorRef)color {
-    CGColorRef swapped = swappedCopy(color);
-    CGColorRef used = swapped ?: color;
-    %orig(used);
-    if (swapped) CGColorRelease(swapped);
+    SGRAccentToken *source = SGRAccentCGSource(color);
+    objc_setAssociatedObject(self, &backgroundKey, source, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    id used = source ? resolved(source,nil) : (__bridge id)color;
+    %orig((__bridge CGColorRef)used);
+    if (source) track(self);
+}
+- (void)addAnimation:(CAAnimation *)animation forKey:(NSString *)key {
+    // This is Spotify/Vitrine submitting a new animation, never a repaint of an installed one.
+    if (animationOwned(animation))
+        animation = preparedAnimation(animation, objc_getAssociatedObject(self, &layerOverrideKey));
+    %orig(animation,key);
 }
 %end
-
 %hook CABasicAnimation
 - (void)setFromValue:(id)value {
-    id used = swappedValue(value);
+    id used = animationValue(self,@"fromValue",value);
     %orig(used);
 }
 - (void)setToValue:(id)value {
-    id used = swappedValue(value);
+    id used = animationValue(self,@"toValue",value);
+    %orig(used);
+}
+- (void)setByValue:(id)value {
+    id used = animationValue(self,@"byValue",value);
     %orig(used);
 }
 %end
-
 %hook CAKeyframeAnimation
 - (void)setValues:(NSArray *)values {
-    NSMutableArray *mapped = nil;
-    for (NSUInteger i = 0; i < values.count; i++) {
-        id swapped = swappedValue(values[i]);
-        if (swapped == values[i] && !mapped) continue;
-        if (!mapped) mapped = [values mutableCopy];
-        mapped[i] = swapped;
+    if (objc_getAssociatedObject(self, &resolvingKey)) {
+        %orig;
+        return;
     }
-    NSArray *used = mapped ?: values;
-    %orig(used);
+    NSMutableArray *sources = [NSMutableArray array], *mapped = [NSMutableArray array];
+    BOOL any = NO;
+    for (id value in values) {
+        SGRAccentToken *source = SGRAccentCGSource((__bridge CGColorRef)value);
+        [sources addObject:source ?: NSNull.null];
+        [mapped addObject:source ? resolved(source,nil) : value];
+        any |= source != nil;
+    }
+    recordAnimation(self,@"values", any ? sources : nil);
+    %orig(mapped);
 }
 %end
-
+%end
+// The factory's dynamic class overrides UIColor's derivations. Bind the actual produced class.
+%group SGRTokenDerivation
+%hook SGRDerivedColor
+- (UIColor *)colorWithAlphaComponent:(CGFloat)alpha {
+    SGRAccentToken *source = SGRAccentSource((UIColor *)self);
+    if (source && SGRAccentSubstitutionEnabled())
+        return [[[SGRAccentToken alloc] initWithAlpha:alpha shade:source.shade originalRGB:source.originalRGB] color];
+    return %orig;
+}
+%end
+%end
+static void installPaint(void) {
+    static BOOL installed;
+    if (installed || !SGRAccentSubstitutionEnabled()) return;
+    installed = YES;
+    %init(SGRAccentPaint);
+    %init(SGRTokenDerivation, SGRDerivedColor = object_getClass(SGRAccentColor()));
+}
 %ctor {
     if (!SGRedesignedUI()) return;
-    sg_accent = chosen();
-    if (sg_accent >= 0) %init;
+    // Initialize the gate before any provenance hook. A later live enable installs it once;
+    // turning it off restores original token components and bypasses new substitution.
+    SGRAccentPreferencesChanged();
+    %init(SGRAccentLifecycle);
+    installPaint();
+    [NSNotificationCenter.defaultCenter addObserverForName:SGRAccentDidChangeNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note) { installPaint(); refreshPaint(); }];
+    dispatch_async(dispatch_get_main_queue(), ^{ SGRAccentStart(); });
 }

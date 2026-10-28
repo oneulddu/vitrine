@@ -11,6 +11,15 @@
 @interface SGModRow : NSObject
 @property (nonatomic, copy) NSString *title;
 @property (nonatomic, copy) NSString *subtitle;
+// More words the search finds this row by, after its title, subtitle and the pages above it: the names a setting is
+// looked for by and its title does not hold ("CarPlay" for the Activity card), one per line in this language.
+@property (nonatomic, copy) NSString *searchKeywords;
+// What the search remembers the row as, when it was opened from its results: a name that does not change with the
+// language and is the same for the same setting every launch. A switch row's own key does that already; this is for
+// a row without one (a page row, a menu or an action), and a look's own setting names its look in it
+// ("spotifyglass.redesign.accent") while a setting both looks share does not ("page.vibrations"). A row with
+// neither a key nor this is not remembered.
+@property (nonatomic, copy) NSString *searchIdentifier;
 @property (nonatomic, copy) NSString *key;
 @property (nonatomic) BOOL defaultOn;
 @property (nonatomic) BOOL flag;
@@ -124,6 +133,13 @@ SGModSection *SGNotedSection(NSString *title, NSArray<SGModRow *> *rows, NSStrin
 SGModRow *SGWithSymbol(SGModRow *row, NSString *symbol);
 // The same on a tile of `color`, the way Settings colors the icon of each of its rows.
 SGModRow *SGWithTile(SGModRow *row, NSString *symbol, UIColor *color);
+// Gives the row the words the search finds it by besides its title, subtitle and the pages above it: what the
+// feature is called elsewhere, separated by spaces.
+SGModRow *SGSearchKeywords(SGModRow *row, NSString *keywords);
+// Gives the row the name the search remembers it as when its results lead to it, for a row that has no key of its
+// own: a page row, a menu or an action. It does not change with the language, and a look's own setting names the
+// look in it (SGModRow.searchIdentifier).
+SGModRow *SGSearchIdentified(SGModRow *row, NSString *identifier);
 // A small blue "New" capsule after the row's title until the row is first used: a page row's page opened, a
 // switch flipped, a menu's item picked, any other row tapped. From then on `identifier` reads YES in the
 // dictionary under SGKeySeenNew and the mark is gone for good. A slider row shows no mark.

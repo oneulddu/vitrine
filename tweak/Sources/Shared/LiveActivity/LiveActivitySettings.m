@@ -103,6 +103,16 @@ UIViewController *SGLiveActivitySettingsPage(void) {
     SGModRow *colors = menuRow(SGL(@"settings.liveactivity.colors.title", @"Colors"), SGKeyLiveActivityColors, @[SGL(@"settings.liveactivity.colors.choice.spotify", @"Spotify"), SGL(@"settings.liveactivity.colors.choice.artwork", @"Artwork"), SGL(@"settings.liveactivity.colors.choice.plain", @"Plain")], SGLiveActivityColorsSpotify, preview);
     SGModRow *progress = SGSwitchRow(SGL(@"settings.liveactivity.progressbar.title", @"Progress bar"), nil, SGKeyLiveActivityProgressBar);
     progress.changed = switched;
+    // What a card on the lock screen, in the Dynamic Island, on a Watch or in CarPlay is looked for by.
+    for (SGModRow *row in @[on, view, without, alignment, translation, size, artwork, colors, progress])
+        SGSearchKeywords(row, SGL(@"settings.search.live_activity.keywords", @"dynamic island lock screen apple watch carplay card activity"));
+    // A choice or menu row stores under a key its own blocks hold, so it has no key of its own for the search to
+    // remember it by; these rows are the shared Live Activity's, under either look, so their names carry no look.
+    SGSearchIdentified(view, SGKeyLiveActivityView);
+    SGSearchIdentified(without, SGKeyLiveActivityWithoutLyrics);
+    SGSearchIdentified(alignment, SGKeyLiveActivityAlignment);
+    SGSearchIdentified(size, SGKeyLiveActivityTextSize);
+    SGSearchIdentified(colors, SGKeyLiveActivityColors);
     SGLiveActivityPage *page = [[SGLiveActivityPage alloc] initWithTitle:SGL(@"settings.liveactivity.title", @"Live Activity") intro:nil sections:@[
         SGSection(nil, @[missingRow(), on, view, without, alignment, translation, size]),
         SGNotedSection(SGL(@"settings.liveactivity.card.header", @"Card"), @[artwork, colors, progress],

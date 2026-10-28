@@ -248,7 +248,7 @@ static void *kReadyContext = &kReadyContext;
     CGRect bounds = self.bounds;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    if (SGRFullBleedCovers()) {
+    if (SGRPageFullCover(SGRKeyAlbumFullCover)) {
         if (_extension) {
             _extension.frame = bounds;
             CGFloat side = MIN(bounds.size.width, bounds.size.height);
@@ -317,7 +317,7 @@ static void *kReadyContext = &kReadyContext;
     [_motion removeFromSuperlayer];
     _motion = nil;
     // A square cover's gradients and shadow follow whether a clip covers it.
-    if (!SGRFullBleedCovers()) [self setNeedsLayout];
+    if (!SGRPageFullCover(SGRKeyAlbumFullCover)) [self setNeedsLayout];
 }
 
 - (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
@@ -337,7 +337,7 @@ static void *kReadyContext = &kReadyContext;
     [CATransaction setDisableActions:YES];
     layer.opacity = 1;
     // A square cover's hero has no gradients until the clip fills it; they come in with it.
-    NSArray<CALayer *> *fading = SGRFullBleedCovers() ? @[layer] : @[layer, _scrim, _dissolve];
+    NSArray<CALayer *> *fading = SGRPageFullCover(SGRKeyAlbumFullCover) ? @[layer] : @[layer, _scrim, _dissolve];
     _scrim.hidden = NO;
     _dissolve.hidden = NO;
     if (self.window) {
@@ -446,7 +446,7 @@ static void applyHero(UIView *header, UIView *cover, CGFloat bottom) {
     // Spotify's square at full size, in the header's coordinates, which are the hero's: grow-only like the height,
     // so the square stays put while the header fades and collapses. Its bottom too, since the cover can reach its
     // full size before the header's top inset is in.
-    if (!SGRFullBleedCovers()) {
+    if (!SGRPageFullCover(SGRKeyAlbumFullCover)) {
         CGRect square = [cover convertRect:cover.bounds toView:header];
         if (square.size.width >= kMinCover && (square.size.width > hero.square.size.width + 0.5
                                                || CGRectGetMaxY(square) > CGRectGetMaxY(hero.square) + 0.5)) hero.square = square;

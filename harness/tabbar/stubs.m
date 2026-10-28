@@ -34,5 +34,18 @@ void SGRNavbarForgetTab(void) {
     sgHarnessLitTab = nil;
 }
 void SGOpenModSettings(UIView *source) {}
+
+// Navbar.x's lays out the bar SGRComposeTabBar last composed, and the stub above composes none, so it lays out
+// nothing here: what the Tab bar page changes reaches the bar only through TabBar.x's own path (`navsettings`).
+void SGRRefreshTabBar(void) {}
+
+// Shared/Player/SGLastTrack.m, which the preview's placeholder art comes from; a plain square of the tint here.
+UIImage *SGPlaceholderArtwork(UIColor *tint) {
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(64, 64)];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [tint setFill];
+        UIRectFill(CGRectMake(0, 0, 64, 64));
+    }];
+}
 // Shared/Player/PlayerEvents.x, which TabBarMinimize.x listens to.
 NSString *const SGPlayerTransitionNotification = @"spotifyglass.playerTransition";

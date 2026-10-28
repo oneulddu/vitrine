@@ -15,3 +15,13 @@ void SGRObservePlayerTransition(id owner, void (^changed)(id owner)) {}
 
 // Shared/AlbumQueue/AlbumQueueMenu.x: a tapped album header ⋯ records its album for the menu; no menu here.
 void SGAlbumQueueMarkSource(UIView *view) {}
+
+// Shared/Player/SGLastTrack.m, which the preview cards' placeholder art comes from; a plain square of the tint here,
+// without the player that file records.
+UIImage *SGPlaceholderArtwork(UIColor *tint) {
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(64, 64)];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [tint setFill];
+        UIRectFill(CGRectMake(0, 0, 64, 64));
+    }];
+}

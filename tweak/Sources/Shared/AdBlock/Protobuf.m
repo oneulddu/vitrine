@@ -7,6 +7,8 @@ static BOOL readVarint(const uint8_t *bytes, NSUInteger length, NSUInteger *at, 
     uint64_t value = 0;
     for (int shift = 0; *at < length && shift < 64; shift += 7) {
         uint8_t byte = bytes[(*at)++];
+        // Only bit 63 remains in the tenth byte. Shifting any other payload bit would wrap it away.
+        if (shift == 63 && (byte & 0xfe)) return NO;
         value |= (uint64_t)(byte & 0x7f) << shift;
         if (!(byte & 0x80)) {
             *out = value;

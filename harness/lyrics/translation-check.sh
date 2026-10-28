@@ -17,7 +17,7 @@ xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -g -O0 -isysroot "$SDK
     "$SRC"/Redesigned/Lyrics/SongLanguage.m "$SRC"/Redesigned/Lyrics/MeaningSheet.m "$SRC"/Redesigned/Lyrics/SGRSingButton.m \
     "$SRC"/Shared/Lyrics/KaraokeTiming.m "$SRC"/Shared/Lyrics/Romanise.m "$SRC"/Shared/Lyrics/LyricsLanguage.m \
     "$SRC"/Shared/LyricsMeanings/Meanings.m "$SRC"/Shared/LyricsSources/SongMatch.m "$SRC"/Shared/AdBlock/Protobuf.m "$SRC"/Shared/LyricsSources/SGTTML.m \
-    "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Redesigned/Kit/SGRDownload.m "$SRC"/Redesigned/Kit/SGRRestyle.m "$HERE/../page-style-with-presenter-stubs.m" "$SRC"/Core/SGViewTree.m \
+    "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Redesigned/Kit/SGRDownload.m "$SRC"/Redesigned/Kit/SGRRestyle.m "$SRC"/Redesigned/Kit/SGRRollingDigits.m "$SRC"/Redesigned/Kit/SGRRefinements.m "$HERE/../page-style-with-presenter-stubs.m" "$SRC"/Core/SGViewTree.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGLocalize.m "$SRC"/Core/SGGlass.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreText -framework Foundation \
     -framework Symbols -framework NaturalLanguage -o "$APP/Contents/MacOS/Check"

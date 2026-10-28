@@ -51,6 +51,8 @@ SGOptionalWorkReason SGOptionalWorkReasonForInputs(BOOL lowPower, NSProcessInfoT
 }
 
 BOOL SGOptionalWorkMayRun(BOOL allowsExpensive) {
+    id enabled = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLoadAhead];
+    if (enabled && ![enabled boolValue]) return NO;
     SGOptionalNetwork network = networkNow();
     NSProcessInfo *process = NSProcessInfo.processInfo;
     SGOptionalWorkReason reason = SGOptionalWorkReasonForInputs(process.lowPowerModeEnabled, process.thermalState,

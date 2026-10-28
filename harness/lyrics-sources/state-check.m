@@ -5,6 +5,8 @@
 #import "Settings/SGSourcesPage.h"
 #import <objc/runtime.h>
 #import <Security/Security.h>
+#import "Shared/Player/PlayerState.h"
+#import "Core/SGOptionalWork.h"
 #define CHECK(cond) do { if (!(cond)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #cond); exit(1); } } while (0)
 
 static void (^sg_pinnedReply)(SGLyricsResult *);
@@ -22,7 +24,21 @@ static void holdableAfter(dispatch_time_t when, dispatch_queue_t queue, dispatch
     else dispatch_after(when, queue, block);
 }
 #define dispatch_after holdableAfter
+static BOOL sg_aheadAllowed = YES;
+static BOOL optionalForWatcher(BOOL expensive) {
+    id enabled = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLoadAhead];
+    return sg_aheadAllowed && (!enabled || [enabled boolValue]);
+}
+static NSMutableArray<NSString *> *sg_prefetched;
+static void observedPrefetch(NSString *track) {
+    [sg_prefetched addObject:track];
+    SGLyricsPrefetch(track);
+}
+#define SGOptionalWorkMayRun optionalForWatcher
+#define SGLyricsPrefetch observedPrefetch
 #import "karaoke.inc"
+#undef SGLyricsPrefetch
+#undef SGOptionalWorkMayRun
 // The production watcher, with only its drawing/rest effects replaced. The full player simulator
 // harness needs unrelated AI/view services; this check drives the state machine without those.
 static BOOL sg_open, sg_alone;
@@ -90,6 +106,9 @@ NSString *SGURIString(id uri) {
     return [uri isKindOfClass:NSURL.class] ? [uri absoluteString] :
         ([uri isKindOfClass:NSString.class] ? uri : nil);
 }
+#import "player-up-next.inc"
+static SPTPlayerState *sg_fixtureState;
+SPTPlayerState *SGPlayerState(void) { return sg_fixtureState; }
 NSNotificationName const SGLocalFileEditsDidChangeNotification = @"harness.localFileEdits";
 static BOOL sg_testLocalFile;
 BOOL SGLocalFileIs(NSString *track) { return sg_testLocalFile; }
@@ -116,6 +135,18 @@ double SGSingLeadOf(SPTPlayerState *state) { return 0; }
 @property (nonatomic, copy) NSDictionary *metadata;
 @end
 @implementation HarnessLyricsTrack
+@end
+// SGPlayerUpNextIn validates Spotify's concrete class, rather than any URI-bearing object.
+@implementation SPTPlayerTrack
+@dynamic URI, artistURI, artistName, trackTitle, metadata, provider;
+@end
+@interface StateUpcomingTrack : SPTPlayerTrack
+@property (nonatomic, copy) id URI;
+@property (nonatomic, copy) NSString *trackTitle, *artistName;
+@property (nonatomic, copy) NSDictionary *metadata;
+@end
+@implementation StateUpcomingTrack
+@synthesize URI, trackTitle, artistName, metadata;
 @end
 @interface HarnessLyricsState : NSObject
 @property (nonatomic, strong) HarnessLyricsTrack *track;
@@ -1499,13 +1530,105 @@ static void checkLRCProjectionPaths(void) {
     puts("LRCLIB projection: line timing, literal word tags, mixed Lyricsfile timing and empty inputs passed");
 }
 
+static void checkHeaderOrigin(void) {
+    NSDictionary *previousHeaders = sg_spclientHeaders;
+    NSMutableArray *previousWaiting = sg_headersWaiting;
+    sg_spclientHeaders = nil;
+    sg_headersWaiting = nil;
+    // The third column is what public header consumers must see after each request.
+    NSArray *cases = @[
+        @[@"https://spclient.wg.spotify.com/color-lyrics/v2/track/check", @"trusted", @"trusted"],
+        @[@"https://spclient.evil.example/color-lyrics/v2/track/check", @"untrusted-host", @"trusted"],
+        @[@"https://evilspclient.wg.spotify.com.example/color-lyrics/v2/track/check", @"untrusted-suffix", @"trusted"],
+        @[@"http://spclient.wg.spotify.com/color-lyrics/v2/track/check", @"insecure", @"trusted"],
+        @[@"HTTPS://SPCLIENT.WG.SPOTIFY.COM/color-lyrics/v2/track/check", @"case-insensitive", @"case-insensitive"],
+    ];
+    for (NSArray<NSString *> *row in cases) {
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:row[0]]];
+        [request setValue:row[1] forHTTPHeaderField:@"Authorization"];
+        rememberHeaders(nil, request);
+        __block BOOL checked = NO;
+        // Capture queues its update on main. This fence observes that update (or rejection)
+        // before querying the public API, without timing assumptions or network access.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SGSpclientHeaders(^(NSDictionary *headers) {
+                CHECK([headers[@"authorization"] isEqualToString:row[2]]);
+                checked = YES;
+            });
+        });
+        pumpUntil(^BOOL { return checked; });
+    }
+    sg_spclientHeaders = previousHeaders;
+    sg_headersWaiting = previousWaiting;
+    puts("header origin: exact HTTPS host, case-insensitivity, malicious hosts and HTTP rejection passed");
+}
+
+static void checkUpNext(void) {
+    NSString *previousID = sg_lastSeenID;
+    SPTPlayerTrack *previousTrack = sg_lastSeen;
+    sg_prefetched = [NSMutableArray array];
+    SGKaraokeTrackWatcher *watcher = [SGKaraokeTrackWatcher new];
+    HarnessLyricsState *state = [HarnessLyricsState new];
+    StateUpcomingTrack *(^track)(NSString *) = ^(NSString *identifier) {
+        StateUpcomingTrack *value = [StateUpcomingTrack new];
+        value.URI = [@"spotify:track:" stringByAppendingString:identifier];
+        value.trackTitle = identifier; value.artistName = @"Singer"; value.metadata = @{};
+        return value;
+    };
+    StateUpcomingTrack *a = track(@"ahead-current"), *b = track(@"ahead-old"), *c = track(@"ahead-new");
+    state.track = (id)a; state.future = @[b];
+    sg_fixtureState = (id)state;
+    [NSUserDefaults.standardUserDefaults setBool:NO forKey:SGKeyLoadAhead];
+    [watcher playerStateDidChange:(id)state];
+    CHECK(([sg_prefetched isEqual:@[@"ahead-current"]]));
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGKeyLoadAhead];
+    [watcher playerUpNextDidChange:(id)state];
+    CHECK(([sg_prefetched isEqual:@[@"ahead-current", @"ahead-old"]]));
+    state.future = @[c];
+    [watcher playerUpNextDidChange:(id)state];
+    [watcher playerStateDidChange:(id)state];
+    CHECK(([sg_prefetched isEqual:@[@"ahead-current", @"ahead-old", @"ahead-new"]]));
+    state.future = @[]; [watcher playerUpNextDidChange:(id)state];
+    CHECK(!watcher.ahead);
+    state.future = @[@"invalid"]; [watcher playerUpNextDidChange:(id)state];
+    CHECK(sg_prefetched.count == 3);
+    sg_aheadAllowed = NO; state.future = @[b];
+    [watcher playerUpNextDidChange:(id)state];
+    CHECK(sg_prefetched.count == 3);
+    sg_aheadAllowed = YES; [watcher playerStateDidChange:(id)state];
+    CHECK([sg_prefetched.lastObject isEqual:@"ahead-old"]);
+    // Drain the actual source owner's coalesced requests and deliver B after C.
+    NSMutableDictionary *replies = [NSMutableDictionary dictionary];
+    SGLyricsProvider *provider = SGLyricsProviderFor(@"musixmatch");
+    SGLyricsAsk saved = provider.ask;
+    provider.ask = ^(SGLyricsQuery *q, void (^done)(SGLyricsResult *)) { replies[q.trackID] = [done copy]; };
+    pumpUntil(^BOOL { return replies.count == 3; });
+    SGLyricsResult *new = madeUpLyrics(@"new", SGKaraokeTimingWords);
+    SGLyricsResult *old = madeUpLyrics(@"old", SGKaraokeTimingWords);
+    ((void (^)(SGLyricsResult *))replies[@"ahead-new"])(new);
+    ((void (^)(SGLyricsResult *))replies[@"ahead-old"])(old);
+    ((void (^)(SGLyricsResult *))replies[@"ahead-current"])(nil);
+    __block BOOL delivered = NO;
+    SGLyricsFetch(@"ahead-new", ^(SGLyricsResult *answer) { CHECK([answer.texts.firstObject isEqual:@"new"]); delivered = YES; });
+    pumpUntil(^BOOL { return delivered; });
+    provider.ask = saved;
+    sg_prefetched = nil;
+    sg_fixtureState = nil;
+    sg_lastSeenID = previousID;
+    sg_lastSeen = previousTrack;
+}
+
 int main(void) {
     @autoreleasepool {
+        checkHeaderOrigin();
+        BOOL aheadOnly = getenv("VITRINE_UP_NEXT_ONLY") != NULL;
+        if (!aheadOnly) {
         checkOwnMethod();
         checkTranslationPresence();
         checkLRCProjectionPaths();
         checkTTMLResult();
         checkNetEaseURLs();
+        }
         // A separate suite makes the default writes real without touching the app's or the user's.
         sg_testSuite = [@"com.vitrine.lyrics-state-check." stringByAppendingString:NSUUID.UUID.UUIDString];
         sg_testDefaults = [[NSUserDefaults alloc] initWithSuiteName:sg_testSuite];
@@ -1520,8 +1643,10 @@ int main(void) {
         Method defaultsMethod = class_getClassMethod(NSUserDefaults.class, @selector(standardUserDefaults));
         method_setImplementation(defaultsMethod, (IMP)fakeDefaults);
         NSUserDefaults *defaults = sg_testDefaults;
-        checkLanguageStore();
-        checkAskModeMigration();
+        if (!aheadOnly) {
+            checkLanguageStore();
+            checkAskModeMigration();
+        }
         [defaults setObject:@[@"musixmatch"] forKey:SGKeyLyricsProviders];
         [defaults setInteger:250 forKey:SGKeyLyricsDelay];
         sg_seenTracks = [NSMutableDictionary dictionary];
@@ -1529,6 +1654,8 @@ int main(void) {
         sg_requested = [NSMutableSet set]; sg_asking = [NSMutableSet set]; sg_looking = [NSMutableSet set];
         sg_losses = [NSMutableDictionary dictionary]; sg_ownSources = YES;
         sg_lastSeenID = @"song";
+        checkUpNext();
+        if (aheadOnly) { puts("lyrics up-next: replacement, coalescing, stale result and foreground gate passed"); return 0; }
         checkTranslationDelivery();
         checkMissingRecovery();
         checkSpicyCancellation();

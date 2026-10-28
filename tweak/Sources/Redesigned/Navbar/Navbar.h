@@ -7,6 +7,9 @@
 #define SGRKeyNavbar @"spotifyglass.redesign.navbar"
 // Icons only on the glass bar. On unless set; applies as soon as the bar lays out again.
 #define SGRKeyNavbarHideLabels @"spotifyglass.redesign.navbar.hideLabels"
+// The redesign's black fade under the glass bar and the now playing bar (TabBar.x's SGRBarFade). On unless switched
+// off; applies as soon as the bar lays out again. Spotify's own fade under its bar stays off either way.
+#define SGRKeyNavbarFade @"spotifyglass.redesign.navbar.fade"
 
 extern NSString *const SGRNavbarID;      // NSString, the entry's identity
 extern NSString *const SGRNavbarTitle;   // NSString, the name in the settings list and under the icon
@@ -61,5 +64,11 @@ CGRect SGRTabBarInlineSlot(UIView *host, CGFloat height);
 UIImage *SGRNavbarGlyph(NSDictionary *entry, BOOL active);
 // Lets a laid out bar's titles shrink a little before UIKit cuts them short (TabBar.x), for the page's preview too.
 void SGRShrinkTabTitles(UIView *bar);
+// The fade under the bars (TabBar.x), for the page's preview too: how far above the glass bar's top it starts, and
+// its ramp of black, drawn on `layer` from its top to its foot.
+extern const CGFloat SGRBarFadeAbovePt;
+void SGRStyleBarFade(CAGradientLayer *layer);
+// After SGRKeyNavbarFade changes (TabBar.x): the glass's bar lays out again, so the fade goes or comes at once.
+void SGRRefreshBarFade(void);
 
 UIViewController *SGRNavbarSettingsPage(void);   // the tab editor, in Mod Settings

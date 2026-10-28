@@ -16,6 +16,7 @@
 #import "Settings/SGModPage.h"
 #import "Redesigned/Kit/SGRAccent.h"
 #import "Redesigned/Kit/SGRPagePreview.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Redesigned/Playlist/Playlist.h"
 #import "Redesigned/Home/Home.h"
 #import "Redesigned/Search/Search.h"
@@ -199,9 +200,64 @@ static void runLooks(NSString *name, UIViewController *(^builder)(void)) {
     [window.traitOverrides removeTrait:UITraitPreferredContentSizeCategory.class];
 }
 
+static UIView *identified(UIView *view, NSString *identifier) {
+    if ([view.accessibilityIdentifier isEqual:identifier]) return view;
+    for (UIView *child in view.subviews) {
+        UIView *found = identified(child, identifier);
+        if (found) return found;
+    }
+    return nil;
+}
+
+static BOOL visibleText(UIView *view, NSString *text) {
+    if (view.hidden || view.alpha < 0.01) return NO;
+    if ([view isKindOfClass:UILabel.class] && [((UILabel *)view).text isEqual:text]) return YES;
+    for (UIView *child in view.subviews) if (visibleText(child, text)) return YES;
+    return NO;
+}
+
+static void runCoverChoices(void) {
+    reset();
+    for (int album = 0; album < 2; album++) for (int playlist = 0; playlist < 2; playlist++) {
+        SGSetInt(SGRKeyAlbumFullCover, album);
+        SGSetInt(SGRKeyPlaylistFullCover, playlist);
+        for (NSNumber *isAlbum in @[@YES, @NO]) {
+            SGRPagePreview *card = show(^UIViewController *{
+                return isAlbum.boolValue ? SGRAlbumSettingsPage() : SGRPlaylistSettingsPage();
+            });
+            UIView *art = identified(card, @"vitrine.preview.header.artwork");
+            BOOL full = isAlbum.boolValue ? album : playlist;
+            if (!art || art.bounds.size.width <= 0) HARNESS_FAIL(@"missing cover preview");
+            if (full && CGRectGetMinX(art.frame) != 0) HARNESS_FAIL(@"Full screen cover must reach both edges");
+            if (!full && (CGRectGetMinX(art.frame) <= 0 || fabs(art.bounds.size.width - art.bounds.size.height) > 0.5))
+                HARNESS_FAIL(@"Card cover must remain an inset square");
+            // Change the other page while this card stays visible: no effect on its cover.
+            CGRect before = art.frame;
+            SGSetInt(isAlbum.boolValue ? SGRKeyPlaylistFullCover : SGRKeyAlbumFullCover, !full);
+            spin(0.4);
+            if (!CGRectEqualToRect(before, art.frame)) HARNESS_FAIL(@"other page's cover setting leaked");
+            SGSetInt(SGRKeyAlbumFullCover, album); SGSetInt(SGRKeyPlaylistFullCover, playlist);
+        }
+    }
+    reset();
+    SGRPagePreview *card = show(^UIViewController *{ return SGRAlbumSettingsPage(); });
+    if (!visibleText(card, @"Your plays: 12")) HARNESS_FAIL(@"personal counts remain the default");
+    SGSetInt(SGRKeyAlbumPlayCountsSource, 1);
+    spin(0.4);
+    if (!visibleText(card, @"Spotify plays: 12")) HARNESS_FAIL(@"row preview must name Spotify source");
+    SGSetInt(SGRKeyAlbumPlayCountsPlace, SGRAlbumPlayCountsInMenu);
+    spin(0.4);
+    if (!visibleText(card, @"Spotify plays: 12")) HARNESS_FAIL(@"menu preview must name Spotify source");
+    SGSetInt(SGRKeyAlbumPlayCountsSource, 0);
+    spin(0.4);
+    if (!visibleText(card, @"Your plays: 12")) HARNESS_FAIL(@"menu preview must restore personal source");
+    printf("PASS four cover combinations and both count sources in row/menu previews\n");
+}
+
 static void runChecks(void) {
+    runCoverChoices();
     runPage(@"playlist", ^UIViewController *{ return SGRPlaylistSettingsPage(); },
-            @"Full screen cover and Sort and Mix",
+            @"Open cover on tap and Sort and Mix",
             ^{
                 SGSetEnabled(SGRKeyPlaylistCoverViewer, NO);
                 SGSetEnabled(SGRKeyPlaylistHideCuration, NO);

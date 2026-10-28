@@ -16,6 +16,8 @@ xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -g -O0 -isysroot "$SDK
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
     -I"$SRC" -I"$SRC/Redesigned/Album" -Wall -Wno-unused-parameter -Wno-deprecated-declarations \
     "$OUT/AlbumPlaysMenu.m" "$OUT/AlbumRows.m" "$HERE/menu-check.m" "$SRC/Core/SGLog.m" "$SRC/Core/SGViewTree.m" "$SRC/Core/SGPrefs.m" \
+    "$SRC/Redesigned/Album/AlbumSpotifyCounts.m" "$SRC/Shared/AdBlock/Protobuf.m" \
+    "$SRC/Redesigned/Album/AlbumPlaysPlace.m" "$SRC/Redesigned/Album/AlbumPlaysText.m" "$SRC/Core/SGLocalize.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework Foundation -o "$APP/Contents/MacOS/ui-refinements-menu-check"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -35,4 +37,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict></plist>
 PLIST
 codesign -f -s - "$APP" >/dev/null 2>&1
-"$APP/Contents/MacOS/ui-refinements-menu-check"
+for SOURCE in 0 1; do
+    ALBUM_COUNTS_CACHE="$OUT/cache-menu-$SOURCE" "$APP/Contents/MacOS/ui-refinements-menu-check" \
+        -spotifyglass.redesign.album.playCounts.source "$SOURCE" -spotifyglass.redesign.album.playCounts.place 2 -AppleLanguages '(en)' -AppleLocale en_US
+done
+ALBUM_COUNTS_CACHE="$OUT/cache-row" "$APP/Contents/MacOS/ui-refinements-menu-check" \
+    -spotifyglass.redesign.album.playCounts.source 1 -spotifyglass.redesign.album.playCounts.place 1 -AppleLanguages '(en)' -AppleLocale en_US

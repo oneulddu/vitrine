@@ -16,6 +16,7 @@
 // Threading: main thread only.
 #import "Core/SGCore.h"
 #import "Album.h"
+#import "AlbumSpotifyCounts.h"
 
 static NSString *const kSheetClass = @"_TtC24ContextMenu_InternalImpl25ContextMenuViewController";
 // From the action of a row's ⋯ to the first pass of the sheet it opens.
@@ -24,15 +25,22 @@ static const NSTimeInterval kMarkWindow = 1.5;
 static const CGFloat kSideMargin = 16, kVerticalPadding = 12;
 
 static NSString *sg_markedAlbum, *sg_markedTitle;
+static SGRAlbumCountPage *sg_markedSpotifyPage;
 static CFTimeInterval sg_markedAt;
 static char kTrackKey, kInfoKey;
 static NSMutableSet<NSString *> *sg_logged;
 
 void SGRAlbumPlaysMarkMenu(NSString *album, NSString *title) {
+    sg_markedSpotifyPage = nil;
     BOOL marked = album.length && title.length;
     sg_markedAlbum = marked ? [album copy] : nil;
     sg_markedTitle = marked ? [title copy] : nil;
     sg_markedAt = CACurrentMediaTime();
+}
+
+void SGRAlbumPlaysMarkSpotifyMenu(NSString *trackURI, SGRAlbumCountPage *page) {
+    SGRAlbumPlaysMarkMenu(page.albumURI, trackURI);
+    if (sg_markedAlbum) sg_markedSpotifyPage = page;
 }
 
 // The sheets with a track whose line may still come, go or change.
@@ -106,11 +114,13 @@ static void install(UIViewController *sheet);
 
 // The track this sheet is for, decided at its first pass and only from a row's ⋯ just before; the mark is used up by
 // the first sheet that asks, whichever it is.
-static NSArray<NSString *> *trackFor(UIViewController *sheet) {
+static NSArray *trackFor(UIViewController *sheet) {
     id decided = objc_getAssociatedObject(sheet, &kTrackKey);
     if (decided) return decided == NSNull.null ? nil : decided;
-    NSArray<NSString *> *track = sg_markedAlbum && CACurrentMediaTime() - sg_markedAt <= kMarkWindow ? @[sg_markedAlbum, sg_markedTitle] : nil;
+    NSArray *track = sg_markedAlbum && CACurrentMediaTime() - sg_markedAt <= kMarkWindow
+        ? @[sg_markedAlbum, sg_markedTitle, sg_markedSpotifyPage ?: (id)NSNull.null] : nil;
     sg_markedAlbum = sg_markedTitle = nil;
+    sg_markedSpotifyPage = nil;
     objc_setAssociatedObject(sheet, &kTrackKey, track ?: (id)NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return track;
 }
@@ -136,7 +146,7 @@ static void setSlot(UITableView *table, BOOL footer, UIView *view) {
 
 static void install(UIViewController *sheet) {
     UIView *root = sheet.viewIfLoaded;
-    NSArray<NSString *> *track = root ? trackFor(sheet) : nil;
+    NSArray *track = root ? trackFor(sheet) : nil;
     if (!track) return;
     UITableView *table = SGTableIn(root, 6);
     if (!table) {
@@ -147,7 +157,11 @@ static void install(UIViewController *sheet) {
     [liveSheets() addObject:sheet];
     CGFloat width = table.bounds.size.width;
     if (width <= 0) return;
-    NSString *text = SGRAlbumPlaysText(SGRAlbumPlayCount(track[0], track[1]));
+    NSString *text;
+    if (track[2] != NSNull.null) {
+        SGRAlbumCountPage *page = track[2];
+        text = [page.albumURI isEqual:track[0]] ? SGRAlbumSpotifyPlaysText(page.counts[track[1]]) : nil;
+    } else text = SGRAlbumPlaysText(SGRAlbumPlayCount(track[0], track[1]));
     SGRPlaysInfoRow *info = objc_getAssociatedObject(sheet, &kInfoKey);
     if (!info) {
         if (!text) return;

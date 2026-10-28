@@ -63,7 +63,19 @@ static NSString *readJapanese(NSString *text, BOOL hiragana) {
     return read;
 }
 
-static const NSUInteger SGHangulMaximumInputUTF16Units = 4000;
+static const NSUInteger SGReadingMaximumInputUTF16Units = 4000;
+// Every tokenizer/transform input stays bounded, without cutting a surrogate or combining sequence.
+// A single grapheme larger than the budget is passed through unchanged, never fed to ICU.
+static void readingSegments(NSString *text, void (^each)(NSRange range)) {
+    NSUInteger from = 0;
+    while (from < text.length) {
+        NSUInteger end = from + MIN(SGReadingMaximumInputUTF16Units, text.length - from);
+        NSRange last = [text rangeOfComposedCharacterSequenceAtIndex:end - 1];
+        if (NSMaxRange(last) > end) end = last.location > from ? last.location : NSMaxRange(last);
+        each(NSMakeRange(from, end - from));
+        from = end;
+    }
+}
 // Unicode Hangul syllable composition: initial × 21 vowels × 28 finals.
 static const unichar SGHangulFirstSyllable = 0xAC00;
 static const NSUInteger SGHangulVowelCount = 21, SGHangulFinalCount = 28;
@@ -240,15 +252,35 @@ static NSString *hangulReading(NSString *text, BOOL japanese) {
     return [out stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
 }
 
-NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
+static NSString *romanisedWith(NSString *text, BOOL japanese, BOOL wantsHangul, BOOL wantsHiragana) {
     if (!text.length) return nil;
+    if (text.length > SGReadingMaximumInputUTF16Units) {
+        NSMutableString *whole = [NSMutableString string];
+        __block BOOL changed = NO;
+        BOOL kana = japanese || hasKana(text);
+        readingSegments(text, ^(NSRange range) {
+            NSString *part = [text substringWithRange:range];
+            NSString *reading = part.length <= SGReadingMaximumInputUTF16Units ?
+                romanisedWith(part, kana, wantsHangul, wantsHiragana) : nil;
+            changed |= reading != nil;
+            if (!reading) { [whole appendString:part]; return; }
+            // The short-line transform trims its edges. Preserve separators between segments.
+            NSUInteger head = 0, tail = part.length;
+            NSCharacterSet *space = NSCharacterSet.whitespaceAndNewlineCharacterSet;
+            while (head < tail && [space characterIsMember:[part characterAtIndex:head]]) head++;
+            while (tail > head && [space characterIsMember:[part characterAtIndex:tail - 1]]) tail--;
+            [whole appendString:[part substringToIndex:head]];
+            [whole appendString:reading];
+            [whole appendString:[part substringFromIndex:tail]];
+        });
+        return changed ? [whole stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] : nil;
+    }
     static NSCache<NSString *, NSString *> *kept;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = 1000; });
-    BOOL wantsHangul = [NSUserDefaults.standardUserDefaults boolForKey:SGKeyLyricsPronunciationHangul];
-    BOOL hangul = wantsHangul && text.length <= SGHangulMaximumInputUTF16Units &&
+    BOOL hangul = wantsHangul &&
         (japanese || hasKana(text) || has(text, SGScriptHan));
-    BOOL hiragana = !wantsHangul && japanese && [NSUserDefaults.standardUserDefaults boolForKey:SGKeyLyricsJapaneseKana];
+    BOOL hiragana = !wantsHangul && japanese && wantsHiragana;
     NSString *mode = hangul ? (japanese || hasKana(text) ? @"hangul-ja" : @"hangul-zh") :
         hiragana ? @"hiragana" : japanese ? @"ja" : @"latin";
     NSString *key = [NSString stringWithFormat:@"%@:%@", mode, text];
@@ -282,11 +314,30 @@ NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
     return romanised.length ? romanised : nil;
 }
 
+NSString *SGLyricsRomanised(NSString *text, BOOL japanese) {
+    return romanisedWith(text, japanese,
+        [NSUserDefaults.standardUserDefaults boolForKey:SGKeyLyricsPronunciationHangul],
+        [NSUserDefaults.standardUserDefaults boolForKey:SGKeyLyricsJapaneseKana]);
+}
+
 @implementation SGLyricsRuby
 @end
 
 NSArray<SGLyricsRuby *> *SGLyricsFurigana(NSString *text) {
     if (!text.length) return @[];
+    if (text.length > SGReadingMaximumInputUTF16Units) {
+        NSMutableArray *whole = [NSMutableArray array];
+        readingSegments(text, ^(NSRange range) {
+            if (range.length > SGReadingMaximumInputUTF16Units) return;
+            for (SGLyricsRuby *part in SGLyricsFurigana([text substringWithRange:range])) {
+                SGLyricsRuby *ruby = [SGLyricsRuby new];
+                ruby.range = NSMakeRange(range.location + part.range.location, part.range.length);
+                ruby.reading = part.reading;
+                [whole addObject:ruby];
+            }
+        });
+        return [whole copy];
+    }
     static NSCache<NSString *, NSArray<SGLyricsRuby *> *> *kept;
     static dispatch_once_t once;
     dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = 1000; });
@@ -330,4 +381,129 @@ NSArray<SGLyricsRuby *> *SGLyricsFurigana(NSString *text) {
     NSArray *answer = [runs copy];
     [kept setObject:answer forKey:text];
     return answer;
+}
+
+@implementation SGLyricsPreparedExtras
+- (instancetype)initWithPronunciation:(SGKaraokeLine *)pronunciation ranges:(NSArray<NSValue *> *)ranges
+                          wordRanges:(NSArray<NSValue *> *)wordRanges ruby:(NSArray<SGLyricsRuby *> *)ruby {
+    if ((self = [super init])) {
+        _pronunciation = pronunciation;
+        _sourceRanges = [ranges copy];
+        _wordRanges = [wordRanges copy];
+        _ruby = [ruby copy];
+    }
+    return self;
+}
+@end
+
+SGLyricsPreparedExtras *SGLyricsPrepareExtras(SGKaraokeLine *line, BOOL japanese, BOOL hangul,
+                                             BOOL hiragana, BOOL pronunciation, BOOL ruby) {
+    static NSCache *kept;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = 1000; });
+    NSString *text = SGKaraokeLineText(line) ?: @"";
+    NSMutableArray *clocks = [NSMutableArray array];
+    NSMutableArray<NSValue *> *wordRanges = [NSMutableArray array];
+    NSUInteger offset = 0;
+    for (SGKaraokeWord *word in line.words) {
+        if (offset && !word.joined) offset++;
+        [wordRanges addObject:[NSValue valueWithRange:NSMakeRange(offset, word.text.length)]];
+        offset += word.text.length;
+        [clocks addObject:@[word.text ?: @"", @(word.start), @(word.end), @(word.joined)]];
+    }
+    NSArray *key = @[clocks, @(line.start), @(line.end), @(line.timing), @(line.align),
+                     @(japanese), @(hangul), @(hiragana), @(pronunciation), @(ruby)];
+    // Only workers enter this section. Coalesce cold requests from the player and full-screen view.
+    @synchronized (kept) {
+        SGLyricsPreparedExtras *cached = [kept objectForKey:key];
+        if (cached) return cached;
+        NSMutableArray<SGKaraokeWord *> *spoken = [NSMutableArray array];
+        NSMutableArray<NSValue *> *ranges = [NSMutableArray array];
+        __block BOOL changed = NO;
+        __block NSUInteger lastSource = NSNotFound;
+        BOOL kana = japanese || hasKana(text);
+        void (^append)(NSRange, NSString *, BOOL) = ^(NSRange range, NSString *reading, BOOL gap) {
+            NSString *original = [text substringWithRange:range];
+            if (![original stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) return;
+            if (!reading.length) reading = romanisedWith(original, kana, hangul, hiragana) ?: original;
+            changed |= ![original isEqualToString:reading];
+            SGKaraokeWord *word = [SGKaraokeWord new];
+            word.text = reading;
+            word.joined = spoken.count && (gap || (kana && (hangul || hiragana))) &&
+                NSMaxRange(ranges.lastObject.rangeValue) == range.location;
+            BOOL anchored = NO;
+            NSUInteger firstSource = NSNotFound, untilSource = NSNotFound;
+            for (NSUInteger i = 0; i < wordRanges.count; i++) {
+                if (!NSIntersectionRange(range, wordRanges[i].rangeValue).length) continue;
+                if (firstSource == NSNotFound) firstSource = i;
+                untilSource = i;
+                SGKaraokeWord *source = line.words[i];
+                if (!anchored) { word.start = source.start; word.end = source.end; anchored = YES; }
+                else { word.start = MIN(word.start, source.start); word.end = MAX(word.end, source.end); }
+            }
+            if (!anchored) return;
+            // A provider word is the finest clock we own. Tokens within that word share one
+            // reading word rather than inventing sub-word times or duplicate sweep knots.
+            if (spoken.count && firstSource <= lastSource) {
+                SGKaraokeWord *previous = spoken.lastObject;
+                previous.text = [NSString stringWithFormat:@"%@%@%@", previous.text, word.joined ? @"" : @" ", word.text];
+                previous.start = MIN(previous.start, word.start);
+                previous.end = MAX(previous.end, word.end);
+                ranges[ranges.count - 1] = [NSValue valueWithRange:NSUnionRange(ranges.lastObject.rangeValue, range)];
+                lastSource = untilSource;
+                return;
+            }
+            lastSource = untilSource;
+            [spoken addObject:word];
+            [ranges addObject:[NSValue valueWithRange:range]];
+        };
+        if (pronunciation && has(text, SGScriptNotLatin)) {
+            CFLocaleRef locale = CFLocaleCreate(NULL, kana ? CFSTR("ja") : CFSTR("und"));
+            readingSegments(text, ^(NSRange segmentRange) {
+                NSString *segment = [text substringWithRange:segmentRange];
+                if (segment.length > SGReadingMaximumInputUTF16Units) {
+                    append(segmentRange, segment, YES);
+                    return;
+                }
+                CFStringTokenizerRef tokenizer = CFStringTokenizerCreate(NULL, (__bridge CFStringRef)segment,
+                    CFRangeMake(0, segment.length), kCFStringTokenizerUnitWord, locale);
+                NSUInteger from = segmentRange.location;
+                while (CFStringTokenizerAdvanceToNextToken(tokenizer) != kCFStringTokenizerTokenNone) {
+                    CFRange token = CFStringTokenizerGetCurrentTokenRange(tokenizer);
+                    NSRange local = [segment rangeOfComposedCharacterSequencesForRange:NSMakeRange(token.location, token.length)];
+                    NSRange range = NSMakeRange(segmentRange.location + local.location, local.length);
+                    if (NSMaxRange(range) <= from) continue;
+                    if (range.location < from) range = NSMakeRange(from, NSMaxRange(range) - from);
+                    if (range.location > from) append(NSMakeRange(from, range.location - from), nil, YES);
+                    NSString *original = [text substringWithRange:range], *reading = nil;
+                    if (kana && (hasKana(original) || has(original, SGScriptHan))) {
+                        NSString *latin = CFBridgingRelease(CFStringTokenizerCopyCurrentTokenAttribute(tokenizer,
+                            kCFStringTokenizerAttributeLatinTranscription));
+                        if (hangul) reading = kanaHangul([latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO] ?: original);
+                        else if (hiragana) reading = has(original, SGScriptHan) ?
+                            [latin stringByApplyingTransform:@"Latin-Hiragana" reverse:NO] : original;
+                        else reading = [latin stringByApplyingTransform:@"Latin-ASCII" reverse:NO];
+                    }
+                    append(range, reading, segmentRange.location > 0 && range.location == segmentRange.location);
+                    from = NSMaxRange(range);
+                }
+                if (from < NSMaxRange(segmentRange)) append(NSMakeRange(from, NSMaxRange(segmentRange) - from), nil, YES);
+                CFRelease(tokenizer);
+            });
+            CFRelease(locale);
+        }
+        SGKaraokeLine *reading = nil;
+        if (changed && spoken.count) {
+            reading = [SGKaraokeLine new];
+            reading.words = spoken;
+            reading.start = line.start;
+            reading.end = line.end;
+            reading.timing = line.timing;
+            reading.align = line.align;
+        }
+        SGLyricsPreparedExtras *result = [[SGLyricsPreparedExtras alloc] initWithPronunciation:reading
+            ranges:reading ? ranges : @[] wordRanges:wordRanges ruby:ruby ? SGLyricsFurigana(text) : @[]];
+        [kept setObject:result forKey:key];
+        return result;
+    }
 }

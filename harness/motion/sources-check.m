@@ -1,6 +1,7 @@
 // Production Canvas lookup/cache and protobuf codec, with controlled HTTP and file boundaries.
 #import <UIKit/UIKit.h>
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "Shared/AnimatedArtwork/SGMotionTicket.h"
 #import "Shared/AdBlock/Protobuf.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGSourcesPage.h"
@@ -10,9 +11,19 @@
 BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
 NSString *SGL(NSString *key, NSString *english) { return english; }
 void SGSpclientHeaders(void (^use)(NSDictionary *)) { use(@{@"Authorization": @"fixture"}); }
-void SGMotionFile(NSURL *remote, void (^done)(NSURL *)) { done(remote); }
-void SGMotionAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *)) {
+static BOOL holdFile;
+static SGMotionTicket *fileTicket;
+static NSUInteger fileRequests;
+SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *)) {
+    fileRequests++;
+    SGMotionTicket *ticket = [SGMotionTicket new];
+    fileTicket = ticket;
+    if (!holdFile) dispatch_async(dispatch_get_main_queue(), ^{ if (!ticket.cancelled) done(remote); });
+    return ticket;
+}
+SGMotionTicket *SGMotionRequestAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *)) {
     CHECK(NO); // The fixture enables only Canvas.
+    return nil;
 }
 // Settings-page linkage is not exercised by these source-walk checks.
 @implementation SGSource
@@ -120,6 +131,21 @@ int main(void) {
         waitFor(^BOOL { return delivered == 3; });
         CHECK([lookup(@"spotify:track:held").absoluteString isEqual:@"https://fixture.invalid/second.mp4"]);
         CHECK(delivered == 3 && heldRequests == 1);
+        holdFile = YES;
+        SGMotionTicket *walk = SGMotionRequestClip(@"spotify:track:cancel", [NSURL URLWithString:@"https://fixture.invalid/held.mp4"],
+            nil, nil, 720, ^(NSURL *file, NSString *source) { CHECK(NO); });
+        [walk cancel];
+        CHECK(fileTicket.cancelled);
+        holdFile = NO;
+        held = nil;
+        // A cancelled metadata lookup must not start a file download when its reply arrives.
+        // The cached Canvas answer still serves an unrelated consumer.
+        NSUInteger before = fileRequests;
+        walk = SGMotionRequestClip(@"spotify:track:cancel-metadata", nil, nil, nil, 720,
+            ^(NSURL *file, NSString *source) { CHECK(NO); });
+        [walk cancel];
+        lookup(@"spotify:track:barrier");
+        CHECK(fileRequests == before + 1);
         [NSURLProtocol unregisterClass:CanvasProtocol.class];
         puts("motion sources: positive/negative eviction and in-flight waiters passed");
         return 0;

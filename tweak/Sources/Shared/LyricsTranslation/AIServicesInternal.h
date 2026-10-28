@@ -2,13 +2,36 @@
 #import "LyricsTranslation.h"
 #import "CredentialSettings.h"
 
+// A language tag as the translators' instructions name it ("Korean" for ko-KR), or nil for a tag no instruction
+// takes. English names, so every service is asked for the same language.
+NSString *SGLyricsAILanguageName(NSString *tag);
+
+// Web-translator operations for plain text rather than a song's lyrics, whose one caller is TextTranslation.m.
+// The same endpoints, batching and reply checks as their lyric jobs, with no kept answer and no saved
+// translation. Call on main; completion on main.
+void SGDeepLTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, void (^done)(NSArray<NSString *> *, NSString *));
+void SGGoogleTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, void (^done)(NSArray<NSString *> *, NSString *));
+void SGBingTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, void (^done)(NSArray<NSString *> *, NSString *));
+
 // Original text, sendable text and initial output retain the same source indices.
 // Oversized originals count even when their protected text will not be sent.
 NSArray<NSString *> *SGLyricsWebTexts(NSArray<SGKaraokeLine *> *lines, NSUInteger maxCharacters,
                                     NSMutableArray **send, NSMutableArray **out, BOOL *tooLong);
 
 NSArray<NSString *> *SGLyricsAIArrayIn(id content, NSUInteger count);
-typedef NS_ENUM(NSInteger, SGLyricsReplyFormat) { SGLyricsReplyJSON, SGLyricsReplyIndexed };
+// Prose uses JSON with mandatory successful completion metadata; existing JSON lyric/title jobs retain their contract.
+typedef NS_ENUM(NSInteger, SGLyricsReplyFormat) { SGLyricsReplyJSON, SGLyricsReplyIndexed, SGLyricsReplyProse };
+enum { SGClaudeMaxOutputTokens = 8192 };
+// The output allowance actually requested for prose, not a guessed model context window.
+NSUInteger SGLyricsAIProseOutputTokens(SGLyricsAI service);
+BOOL SGLyricsProseTextsValid(NSArray<NSString *> *texts);
+BOOL SGLyricsProseReplyValid(NSArray<NSString *> *answer, NSArray<NSString *> *texts);
+NSString *SGLyricsProseTooLong(void);
+// Paragraph/sentence segmentation is only for prose. Literal whitespace is reinserted after every segment succeeds.
+typedef NS_ENUM(NSInteger, SGProseSegmentUnit) { SGProseSegmentUTF16, SGProseSegmentJSONBytes };
+void SGLyricsTranslateSegments(NSArray<NSString *> *texts, NSUInteger maxSize, SGProseSegmentUnit unit,
+    void (^send)(NSArray<NSString *> *, void (^)(NSArray<NSString *> *, NSString *)),
+    void (^done)(NSArray<NSString *> *, NSString *));
 // Only new lyric jobs use indexed rows. Titles and other AI jobs explicitly retain JSON.
 NSString *SGLyricsTranslationInstructionForFormat(SGLyricsReplyFormat format);
 NSString *SGLyricsTranslationPromptForFormat(NSArray<NSString *> *texts, NSString *languageTag, SGLyricsReplyFormat format);
@@ -39,7 +62,7 @@ typedef NS_ENUM(NSInteger, SGOpenAIKeyMigration) {
     SGOpenAIKeyMigrationCopy, SGOpenAIKeyMigrationDeleteLegacy
 };
 SGOpenAIKeyMigration SGOpenAIKeyMigrationDecision(NSString *base, BOOL legacyExists, BOOL hostKeyExists);
-NSURLRequest *SGOpenAIRequest(NSString *system, NSString *prompt, NSString **problem);
+NSURLRequest *SGOpenAIRequest(NSString *system, NSString *prompt, SGLyricsReplyFormat format, NSString **problem);
 NSURLRequest *SGClaudeRequest(NSString *system, NSString *prompt, NSString **problem);
 NSURLRequest *SGGeminiAIRequest(NSString *system, NSString *prompt, NSString **problem);
 NSURLRequest *SGGeminiAIRequestWithFormat(NSString *system, NSString *prompt, SGLyricsReplyFormat format, NSString **problem);

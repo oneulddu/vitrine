@@ -5,9 +5,11 @@
 // (harness-fail.h).
 #import <UIKit/UIKit.h>
 #import "Core/SGUIMode.h"
+#import <objc/runtime.h>
 #import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Album/Album.h"
+#import "Redesigned/Album/AlbumSpotifyCounts.h"
 #import "../harness-fail.h"
 
 #pragma mark - stubs for what the files call
@@ -15,13 +17,42 @@
 static NSUInteger sg_count;
 NSNotificationName const SGRAlbumPlayCountsDidChangeNotification = @"SGRAlbumPlayCountsDidChange";
 BOOL SGRedesignedUI(void) { return YES; }
-SGRAlbumPlayCountsPlace SGRAlbumPlayCountsWhere(void) { return SGRAlbumPlayCountsInMenu; }
+static SGSpotifyMetadataReply sg_pendingMetadataReply;
+static NSString *const sg_trackURI = @"spotify:track:0000000000000000000001";
+void SGSpotifyMetadataRequest(NSString *path, NSData *body, SGSpotifyMetadataReply done) {
+    if (!SGRAlbumUsesSpotifyCounts()) HARNESS_FAIL(@"Spotify metadata reached from a personal-count fixture");
+    if (body) {
+        dispatch_async(dispatch_get_main_queue(), ^{ sg_pendingMetadataReply = done; });
+    } else {
+        NSData *json = [NSJSONSerialization dataWithJSONObject:@{@"disc": @[@{@"track":
+            @[@{@"uri": sg_trackURI}, @{@"uri": @"spotify:track:0000000000000000000002"}]}]} options:0 error:nil];
+        done(json, 200, nil);
+    }
+}
 NSUInteger SGRAlbumPlayCount(NSString *album, NSString *title) {
+    if (SGRAlbumUsesSpotifyCounts()) HARNESS_FAIL(@"personal title matching reached from a Spotify-count page");
     return [album isEqualToString:@"Hurry Up Tomorrow"] && [title isEqualToString:@"Cry For Me"] ? sg_count : 0;
 }
-NSString *SGRAlbumPlaysText(NSUInteger plays) {
-    return plays ? [NSString stringWithFormat:@"%lu plays", (unsigned long)plays] : nil;
+
+// The existing model bridge's boundary: identity is carried by the page controller, never the labels.
+@interface SGAlbumQueuePage : NSObject
++ (NSString *)albumURI:(UIViewController *)controller;
+@end
+@implementation SGAlbumQueuePage
++ (NSString *)albumURI:(UIViewController *)controller {
+    return [controller.view.accessibilityIdentifier isEqual:@"harness.albumHost"] ? controller.view.accessibilityValue : nil;
 }
+@end
+
+@interface NSFileManager (CountFixture)
+- (NSArray<NSURL *> *)fixture_URLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domains;
+@end
+@implementation NSFileManager (CountFixture)
+- (NSArray<NSURL *> *)fixture_URLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domains {
+    if (directory == NSCachesDirectory) return @[[NSURL fileURLWithPath:@(getenv("ALBUM_COUNTS_CACHE"))]];
+    return [self fixture_URLsForDirectory:directory inDomains:domains];
+}
+@end
 // The Kit's, for AlbumRows.x: the mock marks a page and a track's content by identifier.
 static NSString *const kPageID = @"harness.albumPage", *const kTrackID = @"harness.trackContent";
 const CGFloat SGRSideMargin = 16;
@@ -119,11 +150,84 @@ static NSString *lineOfNewSheet(UIWindow *window) {
     return header(sheet).accessibilityLabel;
 }
 
+static void waitFor(BOOL (^ready)(void)) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
+    while (!ready() && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    expect(ready(), @"Spotify fixture completed before its deadline");
+}
+static BOOL showsSpotifyCount(UIView *view) {
+    if ([view isKindOfClass:UILabel.class] && [((UILabel *)view).text isEqual:@"Spotify plays: 12,345"]) return YES;
+    for (UIView *child in view.subviews) if (showsSpotifyCount(child)) return YES;
+    return NO;
+}
+static void deliverSpotifyCount(void) {
+    const uint8_t count[] = {0x18, 0xb9, 0x60};
+    NSData *any = SGPBSerialize(@[SGPBString(1, @"fixture.PlayCount"), SGPBBytes(2, [NSData dataWithBytes:count length:sizeof(count)])]);
+    NSData *entry = SGPBSerialize(@[SGPBString(2, sg_trackURI), SGPBBytes(1, SGPBSerialize(@[SGPBVarint(1, 200)])), SGPBBytes(3, any)]);
+    NSData *reply = SGPBSerialize(@[SGPBBytes(2, SGPBSerialize(@[SGPBVarint(2, 185), SGPBBytes(3, entry)]))]);
+    SGSpotifyMetadataReply done = sg_pendingMetadataReply;
+    sg_pendingMetadataReply = nil;
+    done(reply, 200, nil);
+}
+
+static void runSpotifyChecks(UIWindow *window, UIViewController *host, UIView *page, UIView *cell,
+                             UILabel *title, UIControl *more, dispatch_block_t layoutCell) {
+    BOOL inRow = SGRAlbumPlayCountsWhere() == SGRAlbumPlayCountsInRow;
+    waitFor(^BOOL{ return sg_pendingMetadataReply != nil; });
+    expect(!showsSpotifyCount(cell), @"loading Spotify count is unavailable on the row");
+    _TtC24ContextMenu_InternalImpl25ContextMenuViewController *sheet;
+    if (!inRow) {
+        [more sendActionsForControlEvents:UIControlEventTouchUpInside];
+        sheet = [_TtC24ContextMenu_InternalImpl25ContextMenuViewController new];
+        window.rootViewController = sheet;
+        layOut(sheet);
+        expect(header(sheet) == nil, @"loading Spotify count is unavailable in menu");
+    }
+    deliverSpotifyCount();
+    waitFor(^BOOL{
+        if (inRow) { layoutCell(); return showsSpotifyCount(cell); }
+        return [header(sheet).accessibilityLabel isEqual:@"Spotify plays: 12,345"];
+    });
+    expect(inRow || !showsSpotifyCount(cell), @"menu placement does not also put counts on the row");
+    window.rootViewController = host;
+    title.text = @"No title matching is possible";
+    layoutCell();
+    if (inRow) expect(showsSpotifyCount(cell), @"Spotify row count follows URI after title changes");
+    else {
+        [more sendActionsForControlEvents:UIControlEventTouchUpInside];
+        expect([lineOfNewSheet(window) isEqual:@"Spotify plays: 12,345"], @"Spotify menu count follows the tapped row URI");
+    }
+    window.rootViewController = host;
+    more.accessibilityIdentifier = @"Components.UI.ContextMenuButton-0000000000000000000002";
+    layoutCell();
+    if (inRow) expect(!showsSpotifyCount(cell), @"missing track count is not reused or fabricated as zero");
+    else {
+        [more sendActionsForControlEvents:UIControlEventTouchUpInside];
+        expect(lineOfNewSheet(window) == nil, @"missing URI count stays absent from its menu");
+    }
+    window.rootViewController = host;
+    more.accessibilityIdentifier = @"Components.UI.ContextMenuButton-0000000000000000000001";
+    layoutCell();
+    if (!inRow) {
+        [more sendActionsForControlEvents:UIControlEventTouchUpInside];
+        sheet = [_TtC24ContextMenu_InternalImpl25ContextMenuViewController new];
+        window.rootViewController = sheet;
+        layOut(sheet);
+    }
+    host.view.accessibilityValue = nil;
+    SGRAlbumSetTitle(page, @"Hurry Up Tomorrow");
+    layoutCell();
+    expect(inRow ? !showsSpotifyCount(cell) : header(sheet) == nil, @"page identity loss clears the live Spotify count");
+}
+
 // AlbumRows.x's ⋯ watch: the track is marked from the ⋯'s action alone (no touch, as VoiceOver activates), and only
 // while the ⋯ is still an album track row's; any other control's action leaves a mark as it was.
 static void runActionChecks(UIWindow *window) {
     sg_count = 1234;
     UIViewController *host = [UIViewController new];
+    host.view.accessibilityIdentifier = @"harness.albumHost";
+    host.view.accessibilityValue = @"spotify:album:0000000000000000000001";
     UIView *page = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 400, 400)];
     page.accessibilityIdentifier = kPageID;
     [host.view addSubview:page];
@@ -143,6 +247,7 @@ static void runActionChecks(UIWindow *window) {
     [row addSubview:titleBox];
     UIControl *more = [[UIControl alloc] initWithFrame:CGRectMake(340, 4, 48, 48)];
     more.accessibilityIdentifier = @"Components.UI.ContextMenuButton-5673WA8EEUSPx1ir26lhGW";
+    if (SGRAlbumUsesSpotifyCounts()) more.accessibilityIdentifier = @"Components.UI.ContextMenuButton-0000000000000000000001";
     SGUIRefinementsSpotifyAction *spotify = [SGUIRefinementsSpotifyAction new];
     [more addTarget:spotify action:@selector(fire) forControlEvents:UIControlEventTouchUpInside];
     [row addSubview:more];
@@ -157,10 +262,15 @@ static void runActionChecks(UIWindow *window) {
     };
     layOutCell();
 
+    if (SGRAlbumUsesSpotifyCounts()) {
+        runSpotifyChecks(window, host, page, cell, title, more, layOutCell);
+        return;
+    }
+
     // The album row's ⋯: its action marks the track for the sheet it opens.
     [more sendActionsForControlEvents:UIControlEventTouchUpInside];
     expect(spotify.fired == 1, @"Spotify's own action still runs");
-    expect([lineOfNewSheet(window) isEqualToString:@"1234 plays"], @"the album row's ⋯ marks its track from its action");
+    expect([lineOfNewSheet(window) isEqualToString:@"Your plays: 1,234"], @"the album row's ⋯ marks its track from its action");
 
     // The cell is reused for a row of no album, its title another: its old ⋯ marks nothing, before and after the
     // reused cell's layout, and the mark there was stays.
@@ -172,7 +282,7 @@ static void runActionChecks(UIWindow *window) {
     [more sendActionsForControlEvents:UIControlEventTouchUpInside];
     layOutCell();
     [more sendActionsForControlEvents:UIControlEventTouchUpInside];
-    expect([lineOfNewSheet(window) isEqualToString:@"1234 plays"], @"a ⋯ reused out of an album leaves the mark alone");
+    expect([lineOfNewSheet(window) isEqualToString:@"Your plays: 1,234"], @"a ⋯ reused out of an album leaves the mark alone");
 
     // An album's track row again, then moved off the album page with no pass of its own since: the action checks
     // the row again rather than trusting its flag.
@@ -184,16 +294,22 @@ static void runActionChecks(UIWindow *window) {
     title.text = @"Other";
     SGRAlbumPlaysMarkMenu(@"Hurry Up Tomorrow", @"Cry For Me");
     [more sendActionsForControlEvents:UIControlEventTouchUpInside];
-    expect([lineOfNewSheet(window) isEqualToString:@"1234 plays"], @"a ⋯ no longer on an album page leaves the mark alone");
+    expect([lineOfNewSheet(window) isEqualToString:@"Your plays: 1,234"], @"a ⋯ no longer on an album page leaves the mark alone");
 
     // Any other control's action leaves the mark as it was.
     window.rootViewController = host;
     SGRAlbumPlaysMarkMenu(@"Hurry Up Tomorrow", @"Cry For Me");
     [other sendActionsForControlEvents:UIControlEventTouchUpInside];
-    expect([lineOfNewSheet(window) isEqualToString:@"1234 plays"], @"an unflagged control leaves the mark alone");
+    expect([lineOfNewSheet(window) isEqualToString:@"Your plays: 1,234"], @"an unflagged control leaves the mark alone");
 }
 
 static void run(UIWindow *window) {
+    if (SGRAlbumUsesSpotifyCounts()) {
+        runActionChecks(window);
+        printf("ui-refinements Spotify %s: %lu checks passed\n", SGRAlbumPlayCountsWhere() == SGRAlbumPlayCountsInRow ? "row" : "menu", (unsigned long)sg_checks);
+        fflush(stdout);
+        exit(0);
+    }
     // A sheet with no ⋯ action before it gets no line, whatever the count.
     sg_count = 7;
     _TtC24ContextMenu_InternalImpl25ContextMenuViewController *unmarked = [_TtC24ContextMenu_InternalImpl25ContextMenuViewController new];
@@ -212,7 +328,7 @@ static void run(UIWindow *window) {
     // The counts arrive after the sheet's last pass: the notification alone brings the line.
     countsChanged(1234);
     UIView *line = header(sheet);
-    expect([line.accessibilityLabel isEqualToString:@"1234 plays"], [NSString stringWithFormat:@"the line comes with the counts, got %@ %@", line.class, line.accessibilityLabel]);
+    expect([line.accessibilityLabel isEqualToString:@"Your plays: 1,234"], [NSString stringWithFormat:@"the line comes with the counts, got %@ %@", line.class, line.accessibilityLabel]);
     expect(!line.userInteractionEnabled && (line.accessibilityTraits & UIAccessibilityTraitStaticText) && !(line.accessibilityTraits & UIAccessibilityTraitButton),
            @"the line is static text, not a button");
     expect([labelIn(line).textColor isEqual:UIColor.secondaryLabelColor], @"the line's text is the secondary label color");
@@ -228,7 +344,7 @@ static void run(UIWindow *window) {
     countsChanged(0);
     expect(header(sheet) == nil, @"the line goes with the count");
     countsChanged(5);
-    expect([header(sheet).accessibilityLabel isEqualToString:@"5 plays"], @"the line comes back with a count");
+    expect([header(sheet).accessibilityLabel isEqualToString:@"Your plays: 5"], @"the line comes back with a count");
 
     // Spotify puts a view of its own in the header: the line gives way, on the next pass and on the next change.
     UIView *spotify = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 40)];
@@ -253,7 +369,7 @@ static void run(UIWindow *window) {
 - (void)scene:(UIScene *)scene willConnectToSession:(UISceneSession *)session options:(UISceneConnectionOptions *)options {
     self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
     [self.window makeKeyAndVisible];
-    dispatch_async(dispatch_get_main_queue(), ^{ run(self.window); });
+    [NSTimer scheduledTimerWithTimeInterval:0 repeats:NO block:^(NSTimer *timer) { run(self.window); }];
 }
 @end
 
@@ -266,6 +382,8 @@ int main(int argc, char *argv[]) {
     // A run that never reaches its end fails rather than hangs.
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 15 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{ HARNESS_FAIL(@"timed out"); });
     @autoreleasepool {
+        method_exchangeImplementations(class_getInstanceMethod(NSFileManager.class, @selector(URLsForDirectory:inDomains:)),
+                                       class_getInstanceMethod(NSFileManager.class, @selector(fixture_URLsForDirectory:inDomains:)));
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(SGUIRefinementsMenuApp.class));
     }
 }

@@ -122,6 +122,14 @@ NSData *SGGoogleTranslationForm(NSString *text, NSString *languageTag);
 NSURL *SGOpenAICompletionURL(NSString *base);
 NSArray<NSString *> *SGOpenAITranslationsIn(id root, NSUInteger count);
 
+// Text that is not a song's lyrics: a Genius explanation, say. It goes to the first translator that is on, in the
+// same order Translate song titles uses, or nothing leaves the phone when none is. Call on main; the completion is
+// on main too. One translation comes back for each text, in the same order, or nil and a message to show.
+// Nothing here invents a track ID: no answer is kept, and no answer becomes a lyric translation.
+BOOL SGLyricsTranslateTextsAvailable(void);
+void SGLyricsTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, UIView *presentingView,
+                            void (^done)(NSArray<NSString *> *translations, NSString *error));
+
 // The translators' bounded, ephemeral transport, implemented in DeepL.m. Call on main; completion is
 // on main too. Retries 429 three times, and 5xx when asked. `allowed` is checked before every attempt.
 void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retryServer, BOOL (^allowed)(void),

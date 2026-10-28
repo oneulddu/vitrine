@@ -20,6 +20,14 @@ NSArray<SPTPlayerTrack *> *SGPlayerUpcomingTracks(SPTPlayerState *state, NSUInte
     return tracks;
 }
 
+SPTPlayerTrack *SGPlayerUpNextIn(SPTPlayerState *state) {
+    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
+    id next = [future isKindOfClass:NSArray.class] ? [future firstObject] : nil;
+    if (![next isKindOfClass:objc_getClass("SPTPlayerTrack")]) return nil;
+    NSString *uri = SGURIString([next URI]);
+    return uri.length && ![uri isEqualToString:SGURIString(state.track.URI)] ? next : nil;
+}
+
 // Returns the last command's answer: while repeating the track it is the context command, else the one made.
 id SGPlayerAdvanceRepeat(id<SPTPlayer> player, SPTPlayerOptions *options) {
     // Off, then the playlist or album, then the track, then off again, the way Spotify's button goes.
@@ -36,6 +44,7 @@ static SPTPlayerState *sg_playerState;
 // The first player seen, weak: the app owns it.
 static __weak id sg_playerInstance;
 static NSString *sg_stateKey;
+static NSString *sg_upNextURI, *sg_upNextCurrentURI;
 // Set once the now playing platform has reported; the mod's own observer on the player stands down.
 static BOOL sg_platformReported = NO;
 
@@ -65,6 +74,15 @@ static void publish(SPTPlayerState *state) {
     sg_playerState = state;
     for (id<SGPlayerStateObserver> observer in sg_stateObservers.allObjects) {
         if ([observer respondsToSelector:@selector(playerStateDidReport:)]) [observer playerStateDidReport:state];
+    }
+    NSString *next = SGURIString(SGPlayerUpNextIn(state).URI);
+    NSString *current = SGURIString(state.track.URI);
+    if (!(next == sg_upNextURI || [next isEqualToString:sg_upNextURI]) ||
+        !(current == sg_upNextCurrentURI || [current isEqualToString:sg_upNextCurrentURI])) {
+        sg_upNextURI = [next copy];
+        sg_upNextCurrentURI = [current copy];
+        for (id<SGPlayerStateObserver> observer in sg_stateObservers.allObjects)
+            if ([observer respondsToSelector:@selector(playerUpNextDidChange:)]) [observer playerUpNextDidChange:state];
     }
     NSString *key = keyOf(state);
     if ([key isEqualToString:sg_stateKey]) return;

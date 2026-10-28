@@ -33,6 +33,7 @@ static const struct { __unsafe_unretained NSString *key; SGRFluidLimits limits; 
     {@"spotifyglass.redesign.fluid.blur", {2, 24, 1, 8}},
     {@"spotifyglass.redesign.fluid.saturation", {0, 250, 10, 150}},
     {@"spotifyglass.redesign.fluid.brightness", {40, 150, 5, 100}},
+    {@"spotifyglass.redesign.fluid.grain", {0, 200, 10, 100}},
 };
 
 SGRFluidLimits SGRFluidLimitsOf(SGRFluidSetting setting) {
@@ -219,6 +220,7 @@ static UIImage *blurred(UIImage *image, BOOL contrast, CGFloat radius, CGFloat s
     }
     _gpu.rate = (float)(SGRFluidValue(SGRFluidSpeed) / 100.0);
     _gpu.warp = (float)_warp;
+    _gpu.grain = (float)(SGRFluidValue(SGRFluidGrain) / 100.0);
 }
 
 - (void)gpuDrew:(SGRFluidGPULayer *)gpu {

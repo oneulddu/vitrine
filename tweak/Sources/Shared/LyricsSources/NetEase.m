@@ -114,6 +114,7 @@ SGLyricsAsk SGNetEaseAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *
         NSMutableArray<NSDictionary *> *fitting = [NSMutableArray array];
         for (NSDictionary *song in [songs isKindOfClass:NSArray.class] ? songs : @[]) {
             if (![song isKindOfClass:NSDictionary.class]) continue;
+            if (![SGLyricsMatchKey(song[@"name"]) isEqualToString:SGLyricsMatchKey(title)]) continue;
             NSString *identifier = SGLyricsDecimalID(song[@"id"]);
             double duration;
             if (!identifier || !SGLyricsNumber(song[@"duration"], &duration)

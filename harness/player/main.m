@@ -33,8 +33,13 @@
 //              the hills moving, blurred behind the lyrics, settling and stopping on a pause, back on play,
 //              and the ⋯ menu's switch to Fluid and back; the log ends with visualizer checks n of m right
 //              -- PASS or FAIL
+//     options  the Player page's Header glass and Music app icons switched off and on with the player open, in it and
+//              the AI DJ's, then Fluid's Grain at 0, 100 and 200% on Smooth and on Light; the log ends with options
+//              checks n of m right -- PASS or FAIL
+//     renderer the switch from Smooth to Light, read 0.2 to 4 s after it, five times; renderer checks n of m right
 // HARNESS_VOLUME=0 leaves out the volume row the phone has (trees/clean/player/01.txt has none).
 #import <AVFoundation/AVFoundation.h>
+#import <CoreImage/CoreImage.h>
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
@@ -47,6 +52,9 @@
 #import "Redesigned/Kit/SGRField.h"
 #import "Redesigned/Lyrics/MeaningSheet.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
+#import "Core/SGPrefs.h"
+#import "Redesigned/Kit/SGRFluid.h"
+#import "Settings/SGModPage.h"
 
 @interface SGRPlayerMotionView : UIView
 - (void)playFile:(NSURL *)file poster:(UIImage *)poster;
@@ -282,6 +290,39 @@ static NSString *colorName(UIImage *image) {
 @interface MockEncoreButton : UIControl @end
 @implementation MockEncoreButton @end
 
+// Spotify's glyph view (Headers/SPTEncoreIconView.h), the queue's in the footer: it draws its glyph in the foreground
+// color, or the active one while the queue is on.
+@interface SPTEncoreIconView : UIView
+@property (nonatomic, strong) UIColor *foregroundColor, *activeForegroundColor;
+@property (nonatomic) BOOL isActive;
+@end
+@implementation SPTEncoreIconView {
+    UIImageView *_drawn;
+}
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame])) return nil;
+    _drawn = [[UIImageView alloc] initWithFrame:self.bounds];
+    _drawn.image = [UIImage systemImageNamed:@"list.bullet"];
+    _drawn.contentMode = UIViewContentModeScaleAspectFit;
+    _drawn.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self addSubview:_drawn];
+    _foregroundColor = UIColor.whiteColor;
+    _activeForegroundColor = UIColor.greenColor;
+    [self paint];
+    return self;
+}
+- (void)setForegroundColor:(UIColor *)color { _foregroundColor = color; [self paint]; }
+- (void)setActiveForegroundColor:(UIColor *)color { _activeForegroundColor = color; [self paint]; }
+- (void)setIsActive:(BOOL)active { _isActive = active; [self paint]; }
+- (void)paint { _drawn.tintColor = _isActive ? _activeForegroundColor : _foregroundColor; }
+@end
+
+// The AI DJ's header and footer units (SGRDJClass's mangled Endless_DJMusicImpl names), built by the options scenario.
+@interface _TtC19Endless_DJMusicImpl35DJMHeaderElementsUnitViewController : UIViewController @end
+@implementation _TtC19Endless_DJMusicImpl35DJMHeaderElementsUnitViewController @end
+@interface _TtC19Endless_DJMusicImpl27DJMFooterUnitViewController : UIViewController @end
+@implementation _TtC19Endless_DJMusicImpl27DJMFooterUnitViewController @end
+
 #pragma mark - building the tree
 
 static UIView *box(UIView *parent, Class cls, CGRect frame, NSString *identifier) {
@@ -426,6 +467,12 @@ static void loadLyrics(void) {
     UIView *_tilt;
     NSUInteger _failures, _checks;
     float _dimAlone;   // the motion scenario's dim before the lyrics
+    // The options scenario's views: the footer's Connect glyph and queue icon, the AI DJ's header and footer, the
+    // glyph Spotify drew for Connect.
+    UIImageView *_connectImage, *_djConnectImage;
+    SPTEncoreIconView *_queueIcon;
+    UIView *_djHeader, *_djFooter;
+    UIImage *_spotifyConnect, *_djSpotifyConnect;
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)options {
@@ -554,8 +601,44 @@ static void loadLyrics(void) {
     connectGlyph.image = [UIImage systemImageNamed:@"airpods.pro"];
     connectGlyph.tintColor = UIColor.whiteColor;
     [connectHolder addSubview:connectGlyph];
+    _connectImage = connectGlyph;
+    _spotifyConnect = connectGlyph.image;
     glyphButton(footerRow, CGRectMake(279, 0, 44, 44), @"square.and.arrow.up", @"ShareButtonNowPlayingView");
-    glyphButton(footerRow, CGRectMake(323, 6, 47, 32), @"list.bullet", @"QueueButtonNowPlaying");
+    // The queue control holds Spotify's 18x18 glyph view (out/rep/ptree.txt:1228-1279).
+    UIView *queueButton = box(footerRow, MockEncoreButton.class, CGRectMake(323, 6, 47, 32), @"QueueButtonNowPlaying");
+    _queueIcon = (SPTEncoreIconView *)box(queueButton, SPTEncoreIconView.class, CGRectMake(14.5, 7, 18, 18), @"Encore.IconView");
+
+    // The options scenario's AI DJ: its header unit's two buttons over the status bar, and its footer (DJMFooterUnitView:
+    // share, the DJ button and Connect, not in a stack) just under the player's header row.
+    UIViewController *djHeaderUnit = nil, *djFooterUnit = nil;
+    if ([scenario() isEqualToString:@"options"]) {
+        _djHeader = box(host, UIView.class, CGRectMake(0, 8, W, headerHeight), nil);
+        glyphButton(_djHeader, CGRectMake(W / 2 - 104, 0, 48, 48), @"chevron.down", @"now-playing-minimize-button");
+        glyphButton(_djHeader, CGRectMake(W / 2 + 56, 0, 48, 48), @"ellipsis", @"Context menu");
+        _djFooter = box(host, UIView.class, CGRectMake(0, bandTop, W, 44), nil);
+        UIView *shareHolder = box(_djFooter, UIView.class, CGRectMake(W - 60, 0, 44, 44), nil);
+        glyphButton(shareHolder, shareHolder.bounds, @"square.and.arrow.up", @"ShareButtonNowPlayingView");
+        UIView *djHolder = box(_djFooter, UIView.class, CGRectMake(W - 120, -2, 48, 48), nil);
+        UIView *dj = box(djHolder, UIView.class, djHolder.bounds, @"Components.UI.NeffleButtonNowPlayingContainerView");
+        dj.backgroundColor = UIColor.systemBlueColor;
+        dj.layer.cornerRadius = 24;
+        UIView *djConnectHolder = box(_djFooter, UIView.class, CGRectMake(16, 4, 153, 36), nil);
+        UIView *djConnect = box(djConnectHolder, UIView.class, djConnectHolder.bounds, @"Components.ConnectButtonOutputSwitcher");
+        _djConnectImage = [[UIImageView alloc] initWithFrame:CGRectMake(0, 8, 19, 19)];
+        _djConnectImage.image = [UIImage systemImageNamed:@"hifispeaker"];
+        _djConnectImage.tintColor = UIColor.whiteColor;
+        _djSpotifyConnect = _djConnectImage.image;
+        [djConnect addSubview:_djConnectImage];
+        UILabel *device = [[UILabel alloc] initWithFrame:CGRectMake(26, 8, 120, 19)];
+        device.text = @"Living Room";
+        device.textColor = UIColor.whiteColor;
+        [djConnect addSubview:device];
+        box(_djFooter, UIView.class, CGRectMake(W / 2, 0, 1, 44), nil);   // the empty view
+        djHeaderUnit = [_TtC19Endless_DJMusicImpl35DJMHeaderElementsUnitViewController new];
+        djHeaderUnit.view = _djHeader;
+        djFooterUnit = [_TtC19Endless_DJMusicImpl27DJMFooterUnitViewController new];
+        djFooterUnit.view = _djFooter;
+    }
 
     // The now playing bar, off screen: the Kit reads its 40pt cover (SPTNowPlayingBar > Encore.ImageView >
     // UIImageView, trees/clean/artist/01.txt).
@@ -595,11 +678,15 @@ static void loadLyrics(void) {
         [plane removeFromSuperview];
         _units = @[headerUnit, info, duration, floating, playback, footer, scrollUnit, player];
     }
+    if (djHeaderUnit) _units = [_units arrayByAddingObjectsFromArray:@[djHeaderUnit, djFooterUnit]];
     [self start];
     [self layOut];
     // Spotify lays its units out again as a track's elements arrive, which is what the redesign's
-    // transforms and narrowed labels have to survive.
-    [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { [self layOut]; }];
+    // transforms and narrowed labels have to survive. The options scenario leaves layout to UIKit, so a switch
+    // on the Player page is seen to reach the open player by itself.
+    if (![scenario() isEqualToString:@"options"] && ![scenario() isEqualToString:@"renderer"]) {
+        [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer *t) { [self layOut]; }];
+    }
 
     NSLog(@"[harness] lyrics available: %d", SGRPlayerLyricsAvailable());
     // With the lines up, the row that rose into them must still be Spotify's to touch, and the lines
@@ -629,6 +716,8 @@ static void loadLyrics(void) {
     else if ([scenario() isEqualToString:@"seek"]) [self runSeekChecks];
     else if ([scenario() isEqualToString:@"visualiser"]) [self runVisualiserChecks];
     else if ([scenario() isEqualToString:@"header"]) [self runHeaderChecks];
+    else if ([scenario() isEqualToString:@"options"]) [self runOptionsChecks];
+    else if ([scenario() isEqualToString:@"renderer"]) [self runRendererChecks];
     // Opened, closed and opened again, so a screenshot can be taken of each state and of the move itself.
     else for (NSNumber *at in @[@2, @6, @10]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(at.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -661,6 +750,16 @@ static UIView *firstOfClass(UIView *root, NSString *name);
 // The alpha of a gradient's stop `index`.
 static CGFloat stopAlpha(CAGradientLayer *gradient, NSUInteger index) {
     return CGColorGetAlpha((__bridge CGColorRef)gradient.colors[index]);
+}
+
+// Steps of @[delay, block], each run its delay after the one before it ran. Blocks all scheduled from one moment drift
+// with dispatch_after's leeway, which grows with the delay, and two can fire together with no layout pass between.
+static void runScript(NSArray<NSArray *> *script, NSUInteger index) {
+    if (index >= script.count) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)([script[index][0] doubleValue] * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        ((dispatch_block_t)script[index][1])();
+        runScript(script, index + 1);
+    });
 }
 
 static void after(NSTimeInterval seconds, dispatch_block_t block) {
@@ -1867,6 +1966,369 @@ static BOOL linesSeek(SGRKaraokeView *lyrics) {
     after(2, next);
 }
 
+#pragma mark - the Player page's look switches and Grain
+
+// The Kit's glass circle in a header button (SGRGlassInside): the 44pt view in it that is not the button's glyph.
+static UIView *circleIn(UIView *button) {
+    for (UIView *sub in button.subviews) {
+        if (![sub isKindOfClass:UIImageView.class] && CGSizeEqualToSize(sub.bounds.size, CGSizeMake(44, 44))) return sub;
+    }
+    return nil;
+}
+
+// The Music app's glyph a stand-in draws over a glyph view of Spotify's, or nil.
+static UIView *standInIn(UIView *drawn) {
+    for (UIView *sub in drawn.subviews) {
+        if ([NSStringFromClass(sub.class) isEqualToString:@"SGRGlyphView"]) return sub;
+    }
+    return nil;
+}
+
+// The grabber over a header row: its 36x5 pill.
+static UIView *grabberIn(UIView *header) {
+    for (UIView *sub in header.subviews) {
+        if (CGSizeEqualToSize(sub.bounds.size, CGSizeMake(36, 5))) return sub;
+    }
+    return nil;
+}
+
+static NSUInteger metalLayersIn(CALayer *layer) {
+    NSUInteger count = [layer isKindOfClass:CAMetalLayer.class];
+    for (CALayer *sublayer in layer.sublayers) count += metalLayersIn(sublayer);
+    return count;
+}
+
+static CALayer *fluidLayerIn(CALayer *layer) {
+    if ([NSStringFromClass(layer.class) isEqualToString:@"SGRFluidLayer"]) return layer;
+    for (CALayer *sublayer in layer.sublayers) {
+        CALayer *found = fluidLayerIn(sublayer);
+        if (found) return found;
+    }
+    return nil;
+}
+
+// The field's top band, above the header row, drawn at one pixel a point (the Smooth renderer's own), as RGBA bytes.
+static NSData *fieldBand(UIView *field) {
+    CGSize size = CGSizeMake(round(field.bounds.size.width), 56);
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    format.opaque = YES;
+    UIImage *image = [[[UIGraphicsImageRenderer alloc] initWithSize:size format:format] imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [field drawViewHierarchyInRect:field.bounds afterScreenUpdates:YES];
+    }];
+    size_t width = (size_t)size.width, height = (size_t)size.height;
+    NSMutableData *pixels = [NSMutableData dataWithLength:width * height * 4];
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef bitmap = CGBitmapContextCreate(pixels.mutableBytes, width, height, 8, width * 4, space, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(space);
+    CGContextDrawImage(bitmap, CGRectMake(0, 0, width, height), image.CGImage);
+    CGContextRelease(bitmap);
+    return pixels;
+}
+
+// The grain in a band: how far each pixel's green is from its right-hand neighbor's, in eight-bit steps, on average. The
+// blurred cover barely changes from one pixel to the next, so what is left is the noise.
+static double grainIn(NSData *pixels, CGFloat width) {
+    const uint8_t *p = pixels.bytes;
+    size_t w = (size_t)width, rows = pixels.length / 4 / w;
+    double total = 0;
+    size_t count = 0;
+    for (size_t y = 0; y < rows; y++) {
+        for (size_t x = 0; x + 1 < w; x++) {
+            total += abs((int)p[(y * w + x) * 4 + 1] - (int)p[(y * w + x + 1) * 4 + 1]);
+            count++;
+        }
+    }
+    return count ? total / count : 0;
+}
+
+// How far apart two bands are: the mean difference of their color channels, in eight-bit steps.
+static double bandDiff(NSData *a, NSData *b) {
+    if (a.length != b.length || !a.length) return INFINITY;
+    const uint8_t *p = a.bytes, *q = b.bytes;
+    double total = 0;
+    for (NSUInteger i = 0; i < a.length; i++) {
+        if (i % 4 != 3) total += abs((int)p[i] - (int)q[i]);
+    }
+    return total / (a.length / 4 * 3);
+}
+
+// The Light renderer's copies (SGRFluid.m) hidden, as a count of four.
+static NSUInteger hiddenCopiesIn(CALayer *fluid) {
+    NSUInteger hidden = 0;
+    for (CALayer *sublayer in fluid.sublayers) {
+        if (!sublayer.contentsGravity || ![sublayer.contentsGravity isEqualToString:kCAGravityResizeAspectFill]) continue;
+        hidden += sublayer.hidden;
+    }
+    return hidden;
+}
+
+// The switch from Smooth to Light with the song paused, five times: the field read about 0.2, 0.5, 1 and 2 s after it (each
+// read's own time logged), each compared with the band it settles on, read about 4 s after. Only Kit API the committed
+// renderer has too, so the same scenario runs against HEAD's SGRFluid.m and SGRFluidGPU.m.
+- (void)runRendererChecks {
+    static const NSUInteger kCycles = 5;
+    NSArray<NSNumber *> *offsets = @[@0.2, @0.5, @1, @2];
+    NSMutableArray<NSArray *> *script = [NSMutableArray array];
+    void (^step)(NSTimeInterval, dispatch_block_t) = ^(NSTimeInterval delay, dispatch_block_t block) { [script addObject:@[@(delay), block]]; };
+    NSString *(^state)(void) = ^NSString *{
+        UIView *field = (UIView *)SGRPlayerField();
+        CALayer *fluid = fluidLayerIn(field.layer);
+        return [NSString stringWithFormat:@"Smooth %@, %lu Metal layers, %lu of 4 copies hidden", [[fluid valueForKey:@"_gpuShown"] boolValue] ? @"showing" : @"not showing",
+                (unsigned long)metalLayersIn(field.layer), (unsigned long)hiddenCopiesIn(fluid)];
+    };
+    step(2, ^{ SGRHarnessSetTrack(@"spotify:track:harnessA", imageURI(@"aaaa"), YES); });
+    for (NSUInteger cycle = 0; cycle < kCycles; cycle++) {
+        __block CFTimeInterval switchedAt = 0;
+        NSMutableDictionary<NSNumber *, NSData *> *early = [NSMutableDictionary dictionary];
+        NSMutableDictionary<NSNumber *, NSString *> *states = [NSMutableDictionary dictionary];
+        step(1, ^{ SGRSetFluidRenderer(SGRFluidRendererSmooth); });
+        step(3, ^{
+            NSLog(@"[harness] renderer cycle %lu before the switch: %@", (unsigned long)cycle + 1, state());
+            switchedAt = CACurrentMediaTime();
+            SGRSetFluidRenderer(SGRFluidRendererLight);
+        });
+        __block double previous = 0;
+        for (NSNumber *offset in offsets) {
+            step(offset.doubleValue - previous, ^{
+                early[offset] = fieldBand((UIView *)SGRPlayerField());
+                states[offset] = [NSString stringWithFormat:@"read at +%.2f s, %@", CACurrentMediaTime() - switchedAt, state()];
+            });
+            previous = offset.doubleValue;
+        }
+        step(2, ^{
+            NSData *settled = fieldBand((UIView *)SGRPlayerField());
+            NSMutableArray<NSString *> *seen = [NSMutableArray array];
+            for (NSNumber *offset in offsets) [seen addObject:[NSString stringWithFormat:@"%.3f steps off (%@)", bandDiff(early[offset], settled), states[offset]]];
+            [self expect:[early[@1] isEqualToData:settled] step:[NSString stringWithFormat:@"cycle %lu, Light a second after the switch as it settles", (unsigned long)cycle + 1]
+                  detail:[NSString stringWithFormat:@"settled at +%.2f s; %@", CACurrentMediaTime() - switchedAt, [seen componentsJoinedByString:@"; "]]];
+        });
+    }
+    step(0.5, ^{
+        NSLog(@"[harness] renderer checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
+              self->_failures ? @"FAIL" : @"PASS");
+        exit(self->_failures ? 1 : 0);
+    });
+    runScript(script, 0);
+}
+
+// Header glass and Music app icons switched off and on again on the Player page while the player is open, in the ordinary
+// player and the AI DJ's; then Grain at 0, 100 and 200% on the Smooth renderer, and on the Light one, which has none.
+- (void)runOptionsChecks {
+    __block UINavigationController *nav;
+    SGModPage *(^page)(void) = ^{ return (SGModPage *)nav.topViewController; };
+    UIView *header = _units.firstObject.view, *djHeader = _djHeader;
+    NSMutableArray<UIView *> *buttons = [NSMutableArray array];
+    for (UIView *row in @[header, djHeader]) {
+        for (UIView *view in row.subviews) if ([view isKindOfClass:MockEncoreButton.class]) [buttons addObject:view];
+    }
+    UIImageView *connect = _connectImage, *djConnect = _djConnectImage;
+    SPTEncoreIconView *queue = _queueIcon;
+    UIImage *spotifyConnect = _spotifyConnect, *djSpotifyConnect = _djSpotifyConnect;
+
+    void (^open)(void) = ^{
+        nav = [[UINavigationController alloc] initWithRootViewController:SGRPlayerSettingsPage(@[])];
+        // Over the player, which stays in the window and lays out as it would under Mod Settings.
+        nav.modalPresentationStyle = UIModalPresentationOverFullScreen;
+        [self.window.rootViewController presentViewController:nav animated:NO completion:nil];
+    };
+    void (^close)(void) = ^{ [self.window.rootViewController dismissViewControllerAnimated:NO completion:nil]; };
+    SGModRow *(^rowTitled)(NSString *) = ^SGModRow *(NSString *title) {
+        for (SGModSection *section in page().sections) for (SGModRow *row in section.rows) if ([row.title isEqualToString:title]) return row;
+        return nil;
+    };
+    NSIndexPath *(^pathOf)(SGModRow *) = ^NSIndexPath *(SGModRow *row) {
+        NSArray<NSArray *> *shown = [page() valueForKey:@"_shown"];
+        for (NSUInteger s = 0; s < shown.count; s++) {
+            NSUInteger r = [shown[s] indexOfObject:row];
+            if (r != NSNotFound) return [NSIndexPath indexPathForRow:(NSInteger)r inSection:(NSInteger)s];
+        }
+        return nil;
+    };
+    // A row's switch flipped as a finger flips it: the page's own handler stores it and tells the player.
+    BOOL (^flip)(NSString *, BOOL) = ^BOOL(NSString *title, BOOL on) {
+        NSIndexPath *path = pathOf(rowTitled(title));
+        if (!path) return NO;
+        UITableView *table = page().tableView;
+        [table scrollToRowAtIndexPath:path atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
+        [table layoutIfNeeded];
+        UIView *accessory = [table cellForRowAtIndexPath:path].accessoryView;
+        UIControl *toggle = [accessory respondsToSelector:@selector(isOn)] ? (UIControl *)accessory : nil;
+        for (UIView *sub in accessory.subviews) if (!toggle && [sub respondsToSelector:@selector(isOn)]) toggle = (UIControl *)sub;
+        if (!toggle) return NO;
+        [(UISwitch *)toggle setOn:on];
+        [toggle sendActionsForControlEvents:UIControlEventValueChanged];
+        return YES;
+    };
+    void (^expectGlass)(NSString *, BOOL) = ^(NSString *step, BOOL on) {
+        NSMutableArray<NSString *> *seen = [NSMutableArray array];
+        BOOL ok = buttons.count == 4;
+        for (UIView *button in buttons) {
+            UIView *circle = circleIn(button), *row = button.superview;
+            CGPoint middle = CGPointMake(CGRectGetMidX(button.frame), CGRectGetMidY(button.frame));
+            BOOL hits = [row hitTest:middle withEvent:nil] == button;
+            BOOL shape = on ? [circle isKindOfClass:UIVisualEffectView.class] && button.subviews.firstObject == circle : circle == nil;
+            BOOL kept = grabberIn(row) != nil && button.accessibilityIdentifier.length && !button.accessibilityElementsHidden && button.userInteractionEnabled;
+            ok = ok && shape && hits && kept;
+            [seen addObject:[NSString stringWithFormat:@"%@ %@: circle %@, touch %@, grabber %@", row == djHeader ? @"DJ" : @"player",
+                             button.accessibilityIdentifier, circle ? NSStringFromClass(circle.class) : @"none", hits ? @"lands" : @"MISSES",
+                             grabberIn(row) ? @"up" : @"gone"]];
+        }
+        [self expect:ok step:step detail:[seen componentsJoinedByString:@"; "]];
+    };
+    void (^expectIcons)(NSString *, BOOL, UIImage *) = ^(NSString *step, BOOL on, UIImage *spotify) {
+        BOOL ordinary = on ? standInIn(connect) && connect.image != spotify : !standInIn(connect) && connect.image == spotify;
+        BOOL dj = on ? standInIn(djConnect) && djConnect.image != djSpotifyConnect : !standInIn(djConnect) && djConnect.image == djSpotifyConnect;
+        BOOL queued = on ? standInIn(queue) && [queue.foregroundColor isEqual:UIColor.clearColor]
+                         : !standInIn(queue) && [queue.foregroundColor isEqual:UIColor.whiteColor] && [queue.activeForegroundColor isEqual:UIColor.greenColor];
+        [self expect:ordinary && dj && queued step:step
+              detail:[NSString stringWithFormat:@"Connect: stand-in %@, Spotify's glyph %@; DJ Connect: stand-in %@, Spotify's glyph %@; queue: stand-in %@, colors %@ / %@",
+                      standInIn(connect) ? @"in" : @"out", connect.image == spotify ? @"shown" : @"cleared", standInIn(djConnect) ? @"in" : @"out",
+                      djConnect.image == djSpotifyConnect ? @"shown" : @"cleared", standInIn(queue) ? @"in" : @"out", queue.foregroundColor, queue.activeForegroundColor]];
+    };
+
+    // One step after another, each its delay after the one before it ran: every state a screenshot is asked for holds
+    // two seconds or more, and a check reads a state the step before it set up once UIKit has laid it out.
+    __block UIImage *device = nil;
+    NSMutableArray<NSArray *> *script = [NSMutableArray array];
+    void (^step)(NSTimeInterval, dispatch_block_t) = ^(NSTimeInterval delay, dispatch_block_t block) { [script addObject:@[@(delay), block]]; };
+    step(2, ^{
+        expectGlass(@"glass, as it stands", YES);
+        expectIcons(@"Music app icons, as they stand", YES, spotifyConnect);
+        NSLog(@"[harness] options: screenshot on now");
+    });
+    step(2.5, ^{ open(); });
+    step(0.5, ^{
+        BOOL flipped = flip(@"Header glass", NO) && flip(@"Music app icons", NO);
+        [self expect:flipped && !SGEnabled(SGRKeyPlayerHeaderGlass) && !SGEnabled(SGRKeyPlayerMusicIcons) step:@"both switched off on the page"
+              detail:[NSString stringWithFormat:@"switches %@", flipped ? @"flipped" : @"NOT FOUND"]];
+    });
+    step(0.5, ^{
+        expectGlass(@"glass off, the page still up", NO);
+        expectIcons(@"Music app icons off, the page still up", NO, spotifyConnect);
+        // Spotify draws another device's glyph while they are off: it stays Spotify's.
+        device = [[UIImage systemImageNamed:@"hifispeaker.fill"] imageWithTintColor:UIColor.greenColor renderingMode:UIImageRenderingModeAlwaysOriginal];
+        connect.image = device;
+        close();
+    });
+    step(1, ^{
+        expectIcons(@"a new device's glyph while off", NO, device);
+        NSLog(@"[harness] options: screenshot off now");
+    });
+    step(2.5, ^{ open(); });
+    step(0.5, ^{ flip(@"Header glass", YES); flip(@"Music app icons", YES); });
+    step(0.5, ^{
+        expectGlass(@"glass on again", YES);
+        expectIcons(@"Music app icons on again", YES, device);
+        NSLog(@"[harness] options: screenshot controls rows now");
+    });
+    step(2.5, ^{
+        SGModRow *grain = rowTitled(@"Grain"), *style = rowTitled(@"Style");
+        BOOL smooth = pathOf(grain) != nil;
+        style.chosen(SGRFluidRendererLight);
+        BOOL light = pathOf(grain) != nil;
+        style.chosen(SGRFluidRendererSmooth);
+        BOOL back = pathOf(grain) != nil;
+        [self expect:grain && smooth && !light && back step:@"Grain shown only while Smooth draws"
+              detail:[NSString stringWithFormat:@"Smooth %@, Light %@, Smooth again %@", smooth ? @"shown" : @"hidden", light ? @"shown" : @"hidden", back ? @"shown" : @"hidden"]];
+    });
+    step(1, ^{
+        if (pathOf(rowTitled(@"Grain"))) [page().tableView scrollToRowAtIndexPath:pathOf(rowTitled(@"Grain")) atScrollPosition:UITableViewScrollPositionMiddle animated:NO];
+        NSLog(@"[harness] options: screenshot grain row now");
+    });
+    step(2.5, ^{
+        close();
+        // Held still, so every band read is one frame.
+        SGRHarnessSetTrack(@"spotify:track:harnessA", imageURI(@"aaaa"), YES);
+    });
+
+    // What Spotify sets while the Music app's glyphs show is what comes back when they go, nil and all: Connect cleared, and
+    // handed an image with no bitmap; the queue's two colors reset to nil; and a value Spotify set while they were out is
+    // not overwritten by one recorded the time before.
+    void (^icons)(BOOL) = ^(BOOL on) {
+        SGSetEnabled(SGRKeyPlayerMusicIcons, on);
+        SGRPlayerLookChanged();
+    };
+    UIImage *unbacked = [UIImage imageWithCIImage:[[CIImage imageWithColor:[CIColor colorWithRed:0 green:1 blue:0]] imageByCroppingToRect:CGRectMake(0, 0, 19, 19)]];
+    NSString *(^iconState)(void) = ^NSString *{
+        return [NSString stringWithFormat:@"Connect: stand-in %@, image %@; queue: stand-in %@, colors %@ / %@", standInIn(connect) ? @"in" : @"out",
+                connect.image == unbacked ? @"the one with no bitmap" : connect.image ? (connect.image.CGImage ? @"a bitmap" : @"another") : @"nil",
+                standInIn(queue) ? @"in" : @"out", queue.foregroundColor ?: @"nil", queue.activeForegroundColor ?: @"nil"];
+    };
+    step(0.5, ^{
+        connect.image = nil;
+        queue.foregroundColor = nil;
+        queue.activeForegroundColor = nil;
+        icons(NO);
+    });
+    step(0.5, ^{
+        [self expect:!standInIn(connect) && !connect.image && !standInIn(queue) && !queue.foregroundColor && !queue.activeForegroundColor
+                step:@"Connect cleared and the queue's colors reset while the glyphs showed, given back as nil" detail:iconState()];
+        queue.foregroundColor = UIColor.whiteColor;
+        icons(YES);
+    });
+    step(0.5, ^{
+        [self expect:standInIn(connect) && standInIn(queue) && [queue.foregroundColor isEqual:UIColor.clearColor] step:@"the glyphs back over a cleared Connect"
+              detail:iconState()];
+        connect.image = unbacked;
+        icons(NO);
+    });
+    step(0.5, ^{
+        [self expect:!standInIn(connect) && connect.image == unbacked && [queue.foregroundColor isEqual:UIColor.whiteColor] && !queue.activeForegroundColor
+                step:@"an image with no bitmap given back as Spotify set it" detail:iconState()];
+        connect.image = nil;
+        queue.foregroundColor = nil;
+        icons(YES);
+    });
+    step(0.5, ^{ icons(NO); });
+    step(0.5, ^{
+        [self expect:!connect.image && !queue.foregroundColor && !queue.activeForegroundColor
+                step:@"what Spotify set while they were out, not the record before" detail:iconState()];
+        icons(YES);
+    });
+
+    // Each Grain set as the slider sets it, then the field read a second later. Light at 100 is the read a second after the
+    // switch from Smooth, compared with the two read after it (the switch on its own: the `renderer` scenario).
+    NSMutableDictionary<NSString *, NSNumber *> *grains = [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSData *> *bands = [NSMutableDictionary dictionary];
+    __block CFTimeInterval setAt = 0;
+    NSArray<NSArray *> *grainSteps = @[@[@"Smooth", @0], @[@"Smooth", @100], @[@"Smooth", @200], @[@"Light", @100], @[@"Light", @0], @[@"Light", @200]];
+    [grainSteps enumerateObjectsUsingBlock:^(NSArray *values, NSUInteger i, BOOL *stop) {
+        NSString *renderer = values[0], *name = [NSString stringWithFormat:@"%@ %@", values[0], values[1]];
+        step(i ? 2 : 1, ^{
+            setAt = CACurrentMediaTime();
+            SGRSetFluidRenderer([renderer isEqualToString:@"Smooth"] ? SGRFluidRendererSmooth : SGRFluidRendererLight);
+            SGRSetFluidValue(SGRFluidGrain, [values[1] integerValue]);
+        });
+        step(1, ^{
+            UIView *field = (UIView *)SGRPlayerField();
+            CALayer *fluid = fluidLayerIn(field.layer);
+            BOOL gpu = [[fluid valueForKey:@"_gpuShown"] boolValue];
+            NSData *band = fieldBand(field);
+            bands[name] = band;
+            grains[name] = @(grainIn(band, round(field.bounds.size.width)));
+            NSLog(@"[harness] options: %@ grain %.2f s after it was set, the Smooth renderer %@ (%lu Metal layers in the field) -- %.3f steps; screenshot %@ now",
+                  name, CACurrentMediaTime() - setAt, gpu ? @"showing" : @"not showing", (unsigned long)metalLayersIn(field.layer), grains[name].doubleValue, name);
+            if ([renderer isEqualToString:@"Smooth"] != gpu) {
+                [self expect:NO step:[name stringByAppendingString:@" drawn by its renderer"] detail:gpu ? @"Smooth showing" : @"Smooth not showing"];
+            }
+        });
+    }];
+    step(1, ^{
+        double s0 = grains[@"Smooth 0"].doubleValue, s100 = grains[@"Smooth 100"].doubleValue, s200 = grains[@"Smooth 200"].doubleValue;
+        [self expect:s0 < s100 && s100 + 0.5 < s200 step:@"Smooth: none at 0, the dither at 100, a visible grain at 200"
+              detail:[NSString stringWithFormat:@"%.3f, %.3f, %.3f steps", s0, s100, s200]];
+        [self expect:[bands[@"Light 0"] isEqualToData:bands[@"Light 200"]] step:@"Light: the same at 0 and 200"
+              detail:[NSString stringWithFormat:@"%.3f and %.3f steps", grains[@"Light 0"].doubleValue, grains[@"Light 200"].doubleValue]];
+        [self expect:[bands[@"Light 100"] isEqualToData:bands[@"Light 0"]] step:@"Light a second after the switch from Smooth, as it settles"
+              detail:[NSString stringWithFormat:@"%.3f steps from the settled band", bandDiff(bands[@"Light 100"], bands[@"Light 0"])]];
+        NSLog(@"[harness] options checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
+              self->_failures ? @"FAIL" : @"PASS");
+        exit(self->_failures ? 1 : 0);
+    });
+    runScript(script, 0);
+}
+
 - (void)runLook {
     UIImage *second = secondArtwork();
     // Issue #54: the footer row moved down past the bottom stack's bounds must still take its touches,
@@ -1930,6 +2392,13 @@ __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
             [store removeObjectForKey:@"spotifyglass.lastTrack"];
         }
         [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
+    }
+    // options: Fluid drawn Smooth, the look switches and Grain at their standard (the app's defaults outlive a run).
+    if ([scenario() isEqualToString:@"options"] || [scenario() isEqualToString:@"renderer"]) {
+        NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+        [store setInteger:SGRPlayerBackgroundFluid forKey:@"spotifyglass.redesign.player.background"];
+        [store setInteger:SGRFluidRendererSmooth forKey:@"spotifyglass.redesign.fluid.renderer"];
+        for (NSString *key in @[SGRKeyPlayerHeaderGlass, SGRKeyPlayerMusicIcons, @"spotifyglass.redesign.fluid.grain"]) [store removeObjectForKey:key];
     }
     // The shared session the catalog asks with.
     if ([scenario() isEqualToString:@"catalog"]) [NSURLProtocol registerClass:SGRHarnessPictureServer.class];

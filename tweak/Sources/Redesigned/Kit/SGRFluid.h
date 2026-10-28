@@ -6,8 +6,9 @@
 // Like SGRFlow.h it is all Core Animation: repeating rotations the render server plays, nothing drawn
 // per frame by the app. Stopping holds every copy where it is, and starting again carries on from there.
 //
-// The Player page tunes it with five sliders (Redesigned/Player/PlayerSettings.m), stored as whole numbers under
-// spotifyglass.redesign.fluid.<speed|warp|blur|saturation|brightness>. Every layer follows a change at once.
+// The Player page tunes it with six sliders (Redesigned/Player/PlayerSettings.m), stored as whole numbers under
+// spotifyglass.redesign.fluid.<speed|warp|blur|saturation|brightness|grain>. Every layer follows a change at once.
+// Grain is the Smooth renderer's alone: the Light renderer's copies have no grain to scale, and leave it unused.
 //
 // Two renderers draw it, picked on the same page (spotifyglass.redesign.fluid.renderer): Light, the turning copies
 // above, which cost the app nothing per frame, and Smooth (SGRFluidGPU.h), the same blurred cover flowing on the
@@ -23,6 +24,7 @@ typedef NS_ENUM(NSInteger, SGRFluidSetting) {
     SGRFluidBlur,         // the blur's strength, 1.25 px of radius each on the 128 px cover
     SGRFluidSaturation,   // percent
     SGRFluidBrightness,   // percent, under the ceiling that keeps the player's text legible
+    SGRFluidGrain,        // percent of the Smooth renderer's grain (SGRFluidGPU.h); 100 is its standard dither
     SGRFluidSettingCount,
 };
 typedef struct { NSInteger least, most, step, standard; } SGRFluidLimits;
@@ -30,7 +32,7 @@ SGRFluidLimits SGRFluidLimitsOf(SGRFluidSetting setting);
 NSInteger SGRFluidValue(SGRFluidSetting setting);   // held to its limits
 // Stores the value and posts SGRFluidSettingsDidChangeNotification on the main thread.
 void SGRSetFluidValue(SGRFluidSetting setting, NSInteger value);
-void SGRResetFluidSettings(void);   // all five back to their standard values, one notification
+void SGRResetFluidSettings(void);   // all six back to their standard values, one notification
 extern NSNotificationName const SGRFluidSettingsDidChangeNotification;
 
 typedef NS_ENUM(NSInteger, SGRFluidRenderer) {

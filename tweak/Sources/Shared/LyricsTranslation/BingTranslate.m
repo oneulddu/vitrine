@@ -188,6 +188,23 @@ static NSString *encode(NSString *text) {
 }
 @end
 
+// Runs the batches for texts already checked. `memo` is the song and language a kept answer belongs to; text that
+// is not a song's lyrics passes nil, and nothing is kept for it.
+static void startBing(NSString *target, NSArray<NSString *> *texts, NSMutableArray *out,
+                      NSArray<NSArray<NSNumber *> *> *batches, NSString *memo, void (^done)(NSArray<NSString *> *, NSString *)) {
+    SGBingTranslation *job = [SGBingTranslation new];
+    job.target = target; job.texts = texts; job.out = out; job.batches = [batches mutableCopy];
+    job.done = ^(NSArray *translated, NSString *problem) {
+        if (translated && memo) {
+            if (!sg_done) sg_done = [NSMutableDictionary dictionary];
+            if (sg_done.count >= 32) [sg_done removeAllObjects];
+            sg_done[memo] = @{@"texts": [texts copy], @"translations": translated};
+        }
+        done(translated, problem);
+    };
+    [job advance];
+}
+
 void SGLyricsTranslateWithBing(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                               void (^done)(NSArray<NSString *> *, NSString *)) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -200,20 +217,27 @@ void SGLyricsTranslateWithBing(NSString *trackID, NSArray<SGKaraokeLine *> *line
         if (!texts) { done(nil, tooLong ? SGL(@"settings.translation.bing.error.toolong", @"The song is too long to send to Bing Translator.") : unreadable()); return; }
         NSArray *batches = SGLyricsTranslationBatches(send, 40, 2800);
         if (!batches) { done(nil, unreadable()); return; }
-        if (!sg_done) sg_done = [NSMutableDictionary dictionary];
-        NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
-        NSDictionary *cached = trackID ? sg_done[memo] : nil;
+        NSString *memo = trackID ? [NSString stringWithFormat:@"%@|%@", trackID, languageTag] : nil;
+        NSDictionary *cached = memo ? sg_done[memo] : nil;
         if ([cached[@"texts"] isEqual:texts]) { done(cached[@"translations"], nil); return; }
-        SGBingTranslation *job = [SGBingTranslation new];
-        job.target = target; job.texts = texts; job.out = out; job.batches = [batches mutableCopy];
-        job.done = ^(NSArray *translated, NSString *problem) {
-            if (translated && trackID) {
-                if (sg_done.count >= 32) [sg_done removeAllObjects];
-                sg_done[memo] = @{@"texts": [texts copy], @"translations": translated};
-            }
-            done(translated, problem);
-        };
-        [job advance];
+        startBing(target, texts, out, batches, memo, done);
+    });
+}
+
+// Text that is not a song's lyrics: the same web translation, with nothing kept for a later call.
+void SGBingTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, void (^done)(NSArray<NSString *> *, NSString *)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!SGFlag(SGKeyLyricsBingTranslate, NO)) { done(nil, disabled()); return; }
+        NSString *target = SGBingTargetLanguage(languageTag);
+        if (!target) { done(nil, SGL(@"settings.translation.bing.error.language", @"Choose a valid language for Bing Translator.")); return; }
+        const NSUInteger maxTextUTF16Units = 2800;
+        SGLyricsTranslateSegments(texts, maxTextUTF16Units, SGProseSegmentUTF16, ^(NSArray *segments, void (^finish)(NSArray *, NSString *)) {
+            NSArray *batches = SGLyricsTranslationBatches(segments, 40, maxTextUTF16Units);
+            if (!batches) { finish(nil, unreadable()); return; }
+            NSMutableArray *out = [NSMutableArray array];
+            for (NSUInteger i = 0; i < segments.count; i++) [out addObject:@""];
+            startBing(target, segments, out, batches, nil, finish);
+        }, done);
     });
 }
 

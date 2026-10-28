@@ -1,134 +1,21 @@
-// The pages are built by their rows' blocks as they are opened, so nothing lists every row ahead of time:
-// the first letter typed builds the pages the page's rows open, and theirs, once per visit, and reads their
-// rows. A row that shows only under some other setting (SGModRow.visible) is left out while it would not show.
-// Building a page is cheap: it makes rows, and a row asks for its value only once its page is on screen.
+// The field over Mod Settings and the results under it: a field with words typed shows the rows the pages read so
+// far hold (SGSettingsIndex), and one left empty shows the settings the results led to before. A row picked opens the
+// page it sits on, scrolled to it and lit for a moment, or the page it opens. The pages are built by their rows'
+// blocks as they are opened, so nothing lists every row ahead of time: opening the field reads the searched page
+// itself, and the pages under it follow one per pass of the main run loop.
 #import "SGSettingsSearch.h"
+#import "SGSettingsIndex.h"
 #import "SGPageStyle.h"
 #import "Core/SGCore.h"
 
-static const NSUInteger kDepth = 2;       // the page itself, then two levels of pages under it
-static const NSUInteger kMostHits = 60;
 static char kSearchKey;
 
-@interface SGSettingsHit : NSObject
-@property (nonatomic, copy) NSString *title, *subtitle;
-@property (nonatomic, copy) NSArray<NSString *> *trail;   // the pages above the row, from the searched page's row down
-@property (nonatomic, copy) NSString *symbol;             // the tile of the searched page's row the trail starts from
-@property (nonatomic, strong) UIColor *tint;
-// What picking the hit opens: the page the row sits on (nil for the searched page itself), or the row's own
-// page when `opens`.
-@property (nonatomic, copy) UIViewController *(^open)(void);
-@property (nonatomic) BOOL opens;
-@property (nonatomic, copy) NSString *folded, *foldedTitle;
-@property (nonatomic, copy) NSString *initials, *initialsTitle;   // the folded text with each syllable as its initial
-@end
-
-@implementation SGSettingsHit
-@end
-
-static NSString *fold(NSString *text) {
-    return [text ?: @"" stringByFoldingWithOptions:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch
-                                            locale:NSLocale.currentLocale];
-}
-
-static NSString *const kInitials[19] = {@"ㄱ", @"ㄲ", @"ㄴ", @"ㄷ", @"ㄸ", @"ㄹ", @"ㅁ", @"ㅂ", @"ㅃ", @"ㅅ",
-                                        @"ㅆ", @"ㅇ", @"ㅈ", @"ㅉ", @"ㅊ", @"ㅋ", @"ㅌ", @"ㅍ", @"ㅎ"};
-
-static NSInteger initialsIndex(unichar c) {
-    for (NSInteger i = 0; i < 19; i++) {
-        if ([kInitials[i] characterAtIndex:0] == c) return i;
-    }
-    return NSNotFound;
-}
-
-static BOOL hasSyllable(NSString *text) {
-    for (NSUInteger i = 0; i < text.length; i++) {
-        unichar c = [text characterAtIndex:i];
-        if (c >= 0xAC00 && c <= 0xD7A3) return YES;
-    }
-    return NO;
-}
-
-// Each precomposed syllable becomes its initial consonant; the rest is the folded text. Folding normally keeps
-// syllables precomposed, but if it decomposed them, the raw text supplies the syllables and the rest is folded
-// character by character.
-NSString *SGSearchInitials(NSString *text) {
-    NSString *folded = fold(text);
-    BOOL raw = !hasSyllable(folded) && hasSyllable(text);
-    NSString *base = raw ? text : folded;
-    NSMutableString *initials = [NSMutableString string];
-    for (NSUInteger i = 0; i < base.length; i++) {
-        unichar c = [base characterAtIndex:i];
-        if (c >= 0xAC00 && c <= 0xD7A3) [initials appendString:kInitials[(c - 0xAC00) / 588]];
-        else if (raw) [initials appendString:fold([base substringWithRange:NSMakeRange(i, 1)])];
-        else [initials appendFormat:@"%C", c];
-    }
-    return initials;
-}
-
-// A word of only the 19 compatibility consonants a syllable can start with, so it is compared to initials.
-BOOL SGSearchIsInitialsWord(NSString *word) {
-    if (!word.length) return NO;
-    for (NSUInteger i = 0; i < word.length; i++) {
-        if (initialsIndex([word characterAtIndex:i]) == NSNotFound) return NO;
-    }
-    return YES;
-}
-
-// A query of initials words, which may be separated by spaces, also compares its start to the title's initials.
-static BOOL isInitialsQuery(NSString *query) {
-    BOOL any = NO;
-    for (NSUInteger i = 0; i < query.length; i++) {
-        unichar c = [query characterAtIndex:i];
-        if ([[NSCharacterSet whitespaceCharacterSet] characterIsMember:c]) continue;
-        if (initialsIndex(c) == NSNotFound) return NO;
-        any = YES;
-    }
-    return any;
-}
-
-BOOL SGSearchWordMatches(NSString *word, NSString *folded, NSString *initials) {
-    return [(SGSearchIsInitialsWord(word) ? initials : folded) containsString:word];
-}
-
-BOOL SGSearchStartsTitle(NSString *query, NSString *foldedTitle, NSString *initialsTitle) {
-    if (isInitialsQuery(query) && [initialsTitle hasPrefix:query]) return YES;
-    return [foldedTitle hasPrefix:query];
-}
-
-static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewController *(^opener)(void), SGModRow *top,
-                    NSUInteger depth, NSMutableArray<SGSettingsHit *> *hits) {
-    for (SGModSection *section in page.sections) {
-        for (SGModRow *row in section.rows) {
-            if (!row.title.length || (row.visible && !row.visible())) continue;
-            SGModRow *lead = top ?: row;
-            // A row that opens a page is found as that page, whatever kind it is; a choice row's list is not one,
-            // and the row itself is what is found. Only a page of rows within reach is built, to read its rows.
-            BOOL opens = row.page && !row.choice;
-            UIViewController *child = opens && depth < kDepth ? row.page() : nil;
-            SGModPage *rows = [child isKindOfClass:SGModPage.class] ? (SGModPage *)child : nil;
-            SGSettingsHit *hit = [SGSettingsHit new];
-            hit.title = row.title;
-            hit.subtitle = row.subtitle;
-            hit.trail = trail;
-            hit.symbol = lead.symbol;
-            hit.tint = lead.tint;
-            hit.opens = opens;
-            hit.open = opens ? row.page : opener;
-            hit.foldedTitle = fold(row.title);
-            hit.folded = fold([@[row.title, row.subtitle ?: @"", [trail componentsJoinedByString:@" "]] componentsJoinedByString:@"\n"]);
-            // The initials come from the raw text, in case folding decomposes Hangul; computed once per row.
-            hit.initialsTitle = SGSearchInitials(row.title);
-            hit.initials = SGSearchInitials([@[row.title, row.subtitle ?: @"", [trail componentsJoinedByString:@" "]] componentsJoinedByString:@"\n"]);
-            [hits addObject:hit];
-            if (rows) collect(rows, [trail arrayByAddingObject:row.title], row.page, lead, depth + 1, hits);
-        }
-    }
-}
-
-@interface SGSettingsResults : SGPage <UISearchResultsUpdating>
+@interface SGSettingsResults : SGPage <UISearchResultsUpdating, UISearchControllerDelegate>
 @property (nonatomic, weak) SGModPage *owner;
 @property (nonatomic, weak) UISearchBar *bar;
+// The field this table is the results of: its `showsSearchResultsController` is held on, off the field's own rule,
+// so the table (and the recents on it) shows for an empty field too, which that rule hides.
+@property (nonatomic, weak) UISearchController *search;
 @end
 
 // The field's own box sits 8pt inside the bar, so the bar is set out by the table's margin less that: the field
@@ -147,8 +34,11 @@ static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewControlle
 @end
 
 @implementation SGSettingsResults {
-    NSArray<SGSettingsHit *> *_all;
+    SGSettingsIndex *_index;
+    NSString *_query;                   // the field's text, folded; nil until the field is first asked
+    NSString *_shownQuery;              // the query the table was last scrolled to the top for
     NSArray<SGSettingsHit *> *_hits;
+    NSArray<SGSettingsHit *> *_recents;   // the recent places the rows read so far hold
     UILabel *_none;
     id _defaultsObserver;
 }
@@ -159,18 +49,33 @@ static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewControlle
     _defaultsObserver = [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
         usingBlock:^(NSNotification *note) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [weakSelf invalidateIndex];
+                // A switch flipped outside the results can hide or show a row, so the pages are read again. The recents
+                // are one of the things written this way (SGSearchRememberPlace) and need no re-read, but they come
+                // with the same write, and a results table that is not up needs no index at all.
+                if (!weakSelf.keysUp) return;
+                [weakSelf readPages];
             });
         }];
     return self;
 }
 
-- (void)invalidateIndex {
-    _all = nil;
+- (void)dealloc {
+    [_index stop];
+    [NSNotificationCenter.defaultCenter removeObserver:_defaultsObserver];
 }
 
-- (void)dealloc {
-    [NSNotificationCenter.defaultCenter removeObserver:_defaultsObserver];
+// The field is closed or its page is off screen: nothing more is built, and opening it again reads the pages afresh,
+// since a switch flipped meanwhile may have moved a row.
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    [_index stop];
+    _index = nil;
+    _shownQuery = nil;
+}
+
+// The field is showing its results, over its page.
+- (BOOL)keysUp {
+    return _index != nil && self.view.window != nil;
 }
 
 - (void)viewDidLoad {
@@ -184,6 +89,21 @@ static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewControlle
     _none.textColor = SGGrey();
     _none.textAlignment = NSTextAlignmentCenter;
 }
+
+// The field shows its table for as long as it is up, and UIKit takes the table down with the field, so nothing here
+// has to put it back: this only keeps the table up when the field's own rule would take it away, which is when the
+// text is empty or is cleared (SGSettingsSearchAttach sets it once, off that rule for good).
+- (void)updateSearchResultsForSearchController:(UISearchController *)search {
+    search.showsSearchResultsController = YES;
+    NSString *query = [SGSearchFold(search.searchBar.text) stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+    _query = [query copy];
+    // A field nobody typed in reads the pages only when it has stored places to find among them; a typed query
+    // matches the pages read before it as they are, and the pages still to be read join them.
+    if (!_index && (query.length || SGSearchRecents().count)) [self readPages];
+    else [self showResults];
+}
+
+#pragma mark - the table
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
@@ -205,54 +125,84 @@ static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewControlle
     _none.font = SGTitleFont();
 }
 
-// Every word typed is in the row's title, subtitle or trail; a title starting with what was typed comes first,
-// then a title holding every word, then the rest, each in the order of the pages.
-- (void)updateSearchResultsForSearchController:(UISearchController *)search {
-    NSString *query = [fold(search.searchBar.text) stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-    if (!query.length) {
+#pragma mark - reading the pages
+
+// The pages are read again from the page itself, which is what a changed setting needs: a row whose switch was
+// flipped elsewhere comes or goes. What is read stays shown while it is read again.
+- (void)readPages {
+    [_index stop];
+    _index = [SGSettingsIndex new];
+    __weak typeof(self) weakSelf = self;
+    _index.grew = ^{ [weakSelf showResults]; };
+    [_index startWithRoot:self.owner];
+    [self showResults];
+    [_index scheduleStep];
+}
+
+// What the pages read so far hold, shown at once, and again as each pass adds to it. A field with nothing typed
+// shows the recent places alone, and says nothing when there are none.
+- (void)showResults {
+    BOOL newQuery = ![(_shownQuery ?: @"") isEqualToString:_query ?: @""];
+    _shownQuery = [_query copy];
+    if (_query.length) {
+        _hits = [_index hitsForQuery:_query];
+        _recents = @[];
+    } else {
         _hits = @[];
-        self.tableView.backgroundView = nil;
-        [self.tableView reloadData];
-        return;
+        _recents = [_index recentHits];
     }
-    if (!_all) {
-        NSMutableArray<SGSettingsHit *> *all = [NSMutableArray array];
-        SGModPage *owner = self.owner;
-        if (owner) collect(owner, @[], nil, nil, 0, all);
-        _all = all;
-    }
-    NSArray<NSString *> *words = [query componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-    NSMutableArray<SGSettingsHit *> *ranks[3] = {[NSMutableArray array], [NSMutableArray array], [NSMutableArray array]};
-    for (SGSettingsHit *hit in _all) {
-        BOOL found = YES, inTitle = YES;
-        for (NSString *word in words) {
-            if (!word.length) continue;
-            if (!SGSearchWordMatches(word, hit.folded, hit.initials)) { found = NO; break; }
-            inTitle = inTitle && SGSearchWordMatches(word, hit.foldedTitle, hit.initialsTitle);
-        }
-        if (!found) continue;
-        [ranks[SGSearchStartsTitle(query, hit.foldedTitle, hit.initialsTitle) ? 0 : inTitle ? 1 : 2] addObject:hit];
-    }
-    NSMutableArray<SGSettingsHit *> *hits = [NSMutableArray array];
-    for (int i = 0; i < 3; i++) [hits addObjectsFromArray:ranks[i]];
-    _hits = hits.count > kMostHits ? [hits subarrayWithRange:NSMakeRange(0, kMostHits)] : hits;
-    self.tableView.backgroundView = _hits.count ? nil : _none;
+    // "No Results" only once every page has been read: before that, the rows a later pass brings are still coming.
+    self.tableView.backgroundView = _query.length && !_hits.count && !_index.running ? _none : nil;
     [self.tableView reloadData];
-    // Each new query reads from its best match down.
-    self.tableView.contentOffset = CGPointMake(0, -self.tableView.contentInset.top);
+    // A new query reads from its best match down; a pass that adds to the same one leaves the page where it is.
+    if (newQuery && _hits.count) self.tableView.contentOffset = CGPointMake(0, -self.tableView.contentInset.top);
+}
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
+    return 2;
 }
 
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
-    return (NSInteger)_hits.count;
+    return (NSInteger)(section == 0 ? _recents.count : _hits.count);
 }
 
+// The recents' heading sits over their card; the results have none, only the gap a section with no heading keeps.
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
+    if (section == 0) return _recents.count ? SGSectionHeaderHeight() : CGFLOAT_MIN;
     return SGSectionGap;
+}
+
+// No note under either card: the two sections are one list to the eye.
+- (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
+    return CGFLOAT_MIN;
+}
+
+// The recents' heading, with the way to forget them beside it; the results need none.
+- (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
+    if (section != 0 || !_recents.count) return nil;
+    UIView *header = SGSectionHeader(table, SGL(@"settings.search.recent.header", @"Recently Opened"));
+    UIButton *clear = [UIButton buttonWithType:UIButtonTypeSystem];
+    [clear setTitle:SGL(@"settings.search.recent.clear", @"Clear") forState:UIControlStateNormal];
+    clear.titleLabel.font = SGSubtitleFont();
+    clear.tintColor = SGGreen();
+    [clear sizeToFit];
+    clear.frame = CGRectMake(header.bounds.size.width - 16 - clear.bounds.size.width, header.bounds.size.height - 7 - clear.bounds.size.height,
+                             clear.bounds.size.width, clear.bounds.size.height);
+    clear.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleTopMargin;
+    [clear addTarget:self action:@selector(clearRecents) forControlEvents:UIControlEventTouchUpInside];
+    [header addSubview:clear];
+    return header;
+}
+
+- (void)clearRecents {
+    SGSearchForgetRecents();
+    [self showResults];
 }
 
 // The row as it reads on its page, its trail where its subtitle would be, under the tile of the page it is in.
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
-    SGSettingsHit *hit = _hits[(NSUInteger)path.row];
+    NSArray<SGSettingsHit *> *hits = path.section == 0 ? _recents : _hits;
+    SGSettingsHit *hit = hits[(NSUInteger)path.row];
     UITableViewCell *cell = SGDequeueCell(table, @"hit");
     NSString *where = hit.trail.count ? [hit.trail componentsJoinedByString:@" › "] : hit.subtitle;
     SGFillCell(cell, hit.title, where, nil, nil);
@@ -265,10 +215,13 @@ static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewControlle
     return cell;
 }
 
+// Where the results led is remembered before the page it opens is built, so a row opened again moves to the front.
 - (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
     [table deselectRowAtIndexPath:path animated:YES];
-    SGSettingsHit *hit = _hits[(NSUInteger)path.row];
+    SGSettingsHit *hit = (path.section == 0 ? _recents : _hits)[(NSUInteger)path.row];
     SGModPage *owner = self.owner;
+    // A row whose place says nothing (its page or the row has no name) opens all the same, it is just not remembered.
+    if (hit.place) SGSearchRememberPlace(hit.place);
     UIViewController *page = hit.open ? hit.open() : nil;
     if (!page) {
         // A row of the searched page itself: the results go, and the row is shown where it is.
@@ -278,17 +231,31 @@ static void collect(SGModPage *page, NSArray<NSString *> *trail, UIViewControlle
         return;
     }
     if (!hit.opens && [page isKindOfClass:SGModPage.class]) [(SGModPage *)page revealRowTitled:hit.title];
+    // The field closes before the page goes on: one still up when the page comes back is laid out again at the top of
+    // its presentation context, which runs under Spotify's own bar, so it would sit over the page's title.
+    UISearchController *search = self.search;
+    [UIView performWithoutAnimation:^{ search.active = NO; }];
     [owner.navigationController pushViewController:page animated:YES];
 }
 
 @end
+
+UISearchController *SGSettingsSearchField(SGModPage *page) {
+    return objc_getAssociatedObject(page, &kSearchKey);
+}
 
 void SGSettingsSearchAttach(SGModPage *page) {
     SGSettingsResults *results = [SGSettingsResults new];
     results.owner = page;
     UISearchController *search = [[UISearchController alloc] initWithSearchResultsController:results];
     results.bar = search.searchBar;
+    results.search = search;
     search.searchResultsUpdater = results;
+    // The field is not left to its own rule, which shows the table only while something is typed and takes it away
+    // again the moment the text is cleared: the table is where the recently opened settings are, on an empty field
+    // too. So the table is what the field shows from the start, and UIKit still takes it down with the field when the
+    // field closes.
+    search.showsSearchResultsController = YES;
     search.hidesNavigationBarDuringPresentation = NO;
     search.obscuresBackgroundDuringPresentation = NO;
     search.searchBar.placeholder = SGL(@"settings.search.placeholder", @"Search");

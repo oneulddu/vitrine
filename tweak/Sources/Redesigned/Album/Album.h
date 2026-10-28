@@ -55,6 +55,12 @@ BOOL SGRCreditRepeatsAlbum(NSString *albumArtist, NSString *rowArtist, NSString 
 // off.
 #define SGRKeyAlbumPlayCountsPlace @"spotifyglass.redesign.album.playCounts.place"
 #define SGRKeyAlbumPlayCounts @"spotifyglass.redesign.album.playCounts"
+#define SGRKeyAlbumPlayCountsSource @"spotifyglass.redesign.album.playCounts.source"
+// 0 Your plays (default), 1 Spotify plays. Placement remains independent.
+BOOL SGRAlbumUsesSpotifyCounts(void);
+NSString *SGRAlbumSpotifyPlaysText(NSNumber *plays);
+@class SGRAlbumCountPage;
+void SGRAlbumPlaysMarkSpotifyMenu(NSString *trackURI, SGRAlbumCountPage *page);
 typedef NS_ENUM(NSInteger, SGRAlbumPlayCountsPlace) {
     SGRAlbumPlayCountsOff,
     SGRAlbumPlayCountsInRow,

@@ -4,8 +4,10 @@
 // shuffle and repeat icons are images drawn in it, the repeat dot is a view with it as its background, and the like
 // checkmark is a Lottie animation whose shape layers are filled with it. None of them asks for the color again, so
 // the player paints them itself, over Spotify's bottom stack (the title row with the like, the progress bar, the
-// controls and the footer): an image drawn in the accent is tinted from its own shape, a background or a shape layer
-// in the accent takes the color, and every original is kept to give back. It paints whenever the cover's color
+// controls and the footer): token-owned images are tinted from their own shape, and token-owned backgrounds,
+// shapes and new animation submissions take the color. Running animations are left alone.
+// Releasing the override resolves the current global token for known model/image colors,
+// not a captured RGB or a similar-looking hue. It paints whenever the cover's color
 // changes and whenever the stack or one of its buttons lays out, which is when Spotify hands a button its new state.
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
@@ -14,7 +16,8 @@
 
 static NSInteger sg_cover = -1;   // 0xRRGGBB while a cover gives one, else -1
 static __weak UIView *sg_stack;   // the bottom stack last painted
-static char kOriginalKey, kTintedKey, kTintedCoverKey, kAccentImageKey, kInkKey, kOriginalFillKey, kOriginalStrokeKey;
+static char kOriginalKey, kTintedKey, kTintedCoverKey, kInkKey, kOriginalFillKey, kOriginalStrokeKey;
+static char kPaintedFillKey, kPaintedStrokeKey;
 
 BOOL SGRPlayerFollowsCover(void) {
     static BOOL on;
@@ -41,49 +44,29 @@ static UIColor *coverColor(void) {
     return made;
 }
 
-// -[UIColor getHue:saturation:brightness:alpha:] worked out from the components, without making a color for it.
-static void hsv(CGFloat r, CGFloat g, CGFloat b, CGFloat *h, CGFloat *s, CGFloat *v) {
-    CGFloat high = MAX(r, MAX(g, b)), low = MIN(r, MIN(g, b)), range = high - low;
-    *v = high;
-    *s = high > 0 ? range / high : 0;
-    if (range <= 0 || high <= 0) *h = 0;
-    else if (high == r) *h = (g - b) / range;
-    else if (high == g) *h = 2 + (b - r) / range;
-    else *h = 4 + (r - g) / range;
-    *h /= 6;
-    if (*h < 0) *h += 1;
-}
-
-// Whether a color is the accent's: its hue within kHueNear, and colorful. Darker shades of it count (a pressed state).
-// A color made from Spotify's green comes out as the accent (Kit/SGRAccent.x), so that green is judged as the accent.
-static const CGFloat kHueNear = 0.05, kColorful = 0.35;
-static BOOL accentLike(CGFloat r, CGFloat g, CGFloat b) {
-    static CGFloat accentHue = -1;
-    if (accentHue < 0) {
-        CGFloat ar, ag, ab, s, v;
-        unpack(SGRAccentRGB(), &ar, &ag, &ab);
-        SGRAccentSwap(&ar, &ag, &ab);
-        hsv(ar, ag, ab, &accentHue, &s, &v);
-    }
-    CGFloat h, s, v;
-    SGRAccentSwap(&r, &g, &b);
-    hsv(r, g, b, &h, &s, &v);
-    CGFloat d = fabs(h - accentHue);
-    return MIN(d, 1 - d) < kHueNear && s > kColorful && v > 0.2;
-}
-
 BOOL SGRPlayerAccentLike(UIColor *color) {
-    CGFloat r, g, b, a;
-    return color && [color getRed:&r green:&g blue:&b alpha:&a] && a > 0.5 && accentLike(r, g, b);
-}
-
-static BOOL cgAccentLike(CGColorRef color) {
-    if (!color || CGColorGetNumberOfComponents(color) != 4) return NO;
-    const CGFloat *c = CGColorGetComponents(color);
-    return c[3] > 0.5 && accentLike(c[0], c[1], c[2]);
+    if (SGRAccentIsToken(color)) return YES;
+    // The footer also uses this public query to classify a lit Spotify control during its natural
+    // repaint. Preserve that pre-batch classification; it is NOT provenance and never authorizes
+    // the cover painter to recolor a background, image, shape or animation.
+    const CGFloat hueDistance = .05, minimumSaturation = .35, minimumBrightness = .2;
+    CGFloat r,g,b,a, h,s,v, ah,as,av;
+    if (!color || ![color getRed:&r green:&g blue:&b alpha:&a] || a <= .5) return NO;
+    SGRAccentSwap(&r,&g,&b);
+    UIColor *ink = [UIColor colorWithRed:r green:g blue:b alpha:a];
+    if (![ink getHue:&h saturation:&s brightness:&v alpha:&a]) return NO;
+    NSInteger rgb = SGRAccentRGB();
+    CGFloat ar,ag,ab;
+    unpack(rgb,&ar,&ag,&ab);
+    UIColor *accent = [UIColor colorWithRed:ar green:ag blue:ab alpha:1];
+    if (![accent getHue:&ah saturation:&as brightness:&av alpha:&a]) return NO;
+    CGFloat distance = fabs(h-ah);
+    return MIN(distance,1-distance) < hueDistance && s > minimumSaturation && v > minimumBrightness;
 }
 
 UIColor *SGRPlayerImageInk(UIImage *image) {
+    SGRAccentToken *source = SGRAccentImageSource(image);
+    if (source) return source.color;
     id known = objc_getAssociatedObject(image, &kInkKey);
     if (known) return known == NSNull.null ? nil : known;
     enum { kSide = 16 };
@@ -103,34 +86,36 @@ UIColor *SGRPlayerImageInk(UIImage *image) {
             b += pixels[i * 4 + 2] / (double)alpha;
             n++;
         }
-        if (n >= 4) ink = [UIColor colorWithRed:r / n green:g / n blue:b / n alpha:1];
+        if (n >= 4) {
+            // Sampling is for the footer's appearance, not proof of token ownership.
+            CGFloat rgba[] = {r/n, g/n, b/n, 1};
+            CGColorSpaceRef sampledSpace = CGColorSpaceCreateDeviceRGB();
+            CGColorRef sampled = CGColorCreate(sampledSpace, rgba);
+            ink = [UIColor colorWithCGColor:sampled];
+            CGColorRelease(sampled);
+            CGColorSpaceRelease(sampledSpace);
+        }
     }
     if (context) CGContextRelease(context);
     objc_setAssociatedObject(image, &kInkKey, ink ?: NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return ink;
 }
 
-// Whether an image is drawn in the accent, judged once and kept on it.
-static BOOL imageAccentLike(UIImage *image) {
-    NSNumber *known = objc_getAssociatedObject(image, &kAccentImageKey);
-    if (known) return known.boolValue;
-    BOOL accent = SGRPlayerAccentLike(SGRPlayerImageInk(image));
-    objc_setAssociatedObject(image, &kAccentImageKey, @(accent), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    return accent;
-}
-
 static void paintImageView(UIImageView *view) {
     UIImage *image = view.image, *tinted = objc_getAssociatedObject(view, &kTintedKey);
     UIImage *original = image == tinted ? objc_getAssociatedObject(view, &kOriginalKey) : image;
     if (!original) return;
-    if (sg_cover < 0 || !imageAccentLike(original)) {
-        if (image == tinted && tinted) view.image = original;
+    SGRAccentToken *source = SGRAccentImageSource(original);
+    if (!source) return;
+    if (sg_cover < 0) {
+        view.image = SGRAccentTintedImage(original, nil);
+        objc_setAssociatedObject(view, &kOriginalKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(view, &kTintedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         return;
     }
     // A tint made for an earlier cover is drawn again in this one; Spotify's icons only change on a state change.
     if (image == tinted && tinted && [objc_getAssociatedObject(view, &kTintedCoverKey) integerValue] == sg_cover) return;
-    UIImage *made = [original imageWithTintColor:coverColor() renderingMode:UIImageRenderingModeAlwaysOriginal];
+    UIImage *made = SGRAccentTintedImage(original, coverColor());
     objc_setAssociatedObject(view, &kOriginalKey, original, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(view, &kTintedKey, made, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(view, &kTintedCoverKey, @(sg_cover), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -140,87 +125,50 @@ static void paintImageView(UIImageView *view) {
 static void paintBackground(UIView *view) {
     UIColor *original = objc_getAssociatedObject(view, &kOriginalKey);
     UIColor *current = view.backgroundColor;
-    if (!original && !SGRPlayerAccentLike(current)) return;
+    if (!original && !SGRAccentIsToken(current)) return;
     if (!original) {
         original = current;
         objc_setAssociatedObject(view, &kOriginalKey, original, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    UIColor *color = sg_cover < 0 ? original : coverColor();
+    UIColor *color = sg_cover < 0 ? original : [coverColor() colorWithAlphaComponent:SGRAccentSource(original).alpha];
     if (![view.backgroundColor isEqual:color]) view.backgroundColor = color;
 }
 
 static void paintShape(CAShapeLayer *layer) {
     for (int stroke = 0; stroke < 2; stroke++) {
         void *key = stroke ? &kOriginalStrokeKey : &kOriginalFillKey;
-        id original = objc_getAssociatedObject(layer, key);
+        void *paintedKey = stroke ? &kPaintedStrokeKey : &kPaintedFillKey;
+        SGRAccentToken *original = objc_getAssociatedObject(layer, key);
+        id painted = objc_getAssociatedObject(layer, paintedKey);
         CGColorRef current = stroke ? layer.strokeColor : layer.fillColor;
-        if (!original && !cgAccentLike(current)) continue;
+        // A fresh Spotify state replaces our previous paint. Restore that new state's source later,
+        // not the source from the first time this reusable layer was seen.
+        if (original && (!current || !painted || !CGColorEqualToColor(current, (__bridge CGColorRef)painted))) {
+            original = nil;
+            objc_setAssociatedObject(layer, key, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(layer, paintedKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
         if (!original) {
-            original = (__bridge id)current;
+            original = SGRAccentLayerSource(layer, stroke);
+            if (!original) continue;
             objc_setAssociatedObject(layer, key, original, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         }
-        CGColorRef color = sg_cover < 0 ? (__bridge CGColorRef)original : coverColor().CGColor;
-        if (CGColorEqualToColor(current, color)) continue;
-        if (stroke) layer.strokeColor = color;
-        else layer.fillColor = color;
-    }
-}
-
-static char kOriginalAnimationsKey;
-static NSString *const kPaintedKey = @"spotifyglass.coverPainted";
-
-// Lottie's Core Animation renderer colors a shape with a keyframe animation on fillColor or strokeColor, which shows
-// over the layer's own value: those keyframes in the accent take the cover's color, the animations as Lottie made
-// them kept by key to give back.
-static void paintAnimations(CALayer *layer) {
-    NSMutableDictionary<NSString *, CAAnimation *> *originals = objc_getAssociatedObject(layer, &kOriginalAnimationsKey);
-    for (NSString *key in layer.animationKeys) {
-        CAAnimation *animation = [layer animationForKey:key];
-        if (![animation isKindOfClass:CAKeyframeAnimation.class]) continue;
-        CAKeyframeAnimation *keyframes = (CAKeyframeAnimation *)animation;
-        if (![keyframes.keyPath isEqualToString:@"fillColor"] && ![keyframes.keyPath isEqualToString:@"strokeColor"]) continue;
-        // A layer copies what it is given, so a painted animation is told by the cover it carries, not by identity.
-        NSNumber *painted = [animation valueForKey:kPaintedKey];
-        CAKeyframeAnimation *base = keyframes;
-        if (painted) {
-            CAKeyframeAnimation *original = (CAKeyframeAnimation *)originals[key];
-            if (!original) continue;
-            if (sg_cover < 0) {
-                [layer addAnimation:original forKey:key];
-                [originals removeObjectForKey:key];
-                continue;
-            }
-            if (painted.integerValue == sg_cover) continue;
-            base = original;
-        } else {
-            if (sg_cover < 0) continue;
-            if (!originals) {
-                originals = [NSMutableDictionary dictionary];
-                objc_setAssociatedObject(layer, &kOriginalAnimationsKey, originals, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
-            originals[key] = keyframes;
+        UIColor *ink = sg_cover < 0 ? original.color : [coverColor() colorWithAlphaComponent:original.alpha];
+        CGColorRef color = ink.CGColor;
+        objc_setAssociatedObject(layer, paintedKey, sg_cover < 0 ? nil : (__bridge id)color, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (!CGColorEqualToColor(current, color)) {
+            if (stroke) layer.strokeColor = color;
+            else layer.fillColor = color;
         }
-        BOOL any = NO;
-        NSMutableArray *values = [NSMutableArray arrayWithCapacity:base.values.count];
-        for (id value in base.values) {
-            BOOL accent = CFGetTypeID((__bridge CFTypeRef)value) == CGColorGetTypeID() && cgAccentLike((__bridge CGColorRef)value);
-            any |= accent;
-            [values addObject:accent ? (__bridge id)coverColor().CGColor : value];
-        }
-        if (!any) {
-            [originals removeObjectForKey:key];
-            continue;
-        }
-        CAKeyframeAnimation *made = [base copy];
-        made.values = values;
-        [made setValue:@(sg_cover) forKey:kPaintedKey];
-        [layer addAnimation:made forKey:key];
+        if (sg_cover < 0) objc_setAssociatedObject(layer, key, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 }
 
 static void paintLayers(CALayer *layer) {
+    // Remember the override for the next natural submission, never replace a running animation:
+    // replacing it cancels Spotify's delegate/completion even when its colors are unchanged.
+    SGRAccentSetLayerOverride(layer, sg_cover < 0 ? nil : coverColor());
     if ([layer isKindOfClass:CAShapeLayer.class]) paintShape((CAShapeLayer *)layer);
-    if (layer.animationKeys.count) paintAnimations(layer);
     for (CALayer *sublayer in layer.sublayers) paintLayers(sublayer);
 }
 
@@ -270,4 +218,9 @@ void SGRPlayerSetCoverAccent(UIColor *cover) {
 %ctor {
     if (!SGRedesignedUI() || !SGRPlayerFollowsCover()) return;
     %init;
+    [NSNotificationCenter.defaultCenter addObserverForName:SGRAccentDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        // The Kit first refreshes its global tokens. Follow the cover then overrides the player's stack,
+        // even if Spotify hands it a new baked icon or Lottie animation without another layout pass.
+        dispatch_async(dispatch_get_main_queue(), ^{ SGRPlayerPaintCover(sg_stack); });
+    }];
 }

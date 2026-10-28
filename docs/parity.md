@@ -25,6 +25,7 @@ fixed in the commits that follow `956e65c`.
 | 114 | Artist page shows Apple Music's artist logo |
 | 77 | Low Data Mode switch on the Lock screen widget, Now playing and Albums & artists pages |
 | 75 | Albums & artists page: animated covers, logos, a switch for each section the redesign hides |
+| 107 | Switch with the star on the lock screen widget: the star takes the like slot and swaps Lyrics and Moving artwork, kept across launches (LockScreenStar.x) |
 
 ### Redesigned player artwork
 
@@ -124,8 +125,8 @@ and download. The rest, on `fix/beta-gaps`:
 
 Still open from the beta gaps: Fluid artwork's settings (SGRFluid.m is being changed elsewhere); the lyrics
 opening for Karaoke on a song without lyrics; Karaoke's background download, output latency, interruption and
-route handling, seeks and read-ahead limit (the Karaoke rewrite owns them); a change to or from Lyrics on the lock
-screen still needs a restart. Deliberate differences: the Off default for the lock screen artwork, the lock
+route handling, seeks and read-ahead limit (the Karaoke rewrite owns them). A change to or from Lyrics on the lock screen
+now applies at once (LyricsArtwork.x), as does the star's swap. Deliberate differences: the Off default for the lock screen artwork, the lock
 screen page's flag rows, the Reinvented Free player mode turned off, the title kept over the lyrics left alone.
 Not gaps: Hide social proof (both flags ship off), recvmsg (Spotify 9.1.78 does not import it).
 
@@ -153,7 +154,7 @@ only, no code); the notes give no numbers, so the limits below are Vitrine's own
 |---|---|
 | The player grows out of the mini player and follows the finger | Already done (PlayerMorph.x) |
 | Square animated covers play inside the cover | Done (PlayerMotion.x); device check outstanding |
-| Chroma Settings searchable | Done: search on the Mod Settings page, two pages deep (SGSettingsSearch.m) |
+| Chroma Settings searchable | Done: search on the Mod Settings page, two pages deep, read a page at a time, with keywords and recent places (SGSettingsSearch.m, SGSettingsIndex.m) |
 | KuGou and QQ Music lyrics, pronunciation for most scripts | Already done (QQMusic.m, KuGou.m, Romanise.m, Pronunciation by AI) |
 | Lyrics kept for offline listening | Done (LyricsStore.m): 1000 tracks, 30 MB, oldest first |
 | Your own photo or pure black behind the player | Done (PlayerBackdrop.m); device check outstanding |
@@ -175,7 +176,7 @@ refinements and the page previews.
 | Hardware keyboard: ⌘↑ / ⌘↓ volume, ⌘1 / ⌘2 / ⌘3 Home, Search and Library, ⌘F Search with its field focused, Esc and ⌘W the player closed | Done (Shared/Keyboard, Core/SGTopController.h); harness/keyboard-commands/ and harness/keyboard-top-controller/; the keys themselves are a device check |
 | Hold a lyrics line for Copy, Share and, where it has one, Meaning | Done (Redesigned/Lyrics/SGRKaraokeView.m); harness/lyrics-hold/; the press itself is a device check |
 | Own lyrics as TTML, LRC or plain text, pasted too, the same 1 MB and content rules, replaced files deleted at the next launch | Done (Shared/LocalFiles/LocalLyrics.m and its page in both looks); harness/local-files/ |
-| Advance work (the next track's lyrics and artwork) stands down on Low Power Mode, serious or critical heat, an unavailable network and Low Data Mode | Done (Core/SGOptionalWork.h, asked at KaraokeSource.x's next-track walk and SGMotionFollower.m's fetch ahead) |
+| Advance work (the next track's lyrics and artwork) stands down on Low Power Mode, serious or critical heat, an unavailable network, Low Data Mode and the Load ahead switch | Done (Core/SGOptionalWork.h, asked by KaraokeSource.x's track watcher and SGMotionFollower.m's fetch ahead, both re-aimed when the up-next track changes) |
 | With shuffle and repeat both hidden, previous and next move out to where the Music app keeps them | Done (Redesigned/Player/PlayerControls.x); a device check on a narrow and a wide iPhone is outstanding |
 | Recent accent colors, up to 8, each look keeping its own | Done (Native/Appearance/AccentHistory.m, Redesigned/Kit/SGRAccentHistory.m); harness/ui-refinements/ |
 | Album play counts Off, In the row or In menu, the switch it replaced migrated | Done (Redesigned/Album/AlbumPlaysPlace.m, AlbumPlaysMenu.x); harness/ui-refinements/; the sheet in Spotify itself is a device check |
@@ -194,8 +195,6 @@ Judged equal, already there, or not taken, from the same beta.4 round:
 | Glass on the full-height Queue and Connect sheets | Tried and dropped: on the iPhone 13 Pro (iOS 27.2) UIKit's `_nonLargeBackground` is nil for Spotify's sheet, so there was no material to carry to the large detent, and Spotify paints its own content opaque (#1F1F1F) there over a #1C1C1E drop shadow view; kept as a follow-up |
 | A translucent download badge | Not built: the download state is not readable from Objective-C, so only a color heuristic was possible, and a wrong badge is worse than none |
 | The iPad full-screen player | Not adopted: no iPad was available to verify it |
-| Separate album and playlist cover settings | Deferred |
-| A Library preview card | None: the redesign has no Library settings page to lead |
 
 Judged not better, or not ours to take:
 
@@ -203,8 +202,56 @@ Judged not better, or not ours to take:
 |---|---|
 | Autoplay shuffle | Unsolved, and no answer of ours either: on 9.1.90 autoplay continuation reports `{autoplay}`, and despite the serialized restriction override the core answers Code=101 and leaves shuffle and repeat as Spotify set them (harness/radio-modes/README.md) |
 | Rewriting an MP3's metadata tags | Left out for its data-loss risk: it edits the user's own files, and the gain is cosmetic |
-| Short-video carousels in Search | Not restored; the redesign keeps the watch feed and its promos collapsed |
 | Account, Plus, server and telemetry features | Out of scope, as in Leave out: no account, no paid tier, no upstream server |
+
+### Chroma 1.0.0-beta.4, the whole feature set (compared with Vitrine's code)
+
+The earlier rounds took what was new in beta.4 and judged the older features from Vitrine's documentation. This round
+compared the whole feature set with Vitrine's code at the logic level (Chroma's side by static reading only, behavior
+described and no code taken): edge cases, limits, retries, caching and where work runs.
+
+| Item | Where Vitrine stands |
+|---|---|
+| Artwork transfers owned by their consumers: a request hands back a ticket, a shared transfer stops when its last consumer leaves unless more than half of a known size is in, and only transient failures (timeout, lost connection, DNS, HTTP 408, 429, 5xx) are tried again | Done (Shared/AnimatedArtwork/SGMotionTicket.*, SGMotionStore.m, MotionSources.m, SGMotionCatalog.m, SGMotionFollower.m); harness/motion/ |
+| A change of the up-next track re-targets the next track's artwork and lyric prefetch | Done (Shared/Player/PlayerState.x's SGPlayerUpNextIn and playerUpNextDidChange:, Shared/Lyrics/KaraokeSource.x, SGMotionFollower.m, which cancels the old target's artwork fetch) |
+| Load ahead, for advance work only | Done (Core/SGOptionalWork.h, AnimatedArtworkSettings.m's SGLoadAheadRow, App/Pages.m): `spotifyglass.loadAhead`, on, on the Player page; the current track is never touched |
+| Spotify's auth headers captured only from https `spclient.wg.spotify.com`, and one metadata transport for them | Done (Shared/Lyrics/KaraokeSource.x's rememberHeaders, Shared/SpotifyMetadata/): ephemeral session, no redirect, 2 MiB |
+| QQ Music word timing (QRC) | Done (Shared/LyricsSources/QQMusic.m): 1 MiB bound, parsed off the main queue, plain LRC when the QRC cannot be read or a clock is malformed; harness/lyrics-sources/ |
+| Lyric source matching: an artist name under four characters never matched inside another name, joined credits with aliases, a NetEase title check, JSON parsed off the main queue | Done (SongMatch.m's SGLyricsSameArtist, NetEase.m, LyricsSources.m's SGLyricsGetJSONTransform, KuGou.m, QQMusic.m); harness/lyrics-sources/ |
+| Generated pronunciation as timed words anchored to source ranges, in the pronunciation role; reading segments of 4,000 UTF-16 units that never split a grapheme | Done (Shared/Lyrics/Romanise.m's SGLyricsPrepareExtras, Redesigned/Lyrics/SGRKaraokeView.m); harness/hangul-pronunciation/, harness/lyrics/ |
+| Meanings matched and furigana prepared on worker queues, with bounded shared results | Done (Shared/LyricsMeanings/Meanings.m, Romanise.m, SGRKaraokeView.m) |
+| Translation in the meaning sheet, on a tap | Done (Redesigned/Lyrics/MeaningSheet.m, Shared/LyricsTranslation/TextTranslation.m, ProseSegments.m): the explanation and its quote go only to the configured service, in paragraph- and sentence-bounded segments sent one after another (16 at most a tap), and a segment that fails, stops short or is cut fails the whole; harness/meaning-translate/ |
+| Settings search read a page at a time, with keywords and recent places | Done (Settings/SGSettingsIndex.*, SGSettingsSearch.m, SGModPage.* searchKeywords and searchIdentifier, the main page's keywords in App/ModSettings.x and Pages.m): the six newest places under `spotifyglass.search.recents`, stored by stable setting names, never by title or text typed; harness/settings-search/ |
+| Player: header glass, Fluid grain, Music app icons switches | Done (Redesigned/Player/PlayerHeader.x, PlayerFooter.x, DJPlayer.x, PlayerSettings.m; Kit/SGRFluid.m, SGRFluidGPU.m): `spotifyglass.redesign.player.headerGlass` (on), `spotifyglass.redesign.fluid.grain` (0 to 200 %, 100, Smooth only), `spotifyglass.redesign.player.musicIcons` (on); the open player follows them at once; harness/player/ |
+| Animated artwork's clip recovery | Done (Redesigned/Player/PlayerMotion.x): a clip that has drawn and then fails is played again from its local file, 3 rebuilds, then given up; harness/fluid-clip/ |
+| Automatic accent | Done (Redesigned/Kit/SGRAccent.x, SGRAccentContext.m, Player/PlayerCoverAccent.x): Accent source, `spotifyglass.redesign.accent.auto`, Picked until switched; the page in front, then the cover; recolors by token provenance, never by a similar hue; harness/appearance-accent/ |
+| Explicit badge hiding, in each look | Done (Native/Appearance/ExplicitBadge.x, Redesigned/Kit/SGRExplicitBadge.x): `spotifyglass.hideExplicit` and `spotifyglass.redesign.hideExplicit`, off; a transparent mask on Spotify's own badge views; harness/ui-refinements/ |
+| Separate album and playlist cover settings (the global Full bleed row removed) | Done (Redesigned/Kit/SGRHeaderInfo.m's SGRPageFullCover, Album/AlbumSettings.m, Playlist/PlaylistSettings.m): Cover layout, Card or Full screen, `spotifyglass.redesign.album.fullCover` and `spotifyglass.redesign.playlist.fullCover`, Full screen unless set; the old `spotifyglass.redesign.fullBleedCovers` is carried over once and kept; harness/album/, harness/page-previews/ |
+| Compact library and the Library settings page | Done (Redesigned/Library/LibraryMenu.m, LibrarySettings.m, LibraryHeader.x): `spotifyglass.redesign.library.hideChips`, off; a menu of Spotify's own sort, list or grid and clear filter, the chips staying where the menu cannot reach them; a preview leads the page; harness/library/ |
+| Tab bar fade switch | Done (Redesigned/Navbar/TabBar.x, NavbarSettings.m): `spotifyglass.redesign.navbar.fade`, on, with the fade in the page's preview; harness/tabbar/ |
+| Spotify plays as a play count source | Done (Redesigned/Album/AlbumSpotifyCounts.*, AlbumPlaysText.m, AlbumRows.x, Shared/SpotifyMetadata/): `spotifyglass.redesign.album.playCounts.source`, Your plays unless set; one JSON GET and one batched POST per album, no automatic retry, 500 tracks an album, 64 albums and 2 MiB kept, 24 hours (five minutes after a failure); an unknown count is nothing, never 0; harness/album-counts/ |
+
+Judged equal, already there, or not taken, from the same round:
+
+| Item | Why |
+|---|---|
+| Search short-video carousels | Already in Vitrine: the redesign's watch feed carousels collapse with the Search page's watch feed switch (on) and come back when it is off (Redesigned/Search/SearchSections.x) |
+| The iPad full-screen player and the beside-cover lyrics opt-out | Not adopted: no iPad to verify them |
+| Writing an MP3's metadata tags | Left out: data loss in the user's own files |
+| A translucent download badge | Not built: there is no reliable download state to read |
+| Visualizer Auto and shuffle | Not taken: they cross paid-gated paths |
+| Car suppression | Not taken: Chroma's behavior is untraced, so there is nothing to build from |
+| Glass on the full-height sheets | Unchanged from the last round (see the Queue and Connect row above) |
+| Lock screen styles and the clock | Not taken: they are interleaved with Plus |
+| Home snapshot replay, and the Library settings button in the header | Unresolved: Chroma's behavior was not traced to the end |
+
+Debt from this round:
+
+- Ruby over a wrapped compound draws over the first line.
+- The offline lyric store drops provider translations and credit links.
+- The shared protobuf decoder (Shared/AdBlock/Protobuf.m) has no field-count budget; AlbumSpotifyCounts.m bounds its own reading.
+- Kit preview parts do not mirror right to left.
+- `LibrarySettings.m` repeats the Kit title row's sizes.
 
 ### Before the fork point, or not needed any more
 
@@ -227,7 +274,6 @@ Judged not better, or not ours to take:
 | 95 (Account page) | chroma.pw account | No account. The system Settings style is below |
 | 129 | "sing limit" | Says nothing buildable |
 | 96 | "More visualisations" | One commit in upstream's private repo after 0.23.0-beta. Nothing public says what it adds |
-| 107 | The lock screen widget's star switches artwork and lyrics | iOS has no public star command for the lock screen. The Lock screen widget page's choice does the same |
 
 ## Still open
 
@@ -241,3 +287,10 @@ Judged not better, or not ours to take:
   lyric preview on, the album notes' two placements and their sheet, an artist's photo and animated artwork, and the
   rolling digits and star. The Queue and Connect sheets' glass is not checkable until UIKit hands the sheet a
   background below full height on iOS 27.
+- From the whole-feature round, on a phone (iPhone 13 Pro, 9.1.90): checked are Spotify's own lyrics with the narrowed
+  header capture, the new rows in Korean, settings search and its recents, the cover layouts, the tab bar fade, the
+  header glass and Music app icons switched off, Automatic accent, and the next track's lyrics prepared when Up Next
+  changes. Spotify plays matched the artist page's Popular counts exactly and now show in the rows. Still unchecked:
+  Compact library's menu, the E masks (the album tried had Korean 19 badges), the next track's artwork, and the meaning
+  sheet's Translate. The artist line's change does not reach a loaded 9.1.90 row, whose explicit badge sits inside the
+  SubtitleView it would hide.

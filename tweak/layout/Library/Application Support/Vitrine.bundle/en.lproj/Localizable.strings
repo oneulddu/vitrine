@@ -84,6 +84,8 @@
 "settings.album.apple_music.header" = "Apple Music";
 "settings.album.apple_music.note" = "Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.";
 "settings.album.artwork_background.title" = "Artwork background";
+"settings.album.cover.header" = "Cover";
+"settings.album.cover_layout" = "Cover layout";
 "settings.album.cover_viewer.cover" = "Album cover";
 "settings.album.header" = "Header";
 "settings.album.hide.add_to_library.title" = "Add to library";
@@ -116,24 +118,30 @@
 "settings.album.play_counts.choice.in_menu" = "In menu";
 "settings.album.play_counts.choice.in_row" = "In the row";
 "settings.album.play_counts.choice.off" = "Off";
-"settings.album.play_counts.count.plural" = "%@ plays";
-"settings.album.play_counts.count.singular" = "%@ play";
-"settings.album.play_counts.note" = "Counted from Listening stats on this phone, matched by the album's and the track's names. With Record plays off, the counts stay as they are.";
-"settings.album.play_counts.subtitle" = "How many times you played each track";
+"settings.album.play_counts.source" = "Count source";
+"settings.album.play_counts.sources_note" = "Your plays uses Listening stats on this phone, matched by album and track names. Spotify plays uses Spotify's track metadata and may be unavailable.";
+"settings.album.play_counts.spotify_count" = "Spotify plays: %@";
+"settings.album.play_counts.spotify_plays" = "Spotify plays";
 "settings.album.play_counts.title" = "Play counts";
+"settings.album.play_counts.your_count" = "Your plays: %@";
+"settings.album.play_counts.your_plays" = "Your plays";
 "settings.album.preview.a11y" = "Preview of an album";
 "settings.album.title" = "Albums";
 "settings.album.tracks.header" = "Tracks";
 
 "settings.appearance.accent.choice.custom" = "Custom";
+"settings.appearance.accent.mode.automatic" = "Automatic";
+"settings.appearance.accent.mode.picked" = "Picked";
+"settings.appearance.accent.mode.subtitle" = "Automatic follows the page in front, then the playing cover. Picked restores your color";
+"settings.appearance.accent.mode.title" = "Accent source";
 "settings.appearance.accent_color.title" = "Accent color";
 "settings.appearance.accent_picker.title" = "Accent color";
 "settings.appearance.accent_preset.choice.custom" = "Custom";
 "settings.appearance.accent_preset.title" = "Accent color preset";
 "settings.appearance.accent_recent.header" = "Recent colors";
 "settings.appearance.amoled_background.title" = "AMOLED background";
-"settings.appearance.full_bleed.subtitle" = "Album and playlist covers across the top. Off, a square cover; an animated cover still fills the top";
-"settings.appearance.full_bleed.title" = "Full bleed covers";
+"settings.appearance.hide_explicit.subtitle" = "Hide the E mark, without changing content restrictions or VoiceOver";
+"settings.appearance.hide_explicit.title" = "Hide explicit badge";
 "settings.appearance.plain_checkmark.subtitle" = "A saved song's tick without its circle, in the accent";
 "settings.appearance.plain_checkmark.title" = "Plain checkmark";
 "settings.appearance.title" = "Appearance";
@@ -425,6 +433,9 @@
 "settings.background.mode.title" = "Background";
 
 "settings.common.new" = "New";
+
+"settings.cover_layout.card" = "Card";
+"settings.cover_layout.full_screen" = "Full screen";
 
 "settings.cover_viewer.close" = "Close";
 "settings.cover_viewer.share" = "Share";
@@ -876,6 +887,23 @@
 "settings.labs.title" = "Labs";
 "settings.labs.widget.header" = "Home screen widget";
 
+"settings.library.compact.note" = "Folders keep their chips. Whenever the menu cannot reach Spotify's controls, the chips stay.";
+"settings.library.compact.subtitle" = "Hides the filter chips under the title. A menu beside it sorts, switches between list and grid, and clears a filter, through Spotify's own controls.";
+"settings.library.compact.title" = "Compact library";
+"settings.library.menu.a11y" = "Sort and view";
+"settings.library.menu.change_view" = "Change view";
+"settings.library.menu.clear_filter" = "Clear filter";
+"settings.library.menu.grid" = "Grid";
+"settings.library.menu.hint" = "Sorts the library, changes its view or clears its filter";
+"settings.library.menu.list" = "List";
+"settings.library.menu.sort" = "Sort";
+"settings.library.preview.a11y" = "Preview of Your Library";
+"settings.library.preview.chips" = "Filter chips";
+"settings.library.preview.menu" = "Sort and view menu";
+"settings.library.preview.sort_row" = "Sort order and view";
+"settings.library.preview.title" = "Your Library";
+"settings.library.title" = "Library";
+
 "settings.liveactivity.alignment.choice.center" = "Center";
 "settings.liveactivity.alignment.choice.left" = "Left";
 "settings.liveactivity.alignment.title" = "Alignment";
@@ -933,6 +961,9 @@
 "settings.liveactivity.withoutlyrics.choice.note" = "Note";
 "settings.liveactivity.withoutlyrics.choice.track" = "Track";
 "settings.liveactivity.withoutlyrics.title" = "Without lyrics";
+
+"settings.load_ahead.subtitle" = "Prepare the next track's artwork and lyrics. Turning this off does not affect the current track.";
+"settings.load_ahead.title" = "Load ahead";
 
 "settings.locallyrics.error.deletefailed" = "Could not delete the file";
 "settings.locallyrics.error.importfailed" = "Could not import the file";
@@ -1067,6 +1098,12 @@
 "settings.lyrics.language_rules.title" = "Clear language rules…";
 "settings.lyrics.lockscreen_lyrics.subtitle" = "Current line in place of the artist";
 "settings.lyrics.lockscreen_lyrics.title" = "Lock screen lyrics";
+"settings.lyrics.meaning.error.translate" = "Couldn't translate";
+"settings.lyrics.meaning.genius" = "View on Genius";
+"settings.lyrics.meaning.next" = "Next";
+"settings.lyrics.meaning.showoriginal" = "Show Original";
+"settings.lyrics.meaning.status.translated" = "Translated";
+"settings.lyrics.meaning.translate" = "Translate";
 "settings.lyrics.meanings.choice.artist" = "From the artist";
 "settings.lyrics.meanings.choice.artist_editors" = "Artist and editors";
 "settings.lyrics.meanings.choice.everyone" = "Everyone";
@@ -1357,6 +1394,7 @@
 "settings.main.home.title" = "Home";
 "settings.main.home_library.title" = "Home & Library";
 "settings.main.labs.title" = "Labs";
+"settings.main.library.title" = "Library";
 "settings.main.listening_stats.title" = "Listening stats";
 "settings.main.live_activity.title" = "Live Activity";
 "settings.main.lock_screen.title" = "Lock screen";
@@ -1737,6 +1775,7 @@
 "settings.player.fluid.blur" = "Blur";
 "settings.player.fluid.brightness" = "Brightness";
 "settings.player.fluid.footer" = "Smooth lets the cover flow and carries the next song's cover in through it, using a little more battery. Brightness above 100% can make white text harder to read. A paused song holds the background still. Animated and Visualizer use these where they show Fluid.";
+"settings.player.fluid.grain" = "Grain";
 "settings.player.fluid.renderer.light" = "Light";
 "settings.player.fluid.renderer.smooth" = "Smooth";
 "settings.player.fluid.renderer.title" = "Style";
@@ -1748,6 +1787,8 @@
 "settings.player.gestures.title" = "Gestures";
 "settings.player.glass_header_buttons.title" = "Glass header buttons";
 "settings.player.glass_lyrics.title" = "Glass lyrics";
+"settings.player.header_glass.subtitle" = "Glass circles behind the close and ⋯ buttons at the top of the player.";
+"settings.player.header_glass.title" = "Header glass";
 "settings.player.hide.about_artist.title" = "About the artist";
 "settings.player.hide.add_to_playlist.title" = "Add to playlist";
 "settings.player.hide.connect.title" = "Connect to a device";
@@ -1783,6 +1824,8 @@
 "settings.player.mini_player.header" = "Mini player";
 "settings.player.motion_low_data.subtitle" = "Up to about 7 MB a song. Applies to animated artwork throughout Vitrine.";
 "settings.player.motion_low_data.title" = "Download in Low Data Mode";
+"settings.player.music_icons.subtitle" = "The Music app's AirPlay and queue icons in place of Spotify's under the controls.";
+"settings.player.music_icons.title" = "Music app icons";
 "settings.player.new_slider.title" = "New progress slider";
 "settings.player.not_playing" = "Not Playing";
 "settings.player.now_playing_bar.title" = "Now playing bar";
@@ -1817,9 +1860,9 @@
 
 "settings.playlist.artwork_background.title" = "Artwork background";
 "settings.playlist.cover.header" = "Cover";
+"settings.playlist.cover_layout" = "Cover layout";
 "settings.playlist.cover_viewer.cover" = "Playlist cover";
 "settings.playlist.full_screen_cover.subtitle" = "Tap the picture at the top of a playlist to zoom in or share it";
-"settings.playlist.full_screen_cover.title" = "Full screen cover";
 "settings.playlist.header" = "Header";
 "settings.playlist.hide.add_to_library.title" = "Add to library";
 "settings.playlist.hide.artwork.title" = "Cover artwork";
@@ -1838,6 +1881,7 @@
 "settings.playlist.hide_in_header.header" = "Hide in the playlist header";
 "settings.playlist.hide_on_page.header" = "Hide on a playlist's page";
 "settings.playlist.more_menu.header" = "More menu";
+"settings.playlist.open_cover_on_tap.title" = "Open cover on tap";
 "settings.playlist.preview.a11y" = "Preview of a playlist";
 "settings.playlist.preview.mix" = "Mix";
 "settings.playlist.preview.sort" = "Sort";
@@ -1944,8 +1988,36 @@
 "settings.report.what.placeholder" = "What went wrong?";
 "settings.report.what.title" = "What went wrong";
 
+"settings.search.airpods.keywords" = "head gestures nod shake headphones airpods";
+"settings.search.albums.keywords" = "album cover notes credits";
+"settings.search.all_flags.keywords" = "remote config feature flags overrides";
+"settings.search.appearance.everywhere.keywords" = "typeface font app icon";
+"settings.search.appearance.keywords" = "theme colour color typeface font amoled black dark icon";
+"settings.search.appearance.look.keywords" = "theme colour color accent typeface amoled black dark";
+"settings.search.artists.keywords" = "artist header photo bio";
+"settings.search.audio_effects.keywords" = "equalizer eq bass treble crossfeed reverb compressor limiter";
+"settings.search.automix.keywords" = "automix crossfade gapless transition mix";
+"settings.search.home.keywords" = "library your library home page gradient";
+"settings.search.labs.keywords" = "experimental experiments flags";
+"settings.search.library.keywords" = "your library filter chips sort grid list compact";
+"settings.search.listening_stats.keywords" = "statistics history top songs streaks charts";
+"settings.search.live_activity.keywords" = "dynamic island lock screen apple watch carplay card activity";
+"settings.search.lock_screen.keywords" = "lock screen wallpaper moving artwork lyrics widget";
+"settings.search.lyrics.keywords" = "karaoke translation romanization furigana sync delay";
+"settings.search.mod.keywords" = "about version update export import backup diagnostics";
 "settings.search.none" = "No Results";
 "settings.search.placeholder" = "Search";
+"settings.search.player.keywords" = "now playing shuffle repeat gestures sleep timer queue";
+"settings.search.playlists.keywords" = "playlist page album cover";
+"settings.search.premium_ads_privacy.keywords" = "ads adverts block telemetry tracking privacy sponsors";
+"settings.search.recent.clear" = "Clear";
+"settings.search.recent.header" = "Recently Opened";
+"settings.search.search.keywords" = "browse categories chips";
+"settings.search.sing.keywords" = "sing karaoke vocals voice remove";
+"settings.search.spatial_voice.keywords" = "spatial audio surround head tracking headphone motion";
+"settings.search.tabbar.keywords" = "navigation bar tabs bottom";
+"settings.search.vibrations.keywords" = "haptics vibration haptic feedback buzz";
+"settings.search.workshop.keywords" = "presets headphones autoeq fonts visualizers download";
 
 "settings.search_tab.cards.header" = "Category cards";
 "settings.search_tab.glass_cards.subtitle" = "Each card as Liquid Glass in its own color. Off, the cards are Spotify's own.";
@@ -2090,6 +2162,8 @@
 "settings.tabbar.custom_bar.title" = "Custom tab bar";
 "settings.tabbar.custom_off.footer" = "Off, the bar shows Spotify's own tabs in Spotify's order. Your list is kept for when it is on again.";
 "settings.tabbar.custom_on.footer" = "Drag a tab to move it. Tap one you added to rename it or change its icon, or one of Spotify's to hide it.";
+"settings.tabbar.fade.subtitle" = "The page darkens toward the foot of the screen, behind the tab bar and the now playing bar";
+"settings.tabbar.fade.title" = "Fade under the bar";
 "settings.tabbar.intro" = "Drag to reorder, tap to show or hide.";
 "settings.tabbar.item.hidden.a11y" = "Hidden";
 "settings.tabbar.item.hint_edit" = "Opens the tab to edit it";
@@ -2314,6 +2388,9 @@
 "settings.translation.savedtranslations.title" = "Saved translations";
 "settings.translation.savedtranslations.value.format" = "%lu · %@";
 "settings.translation.savedtranslations.value.none" = "None";
+"settings.translation.text.noservice" = "Set up a translation service on the Lyrics page first.";
+"settings.translation.text.error.unreadable" = "The translation's answer could not be read. Try again.";
+"settings.translation.text.error.toolong" = "This explanation is too long to translate with this service.";
 "settings.translation.thinking.high" = "High";
 "settings.translation.thinking.low" = "Low";
 "settings.translation.thinking.medium" = "Medium";

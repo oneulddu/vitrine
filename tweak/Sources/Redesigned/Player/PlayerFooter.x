@@ -12,7 +12,8 @@
 // clear at its source. Connect's glyph is an image Spotify draws the color into: each new one is read once for
 // that color, so a device in use still lights it in the accent (or the cover's, PlayerCoverAccent.x), and is
 // swapped for a clear image of its size. The queue's is an SPTEncoreIconView: its foreground colors are kept
-// for the stand-in and Spotify's drawn clear.
+// for the stand-in and Spotify's drawn clear. Music app icons on the Player page (SGRKeyPlayerMusicIcons) switches the
+// stand-ins off and on while the player is open; the row's places, the hidden device name and the touch square stay.
 // Spotify has no lyrics control down here, so that one is the Kit's glyph button, and it turns the
 // lyrics in the player on and off (PlayerLyrics.x): filled while they are up, dimmed and dead for a
 // track that has none.
@@ -121,7 +122,16 @@ SGRGlyphButton *SGRPlayerLyricsGlyphIn(UIView *host) {
 
 #pragma mark - the Music app's glyphs
 
-static char kStandInKey, kClearKey, kQueueActiveColorKey;
+// Switched off on the Player page (SGRKeyPlayerMusicIcons), the stand-ins come out of Spotify's glyph views and what
+// Spotify drew is given back: Connect's last image, the queue's two colors. Each is kept on its view while a stand-in
+// covers it. Switched on again, the next pass of the footer puts the stand-ins back over whatever Spotify draws then.
+static char kStandInKey, kClearKey, kSpotifyImageKey, kQueueRestColorKey, kQueueActiveColorKey;
+
+// The stand-in over `drawn`, while one is shown there; nil once the Music app's glyphs are switched off.
+static SGRGlyphView *shownStandIn(UIView *drawn) {
+    SGRGlyphView *glyph = objc_getAssociatedObject(drawn, &kStandInKey);
+    return glyph.superview == drawn ? glyph : nil;
+}
 
 // The Kit's glyph centered inside `drawn`: it takes `drawn`'s hidden, alpha and animations with it.
 static SGRGlyphView *standIn(UIView *drawn, NSString *symbol) {
@@ -171,8 +181,13 @@ static UIImage *litImage(SGRGlyphView *glyph, UIImage *symbol, UIColor *color) {
 static void takeConnectImage(UIImageView *drawn) {
     UIImage *image = drawn.image;
     UIImage *clear = objc_getAssociatedObject(drawn, &kClearKey);
-    if (!image.CGImage || image == clear) return;
-    SGRGlyphView *glyph = objc_getAssociatedObject(drawn, &kStandInKey);
+    SGRGlyphView *glyph = shownStandIn(drawn);
+    // Whatever Spotify sets while the stand-in shows, nil or an image with no bitmap included, is what goes back when the
+    // Music app's glyphs are switched off; only the clear image set here is not Spotify's. One with no bitmap has no color
+    // to read and stays drawn as Spotify set it.
+    if (!glyph || (clear && image == clear)) return;
+    objc_setAssociatedObject(drawn, &kSpotifyImageKey, image, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (!image.CGImage) return;
     UIImage *symbol = [UIImage systemImageNamed:glyph.symbol withConfiguration:glyph.preferredSymbolConfiguration];
     UIColor *ink = inkOf(drawn, image);
     BOOL lit = SGRPlayerAccentLike(ink);
@@ -191,7 +206,17 @@ static void takeConnectImage(UIImageView *drawn) {
 // Spotify draws a new glyph when the device changes, with no layout pass of the footer to tell it, so its setImage:
 // tells the stand-in; the clear image set back in reports too, and stops there. Each pass looks too, at the cost of a
 // compare, for a view the image cannot be watched on.
+// Off, an image Spotify sets reaches takeConnectImage with no stand-in shown and stays.
 static void standInForConnect(UIImageView *drawn) {
+    if (!SGEnabled(SGRKeyPlayerMusicIcons)) {
+        SGRGlyphView *glyph = shownStandIn(drawn);
+        if (!glyph) return;
+        [glyph removeFromSuperview];
+        // Recorded on every image Spotify set since the stand-in went in, the first included (takeConnectImage below).
+        UIImage *spotify = objc_getAssociatedObject(drawn, &kSpotifyImageKey);
+        if (drawn.image != spotify) drawn.image = spotify;
+        return;
+    }
     BOOL made = objc_getAssociatedObject(drawn, &kStandInKey) != nil;
     if (!standIn(drawn, kConnectSymbol)) return;
     takeConnectImage(drawn);
@@ -200,7 +225,8 @@ static void standInForConnect(UIImageView *drawn) {
 
 // The queue's state as Spotify sets it, for the stand-in; Spotify's own glyph is drawn in clear.
 static void tintQueueStandIn(SPTEncoreIconView *icon) {
-    SGRGlyphView *glyph = objc_getAssociatedObject(icon, &kStandInKey);
+    SGRGlyphView *glyph = shownStandIn(icon);
+    if (!glyph) return;
     // Lit by Spotify's own state, not by a color a cover could make look gray. Lit, it is drawn in the color, as Connect
     // is, so Follow the cover finds it by its pixels and repaints it.
     UIColor *active = objc_getAssociatedObject(icon, &kQueueActiveColorKey);
@@ -212,29 +238,44 @@ static void tintQueueStandIn(SPTEncoreIconView *icon) {
 
 static void standInForQueue(SPTEncoreIconView *icon) {
     if (![icon isKindOfClass:%c(SPTEncoreIconView)]) return;
-    BOOL made = objc_getAssociatedObject(icon, &kStandInKey) != nil;
-    if (!standIn(icon, kQueueSymbol) || made) return;
-    UIColor *color = icon.foregroundColor, *active = icon.activeForegroundColor;
-    // Through the setters below, which now keep each color and hand Spotify's drawing clear.
-    if (color) icon.foregroundColor = color;
-    if (active) icon.activeForegroundColor = active;
+    BOOL on = SGEnabled(SGRKeyPlayerMusicIcons);
+    SGRGlyphView *shown = shownStandIn(icon);
+    if (on == (shown != nil)) return;
+    // Spotify's colors: read while Spotify's drawing is its own, before the stand-in goes in; kept from then on by the
+    // setters below, and handed back through them once it is out again.
+    UIColor *color, *active;
+    if (on) {
+        color = icon.foregroundColor;
+        active = icon.activeForegroundColor;
+        standIn(icon, kQueueSymbol);
+    } else {
+        color = objc_getAssociatedObject(icon, &kQueueRestColorKey);
+        active = objc_getAssociatedObject(icon, &kQueueActiveColorKey);
+        [shown removeFromSuperview];
+    }
+    // Both always, nil included: going in, so each is recorded afresh (a record from an earlier time on would otherwise
+    // come back); going out, so a color Spotify reset to nil meanwhile is nil again, not the clear put in its place.
+    icon.foregroundColor = color;
+    icon.activeForegroundColor = active;
     tintQueueStandIn(icon);
 }
 
 %hook SPTEncoreIconView
-// The stand-in does not take the color at rest, only the active one.
+// The stand-in does not take the color at rest, only the active one; both are kept to give back.
 - (void)setForegroundColor:(UIColor *)color {
-    %orig(objc_getAssociatedObject(self, &kStandInKey) ? UIColor.clearColor : color);
+    BOOL ours = shownStandIn(self) != nil;
+    if (ours) objc_setAssociatedObject(self, &kQueueRestColorKey, color, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    %orig(ours ? UIColor.clearColor : color);
 }
 - (void)setActiveForegroundColor:(UIColor *)color {
-    BOOL ours = objc_getAssociatedObject(self, &kStandInKey) != nil;
+    BOOL ours = shownStandIn(self) != nil;
     if (ours) objc_setAssociatedObject(self, &kQueueActiveColorKey, color, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     %orig(ours ? UIColor.clearColor : color);
     if (ours) tintQueueStandIn(self);
 }
 - (void)setIsActive:(BOOL)active {
     %orig;
-    if (objc_getAssociatedObject(self, &kStandInKey)) tintQueueStandIn(self);
+    tintQueueStandIn(self);
 }
 %end
 
@@ -406,6 +447,7 @@ void SGRPlayerLowerRow(UIView *row) {
     %orig;
     UIView *host = ((UIViewController *)self).viewIfLoaded;
     if (!host) return;
+    SGRPlayerWatchLook(host);
     // The unit lays out before its row does, and the moves are measured from where the row put things.
     [SGFindRemembered(host, &kRowKey, ^BOOL(UIView *v) { return SGIsRow(v); }) layoutIfNeeded];
     CGFloat width = host.bounds.size.width, middleY = CGRectGetMidY(host.bounds);

@@ -12,6 +12,8 @@
 // Footer: DJMFooterUnitView holds the share button, the DJ button, Connect and an empty view, not in a stack.
 // Connect and the DJ button stay Spotify's and are only moved, by a transform that survives relayout. Lyrics
 // and Queue are the Kit's glyph buttons; Queue, the Music app's list.bullet (issue #109), opens spotify:now-playing:queue.
+// With Music app icons off (SGRKeyPlayerMusicIcons) Connect shows Spotify's own glyph again; Queue keeps the list, since
+// the DJ's footer has no queue control of Spotify's to give back.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/Navigation/Links.h"
@@ -104,6 +106,8 @@ static SGRGlyphButton *glyphButtonIn(UIView *host, const void *key, NSString *sy
 static void styleFooter(UIViewController *unit) {
     UIView *host = unit.viewIfLoaded;
     if (!host || host.bounds.size.width < 100) return;
+    // Connect's Music app glyph follows the Player page's switch (SGRKeyPlayerMusicIcons) through SGRPlayerConnectGlyphIn.
+    SGRPlayerWatchLook(host);
     CGFloat width = host.bounds.size.width, middleY = CGRectGetMidY(host.bounds);
     BOOL rtl = host.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
     CGFloat (^slot)(NSUInteger) = ^CGFloat(NSUInteger i) { return round(width * (rtl ? 1 - kSlots[i] : kSlots[i])); };

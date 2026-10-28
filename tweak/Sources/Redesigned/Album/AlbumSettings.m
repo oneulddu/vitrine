@@ -5,6 +5,7 @@
 #import "Settings/SGModPage.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Redesigned/Kit/SGRPagePreview.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Album.h"
 #import "AlbumNotes.h"
 
@@ -59,14 +60,19 @@ static SGRPagePreview *albumPreview(NSDictionary<NSString *, NSString *> *names)
         NSMutableDictionary *state = [NSMutableDictionary dictionary];
         // As AlbumHeader.x asks: the switch, and Apple Music among the animated artwork's sources.
         state[SGRKeyAlbumMotion] = @(SGEnabled(SGRKeyAlbumMotion) && SGMotionAppleMusicOn());
+        state[SGRKeyAlbumFullCover] = @(SGRPageFullCover(SGRKeyAlbumFullCover));
         state[SGRKeyAlbumNotesPlace] = @(SGRAlbumNotesWhere());
         state[SGRKeyAlbumPlayCountsPlace] = @(SGRAlbumPlayCountsWhere());
+        state[SGRKeyAlbumPlayCountsSource] = @(SGRAlbumUsesSpotifyCounts());
         state[SGRKeyAlbumHideTrackArtists] = @(SGEnabled(SGRKeyAlbumHideTrackArtists));
         for (NSUInteger i = 0; i < kSectionCount; i++) state[kSections[i].key] = @(SGEnabled(kSections[i].key));
         return state;
     };
     card.apply = ^(SGRPagePreview *preview, NSDictionary *state) {
         BOOL motion = [state[SGRKeyAlbumMotion] boolValue];
+        BOOL fullCover = [state[SGRKeyAlbumFullCover] boolValue];
+        if (header.fullCover != fullCover) [preview revealPart:header.part];
+        header.fullCover = fullCover;
         if (header.badge.alpha != motion) [preview revealPart:header.part];
         header.badge.alpha = motion;
         header.part.accessibilityLabel = motion ? names[SGRKeyAlbumMotion] : nil;
@@ -76,7 +82,11 @@ static SGRPagePreview *albumPreview(NSDictionary<NSString *, NSString *> *names)
         SGRAlbumPlayCountsPlace counts = [state[SGRKeyAlbumPlayCountsPlace] integerValue];
         BOOL artists = ![state[SGRKeyAlbumHideTrackArtists] boolValue];
         if ((tracks.trailing != nil) != (counts == SGRAlbumPlayCountsInRow) || tracks.showsArtists != artists) [preview revealPart:tracks.part];
-        tracks.trailing = counts == SGRAlbumPlayCountsInRow ? plays : nil;
+        NSMutableArray *shownPlays = [NSMutableArray array];
+        for (NSUInteger i = 0; i < kTracks; i++) [shownPlays addObject:[state[SGRKeyAlbumPlayCountsSource] boolValue]
+            ? SGRAlbumSpotifyPlaysText(@(kPlays[i])) : SGRAlbumPlaysText(kPlays[i])];
+        tracks.trailing = counts == SGRAlbumPlayCountsInRow ? shownPlays : nil;
+        [menu setRow:0 word:shownPlays.firstObject];
         tracks.showsArtists = artists;
         tracks.part.accessibilityLabel = counts == SGRAlbumPlayCountsInRow ? names[SGRKeyAlbumPlayCountsPlace] : nil;
         [preview setPart:menu.overlay shown:counts == SGRAlbumPlayCountsInMenu];
@@ -88,11 +98,17 @@ static SGRPagePreview *albumPreview(NSDictionary<NSString *, NSString *> *names)
 }
 
 UIViewController *SGRAlbumSettingsPage(void) {
+    SGModRow *cover = SGChoiceRow(SGL(@"settings.album.cover_layout", @"Cover layout"), nil, SGRKeyAlbumFullCover,
+        @[SGL(@"settings.cover_layout.card", @"Card"), SGL(@"settings.cover_layout.full_screen", @"Full screen")],
+        SGRPageFullCover(SGRKeyAlbumFullCover));
     SGModRow *motion = SGSwitchRow(SGL(@"settings.album.animated_covers.title", @"Animated covers"), SGL(@"settings.album.animated_covers.subtitle", @"At the top of an album that has one, about 5 MB each"), SGRKeyAlbumMotion);
     SGModRow *notes = SGChoiceRow(SGL(@"settings.album.notes.title", @"Album notes"), nil, SGRKeyAlbumNotesPlace,
         @[SGL(@"settings.album.notes.under_play", @"Under Play"), SGL(@"settings.album.notes.under_tracks", @"Under tracks"),
           SGL(@"settings.album.notes.off", @"Off")], SGRAlbumNotesWhere());
-    SGModRow *plays = SGChoiceRow(SGL(@"settings.album.play_counts.title", @"Play counts"), SGL(@"settings.album.play_counts.subtitle", @"How many times you played each track"), SGRKeyAlbumPlayCountsPlace,
+    SGModRow *source = SGChoiceRow(SGL(@"settings.album.play_counts.source", @"Count source"), nil, SGRKeyAlbumPlayCountsSource,
+        @[SGL(@"settings.album.play_counts.your_plays", @"Your plays"), SGL(@"settings.album.play_counts.spotify_plays", @"Spotify plays")],
+        SGRAlbumUsesSpotifyCounts());
+    SGModRow *plays = SGChoiceRow(SGL(@"settings.album.play_counts.title", @"Play counts"), nil, SGRKeyAlbumPlayCountsPlace,
                                   @[SGL(@"settings.album.play_counts.choice.off", @"Off"), SGL(@"settings.album.play_counts.choice.in_row", @"In the row"),
                                     SGL(@"settings.album.play_counts.choice.in_menu", @"In menu")], SGRAlbumPlayCountsWhere());
     SGModRow *trackArtists = SGSwitchRow(SGL(@"settings.album.hide_track_artists.title", @"Repeated track artists"), SGL(@"settings.album.hide_track_artists.subtitle", @"The artist under a track when it is the album's own"), SGRKeyAlbumHideTrackArtists);
@@ -111,13 +127,14 @@ UIViewController *SGRAlbumSettingsPage(void) {
     names[SGRKeyAlbumPlayCountsPlace] = plays.title;
 
     return SGRPagePreviewPage(SGL(@"settings.album.title", @"Albums"), albumPreview(names), SGRestartNote, @[
+        SGSection(SGL(@"settings.album.cover.header", @"Cover"), @[cover]),
         SGNotedSection(SGL(@"settings.album.apple_music.header", @"Apple Music"), @[
             motion,
             notes,
             SGOptionRow(SGL(@"settings.album.motion_low_data.title", @"Download in Low Data Mode"), SGL(@"settings.album.motion_low_data.subtitle", @"Applies to animated artwork throughout Vitrine."), SGKeyMotionLowData),
         ], SGL(@"settings.album.apple_music.note", @"Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.")),
-        SGNotedSection(SGL(@"settings.album.tracks.header", @"Tracks"), @[plays],
-                       SGL(@"settings.album.play_counts.note", @"Counted from Listening stats on this phone, matched by the album's and the track's names. With Record plays off, the counts stay as they are.")),
+        SGNotedSection(SGL(@"settings.album.tracks.header", @"Tracks"), @[plays, source],
+                       SGL(@"settings.album.play_counts.sources_note", @"Your plays uses Listening stats on this phone, matched by album and track names. Spotify plays uses Spotify's track metadata and may be unavailable.")),
         SGSection(SGL(@"settings.album.hide_on_page.header", @"Hide on an album's page"), @[trackArtists]),
         SGNotedSection(SGL(@"settings.album.hide_under_tracks.header", @"Hide under an album's tracks"), underTracks,
                        SGL(@"settings.album.hide_under_tracks.note", @"Sections are told apart by their English names. With Spotify in another language, Everything else "

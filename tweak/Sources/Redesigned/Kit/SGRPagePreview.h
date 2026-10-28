@@ -103,6 +103,8 @@ SGRPreviewTitle *SGRPreviewAddTitle(SGRPagePreview *card, NSString *title);
 @property (nonatomic) NSUInteger cover;
 // A logo (an artist's wordmark) in place of the title's bar, the detail under it moved clear of it; NO until set.
 @property (nonatomic) BOOL showsLogo;
+// Defaults YES for existing callers (including the artist). NO draws the static square Card cover.
+@property (nonatomic) BOOL fullCover;
 @end
 SGRPreviewHeader *SGRPreviewAddHeader(SGRPagePreview *card, NSUInteger cover, NSString *badge, NSString *trailing);
 
@@ -126,6 +128,7 @@ void SGRPreviewAddTopBar(SGRPagePreview *card);
 @interface SGRPreviewMenu : NSObject
 @property (nonatomic, weak, readonly) UIView *overlay;
 - (void)setRow:(NSUInteger)row shown:(BOOL)shown;
+- (void)setRow:(NSUInteger)row word:(NSString *)word;
 @end
 SGRPreviewMenu *SGRPreviewAddMenu(SGRPagePreview *card, NSArray<NSString *> *symbols, NSArray *words);
 

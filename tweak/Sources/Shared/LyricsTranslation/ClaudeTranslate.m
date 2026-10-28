@@ -82,7 +82,7 @@ NSArray<NSString *> *SGClaudeReplyIn(id root, NSInteger status, NSError *error, 
         if (valid) for (id part in content) {
             if (![part isKindOfClass:NSDictionary.class]) { valid = NO; break; }
             if (![part[@"type"] isEqual:@"text"]) {
-                if (format == SGLyricsReplyIndexed && ![part[@"type"] isEqual:@"thinking"] && ![part[@"type"] isEqual:@"redacted_thinking"]) { valid = NO; break; }
+                if (format != SGLyricsReplyJSON && ![part[@"type"] isEqual:@"thinking"] && ![part[@"type"] isEqual:@"redacted_thinking"]) { valid = NO; break; }
                 continue;
             }
             id piece = part[@"text"];
@@ -91,6 +91,8 @@ NSArray<NSString *> *SGClaudeReplyIn(id root, NSInteger status, NSError *error, 
         }
         if (format == SGLyricsReplyIndexed) {
             if (valid && [reply[@"stop_reason"] isEqual:@"end_turn"]) out = SGLyricsIndexedRowsIn(text, count);
+        } else if (format == SGLyricsReplyProse) {
+            if (valid && [reply[@"stop_reason"] isEqual:@"end_turn"]) out = SGLyricsAIArrayIn(text, count);
         } else if (valid && ![reply[@"stop_reason"] isEqual:@"max_tokens"]) out = SGLyricsAIArrayIn(text, count);
         if (!out) failure = unreadable();
     }
@@ -107,7 +109,7 @@ NSURLRequest *SGClaudeRequest(NSString *system, NSString *prompt, NSString **pro
     [request setValue:key forHTTPHeaderField:@"x-api-key"];
     [request setValue:@"2023-06-01" forHTTPHeaderField:@"anthropic-version"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
-    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"model": model, @"max_tokens": @8192, @"system": system,
+    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"model": model, @"max_tokens": @(SGClaudeMaxOutputTokens), @"system": system,
         @"messages": @[@{@"role": @"user", @"content": prompt}]} options:0 error:nil];
     return request;
 }

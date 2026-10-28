@@ -10,6 +10,13 @@
 #import "Core/SGCore.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/LyricsMeanings/Meanings.h"
+#import <stdatomic.h>
+
+static atomic_bool meaningMatchedOnMain;
+static NSString *HarnessFoldedText(NSString *text) {
+    if (NSThread.isMainThread) atomic_store(&meaningMatchedOnMain, true);
+    return SGLyricsFoldedText(text);
+}
 
 // Only the network boundary is replaced; pagination, matching, caching and waiters are production.
 static id (^sg_meaningReply)(NSURLRequest *, NSInteger *);
@@ -38,7 +45,9 @@ static id (^sg_meaningReply)(NSURLRequest *, NSInteger *);
 }
 @end
 #define NSURLSession HarnessMeaningSession
+#define SGLyricsFoldedText HarnessFoldedText
 #import "Shared/LyricsMeanings/Meanings.m"
+#undef SGLyricsFoldedText
 #undef NSURLSession
 
 @interface HarnessMeaningTrack : NSObject
@@ -92,6 +101,12 @@ void SGLyricsGetJSON(NSURL *url, NSDictionary *headers, void (^done)(id root)) {
     done(body ? [NSJSONSerialization JSONObjectWithData:body options:0 error:nil] : nil);
 }
 void SGLyricsPostJSON(NSURL *url, NSDictionary *headers, id body, void (^done)(id root)) { done(nil); }
+void SGLyricsPostJSONTransform(NSURL *url, NSDictionary *headers, id body, id (^transform)(id), void (^done)(id)) {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        id result = transform(nil);
+        dispatch_async(dispatch_get_main_queue(), ^{ done(result); });
+    });
+}
 void SGLyricsGetText(NSURL *url, void (^done)(NSString *text)) {
     NSData *body = fetched(url);
     done(body ? [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding] : nil);
@@ -243,6 +258,31 @@ static void checkMeanings(void) {
     for (NSUInteger i = 0; i < 41; i++) CHECK(meaningsFor([NSString stringWithFormat:@"cache-%lu", (unsigned long)i])[@0] != nil);
     body = @"After eviction";
     CHECK([((SGLyricsMeaning *)[meaningsFor(@"evicted")[@0] firstObject]).body isEqual:@"After eviction"]);
+    NSMutableArray *choruses = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 40; i++)
+        [choruses addObjectsFromArray:@[@"Filler line", @"Other verse", @"Filler line"]];
+    NSArray *repeated = SGKaraokeStaticLines(choruses);
+    __block NSDictionary *first, *second;
+    SGLyricsMeaningsFor(@"evicted", repeated, ^(NSDictionary *value) { CHECK(NSThread.isMainThread); first = value; });
+    SGLyricsMeaningsFor(@"evicted", repeated, ^(NSDictionary *value) { CHECK(NSThread.isMainThread); second = value; });
+    CHECK(!first && !second); // even a warm raw-referent cache matches asynchronously
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
+    while ((!first || !second) && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    CHECK(first && first == second);
+    CHECK(first.count == 80 && first[@0] && first[@2] && first[@3] && first[@119] && !first[@1]);
+    __block BOOL stale = NO;
+    NSMutableArray *changing = [repeated mutableCopy];
+    SGLyricsMeaningsFor(@"evicted", changing, ^(NSDictionary *value) { stale = YES; });
+    changing[0] = SGKaraokeStaticLines(@[@"Replacement source"]).firstObject;
+    // A later request on the serial worker provides a completion boundary for the stale one.
+    __block BOOL barrier = NO;
+    SGLyricsMeaningsFor(@"evicted", repeated, ^(NSDictionary *value) { barrier = YES; });
+    deadline = [NSDate dateWithTimeIntervalSinceNow:3];
+    while (!barrier && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    CHECK(barrier && !stale);
+    CHECK(!atomic_load(&meaningMatchedOnMain));
     puts("meanings: malformed flags, retry after failed pages and bounded cache passed");
 }
 

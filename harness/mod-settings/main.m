@@ -31,11 +31,131 @@
 @protocol SPTPageController <NSObject>
 @end
 
-// Settings/SGSettingsSearch.m's search rules, tested without a search bar.
-NSString *SGSearchInitials(NSString *text);
-BOOL SGSearchIsInitialsWord(NSString *word);
-BOOL SGSearchWordMatches(NSString *word, NSString *folded, NSString *initials);
-BOOL SGSearchStartsTitle(NSString *query, NSString *foldedTitle, NSString *initialsTitle);
+// Settings/SGSettingsIndex.m's search rules, tested without a search bar.
+#import "Settings/SGSettingsIndex.h"
+#import "Settings/SGSettingsSearch.h"
+
+// A page of the search's own: rows whose titles stand in for real settings, and one row that opens a page under it.
+// The real SGSettingsResults and the real UISearchController are what the checks drive.
+static SGModPage *searchHarnessPage(void) {
+    SGModRow *plain = SGModRow.new;
+    plain.title = @"Plain row";
+    plain.key = @"spotifyglass.harness.search.plain";
+    SGModRow *under = SGModRow.new;
+    under.title = @"Second row";
+    under.key = @"spotifyglass.harness.search.second";
+    SGModRow *page = SGPageRow(@"Live Activity", ^UIViewController *{ return nil; });
+    page.searchIdentifier = @"page.liveactivity";
+    return [[SGModPage alloc] initWithTitle:@"Search" intro:nil sections:@[
+        SGSection(nil, @[plain]),
+        SGSection(nil, @[page]),
+    ] footer:nil];
+}
+
+// The field's results table is the search's own: for an empty field (the recents' case) and an emptied one, the field
+// must be showing it. UIKit's own rule, left on, takes it away whenever the text is empty.
+static NSUInteger searchControllerChecks(void) {
+    __block NSUInteger failures = 0;
+    void (^check)(BOOL, NSString *) = ^(BOOL ok, NSString *what) {
+        if (!ok) {
+            failures++;
+            fprintf(stderr, "[harness] search controller FAIL %s\n", what.UTF8String);
+        }
+    };
+    // Two places to show on the empty field, stored the way the results would store them.
+    SGSearchForgetRecents();
+    SGSearchRememberPlace(@[@"page.liveactivity"]);
+    SGSearchRememberPlace(@[@"spotifyglass.harness.search.plain"]);
+
+    SGModPage *page = searchHarnessPage();
+    page.searchable = YES;
+    // The field is made in viewDidLoad, which the page needs a window for.
+    UIWindow *window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 390, 844)];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:page];
+    window.rootViewController = nav;
+    window.hidden = NO;
+    [page loadViewIfNeeded];
+    [page viewDidAppear:NO];
+    UISearchController *search = SGSettingsSearchField(page);
+    check(search != nil, @"a searchable page heads itself with a field");
+    check(search.searchResultsController != nil, @"the field shows the search's own results table");
+    // UIKit's default is the field's automatic rule, which hides the results table until something is typed and takes
+    // it away again when the text is cleared; the search takes the field off that rule when it attaches it.
+    check(search.automaticallyShowsSearchResultsController == NO,
+          @"the field's automatic results rule is off, so an empty field still shows the results");
+
+    // An empty field, up: the recents' table is what shows, and it holds them.
+    search.active = YES;
+    check(search.showsSearchResultsController, @"an empty field up shows its results");
+    UITableView *table = ((UITableViewController *)search.searchResultsController).tableView;
+    [search.searchResultsController loadViewIfNeeded];
+    NSInteger recents = [table.dataSource tableView:table numberOfRowsInSection:0];
+    check(recents == 2, @"the empty field's results hold both stored places");
+
+    id<UISearchResultsUpdating> updater = (id<UISearchResultsUpdating>)search.searchResultsController;
+    // Typed, then cleared: the table stays, and the recents come back.
+    search.searchBar.text = @"plain";
+    [updater updateSearchResultsForSearchController:search];
+    check(search.showsSearchResultsController && [table.dataSource tableView:table numberOfRowsInSection:1] == 1,
+          @"a typed query shows its row");
+    search.searchBar.text = @"";
+    [updater updateSearchResultsForSearchController:search];
+    check(search.showsSearchResultsController, @"an emptied field still shows its results");
+    check([table.dataSource tableView:table numberOfRowsInSection:0] == 2, @"the recents are back on an emptied field");
+
+    // Closing the field takes its table down with it (UIKit's own dismissal), and the search leaves it down until the
+    // field is up again, so a page whose field was closed does not keep a table over it.
+    search.showsSearchResultsController = NO;
+    check(!search.showsSearchResultsController, @"a closed field shows no results");
+    // Up again with nothing typed: the table comes back, the recents with it.
+    search.showsSearchResultsController = YES;
+    check([table.dataSource tableView:table numberOfRowsInSection:0] == 2, @"up again, the recents are shown once more");
+
+    SGSearchForgetRecents();
+    window.hidden = YES;
+    fprintf(stderr, "[harness] search controller checks: %lu failure(s)\n", (unsigned long)failures);
+    return failures;
+}
+
+// A real search over the page Mod Settings makes: the places its rows are stored as are the rows' own names (their
+// searchIdentifier, else their key), never their titles, so a place survives a language switch and a look switch.
+static NSUInteger searchPlacesChecks(void) {
+    __block NSUInteger failures = 0;
+    void (^check)(BOOL, NSString *) = ^(BOOL ok, NSString *what) {
+        if (!ok) {
+            failures++;
+            fprintf(stderr, "[harness] search places FAIL %s\n", what.UTF8String);
+        }
+    };
+    SGSearchForgetRecents();
+    // The page the app opens, over a navigation stack of the harness's own.
+    UIViewController *home = [UIViewController new];
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:home];
+    UIWindow *window = [[UIWindow alloc] initWithFrame:CGRectMake(0, 0, 390, 844)];
+    window.rootViewController = nav;
+    window.hidden = NO;
+    SGOpenModSettings(home.view);
+    SGModPage *page = (SGModPage *)nav.topViewController;
+    [page loadViewIfNeeded];
+    SGSettingsIndex *index = [SGSettingsIndex new];
+    [index startWithRoot:page];
+    while (index.running) [index step];
+    // Every page row of the main page is remembered: each has a name of its own, or (a switch) a key.
+    NSArray<SGSettingsHit *> *hits = [index hitsForQuery:@"appearance"];
+    check(hits.count > 0 && hits.firstObject.place != nil, @"the main page's rows have places");
+    BOOL titled = NO;
+    for (SGSettingsHit *hit in [index hitsForQuery:@"player"]) {
+        if (hit.place.count == 1 && [hit.place.firstObject isEqual:hit.title]) titled = YES;
+    }
+    check(!titled, @"no place is a row's title");
+    // The Appearance row's place says which look it is: the same row under each look is two places.
+    SGSettingsHit *appearance = [index hitsForQuery:@"appearance"].firstObject;
+    NSString *suffix = SGRedesignedUIStored() ? @"redesigned" : @"native";
+    check([appearance.place.firstObject hasSuffix:suffix], @"the Appearance row's place names the stored look");
+    window.hidden = YES;
+    fprintf(stderr, "[harness] search places checks: %lu failure(s)\n", (unsigned long)failures);
+    return failures;
+}
 
 static NSUInteger searchChecks(void) {
     __block NSUInteger failures = 0;
@@ -231,6 +351,16 @@ static void pageStyleChecks(void) {
     if ([NSProcessInfo.processInfo.arguments containsObject:@"search"]) {
         NSUInteger failures = searchChecks();
         NSLog(@"[harness] search %@", failures ? @"failed" : @"passed");
+        exit(failures ? 1 : 0);
+    }
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"search-controller"]) {
+        NSUInteger failures = searchControllerChecks();
+        NSLog(@"[harness] search controller %@", failures ? @"failed" : @"passed");
+        exit(failures ? 1 : 0);
+    }
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"search-places"]) {
+        NSUInteger failures = searchPlacesChecks();
+        NSLog(@"[harness] search places %@", failures ? @"failed" : @"passed");
         exit(failures ? 1 : 0);
     }
     NSLog(@"[harness] page protocol %@", NSStringFromProtocol(@protocol(SPTPageController)));

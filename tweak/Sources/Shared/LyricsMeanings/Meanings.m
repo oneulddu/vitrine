@@ -193,10 +193,10 @@ static void meaningsOf(NSString *trackID, void (^done)(NSArray<SGLyricsMeaning *
 // Each meaning goes to every line its fragment's first matchable line matches, so a chorus explained
 // once is explained wherever it is sung.
 static NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *matched(NSArray<SGLyricsMeaning *> *meanings,
-                                                                        NSArray<SGKaraokeLine *> *lines,
+                                                                        NSArray<NSString *> *lines,
                                                                         SGLyricsMeaningsLevel level) {
     NSMutableArray<NSString *> *texts = [NSMutableArray arrayWithCapacity:lines.count];
-    for (SGKaraokeLine *line in lines) [texts addObject:SGLyricsFoldedText(SGKaraokeLineText(line))];
+    for (NSString *line in lines) [texts addObject:SGLyricsFoldedText(line)];
     SGLyricsMeaningAuthor furthest = level == SGLyricsMeaningsArtist ? SGLyricsMeaningByArtist
                                    : level == SGLyricsMeaningsEditors ? SGLyricsMeaningByEditors : SGLyricsMeaningByCommunity;
     NSMutableDictionary<NSNumber *, NSMutableArray<SGLyricsMeaning *> *> *byLine = [NSMutableDictionary dictionary];
@@ -219,16 +219,41 @@ static NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *matched(NSArray<S
             return a.author < b.author ? NSOrderedAscending : a.author > b.author ? NSOrderedDescending : NSOrderedSame;
         }];
     }
-    return byLine;
+    NSMutableDictionary *answer = [NSMutableDictionary dictionary];
+    for (NSNumber *index in byLine) answer[index] = [byLine[index] copy];
+    return [answer copy];
 }
 
 void SGLyricsMeaningsFor(NSString *trackID, NSArray<SGKaraokeLine *> *lines,
                          void (^done)(NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *byLine)) {
     SGLyricsMeaningsLevel level = SGLyricsMeaningsShown();
     if (level == SGLyricsMeaningsOff || !trackID.length || !lines.count) return;
+    NSMutableArray *texts = [NSMutableArray arrayWithCapacity:lines.count];
+    for (SGKaraokeLine *line in lines) [texts addObject:SGKaraokeLineText(line) ?: @""];
+    NSArray *snapshot = [texts copy];
     meaningsOf(trackID, ^(NSArray<SGLyricsMeaning *> *meanings) {
-        NSDictionary *byLine = meanings.count ? matched(meanings, lines, level) : @{};
-        if (meanings.count) SGLog(@"meanings: %lu of %lu lines of %@ explained", (unsigned long)byLine.count, (unsigned long)lines.count, trackID);
-        done(byLine);
+        static dispatch_queue_t worker;
+        static NSCache *prepared;
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{
+            worker = dispatch_queue_create("vitrine.lyrics.meanings.match", DISPATCH_QUEUE_SERIAL);
+            prepared = [NSCache new];
+            prepared.countLimit = kKeptTracks;
+        });
+        NSArray *referents = [meanings copy];
+        NSArray *key = @[trackID, snapshot, @(level), referents];
+        dispatch_async(worker, ^{
+            NSDictionary *byLine = [prepared objectForKey:key];
+            if (!byLine) {
+                byLine = matched(referents, snapshot, level);
+                [prepared setObject:byLine forKey:key];
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (level != SGLyricsMeaningsShown() || lines.count != snapshot.count) return;
+                for (NSUInteger i = 0; i < lines.count; i++)
+                    if (![(SGKaraokeLineText(lines[i]) ?: @"") isEqual:snapshot[i]]) return;
+                done(byLine);
+            });
+        });
     });
 }

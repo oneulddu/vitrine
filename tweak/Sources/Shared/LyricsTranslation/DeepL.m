@@ -255,6 +255,26 @@ static NSString *unreadable(void) {
 }
 @end
 
+// Runs the job for texts already checked. `memo` is the song and language a kept answer belongs to; prose that is
+// not a song's lyrics passes nil, and nothing is kept for it.
+static void startDeepL(NSString *key, NSString *target, NSArray<NSString *> *texts,
+                       NSArray<NSArray<NSNumber *> *> *batches, NSString *memo,
+                       void (^done)(NSArray<NSString *> *, NSString *)) {
+    NSMutableArray *out = [NSMutableArray array];
+    for (NSUInteger i = 0; i < texts.count; i++) [out addObject:@""];
+    SGDeepLTranslation *job = [SGDeepLTranslation new];
+    job.key = key; job.target = target; job.texts = texts; job.out = out; job.batches = batches;
+    job.done = ^(NSArray *translated, NSString *problem) {
+        if (translated && memo) {
+            if (!sg_done) sg_done = [NSMutableDictionary dictionary];
+            if (sg_done.count >= 32) [sg_done removeAllObjects];
+            sg_done[memo] = @{@"texts": [texts copy], @"translations": translated};
+        }
+        done(translated, problem);
+    };
+    [job advance];
+}
+
 void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                                void (^done)(NSArray<NSString *> *, NSString *)) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -262,28 +282,31 @@ void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lin
         if (!key) { done(nil, SGL(@"settings.translation.deepl.error.nokey", @"Add a DeepL API key on the Lyrics page first.")); return; }
         if (!target) { done(nil, SGL(@"settings.translation.deepl.error.language", @"DeepL does not support this translation language.")); return; }
         if (![lines isKindOfClass:NSArray.class] || lines.count > 2000) { done(nil, unreadable()); return; }
-        NSMutableArray *texts = [NSMutableArray array], *out = [NSMutableArray array];
+        NSMutableArray *texts = [NSMutableArray array];
         for (id line in lines) {
             if (![line isKindOfClass:SGKaraokeLine.class]) { done(nil, unreadable()); return; }
             [texts addObject:SGKaraokeLineText(line) ?: @""];
-            [out addObject:@""];
         }
         NSArray *batches = SGLyricsTranslationBatches(texts, 50, 16000);
         if (!batches) { done(nil, SGL(@"settings.translation.deepl.error.toolong", @"The song is too long to send to DeepL.")); return; }
-        if (!sg_done) sg_done = [NSMutableDictionary dictionary];
-        NSString *memo = [NSString stringWithFormat:@"%@|%@", trackID, languageTag];
-        NSDictionary *cached = trackID ? sg_done[memo] : nil;
+        NSString *memo = trackID ? [NSString stringWithFormat:@"%@|%@", trackID, languageTag] : nil;
+        NSDictionary *cached = memo ? sg_done[memo] : nil;
         if ([cached[@"texts"] isEqual:texts]) { done(cached[@"translations"], nil); return; }
-        SGDeepLTranslation *job = [SGDeepLTranslation new];
-        job.key = key; job.target = target; job.texts = texts; job.out = out; job.batches = batches;
-        job.done = ^(NSArray *translated, NSString *problem) {
-            if (translated && trackID) {
-                if (sg_done.count >= 32) [sg_done removeAllObjects];
-                sg_done[memo] = @{@"texts": [texts copy], @"translations": translated};
-            }
-            done(translated, problem);
-        };
-        [job advance];
+        startDeepL(key, target, texts, batches, memo, done);
+    });
+}
+
+void SGDeepLTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, void (^done)(NSArray<NSString *> *, NSString *)) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *key = storedKey(), *target = SGDeepLTargetLanguage(languageTag);
+        if (!key) { done(nil, SGL(@"settings.translation.deepl.error.nokey", @"Add a DeepL API key on the Lyrics page first.")); return; }
+        if (!target) { done(nil, SGL(@"settings.translation.deepl.error.language", @"DeepL does not support this translation language.")); return; }
+        const NSUInteger maxTextUTF16Units = 16000;
+        SGLyricsTranslateSegments(texts, maxTextUTF16Units, SGProseSegmentUTF16, ^(NSArray *segments, void (^finish)(NSArray *, NSString *)) {
+            NSArray *batches = SGLyricsTranslationBatches(segments, 50, maxTextUTF16Units);
+            if (!batches) { finish(nil, SGLyricsProseTooLong()); return; }
+            startDeepL(key, target, segments, batches, nil, finish);
+        }, done);
     });
 }
 

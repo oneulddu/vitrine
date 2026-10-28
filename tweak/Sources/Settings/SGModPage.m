@@ -305,6 +305,16 @@ SGModRow *SGWithNew(SGModRow *row, NSString *identifier) {
     return row;
 }
 
+SGModRow *SGSearchKeywords(SGModRow *row, NSString *keywords) {
+    row.searchKeywords = keywords;
+    return row;
+}
+
+SGModRow *SGSearchIdentified(SGModRow *row, NSString *identifier) {
+    row.searchIdentifier = identifier;
+    return row;
+}
+
 #pragma mark - the New mark
 
 static BOOL rowIsNew(SGModRow *row) {

@@ -1,10 +1,17 @@
 // What the lock screen fills the screen with, the lyrics' style and whether the downloads run in Low Data
 // Mode. iOS 26 and up only.
 #import "Core/SGCore.h"
+#import "Core/SGOptionalWork.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "AnimatedArtwork.h"
 #import "Shared/LyricsBackground/LyricsBackgroundSettings.h"
+
+SGModRow *SGLoadAheadRow(void) {
+    return SGSwitchRow(SGL(@"settings.load_ahead.title", @"Load ahead"),
+                      SGL(@"settings.load_ahead.subtitle", @"Prepare the next track's artwork and lyrics. Turning this off does not affect the current track."),
+                      SGKeyLoadAhead);
+}
 
 SGLockArtwork SGLockScreenArtwork(void) {
     if (@available(iOS 26.0, *)) {

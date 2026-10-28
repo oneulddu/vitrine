@@ -5,7 +5,22 @@
 #import "Settings/SGModPage.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/Fonts/Fonts.h"
+#import "Shared/Player/PlayerState.h"
+#import "Redesigned/Kit/SGRBridges.h"
+#import "Redesigned/Kit/SGRField.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "App/About/About.h"
+
+// The page previews' cards read the player and the artwork the redesign publishes; with no player here, they are
+// never told anything, and the preview draws its placeholder instead.
+void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer) {}
+SPTPlayerState *SGPlayerState(void) { return nil; }
+NSString *SGURIString(id uri) { return nil; }
+UIImage *SGPlaceholderArtwork(UIColor *tint) { return nil; }
+NSNotificationName const SGRFieldColorDidChangeNotification = @"harness.sgr.fieldcolor";
+NSNotificationName const SGRNowPlayingArtworkDidChangeNotification = @"harness.sgr.artwork";
+UIImage *SGRNowPlayingArtwork(NSString **trackURI, NSString **identity) { return nil; }
+BOOL SGRPageFullCover(NSString *key) { return NO; }
 
 extern BOOL SGHarnessWarning;
 

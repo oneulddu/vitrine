@@ -42,10 +42,11 @@ static NSString *geminiThinkingLevel(void) {
 
 static NSMutableDictionary *geminiGenerationConfig(SGLyricsReplyFormat format) {
     NSMutableDictionary *config = [@{@"thinkingConfig": @{@"thinkingLevel": geminiThinkingLevel()}} mutableCopy];
-    if (format == SGLyricsReplyJSON) {
+    if (format != SGLyricsReplyIndexed) {
         config[@"responseMimeType"] = @"application/json";
         config[@"responseSchema"] = @{@"type": @"ARRAY", @"items": @{@"type": @"STRING"}};
     }
+    if (format == SGLyricsReplyProse) config[@"maxOutputTokens"] = @(SGLyricsAIProseOutputTokens(SGLyricsAIGemini));
     return config;
 }
 
@@ -175,7 +176,8 @@ NSArray<NSString *> *SGGeminiReplyIn(id root, NSInteger status, NSError *error, 
         *problem = blockedBecause(finished);
     } else {
         NSArray *answer = nil;
-        if (valid && !reply[@"error"] && !blocked && (!finished || [finished isEqual:@"STOP"])) {
+        if (valid && !reply[@"error"] && !blocked &&
+            (format == SGLyricsReplyProse ? [finished isEqual:@"STOP"] : (!finished || [finished isEqual:@"STOP"]))) {
             if (format == SGLyricsReplyIndexed) {
                 if ([finished isEqual:@"STOP"]) answer = SGLyricsIndexedRowsIn(text, count);
             } else answer = SGLyricsAIArrayIn(text, count);

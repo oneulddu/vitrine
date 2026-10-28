@@ -10,7 +10,7 @@ FLAGS=(-target arm64-apple-ios17.0-macabi -isysroot "$SDK"
     -framework UIKit -framework Foundation -framework QuartzCore -framework CoreGraphics -framework AVFoundation -framework CoreMedia -framework CoreVideo)
 xcrun -sdk macosx clang "${FLAGS[@]}" -DSG_MOTION_TEST_STORE main.m ../album-notes/catalog-boundary.m \
     ../../tweak/Sources/Core/SGLog.m \
-    ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionCatalog.m \
+    ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionCatalog.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionTicket.m \
     ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionClip.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m \
     -o "$OUT/vitrine-artist-artwork-check"
 VITRINE_TEST_ROOT="$OUT/catalog" "$OUT/vitrine-artist-artwork-check" fixtures/catalog.json
@@ -24,6 +24,6 @@ xcrun -sdk macosx clang "${FLAGS[@]}" header-check.m ../../tweak/Sources/Redesig
     ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionClip.m ../../tweak/Sources/Shared/AdBlock/Protobuf.m \
     -o "$OUT/vitrine-artist-header-check"
 "$OUT/vitrine-artist-header-check"
-xcrun -sdk macosx clang "${FLAGS[@]}" download-check.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionStore.m \
+xcrun -sdk macosx clang "${FLAGS[@]}" download-check.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionStore.m ../../tweak/Sources/Shared/AnimatedArtwork/SGMotionTicket.m \
     -o "$OUT/vitrine-artist-download-check"
 VITRINE_TEST_ROOT="$OUT/downloads" "$OUT/vitrine-artist-download-check"

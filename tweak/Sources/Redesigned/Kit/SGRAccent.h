@@ -1,15 +1,53 @@
-// The redesign's accent color in place of Spotify's green (SGRAccent.x), chosen apart from the native
-// look's and stored under its own key; unset is #37F200, negative keeps Spotify's own green.
+// The redesign's accent token (SGRAccent.x), apart from the native look's. The saved pick defaults
+// to #37F200; negative picks Spotify's green. Automatic temporarily uses the page/playing cover.
 #import <UIKit/UIKit.h>
 
 #define SGRKeyAccent @"spotifyglass.redesign.accent"   // 0xRRGGBB
 // The last color picked, kept while a preset is in place so Custom brings it back.
 #define SGRKeyAccentCustom @"spotifyglass.redesign.accent.custom"
+#define SGRKeyAccentAuto @"spotifyglass.redesign.accent.auto"
+#define SGRKeyHideExplicit @"spotifyglass.redesign.hideExplicit"
 // The redesign's own green until another is picked; Spotify's is a pick of its own, stored as -1.
 #define SGRDefaultAccent 0x37F200
 
-UIColor *SGRAccentColor(void);   // nil while Spotify's own green is kept
+UIColor *SGRAccentColor(void);   // nil for Picked/Spotify, as before; otherwise a live token
+BOOL SGRAccentSubstitutionEnabled(void);
 NSInteger SGRAccentRGB(void);    // the color in effect, 0xRRGGBB, Spotify's green included
+NSInteger SGRPickedAccentRGB(void); // saved pick, never the temporary page/cover color
+extern NSNotificationName const SGRAccentDidChangeNotification;
+// Main-thread ownership. A registered page with nil color uses the playing cover, then the pick.
+// Publication never promotes a page: only the settled foreground controller can do that.
+void SGRAccentPublishPageColor(UIView *page, UIColor *color);
+void SGRAccentRefreshContext(void);
+void SGRAccentTrackTransition(id<UIViewControllerTransitionCoordinator> transition);
+void SGRAccentNavigationWillChange(void);
+void SGRAccentNavigationDidChange(id<UIViewControllerTransitionCoordinator> transition);
+void SGRAccentPreferencesChanged(void);
+// Token colors retain their identity across automatic changes; the drawing hooks refresh assigned tokens.
+UIColor *SGRAccentTokenColor(CGFloat alpha, CGFloat shade);
+BOOL SGRAccentIsToken(UIColor *color);
+// Semantic provenance survives rendering and CAAnimation's copy-on-add. A matching hue/RGB alone
+// is never ownership. Tokens retain alpha/shade and original brand RGB for restoring Picked/Spotify,
+// never an earlier resolved page color.
+@class CAShapeLayer, CAAnimation;
+@interface SGRAccentToken : NSObject
+@property (nonatomic, readonly) CGFloat alpha, shade;
+@property (nonatomic, readonly) NSInteger originalRGB;
+- (instancetype)initWithAlpha:(CGFloat)alpha shade:(CGFloat)shade originalRGB:(NSInteger)originalRGB;
+- (CGColorRef)copyCGColorForRGB:(NSInteger)rgb CF_RETURNS_RETAINED;
+- (CGColorRef)copyGlobalCGColor CF_RETURNS_RETAINED;
+- (UIColor *)color;
+@end
+SGRAccentToken *SGRAccentSource(UIColor *color);
+SGRAccentToken *SGRAccentMarkedCGSource(CGColorRef color);
+SGRAccentToken *SGRAccentCGSource(CGColorRef color);
+SGRAccentToken *SGRAccentImageSource(UIImage *image);
+UIImage *SGRAccentTintedImage(UIImage *image, UIColor *override);
+SGRAccentToken *SGRAccentLayerSource(CAShapeLayer *layer, BOOL stroke);
+// Only newly submitted animations use this override. Installed animations are never replaced.
+void SGRAccentSetLayerOverride(CALayer *layer, UIColor *override);
+void SGRAccentStart(void);
+void SGRRefreshExplicitBadges(void);
 // What a UIColor made from these components comes out as: one of Spotify's greens turns into the accent while it is
 // swapped. NO, and the components untouched, for any other color.
 BOOL SGRAccentSwap(CGFloat *r, CGFloat *g, CGFloat *b);

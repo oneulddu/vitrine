@@ -540,7 +540,9 @@ static UIView *centered(UIView *view, CGFloat width, CGFloat y, CGFloat share, C
 
 SGRPreviewHeader *SGRPreviewAddHeader(SGRPagePreview *card, NSUInteger cover, NSString *badgeSymbol, NSString *trailingSymbol) {
     SGRPreviewHeader *header = [SGRPreviewHeader new];
+    header.fullCover = YES;
     UIImageView *artwork = SGRPreviewCover(cover);
+    artwork.accessibilityIdentifier = @"vitrine.preview.header.artwork";
     UIView *dissolve = SGRPreviewGradient(@[], CGPointMake(0.5, 0), CGPointMake(0.5, 1));
     UIView *badge = SGRPreviewGlass();
     UIImageView *badgeGlyph = SGRPreviewAddSymbol(badge, badgeSymbol, SGRPrimary());
@@ -554,7 +556,11 @@ SGRPreviewHeader *SGRPreviewAddHeader(SGRPagePreview *card, NSUInteger cover, NS
     UIImageView *playGlyph = SGRPreviewAddSymbol(play, @"play.fill", UIColor.blackColor);
     UIView *part = [card addPartWithLayout:^CGFloat(UIView *view, CGFloat width, CGFloat unit) {
         CGFloat artworkHeight = round(kArtworkHeight * unit);
-        artwork.frame = CGRectMake(0, 0, width, artworkHeight);
+        CGFloat coverSide = MIN(artworkHeight, width - 2 * SGRPagePreviewMargin);
+        artwork.frame = header.fullCover ? CGRectMake(0, 0, width, artworkHeight)
+            : CGRectMake((width - coverSide) / 2, 0, coverSide, coverSide);
+        artwork.layer.cornerRadius = header.fullCover ? 0 : 8 * unit;
+        dissolve.alpha = header.fullCover;
         dissolve.frame = CGRectMake(0, artworkHeight * kDissolveFrom, width, artworkHeight * (1 - kDissolveFrom) + 1);
         CGFloat badgeSide = kBadge * unit;
         badge.frame = CGRectMake(SGRPagePreviewMargin, artworkHeight * kDissolveFrom - badgeSide, badgeSide, badgeSide);
@@ -697,11 +703,16 @@ void SGRPreviewAddTopBar(SGRPagePreview *card) {
 @interface SGRPreviewMenu ()
 @property (nonatomic, weak) UIView *overlay;
 @property (nonatomic, strong) NSMutableArray<NSNumber *> *shown;
+@property (nonatomic, strong) NSArray<NSArray<UIView *> *> *rows;
 @end
 
 @implementation SGRPreviewMenu
 - (void)setRow:(NSUInteger)row shown:(BOOL)shown {
     self.shown[row] = @(shown);
+}
+- (void)setRow:(NSUInteger)row word:(NSString *)word {
+    UIView *text = self.rows[row][1];
+    if ([text isKindOfClass:UILabel.class]) ((UILabel *)text).text = word;
 }
 @end
 
@@ -740,6 +751,7 @@ SGRPreviewMenu *SGRPreviewAddMenu(SGRPagePreview *card, NSArray<NSString *> *sym
     overlay.layer.cornerCurve = kCACornerCurveContinuous;
     for (NSArray<UIView *> *row in rows) for (UIView *view in row) [overlay addSubview:view];
     menu.overlay = overlay;
+    menu.rows = rows;
     return menu;
 }
 

@@ -71,10 +71,11 @@ static NSMutableURLRequest *requestFor(NSURL *url, NSDictionary<NSString *, NSSt
     return request;
 }
 
-// The body whatever the status, and the reply it came with; nil for both when there was none.
+// Raw transport completion stays off main. The public helpers decode/transform here and only
+// deliver the finished value to main, where provider caches and the source walk still live.
 static void sendForReply(NSURLRequest *request, void (^done)(NSData *body, NSHTTPURLResponse *response)) {
     if (!request) {
-        dispatch_async(dispatch_get_main_queue(), ^{ done(nil, nil); });
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{ done(nil, nil); });
         return;
     }
     NSURL *url = request.URL;
@@ -82,7 +83,7 @@ static void sendForReply(NSURLRequest *request, void (^done)(NSData *body, NSHTT
         NSHTTPURLResponse *reply = [response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)response : nil;
         SGLyricsNoteReply(response, error);
         if (error || reply.statusCode >= 400) SGLog(@"lyrics: %@ answered %ld, error %@ (%ld)", url.host, (long)reply.statusCode, error.domain, (long)error.code);
-        dispatch_async(dispatch_get_main_queue(), ^{ done(data, reply); });
+        done(data, reply);
     }] resume];
 }
 
@@ -97,24 +98,38 @@ static id jsonIn(NSData *body) {
 }
 
 void SGLyricsGetJSON(NSURL *url, NSDictionary<NSString *, NSString *> *headers, void (^done)(id root)) {
+    SGLyricsGetJSONTransform(url, headers, nil, done);
+}
+
+void SGLyricsGetJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> *headers,
+                              id (^transform)(id), void (^done)(id)) {
     send(requestFor(url, headers), ^(NSData *body) {
-        done(jsonIn(body));
+        id root = jsonIn(body);
+        id result = transform ? transform(root) : root;
+        dispatch_async(dispatch_get_main_queue(), ^{ done(result); });
     });
 }
 
 void SGLyricsGetJSONReply(NSURL *url, NSDictionary<NSString *, NSString *> *headers, void (^done)(id root, NSHTTPURLResponse *response)) {
     sendForReply(requestFor(url, headers), ^(NSData *body, NSHTTPURLResponse *reply) {
-        done(jsonIn(body), reply);
+        id root = jsonIn(body);
+        dispatch_async(dispatch_get_main_queue(), ^{ done(root, reply); });
     });
 }
 
 void SGLyricsGetText(NSURL *url, void (^done)(NSString *text)) {
     send(requestFor(url, nil), ^(NSData *body) {
-        done(body.length ? [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding] : nil);
+        NSString *text = body.length ? [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding] : nil;
+        dispatch_async(dispatch_get_main_queue(), ^{ done(text); });
     });
 }
 
 void SGLyricsPostJSON(NSURL *url, NSDictionary<NSString *, NSString *> *headers, id body, void (^done)(id root)) {
+    SGLyricsPostJSONTransform(url, headers, body, nil, done);
+}
+
+void SGLyricsPostJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> *headers, id body,
+                               id (^transform)(id), void (^done)(id)) {
     NSData *written = [NSJSONSerialization isValidJSONObject:body]
         ? [NSJSONSerialization dataWithJSONObject:body options:0 error:nil] : nil;
     NSMutableURLRequest *request = written ? requestFor(url, headers) : nil;
@@ -122,7 +137,9 @@ void SGLyricsPostJSON(NSURL *url, NSDictionary<NSString *, NSString *> *headers,
     request.HTTPBody = written;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     send(request, ^(NSData *answer) {
-        done(jsonIn(answer));
+        id root = jsonIn(answer);
+        id result = transform ? transform(root) : root;
+        dispatch_async(dispatch_get_main_queue(), ^{ done(result); });
     });
 }
 

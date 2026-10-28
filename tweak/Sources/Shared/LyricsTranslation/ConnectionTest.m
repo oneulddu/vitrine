@@ -42,7 +42,7 @@ static NSURLRequest *testRequest(SGConnectionTestKind kind, NSString **problem) 
     if (kind == SGConnectionTestModels) return SGOpenAIModelsRequest(problem);
     NSString *prompt = SGLyricsTranslationPrompt(@[kSampleSentence], SGLyricsGeminiLanguage());
     if (!prompt) { *problem = SGL(@"settings.translation.openai.error.settings", @"Check the translation service's base URL and model on the Lyrics page."); return nil; }
-    return SGOpenAIRequest(SGLyricsTranslationInstruction(), prompt, problem);
+    return SGOpenAIRequest(SGLyricsTranslationInstruction(), prompt, SGLyricsReplyJSON, problem);
 }
 
 // Validate only the sample's shape. No response content enters the report, even on success.

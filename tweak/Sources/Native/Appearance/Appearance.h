@@ -7,6 +7,8 @@
 #define SGKeyAccent @"spotifyglass.accent"   // 0xRRGGBB; unset or negative keeps Spotify's own green
 // The last color picked, kept while a preset is in place so Custom brings it back.
 #define SGKeyAccentCustom @"spotifyglass.accent.custom"
+#define SGKeyHideExplicit @"spotifyglass.hideExplicit"
+void SGRefreshExplicitBadges(void);
 
 NSInteger SGAccentRGB(void);    // the color in effect, 0xRRGGBB, Spotify's green included
 

@@ -24,6 +24,7 @@ SGRArtworkField *SGRPageFieldIn(UIView *page, const void *key, NSString *pageNam
         field = [[SGRArtworkField alloc] initWithFrame:page.bounds];
         field.bleed = kPageBleed;
         field.mainColor = YES;
+        field.accentPage = page;
         objc_setAssociatedObject(page, key, field, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         SGLog(@"redesign %@: field on the page %.0fx%.0f", pageName, page.bounds.size.width, page.bounds.size.height);
     }

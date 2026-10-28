@@ -125,6 +125,16 @@ Before the fix the gap was -26 pt with nothing under the bar on an iPhone SE, an
 up on any phone: UIKit's glass bar is 83 pt, Spotify's bar was its 49 pt row with no inset under it,
 and the glass bar stood the difference above it, over the now playing bar.
 
+`fade-check.sh` checks the fade under the bars (`spotifyglass.redesign.navbar.fade`) in a simulator of its own:
+`fade toggle` (and `fade toggle split`) switches it off and on live the way the Tab bar page does, and asserts one
+`SGRBarFade` behind the glass from `SGRBarFadeAbovePt` over the glass bar's top to its foot taking no touches (a
+finger in its band lands on the page), none at all when off, none kept alive after 20 turns, the same minimized and
+with the bar hidden, and Spotify's own `TabBarGradientView` left clear throughout. `fade`, `fade off` and
+`fade mini` hold the page in color for a screenshot, and `navsettings` opens the Tab bar page over the bar
+(navsettings.m): its fade switch starts on, the preview reads the fade, and the switch takes the fade off the real
+bar at once. It does so through the switch's own path in the product (`SGRRefreshBarFade`, TabBar.x): stubs.m's
+`SGRRefreshTabBar` lays out nothing, as Navbar.x's would with no bar composed, so a switch that relied on it fails.
+
 What it does not cover: Spotify's own chrome, which is Swift with no symbols (the constraints above
 are read from its code, not run), the real now playing bar's content and its page's inset, the tab
 bar hidden by a page, the player's open and close over the bars, and a regular width.

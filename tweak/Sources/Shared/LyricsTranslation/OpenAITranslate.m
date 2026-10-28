@@ -47,7 +47,7 @@ NSArray<NSString *> *SGOpenAIReplyIn(id root, NSUInteger count, SGLyricsReplyFor
     id first = [choices isKindOfClass:NSArray.class] && [choices count] ? choices[0] : nil;
     id message = [first isKindOfClass:NSDictionary.class] ? first[@"message"] : nil;
     id content = [message isKindOfClass:NSDictionary.class] ? message[@"content"] : nil;
-    if (format == SGLyricsReplyIndexed) {
+    if (format != SGLyricsReplyJSON) {
         if (![first isKindOfClass:NSDictionary.class] || ![message isKindOfClass:NSDictionary.class] ||
             root[@"error"] || ![first[@"finish_reason"] isEqual:@"stop"] ||
             (message[@"refusal"] && message[@"refusal"] != NSNull.null)) return nil;
@@ -55,7 +55,7 @@ NSArray<NSString *> *SGOpenAIReplyIn(id root, NSUInteger count, SGLyricsReplyFor
         // Optional no-call values vary across compatible servers; only the list field admits [].
         if (tools && tools != NSNull.null && (![tools isKindOfClass:NSArray.class] || [tools count])) return nil;
         if (function && function != NSNull.null) return nil;
-        return SGLyricsIndexedRowsIn(content, count);
+        return format == SGLyricsReplyIndexed ? SGLyricsIndexedRowsIn(content, count) : SGLyricsAIArrayIn(content, count);
     }
     return SGLyricsAIArrayIn(content, count);
 }
@@ -238,7 +238,7 @@ void SGLyricsTranslateWithOpenAIFormat(NSString *trackID, NSArray<SGKaraokeLine 
         NSString *prompt = SGLyricsTranslationPromptForFormat(texts, languageTag, format);
         if (!prompt) { done(nil, unreadable()); return; }
         NSString *requestProblem = nil;
-        NSURLRequest *request = SGOpenAIRequest(SGLyricsTranslationInstructionForFormat(format), prompt, &requestProblem);
+        NSURLRequest *request = SGOpenAIRequest(SGLyricsTranslationInstructionForFormat(format), prompt, format, &requestProblem);
         if (!request || !request.HTTPBody || request.HTTPBody.length > 1024 * 1024) { done(nil, requestProblem ?: unreadable()); return; }
         SGLyricsTranslationSendRequest(request, YES, nil, ^(NSData *data, NSInteger status, NSError *error) {
             NSString *problem = nil;
@@ -370,7 +370,7 @@ NSURLRequest *SGOpenAIModelsRequest(NSString **problem) {
     return request;
 }
 
-NSURLRequest *SGOpenAIRequest(NSString *system, NSString *prompt, NSString **problem) {
+NSURLRequest *SGOpenAIRequest(NSString *system, NSString *prompt, SGLyricsReplyFormat format, NSString **problem) {
     NSString *base = setting(SGKeyLyricsOpenAIBaseURL, kBase);
     NSString *key = storedKey(base), *model = SGOpenAIModel();
     NSURL *endpoint = SGOpenAICompletionURL(base);
@@ -381,7 +381,9 @@ NSURLRequest *SGOpenAIRequest(NSString *system, NSString *prompt, NSString **pro
     request.timeoutInterval = 60;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:[@"Bearer " stringByAppendingString:key] forHTTPHeaderField:@"Authorization"];
-    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"model": model, @"messages": @[
-        @{@"role": @"system", @"content": system}, @{@"role": @"user", @"content": prompt}]} options:0 error:nil];
+    NSMutableDictionary *body = [@{@"model": model, @"messages": @[
+        @{@"role": @"system", @"content": system}, @{@"role": @"user", @"content": prompt}]} mutableCopy];
+    if (format == SGLyricsReplyProse) body[@"max_tokens"] = @(SGLyricsAIProseOutputTokens(SGLyricsAIOpenAI));
+    request.HTTPBody = [NSJSONSerialization dataWithJSONObject:body options:0 error:nil];
     return request;
 }

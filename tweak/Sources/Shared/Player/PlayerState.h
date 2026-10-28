@@ -17,6 +17,8 @@ NSString *SGURIString(id uri);
 // Upcoming tracks with a title and a nonnil string/URL URI, in order, including duplicates.
 // Stops as soon as `limit` tracks qualify; pass NSUIntegerMax for the full list.
 NSArray<SPTPlayerTrack *> *SGPlayerUpcomingTracks(SPTPlayerState *state, NSUInteger limit);
+// Only the first future item, if it is a track with a nonempty URI different from current.
+SPTPlayerTrack *SGPlayerUpNextIn(SPTPlayerState *state);
 
 // Spotify's Repeat button's next mode: off, then the playlist or album, then the track, then off again.
 // Sends the commands to `player` in that order and returns what the last one answered.
@@ -33,6 +35,8 @@ id SGPlayerInstance(void);
 @optional
 // Every accepted report, including position-only updates. Called before the change callback.
 - (void)playerStateDidReport:(SPTPlayerState *)state;
+// Current/first-future identity changed. Also reports an empty/invalid next item.
+- (void)playerUpNextDidChange:(SPTPlayerState *)state;
 @end
 // Observers are held weakly and need no removal.
 void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer);

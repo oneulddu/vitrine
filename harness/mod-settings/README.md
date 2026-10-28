@@ -34,7 +34,14 @@ both. With main's ModSettings.x before the fix it read 0 and 0 for the drawer an
 `search` runs `Settings/SGSettingsSearch.m`'s initials rules without a search bar: each syllable becomes its
 initial (`번역` → `ㅂㅇ`, `가사 설정` → `ㄱㅅ ㅅㅈ`), initials words match rows, double consonants and mixed
 queries work, plain Latin queries are unchanged and a vowel jamo (`ㅏ`) is not treated as initials. It logs
-`search passed` and exits 0, or logs the failures and exits 1.
+`search passed` and exits 0, or logs the failures and exits 1. The rules now live in `Settings/SGSettingsIndex.m`;
+the index, the keywords and the recents are `harness/settings-search/`'s, which runs offline.
+
+`search-controller` drives the real `UISearchController` of a searchable page and its real results table: an empty
+field up shows the table with the two stored places on it, a typed query shows its row, and clearing the text brings
+the recents back — the field is off UIKit's automatic rule, which would take the table away on an empty field. A
+closed field shows no results, and up again the recents are there. It logs `search controller passed` and exits 0,
+or logs the failures and exits 1.
 
 `needs` pushes the Lock screen page's artwork section as iOS 18 to 25 get it (the real
 `AnimatedArtworkSettings.m`'s `SGLockScreenArtworkNeedsRow`), and `tap=<section>.<row>` selects a row and logs the

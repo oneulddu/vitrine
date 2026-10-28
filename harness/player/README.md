@@ -75,7 +75,7 @@ sources, for example an older commit, to see a bug before its fix.
 
 `build.sh` runs `logos.pl -c generator=internal` over `PlayerLyrics.x`, `PlayerArtwork.x`,
 `PlayerControls.x`, `PlayerFooter.x`, `PlayerScroll.x`, `PlayerField.x`, `PlayerHeader.x` (the glass circles of
-the down arrow and the ⋯, in a mocked `HeaderElementsUnit`, and their press) and the Kit's `SGRBridges.x`, and links them with
+the down arrow and the ⋯, in a mocked `HeaderElementsUnit`, and their press), `DJPlayer.x` and the Kit's `SGRBridges.x`, and links them with
 the real `Core/`, `Redesigned/Kit/`, `SGRKaraokeView`, `Settings/`, the Player page and the Visualizer (`PlayerVisualiser.m`, `SGRSpectrum.m`). `stubs.m` stands in for the hooks the harness
 does not compile (the Kit's accent and repaint, the rest of the player, the lyrics store, the haptics,
 Sing's mic) and plays a mock player: `SGRHarnessSetTrack` reports a track, with the image ids Spotify's
@@ -185,6 +185,31 @@ come late, out of order, or not at all.
   to the slider as touch down, value changed and touch up with the slider still tracking, that a drag nobody
   seeks for is seeked directly after a second, and that the slider lets go once the position is there. The
   log ends with `seek checks: n of 9 right -- PASS` or `FAIL`.
+
+- `options` is the Player page's look switches and Fluid's Grain (`PlayerHeader.x`, `PlayerFooter.x`, `DJPlayer.x`,
+  `PlayerSettings.m`, `SGRFluid.m`, `SGRFluidGPU.m`). It builds a mock of the AI DJ's header and footer units too (their
+  mangled `Endless_DJMusicImpl` names) and the queue's `SPTEncoreIconView`, starts with Fluid drawn Smooth and every
+  switch at its standard, and leaves layout to UIKit (no once-a-second pass), so a switch has to reach the open player
+  by itself. It checks the glass circles in both headers and the Music app's Connect and queue glyphs over Spotify's;
+  then, with the Player page over the player, flips Header glass and Music app icons off through their switches and
+  checks the circles gone with the buttons' touches, grabber and accessibility kept, Spotify's own Connect glyphs and
+  the queue's own colors back, and a new device glyph Spotify draws while off left alone; then both on again. Grain's
+  row shows only while Smooth draws. Then what Spotify sets while the stand-ins show comes back exactly when they go:
+  Connect cleared to nil and handed an image with no bitmap, the queue's two colors reset to nil, and a value set while
+  they were out is not replaced by the record from the time before. With the song paused it reads the field's top band
+  at Grain 0, 100 and 200 on Smooth (more grain each time, a visible one at 200) and on Light at 100, a second after
+  the switch from Smooth, then 0 and 200 (all three the same pixels). The steps run one after another, each its delay
+  after the last one ran: scheduled all at once from launch, `dispatch_after`'s leeway let two fire together with no
+  layout pass between. Each state a screenshot is asked for (`options: screenshot <name> now`) holds two seconds or
+  more. The log ends with `options checks: n of 16 right -- PASS` or `FAIL`, and the app exits with it.
+- `renderer` is the switch from Smooth to Light on its own, five times with the song paused: the field read about 0.2,
+  0.5, 1 and 2 s after it (each read's own time logged, with whether Smooth shows, the Metal layers in the field and
+  the Light copies hidden), compared with the band read about 4 s after; the read a second after must match it. It
+  uses only Kit API the committed renderer has too, so it also runs with HEAD's `SGRFluid.m` and `SGRFluidGPU.m` copied
+  into a source tree (`SRC=`). The log ends with `renderer checks: n of 5 right -- PASS` or `FAIL`.
+
+`stubs-tickets.m` stands in for `MotionSources.m`'s `SGMotionRequestClip` and is compiled only where the sources have
+`Shared/AnimatedArtwork/SGMotionTicket.m`.
 
 `HARNESS_VOLUME=0` leaves out the volume row that the phone has and the tree does not.
 

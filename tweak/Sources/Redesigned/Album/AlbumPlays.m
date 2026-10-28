@@ -100,16 +100,3 @@ NSUInteger SGRAlbumPlayCount(NSString *album, NSString *title) {
     NSString *key = keyOf(album, title);
     return key ? sgr_counts[key].unsignedIntegerValue : 0;
 }
-
-// The number in full with the locale's grouping (12,345), never shortened to K or M.
-NSString *SGRAlbumPlaysText(NSUInteger plays) {
-    if (!plays) return nil;
-    static NSNumberFormatter *formatter;
-    if (!formatter) {
-        formatter = [NSNumberFormatter new];
-        formatter.numberStyle = NSNumberFormatterDecimalStyle;
-    }
-    NSString *number = [formatter stringFromNumber:@(plays)];
-    return [NSString stringWithFormat:plays == 1 ? SGL(@"settings.album.play_counts.count.singular", @"%@ play")
-                                                 : SGL(@"settings.album.play_counts.count.plural", @"%@ plays"), number];
-}

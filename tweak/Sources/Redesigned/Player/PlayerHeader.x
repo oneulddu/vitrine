@@ -13,6 +13,10 @@
 // The add button keeps no circle: its glyph is a circle of its own, green and filled once the track is
 // saved, and on glass it read as a disc on a disc (device test, 2026-09-17).
 //
+// The circles can be switched off on the Player page (SGRKeyPlayerHeaderGlass), which the open player follows at
+// once: only the circles go, and each button draws as Spotify's own again. The arrow then shows Spotify's own press;
+// the ⋯, whose touches the mod's button over it takes (ContextMenu.x), shows none.
+//
 // Tree (trees/clean/player/01.txt): HeaderElementsUnit's view is a 402x48 row holding
 // id=now-playing-minimize-button 48x48 (:103) and id=Context menu 48x48 (:122), the playlist name
 // between them. The down arrow and the ⋯ are a pair, as the Music app's are: the same circle, size and glass.
@@ -61,11 +65,21 @@ static void pressFrom(UIControl *control, BOOL throughMenu) {
     [control addTarget:press action:@selector(up:) forControlEvents:throughMenu ? up : up | UIControlEventTouchCancel];
 }
 
+// The button's circle, taken out while the header glass is switched off (SGRKeyPlayerHeaderGlass); the next pass with
+// it on makes a new one. Only the circle goes: the button, its press watcher and the ⋯'s handover stay.
+static void dropCircle(UIView *button) {
+    UIView *circle = objc_getAssociatedObject(button, &kGlassKey);
+    if (!circle) return;
+    [circle removeFromSuperview];
+    objc_setAssociatedObject(button, &kGlassKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
 // `identifiers` holds, for each button, the identifiers it may carry, the first found winning. `watchMenu`: the ⋯ is
 // handed to PlayerMenu.m, which takes it for the ordinary player's; the AI DJ's ⋯ keeps Spotify's own menu.
 static void glassInside(UIViewController *unit, NSArray<NSArray<NSString *> *> *identifiers, const void **findKeys, BOOL watchMenu) {
     UIView *host = unit.viewIfLoaded;
     if (!host) return;
+    BOOL glass = SGEnabled(SGRKeyPlayerHeaderGlass);
     NSUInteger found = 0;
     for (NSUInteger i = 0; i < identifiers.count; i++) {
         UIView *button = nil;
@@ -82,10 +96,11 @@ static void glassInside(UIViewController *unit, NSArray<NSArray<NSString *> *> *
             }
             continue;
         }
-        UIView *circle = SGRGlassInside(button, &kGlassKey, SGRGlassCircleSize);
+        UIView *circle = glass ? SGRGlassInside(button, &kGlassKey, SGRGlassCircleSize) : nil;
+        if (!glass) dropCircle(button);
         if (![said containsObject:name] && button.bounds.size.width > 0) {
             [said addObject:name];
-            SGLog(@"redesign player: a %.0fpt glass circle in %@ (id %@, %.0fx%.0f, %@)", circle.bounds.size.width, NSStringFromClass(button.class),
+            SGLog(@"redesign player: %@ in %@ (id %@, %.0fx%.0f, %@)", circle ? [NSString stringWithFormat:@"a %.0fpt glass circle", circle.bounds.size.width] : @"no glass circle, switched off", NSStringFromClass(button.class),
                   button.accessibilityIdentifier, button.bounds.size.width, button.bounds.size.height,
                   button.hidden || button.alpha < 0.01 ? @"hidden" : @"shown");
         }
@@ -166,7 +181,9 @@ static void glassHeader(UIViewController *unit, BOOL watchMenu) {
     static const void *keys[] = {&kCloseKey, &kMoreKey};
     glassInside(unit, @[@[@"now-playing-minimize-button", @"mobile-nowplaying-close-button"], @[@"Context menu"]], keys, watchMenu);
     UIView *header = unit.viewIfLoaded;
-    if (header) placeGrabber(header);
+    if (!header) return;
+    placeGrabber(header);
+    SGRPlayerWatchLook(header);
 }
 
 %hook _TtC20NowPlaying_ModesImpl18HeaderElementsUnit

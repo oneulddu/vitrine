@@ -6,7 +6,7 @@ OUT=${OUT:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/PlayerHarness.app"
 
 for f in Redesigned/Player/PlayerLyrics.x Redesigned/Player/PlayerArtwork.x Redesigned/Player/PlayerFooter.x \
-         Redesigned/Player/PlayerScroll.x Redesigned/Player/PlayerField.x Redesigned/Player/PlayerMotion.x Redesigned/Player/PlayerLandscape.x Redesigned/Player/PlayerControls.x Redesigned/Player/PlayerHeader.x Redesigned/Player/PlayerCoverAccent.x Redesigned/Kit/SGRBridges.x; do
+         Redesigned/Player/PlayerScroll.x Redesigned/Player/PlayerField.x Redesigned/Player/PlayerMotion.x Redesigned/Player/PlayerLandscape.x Redesigned/Player/PlayerControls.x Redesigned/Player/PlayerHeader.x Redesigned/Player/PlayerCoverAccent.x Redesigned/Player/DJPlayer.x Redesigned/Kit/SGRBridges.x; do
     name=$(basename "$f" .x)
     "$THEOS/bin/logos.pl" -c generator=internal "$SRC/$f" > "$OUT/gen/$name.m"
 done
@@ -19,7 +19,8 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     "$(dirname "$0")/main.m" "$(dirname "$0")/../scene.m" "$(dirname "$0")/stubs.m" "$(dirname "$0")/../tabbar/touch.m" \
     "$OUT"/gen/*.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m "$SRC"/Core/SGLocalize.m \
-    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m "$SRC"/Core/SGFileHash.m \
+    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m "$SRC"/Core/SGFileHash.m "$SRC"/Core/SGOptionalWork.m \
+    "$SRC"/Redesigned/Kit/SGRRollingDigits.m "$SRC"/Redesigned/Kit/SGRRefinements.m \
     "$SRC"/Redesigned/Kit/SGRTokens.m "$SRC"/Redesigned/Kit/SGRPalette.m "$SRC"/Redesigned/Kit/SGRField.m "$SRC"/Redesigned/Kit/SGRFlow.m "$SRC"/Redesigned/Kit/SGRFluid.m "$SRC"/Redesigned/Kit/SGRFluidGPU.m "$SRC"/Shared/AnimatedArtwork/SGMotionCatalog.m "$SRC"/Shared/AnimatedArtwork/SGMotionStore.m \
     "$SRC"/Shared/AnimatedArtwork/SGMotionFollower.m "$SRC"/Shared/AnimatedArtwork/SGMotionClip.m "$SRC"/Shared/Player/SGLastTrack.m \
     "$SRC"/Redesigned/Kit/SGRGlass.m "$SRC"/Settings/SGMarquee.m "$SRC"/Redesigned/Kit/SGRGlyph.m "$SRC"/Redesigned/Kit/SGRRestyle.m \
@@ -28,11 +29,13 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     $( [ -f "$SRC"/Redesigned/Player/PlayerBackdrop.m ] && echo "$SRC"/Redesigned/Player/PlayerBackdrop.m ) \
     "$SRC"/Settings/SGPage.m "$SRC"/Settings/SGPageStyle.m "$SRC"/Settings/SGModPage.m "$SRC"/Settings/SGGlowSwitch.m \
     $( [ -f "$SRC"/Settings/SGSettingsSearch.m ] && echo "$SRC"/Settings/SGSettingsSearch.m ) \
+    $( [ -f "$SRC"/Settings/SGSettingsIndex.m ] && echo "$SRC"/Settings/SGSettingsIndex.m ) \
+    $( [ -f "$SRC"/Shared/AnimatedArtwork/SGMotionTicket.m ] && echo "$SRC"/Shared/AnimatedArtwork/SGMotionTicket.m "$(dirname "$0")"/stubs-tickets.m ) \
     $( [ -f "$SRC"/Redesigned/Lyrics/AutoTranslation.m ] && echo "$SRC"/Redesigned/Lyrics/AutoTranslation.m ) $( [ -f "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ] && echo "$SRC"/Redesigned/Lyrics/TranslationStatusView.m ) "$SRC"/Redesigned/Lyrics/SGRKaraokeView.m "$SRC"/Redesigned/Lyrics/LyricsLook.m "$SRC"/Redesigned/Lyrics/LyricsStyle.m "$SRC"/Redesigned/Kit/SGRPress.m "$SRC"/Redesigned/Lyrics/SGRSingButton.m "$SRC"/Redesigned/Lyrics/MeaningSheet.m "$SRC"/Redesigned/Lyrics/LyricsText.m "$SRC"/Shared/Lyrics/KaraokeTiming.m "$SRC"/Shared/Lyrics/Romanise.m "$SRC"/Shared/AdBlock/Protobuf.m \
     "$SRC"/Shared/Lyrics/LyricsLanguage.m "$SRC"/Shared/Lyrics/LyricsSettings.m "$SRC"/Redesigned/Lyrics/SongLanguage.m "$SRC"/Redesigned/Lyrics/LyricsTools.m \
     "$SRC"/Shared/LyricsTranslation/LyricsTranslation.m "$SRC"/Shared/LyricsTranslation/SavedTranslations.m "$SRC"/Shared/LyricsTranslation/TranslatedTitles.m "$SRC"/Shared/LyricsTranslation/AIServices.m "$SRC"/Shared/LyricsTranslation/OpenAITranslate.m "$SRC"/Shared/LyricsTranslation/BingTranslate.m "$SRC"/Shared/LyricsTranslation/ClaudeTranslate.m "$SRC"/Shared/LyricsTranslation/DeepL.m "$SRC"/Shared/LyricsTranslation/GoogleTranslate.m \
     "$SRC"/Redesigned/Lyrics/AutoTranslatorName.m "$SRC"/Shared/LyricsTranslation/CredentialSettings.m "$SRC"/Shared/LyricsSources/SGTTML.m \
-    -framework UIKit -framework IOKit -framework QuartzCore -framework Metal -framework CoreGraphics -framework CoreImage -framework Foundation -framework NaturalLanguage -framework Symbols -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework Accelerate -framework PhotosUI -framework Security -framework MediaPlayer \
+    -framework UIKit -framework IOKit -framework QuartzCore -framework Metal -framework CoreGraphics -framework CoreImage -framework Foundation -framework NaturalLanguage -framework Symbols -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework Accelerate -framework PhotosUI -framework Security -framework MediaPlayer -framework Network -framework CoreText \
     -o "$OUT/PlayerHarness.app/PlayerHarness"
 
 cat > "$OUT/PlayerHarness.app/Info.plist" <<'PLIST'

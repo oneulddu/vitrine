@@ -19,6 +19,7 @@
     NSString *_source;   // where the clip found came from, nil for none or not found yet
     NSUInteger _walk;    // counts the walks, so an overtaken one is told from the newest
     NSString *_ahead;    // the next track whose clip was fetched ahead
+    SGMotionTicket *_currentTicket, *_aheadTicket;
 }
 
 - (instancetype)initWithBegin:(BOOL (^)(NSString *, SPTPlayerState *))begin found:(void (^)(NSString *, NSURL *))found {
@@ -26,16 +27,40 @@
     _begin = [begin copy];
     _found = [found copy];
     SGAddPlayerStateObserver(self);
+    [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(defaultsChanged:) name:NSUserDefaultsDidChangeNotification object:nil];
     return self;
+}
+
+- (void)dealloc {
+    [_currentTicket cancel];
+    [_aheadTicket cancel];
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+- (void)defaultsChanged:(NSNotification *)note {
+    dispatch_async(dispatch_get_main_queue(), ^{ [self fetchAhead]; });
 }
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
     [self playerStateDidReport:state];
+    [self fetchAhead];
+}
+
+- (void)playerUpNextDidChange:(SPTPlayerState *)state {
+    [self fetchAhead];
 }
 
 - (void)playerStateDidReport:(SPTPlayerState *)state {
     NSString *uri = SGURIString(state.track.URI);
-    if (!uri) return;
+    if (!uri.length) {
+        [_currentTicket cancel];
+        _currentTicket = nil;
+        _track = nil;
+        _walked = NO;
+        _walk++;
+        [self fetchAhead];
+        return;
+    }
     NSURL *canvas = SGMotionCanvasIn(state.track.metadata);
     if ([uri isEqualToString:_track]) {
         if (!_walked || _canvas || !canvas || !SGMotionCanvasOutranks(SGMotionSourceOrder(), _source)) return;
@@ -45,15 +70,17 @@
 }
 
 - (void)walk:(SPTPlayerState *)state uri:(NSString *)uri canvas:(NSURL *)canvas {
+    [_currentTicket cancel];
+    _currentTicket = nil;
     _track = uri;
     _canvas = canvas;
     _source = nil;
     NSUInteger walk = ++_walk;
     _walked = _begin(uri, state);
-    if (!_walked) return;
+    if (!_walked) { [self fetchAhead]; return; }
     NSDictionary *metadata = [state.track.metadata isKindOfClass:NSDictionary.class] ? state.track.metadata : nil;
     __weak SGMotionFollower *weakSelf = self;
-    SGMotionClipFor(uri, canvas, state.track.artistName, metadata[@"album_title"], SGMotionPixels(), ^(NSURL *file, NSString *source) {
+    _currentTicket = SGMotionRequestClip(uri, canvas, state.track.artistName, metadata[@"album_title"], SGMotionPixels(), ^(NSURL *file, NSString *source) {
         SGMotionFollower *follower = weakSelf;
         if (!follower || walk != follower->_walk) return;
         follower->_source = source;
@@ -65,22 +92,27 @@
 // The next track's clip, fetched into the store once, so a skip finds it there.
 - (void)fetchAhead {
     SPTPlayerState *state = SGPlayerState();
-    id future = [state respondsToSelector:@selector(future)] ? state.future : nil;
-    id next = [future isKindOfClass:NSArray.class] ? [(NSArray *)future firstObject] : nil;
-    if (![next isKindOfClass:objc_getClass("SPTPlayerTrack")]) return;
-    SPTPlayerTrack *track = next;
+    SPTPlayerTrack *track = SGPlayerUpNextIn(state);
     NSString *uri = SGURIString(track.URI);
-    if (!uri || [uri isEqualToString:_track] || [uri isEqualToString:_ahead]) return;
-    if (!SGOptionalWorkMayRun(NO)) return;
+    BOOL allowed = _walked && uri.length && SGOptionalWorkMayRun(NO);
+    if (allowed && [uri isEqualToString:_ahead]) return;
+    [_aheadTicket cancel];
+    _aheadTicket = nil;
+    _ahead = nil;
+    if (!allowed) return;
     _ahead = uri;
     NSDictionary *metadata = [track.metadata isKindOfClass:NSDictionary.class] ? track.metadata : nil;
-    SGMotionClipFor(uri, SGMotionCanvasIn(metadata), track.artistName, metadata[@"album_title"], SGMotionPixels(),
+    _aheadTicket = SGMotionRequestClip(uri, SGMotionCanvasIn(metadata), track.artistName, metadata[@"album_title"], SGMotionPixels(),
                     ^(NSURL *file, NSString *source) {
         SGLog(@"motion: the next track's clip fetched ahead: %@", file ? source : @"none");
     });
 }
 
 - (void)restart {
+    [_currentTicket cancel];
+    [_aheadTicket cancel];
+    _currentTicket = _aheadTicket = nil;
+    _ahead = nil;
     _track = nil;
     _walk++;
     SPTPlayerState *state = SGPlayerState();

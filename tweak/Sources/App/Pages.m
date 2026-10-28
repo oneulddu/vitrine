@@ -1,4 +1,5 @@
 #import "Core/SGCore.h"
+#import "Core/SGOptionalWork.h"
 #import "Shared/AppIcon/AppIcon.h"
 #import "Shared/AudioEffects/AudioEffectsPage.h"
 #import "Shared/Fonts/Fonts.h"
@@ -93,14 +94,36 @@ SGModRow *SGRedesignedUIRow(void) {
     return SGWithTile(redesign, @"sparkles", UIColor.systemIndigoColor);
 }
 
+// The words the search finds these rows by besides their titles (SGModRow.searchKeywords): what the settings are
+// called elsewhere, and what people call what they change, in this language.
+static void foundBy(NSArray<SGModRow *> *rows, NSString *keywords) {
+    for (SGModRow *row in rows) SGSearchKeywords(row, keywords);
+}
+
+// The name the search remembers a page row of these pages as when its results lead there (SGModRow.searchIdentifier):
+// a page row has no key to be named by, and the name must not be its title, which the language changes. Pages whose
+// rows differ by look are under a look-named row already, or say the look here.
+static SGModRow *named(SGModRow *row, NSString *name) {
+    return SGSearchIdentified(row, [NSString stringWithFormat:@"page.%@", name]);
+}
+
 // The stored look's own rows, then the font and the app icon, which work under either look on any iOS.
 // Redesigned UI itself leads Mod Settings' main page.
+//
+// A row is remembered by the search under its own key (SGModRow.searchIdentifier falls back to it), which is already
+// the look's: the native look's Accent color rows store under SGKeyAccent and SGKeyAmoled, the redesign's under
+// SGRKeyAccent and SGRKeyAccentAuto, so one recent place can never lead into the other look's setting. The rows of
+// either look's list that have no key of their own (the accent preset and color rows, whose keys their blocks hold)
+// carry a searchIdentifier set where they are built.
 UIViewController *SGAppearancePage(void) {
     NSMutableArray<SGModRow *> *everywhere = [NSMutableArray arrayWithArray:SGAppFontRows()];
     SGModRow *icon = SGAppIconRow();
     if (icon) [everywhere addObject:icon];
+    NSArray<SGModRow *> *look = SGRedesignedUIStored() ? SGRAppearanceRows() : SGNativeAppearanceRows();
+    foundBy(look, SGL(@"settings.search.appearance.look.keywords", @"theme colour color accent typeface amoled black dark"));
+    foundBy(everywhere, SGL(@"settings.search.appearance.everywhere.keywords", @"typeface font app icon"));
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.appearance.title", @"Appearance") intro:SGRestartNote sections:@[
-        SGSection(nil, SGRedesignedUIStored() ? SGRAppearanceRows() : SGNativeAppearanceRows()),
+        SGSection(nil, look),
         SGSection(nil, everywhere),
     ] footer:nil];
 }
@@ -115,23 +138,23 @@ UIViewController *SGWorkshopPage(void) {
     NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
     if (SGRedesignedUIStored()) {
         [sections addObject:SGSection(SGL(@"settings.workshop.look.header", @"Look"), @[
-            SGWithTile(SGPageRow(SGL(@"settings.workshop.visualizers.title", @"Visualizers"), ^UIViewController *{ return SGRVisualiserSettingsPage(); }),
+            SGWithTile(named(SGPageRow(SGL(@"settings.workshop.visualizers.title", @"Visualizers"), ^UIViewController *{ return SGRVisualiserSettingsPage(); }), @"visualizers"),
                        @"waveform.path", UIColor.systemPurpleColor),
-            SGWithNew(SGWithTile(SGPageRow(SGL(@"settings.lyricsstyle.title", @"Lyrics styles"), ^UIViewController *{ return SGRLyricsStylesSettingsPage(); }),
+            SGWithNew(SGWithTile(named(SGPageRow(SGL(@"settings.lyricsstyle.title", @"Lyrics styles"), ^UIViewController *{ return SGRLyricsStylesSettingsPage(); }), @"lyricsstyles"),
                        @"textformat", UIColor.systemPinkColor), @"lyricsStyles"),
         ])];
     }
 
     [sections addObject:SGSection(SGL(@"settings.workshop.sound.header", @"Sound"), @[
-        SGWithTile(SGPageRow(SGL(@"settings.workshop.audio_presets.title", @"Audio presets"), ^UIViewController *{ return SGDSPPresetsPage(); }),
+        SGWithTile(named(SGPageRow(SGL(@"settings.workshop.audio_presets.title", @"Audio presets"), ^UIViewController *{ return SGDSPPresetsPage(); }), @"audiopresets"),
                    @"slider.vertical.3", UIColor.systemRedColor),
-        SGWithTile(SGPageRow(SGL(@"settings.workshop.headphones.title", @"Headphones"), ^UIViewController *{ return SGDSPHeadphonesPage(); }),
+        SGWithTile(named(SGPageRow(SGL(@"settings.workshop.headphones.title", @"Headphones"), ^UIViewController *{ return SGDSPHeadphonesPage(); }), @"headphones"),
                    @"headphones", UIColor.systemBlueColor),
     ])];
 
     NSMutableArray<SGModRow *> *fonts = [NSMutableArray array];
     for (SGModRow *row in SGAppFontRows()) [fonts addObject:SGWithTile(row, @"textformat.alt", UIColor.systemIndigoColor)];
-    [fonts addObject:SGWithTile(SGPageRow(SGL(@"settings.workshop.free_fonts.title", @"Free fonts"), ^UIViewController *{ return SGFontLibraryPage(); }),
+    [fonts addObject:SGWithTile(named(SGPageRow(SGL(@"settings.workshop.free_fonts.title", @"Free fonts"), ^UIViewController *{ return SGFontLibraryPage(); }), @"freefonts"),
                                 @"arrow.down.circle", UIColor.systemTealColor)];
     if (fonts.count) [sections addObject:SGSection(SGL(@"settings.workshop.type.header", @"Type"), fonts)];
 
@@ -166,6 +189,8 @@ static UIViewController *lyricsPage(void) {
     if (!redesigned) [more insertObject:SGGlassLyricsRow() atIndex:0];
     SGModRow *sing = SGPageRow(SGL(@"settings.lyrics.sing.title", @"Karaoke"), ^UIViewController *{ return SGSingSettingsPage(); });
     sing.value = ^NSString *{ return SGSingSummary(); };
+    // The main page's own Karaoke row is page.sing; this one is the Lyrics page's.
+    named(sing, @"lyrics.sing");
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:SGSection(nil, @[SGWithTile(sing, @"music.mic", UIColor.systemRedColor)]),
                                                 SGLyricsSourcesSection(redesigned), nil];
     SGModSection *timing = SGNotedSection(SGL(@"settings.lyrics.timing.header", @"Timing"), @[SGLyricsDelayRow()],
@@ -176,6 +201,7 @@ static UIViewController *lyricsPage(void) {
         SGModRow *translation = SGPageRow(SGL(@"settings.lyrics.translation_ai.title", @"Translation & AI"), ^UIViewController *{ return translationPage(); });
         // Reuse the language row's value reader, including its fallback for an unset selection.
         translation.value = SGLyricsTranslationLanguageRow().value;
+        named(translation, @"lyrics.translation");
         [sections addObjectsFromArray:@[
             SGSection(SGL(@"settings.lyrics.display.header", @"Display"), @[SGRLyricsTextSizesRow(), SGLyricsWordTimingRow(), SGLyricsRomanisedRow(),
                 SGLyricsJapaneseReadingRow(), SGLyricsFuriganaRow(), SGRLyricsKeepAwakeRow(),
@@ -202,22 +228,22 @@ UIViewController *SGLyricsSettingsPage(void) {
 }
 
 UIViewController *SGPlayerSettingsPage(void) {
-    SGModRow *blocked = SGPageRow(SGL(@"settings.player.blocked_artists.title", @"Blocked artists"), ^UIViewController *{ return SGArtistBlockSettingsPage(); });
+    BOOL native = !SGRedesignedUIStored();
+    SGModRow *blocked = named(SGPageRow(SGL(@"settings.player.blocked_artists.title", @"Blocked artists"), ^UIViewController *{ return SGArtistBlockSettingsPage(); }), @"player.blockedartists");
     blocked.value = ^NSString *{
         return SGFlag(SGKeyArtistBlock, NO) ? @(SGBlockedArtists().count).stringValue : SGL(@"common.off", @"Off");
     };
-    BOOL native = !SGRedesignedUIStored();
 
     // AirPods gestures, the lock screen widget and Vibrations have rows of their own on Mod Settings' main page.
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObject:SGSection(nil, @[
-        SGWithTile(SGPageRow(SGL(@"settings.player.gestures.title", @"Gestures"), ^UIViewController *{ return SGGesturesSettingsPage(); }), @"hand.tap", UIColor.systemBlueColor),
+        SGWithTile(named(SGPageRow(SGL(@"settings.player.gestures.title", @"Gestures"), ^UIViewController *{ return SGGesturesSettingsPage(); }), @"player.gestures"), @"hand.tap", UIColor.systemBlueColor),
         SGWithTile(blocked, @"person.crop.circle.badge.xmark", UIColor.systemRedColor),
     ])];
     [sections addObject:SGSleepTimerSettingsSection()];
     if (native) {
         [sections addObject:SGSection(nil, @[
-            SGWithTile(SGPageRow(SGL(@"settings.player.now_playing_bar.title", @"Now playing bar"), ^UIViewController *{ return SGNowPlayingBarSettingsPage(); }), @"rectangle.bottomthird.inset.filled", UIColor.systemPinkColor),
-            SGWithTile(SGPageRow(SGL(@"settings.player.queue_devices.title", @"Queue & devices"), ^UIViewController *{ return SGQueueSettingsPage(); }), @"text.line.first.and.arrowtriangle.forward", UIColor.systemIndigoColor),
+            SGWithTile(named(SGPageRow(SGL(@"settings.player.now_playing_bar.title", @"Now playing bar"), ^UIViewController *{ return SGNowPlayingBarSettingsPage(); }), @"player.nowplayingbar"), @"rectangle.bottomthird.inset.filled", UIColor.systemPinkColor),
+            SGWithTile(named(SGPageRow(SGL(@"settings.player.queue_devices.title", @"Queue & devices"), ^UIViewController *{ return SGQueueSettingsPage(); }), @"player.queue"), @"text.line.first.and.arrowtriangle.forward", UIColor.systemIndigoColor),
         ])];
         [sections addObjectsFromArray:SGNativePlayerScreenSections()];
     }
@@ -227,6 +253,8 @@ UIViewController *SGPlayerSettingsPage(void) {
     NSArray<SGModRow *> *hidden = native ? @[video]
         : @[SGHideRow(SGL(@"settings.player.hide.shuffle.title", @"Shuffle"), nil, SGRKeyPlayerHideShuffle), SGHideRow(SGL(@"settings.player.hide.repeat.title", @"Repeat"), nil, SGRKeyPlayerHideRepeat), video];
     [sections addObject:SGSection(native ? nil : SGL(@"settings.player.hide.header", @"Hide on the player"), hidden)];
+    // The next track's artwork and lyrics, fetched ahead under either look (Core/SGOptionalWork.h).
+    [sections addObject:SGSection(nil, @[SGLoadAheadRow()])];
 
     [sections addObject:SGNotedSection(SGL(@"settings.lossless.header", @"Lossless"), @[
         SGOptionRow(SGL(@"settings.lossless.files.title", @"Lossless files"), SGL(@"settings.lossless.files.subtitle", @"Your own FLACs in place of Spotify's stream"), SGKeyLossless),

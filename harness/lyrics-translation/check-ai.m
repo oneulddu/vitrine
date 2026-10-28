@@ -60,7 +60,7 @@ static void checkOpenAIHostKeys(void) {
     CHECK([openAIKeys[@"openrouter.ai"] isEqual:legacy] && !openAIKeys[@"api-key"] && !openAIKeys[@"api.groq.com"]);
     CHECK(!SGOpenAIKeySet() && SGLyricsAIAvailable().count == 0 && [row.value() isEqual:@"Groq · no key"]);
     NSString *problem = nil;
-    CHECK(!SGOpenAIRequest(@"system", @"prompt", &problem) && problem.length);
+    CHECK(!SGOpenAIRequest(@"system", @"prompt", SGLyricsReplyJSON, &problem) && problem.length);
     NSUInteger before = aiRequests;
     CHECK(!askAI(SGLyricsAIOpenAI, @"host-missing-job", @[@"Blue robot"], YES, &problem) && problem.length && aiRequests == before);
     __block BOOL finished = NO;
@@ -76,7 +76,7 @@ static void checkOpenAIHostKeys(void) {
 
     row.chosen(1);
     CHECK(SGOpenAIKeySet() && [row.value() isEqual:@"OpenRouter"]);
-    NSURLRequest *request = SGOpenAIRequest(@"system", @"prompt", &problem);
+    NSURLRequest *request = SGOpenAIRequest(@"system", @"prompt", SGLyricsReplyJSON, &problem);
     CHECK([request.URL.host isEqual:@"openrouter.ai"] && [[request valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer router-key"]);
     aiReplies = [NSMutableArray arrayWithObject:chatReply(@"[\"로봇\",\"가수\"]")];
     SGLyricsTranslatedTitle(@"host-key-title", @"Blue robot", @"Artist", NULL);
@@ -88,11 +88,11 @@ static void checkOpenAIHostKeys(void) {
     openAIKeys[@"api.groq.com"] = [@"groq-key" dataUsingEncoding:NSUTF8StringEncoding];
     resetCredentialCaches();
     row.chosen(2);
-    request = SGOpenAIRequest(@"system", @"prompt", &problem);
+    request = SGOpenAIRequest(@"system", @"prompt", SGLyricsReplyJSON, &problem);
     CHECK([request.URL.host isEqual:@"api.groq.com"] && [[request valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer groq-key"]);
     openAIKeys[@"api-key"] = legacy;
     resetCredentialCaches();
-    CHECK(SGOpenAIKeySet() && !openAIKeys[@"api-key"] && [[SGOpenAIRequest(@"system", @"prompt", &problem) valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer groq-key"]);
+    CHECK(SGOpenAIKeySet() && !openAIKeys[@"api-key"] && [[SGOpenAIRequest(@"system", @"prompt", SGLyricsReplyJSON, &problem) valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer groq-key"]);
 
     [defaults setObject:@"https://openrouter.ai/api/v1" forKey:SGKeyLyricsOpenAIBaseURL];
     openAIKeys = [@{@"api-key": legacy} mutableCopy];
@@ -115,7 +115,7 @@ static void checkOpenAIHostKeys(void) {
     CHECK(!SGOpenAIKeySet() && openAIKeys[@"api-key"] && openAIKeys.count == 1);
     [defaults setObject:@"http://100.97.8.81:10100/v1" forKey:SGKeyLyricsOpenAIBaseURL];
     openAIKeys = [@{@"100.97.8.81": [@"tailnet-test-key" dataUsingEncoding:NSUTF8StringEncoding]} mutableCopy];
-    NSURLRequest *tailnet = SGOpenAIRequest(@"system", @"prompt", &problem);
+    NSURLRequest *tailnet = SGOpenAIRequest(@"system", @"prompt", SGLyricsReplyJSON, &problem);
     CHECK([tailnet.URL.absoluteString isEqual:@"http://100.97.8.81:10100/v1/chat/completions"]);
     CHECK([[tailnet valueForHTTPHeaderField:@"Authorization"] isEqual:@"Bearer tailnet-test-key"]);
     [defaults setObject:@"http://100.97.8.82:10100/v1" forKey:SGKeyLyricsOpenAIBaseURL];

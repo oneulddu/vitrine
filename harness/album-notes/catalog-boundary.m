@@ -18,6 +18,11 @@ void SGMotionFile(NSURL *remote, void (^done)(NSURL *)) {
     if (remote) CatalogDownloads++;
     done(remote ? [NSURL fileURLWithPath:@"/fixture/clip.mp4"] : nil);
 }
+// The ticketed download the catalog's own chain asks for; the fixture answers at once, so nothing is left to cancel.
+SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *)) {
+    SGMotionFile(remote, done);
+    return [SGMotionTicket new];
+}
 
 @interface ReplayedCatalog : NSURLProtocol @end
 @implementation ReplayedCatalog

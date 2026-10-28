@@ -54,9 +54,12 @@ their check executable in the workflow.
 
 | Script | Mode / reason |
 | --- | --- |
+| `album-counts/check.sh` | Spotify album play counts: cover-layout migration, URI identities, malformed and failed replies, cache bounds, and the authenticated transport's origin, redirect and size limits, with request doubles. |
 | `album-credits/build.sh` | Artist-credit matching assertions. |
 | `album-notes/build.sh` | Album notes against replayed catalog fixtures, and the page's note placement and footer heights over Spotify collection doubles. |
 | `artist-artwork/build.sh` | Artist match and one-attempt identity rules against replayed catalog fixtures, plus the 30 MB clip cap and the Low Data policy. |
+| `appearance-accent/check.sh` | Catalyst Automatic accent ownership: page in front, playing cover, picked colour, real UIKit push/pop/tab/modal, and the player's Follow the cover combinations. |
+| `appearance-page/rows-check.sh` | Appearance rows of both looks, including the explicit-badge switches. |
 | `audio-effects/build.sh` | `route`, `presets` and `format`: isolated settings, preset-file and audio-format text assertions. |
 | `auto-translation-settings/check.sh` | Real Catalyst settings callbacks with fake providers. |
 | `autoeq/build.sh` | Default offline index/preset fixtures, not `online`. |
@@ -77,6 +80,7 @@ their check executable in the workflow.
 | `lyrics-store/build.sh` | Foundation codec, isolated disk reads/writes/deletion, and oldest-first count/byte pruning; run `lyrics-store/build/lyrics-store` after building. |
 | `lyrics-translation/build.sh` | Default checks include `check-ai.m`; also `--auto-retry-only`. |
 | `lyrics-translation/ondevice-kept-check.sh` | Catalyst Swift check: on-device translation keeps target-language lines as completed results. |
+| `meaning-translate/build.sh` | Catalyst meaning sheet's Translate / Show Original over translation doubles for every provider route: stale replies, dismissal, duplicate taps, retry, language change, attribution kept. |
 | `motion/build.sh` | Generated Canvas cuts and synthetic protobuf replies. |
 | `native-declutter/check.sh` | Production native section classification, isolated heading histories and marker-priority/snapshot checks with Foundation view doubles; no simulator. |
 | `now-playing/build.sh` | Logos setter hooks with system setter replaced, lyrics off/on. |
@@ -90,10 +94,12 @@ their check executable in the workflow.
 | `player-refinements/check.sh` | Catalyst rolling-digit rules and the real roll on a label in a window, plus Star add button and Plain checkmark through Logos; no simulator. |
 | `prefs/check.sh` | Foundation preference validation plus counter persistence and file-hash checks (`counters.m`). |
 | `radio-modes/build.sh` | Foundation Spotify mocks, spoofing off/on. |
+| `settings-search/build.sh` | Mod Settings search: page-at-a-time index on a real run loop, keywords below titles, recent places by setting name across looks and languages. |
 | `sing/build.sh` | `spatial`: model-free lead, spatial and decoder assertions. |
 | `sleep-timer/build.sh` | Fake player and timer/fade assertions. |
 | `song-audio/build.sh` | Per-song speed, pitch, pitch-follow and reverb records in two processes, with the player and the audio setters as doubles. |
 | `spicy-lyrics/build.sh` | Offline parser, cache and retry fixtures. |
+| `ui-refinements/badge-check.sh` | Explicit-badge hiding in both looks: only the verified badge views paint nothing, geometry and VoiceOver kept. |
 | `update/offline-check.sh` | Catalyst cached-release selection, no network. |
 | `visualiser/build.sh` | Synthetic spectrum and PCM waveform assertions. |
 
@@ -123,6 +129,7 @@ scenarios are not promoted to CI by merely compiling them.
 | `head-gestures/sim/build.sh` | iOS simulator hooks and teaching UI. |
 | `launch/build.sh` | Requires an untracked flag table extracted from a Spotify IPA. |
 | `library/build.sh` | iOS simulator UI. |
+| `library/compact-check.sh` | iOS simulator UI. |
 | `listening-stats/build-sim.sh` | iOS simulator UI. |
 | `live-activity-page/build.sh` | iOS simulator UI. |
 | `local-files/lyrics/build.sh` | iOS simulator lyrics UI. |
@@ -147,6 +154,7 @@ scenarios are not promoted to CI by merely compiling them.
 | `speed/build.sh` | iOS simulator audio chain. |
 | `system-menu/build.sh` | iOS simulator UI. |
 | `tabbar/build.sh` | iOS simulator UI. |
+| `tabbar/fade-check.sh` | iOS simulator UI. |
 | `update/build.sh` | iOS simulator and live GitHub requests. |
 
 Excluded modes of otherwise included scripts: AutoEq `online` and translation

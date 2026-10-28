@@ -18,8 +18,10 @@
 // choice does; it is given the room of the longest note, so the rows under it hold still as it changes.
 //
 // Under the header: the rows that follow the choice (Animated's sources and its Low Data Mode switch; Fluid's
-// five sliders and their Reset, which the card and the player follow as they move, SGRFluid.h), the Mini
-// player section (Redesigned/NowPlayingBar/NowPlayingBarSettings.m), then the sections either look shares.
+// sliders and their Reset, which the card and the player follow as they move, SGRFluid.h, Grain among them only
+// while Smooth draws), the Controls section, whose Header glass and Music app icons switches the open player follows
+// at once (SGRPlayerLookChanged), the Mini player section (Redesigned/NowPlayingBar/NowPlayingBarSettings.m), then the
+// sections either look shares.
 //
 // Threading: main thread only.
 #import "Core/SGCore.h"
@@ -360,6 +362,20 @@ static NSInteger segmentOf(SGRPlayerBackgroundKind kind) {
 
 @end
 
+#pragma mark - switches the open player follows
+
+static NSHashTable<UIView *> *sg_lookViews;
+
+void SGRPlayerWatchLook(UIView *unitView) {
+    if (!unitView) return;
+    if (!sg_lookViews) sg_lookViews = [NSHashTable weakObjectsHashTable];
+    [sg_lookViews addObject:unitView];
+}
+
+void SGRPlayerLookChanged(void) {
+    for (UIView *view in sg_lookViews.allObjects) [view setNeedsLayout];
+}
+
 // One of Fluid's settings on a slider, written out with `unit` after the number.
 static SGModRow *fluidSlider(NSString *title, SGRFluidSetting setting, NSString *unit) {
     SGRFluidLimits l = SGRFluidLimitsOf(setting);
@@ -451,13 +467,27 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
         return SGRFluidRendererNames()[SGRFluidRendererChosen()];
     }, ^(NSInteger index) {
         SGRSetFluidRenderer(index == SGRFluidRendererSmooth ? SGRFluidRendererSmooth : SGRFluidRendererLight);
+        [weakPlayerPage refreshVisibility];   // Grain comes and goes with Smooth
     });
+    // Grain is Smooth's alone (SGRFluid.h), so it shows only while Smooth draws.
+    SGModRow *grain = fluidSlider(SGL(@"settings.player.fluid.grain", @"Grain"), SGRFluidGrain, @"%");
     NSArray<SGModRow *> *fluid = @[
         renderer, fluidSlider(SGL(@"settings.player.fluid.speed", @"Speed"), SGRFluidSpeed, @"%"), fluidSlider(SGL(@"settings.player.fluid.warp", @"Warp"), SGRFluidWarp, @"%"), fluidSlider(SGL(@"settings.player.fluid.blur", @"Blur"), SGRFluidBlur, @""),
-        fluidSlider(SGL(@"settings.player.fluid.saturation", @"Saturation"), SGRFluidSaturation, @"%"), fluidSlider(SGL(@"settings.player.fluid.brightness", @"Brightness"), SGRFluidBrightness, @"%"), reset,
+        fluidSlider(SGL(@"settings.player.fluid.saturation", @"Saturation"), SGRFluidSaturation, @"%"), fluidSlider(SGL(@"settings.player.fluid.brightness", @"Brightness"), SGRFluidBrightness, @"%"), grain, reset,
     ];
     for (SGModRow *row in fluid) row.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundFluid; };
     renderer.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundFluid && SGRFluidGPUAvailable(); };
+    grain.visible = ^BOOL {
+        return SGRPlayerBackground() == SGRPlayerBackgroundFluid && SGRFluidGPUAvailable() && SGRFluidRendererChosen() == SGRFluidRendererSmooth;
+    };
+    // The header's glass and the footer's glyphs, followed by the open player at once.
+    SGModRow *headerGlass = SGWithNew(SGSwitchRow(SGL(@"settings.player.header_glass.title", @"Header glass"),
+                                                  SGL(@"settings.player.header_glass.subtitle", @"Glass circles behind the close and ⋯ buttons at the top of the player."),
+                                                  SGRKeyPlayerHeaderGlass), @"playerHeaderGlass");
+    SGModRow *musicIcons = SGWithNew(SGSwitchRow(SGL(@"settings.player.music_icons.title", @"Music app icons"),
+                                                 SGL(@"settings.player.music_icons.subtitle", @"The Music app's AirPlay and queue icons in place of Spotify's under the controls."),
+                                                 SGRKeyPlayerMusicIcons), @"playerMusicIcons");
+    headerGlass.changed = musicIcons.changed = ^(BOOL on) { SGRPlayerLookChanged(); };
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
         SGSection(nil, @[behind, choosePhoto]),
@@ -466,7 +496,7 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
         SGNotedSection(nil, fluid, SGL(@"settings.player.fluid.footer", @"Smooth lets the cover flow and carries the next song's cover in through it, "
                                    @"using a little more battery. Brightness above 100% can make white text harder to read. A paused song holds the "
                                    @"background still. Animated and Visualizer use these where they show Fluid.")),
-        SGNotedSection(SGL(@"settings.player.controls.header", @"Controls"), @[SGSwitchRow(SGL(@"settings.player.volume.title", @"Volume"), nil, SGRKeyPlayerVolume),
+        SGNotedSection(SGL(@"settings.player.controls.header", @"Controls"), @[headerGlass, SGSwitchRow(SGL(@"settings.player.volume.title", @"Volume"), nil, SGRKeyPlayerVolume),
                                       SGOptionRow(SGL(@"settings.player.follows_cover.title", @"Follow the cover"), nil, SGRKeyPlayerFollowsCover),
                                       SGWithNew(SGSwitchRow(SGL(@"settings.player.lyric_line.title", @"Lyrics Line"),
                                                   SGL(@"settings.player.lyric_line.subtitle", @"The line being sung, under the cover. Tap it to open the lyrics."),
@@ -476,7 +506,7 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
                                                   SGRKeyPlayerRollingDigits), @"playerRollingDigits"),
                                       SGWithNew(SGOptionRow(SGL(@"settings.player.star_add.title", @"Star add button"),
                                                   SGL(@"settings.player.star_add.subtitle", @"The add button as a star, filled in the accent once the song is saved. In the player it takes the place of Plain checkmark."),
-                                                  SGRKeyPlayerStarAdd), @"playerStarAdd")],
+                                                  SGRKeyPlayerStarAdd), @"playerStarAdd"), musicIcons],
                        SGL(@"settings.player.controls.footer", @"Volume puts a slider under the controls for this iPhone, or the speaker's while Spotify plays on another device. "
                        @"Follow the cover paints the like, shuffle and repeat in the color of the song playing.")),
         SGNotedSection(SGL(@"settings.player.mini_player.header", @"Mini player"), SGRNowPlayingBarRows(),

@@ -29,8 +29,12 @@ NSNotificationName const SGPlayLogDidChangeNotification = @"harness.playLogDidCh
 
 // SGLastTrack.m's constructor registers its recorder at load; with no player, it is never told anything.
 void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer) {}
-SPTPlayerState *SGPlayerState(void) { UNREACHED; }
-NSString *SGURIString(id uri) { UNREACHED; }
+// The accent context observes the empty player at launch; no preview may fetch artwork.
+SPTPlayerState *SGPlayerState(void) { return nil; }
+NSString *SGURIString(id uri) { if (uri) { UNREACHED; } return nil; }
+NSNotificationName const SGRNowPlayingArtworkDidChangeNotification = @"harness.artwork";
+NSNotificationName const SGRFieldColorDidChangeNotification = @"harness.field";
+UIImage *SGRNowPlayingArtwork(NSString **trackURI, NSString **identity) { UNREACHED; }
 SGPlayLog *SGListeningLog(void) { UNREACHED; }
 NSString *SGLocalFileCoverInURL(NSString *url) { UNREACHED; }
 void SGSpclientHeaders(void (^use)(NSDictionary<NSString *, NSString *> *headers)) { UNREACHED; }
@@ -39,6 +43,8 @@ void SGMotionAlbumNotes(NSString *artist, NSString *album, NSDictionary *edition
 NSData *SGMotionCanvasAsk(NSString *uri) { UNREACHED; }
 NSString *SGMotionCanvasInReply(NSData *reply) { UNREACHED; }
 void SGMotionFile(NSURL *remote, void (^done)(NSURL *file)) { UNREACHED; }
+SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *file)) { UNREACHED; }
+SGMotionTicket *SGMotionRequestAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *file)) { UNREACHED; }
 void SGRAlbumNotesChanged(UIView *page) { UNREACHED; }
 UIView *SGRAlbumPageOf(UIView *view) { UNREACHED; }
 UIView *SGRFindByIdentifier(UIView *root, NSString *identifier, const void *cacheKey) { UNREACHED; }

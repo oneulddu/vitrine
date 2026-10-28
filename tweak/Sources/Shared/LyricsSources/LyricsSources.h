@@ -170,6 +170,14 @@ void SGLyricsGetText(NSURL *url, void (^done)(NSString *text));
 // For the one source that is asked a question rather than sent to an address. body is anything
 // NSJSONSerialization writes; nothing is sent at all when it is not.
 void SGLyricsPostJSON(NSURL *url, NSDictionary<NSString *, NSString *> *headers, id body, void (^done)(id root));
+// Pure transforms run with JSON decoding on the transport worker, before delivery on main.
+// Capture immutable inputs only; query/cache state remains owned by the main queue.
+void SGLyricsGetJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> *headers,
+                              id (^transform)(id root), void (^done)(id result));
+void SGLyricsPostJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> *headers, id body,
+                               id (^transform)(id root), void (^done)(id result));
+// QQ's crypt=0 lyric field: base64 UTF-8 or zlib-compressed QRC, then ordinary LRC.
+SGLyricsResult *SGQQMusicResult(id payload);
 // Every source's reply goes through this, so a walk that lost a request to the network or a busy
 // server is not kept as "no lyrics". The two above call it themselves.
 void SGLyricsNoteReply(NSURLResponse *response, NSError *error);

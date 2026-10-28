@@ -48,7 +48,7 @@ void checkNetEaseURLs(void) {
             query[item.name] = item.value;
         if ([request.URL.path isEqual:@"/api/search/get"]) {
             CHECK(([query isEqual:@{@"s": @"A & B? #한글 singer+one", @"type": @"1", @"limit": @"10"}]));
-            return @{@"result": @{@"songs": @[@{@"id": @42, @"duration": @200000,
+            return @{@"result": @{@"songs": @[@{@"id": @42, @"name": @"A & B? #한글", @"duration": @200000,
                                                @"artists": @[@{@"name": @"Singer+One"}]}]}};
         }
         CHECK([request.URL.path isEqual:@"/api/song/lyric/v1"]);

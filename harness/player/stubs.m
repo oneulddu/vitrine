@@ -33,6 +33,9 @@ NSString *SGURIString(id uri) {
     return nil;
 }
 
+// The harness's player has no queue after the track.
+SPTPlayerTrack *SGPlayerUpNextIn(SPTPlayerState *state) { return nil; }
+
 // A player that plays what the harness tells it to, reporting on the main thread the way
 // Shared/Player/PlayerState.x moves Spotify's reports onto it.
 @implementation SPTPlayerTrack
@@ -334,6 +337,9 @@ BOOL SGMotionAppleMusicOn(void) { return YES; }
 // TabBar.x: the Mini player section's Apple Music style switch lays the tab bar out again; there is none here.
 void SGRSetTabBarMinimized(BOOL minimized, BOOL animated) {}
 void SGRRefreshTabBar(void) {}
+
+// Spotify's link dispatcher, which the AI DJ's Queue glyph opens the queue through (DJPlayer.x): none here.
+BOOL SGOpenSpotifyURI(NSURL *uri) { NSLog(@"[harness] open %@", uri); return NO; }
 
 // The ⋯'s system menu (PlayerMenu.m, ContextMenu.x), which this harness does not build; PlayerHeader.x hands it
 // the ⋯, and with no button of the mod's over it the ⋯'s own touches press its circle.

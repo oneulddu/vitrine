@@ -103,6 +103,13 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{ [self answer:lines as:@"Intelligence: " done:done]; });
 }
 @end
+// Shared/LyricsTranslation/TextTranslation.m, for the meaning sheet's Translate action: the menus here have no
+// translator for an explanation, so the action is not offered (harness/meaning-translate covers it).
+BOOL SGLyricsTranslateTextsAvailable(void) { return NO; }
+void SGLyricsTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, UIView *presentingView,
+                            void (^done)(NSArray<NSString *> *translations, NSString *error)) {
+    done(nil, @"no translator in this harness");
+}
 // Saved translations and their jobs, kept in memory for the run as SavedTranslations.m keeps them: the lines made
 // here by their text, for a song and language, and one token a song and language that a newer job or a delete ends.
 NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";

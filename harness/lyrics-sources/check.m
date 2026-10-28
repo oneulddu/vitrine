@@ -64,6 +64,17 @@ void SGLyricsGetJSON(NSURL *url, NSDictionary *headers, void (^done)(id root)) {
     done(sg_answer(url, nil));
 }
 void SGLyricsPostJSON(NSURL *url, NSDictionary *headers, id body, void (^done)(id root)) { done(sg_answer(url, body)); }
+void SGLyricsPostJSONTransform(NSURL *url, NSDictionary *headers, id body, id (^transform)(id), void (^done)(id)) {
+    id root = sg_answer(url, body);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        CHECK(!NSThread.isMainThread);
+        id result = transform ? transform(root) : root;
+        dispatch_async(dispatch_get_main_queue(), ^{ done(result); });
+    });
+}
+void SGLyricsGetJSONTransform(NSURL *url, NSDictionary *headers, id (^transform)(id), void (^done)(id)) {
+    SGLyricsPostJSONTransform(url, headers, nil, transform, done);
+}
 
 // The settings row is linked but never opened. Credentials and network answers are made up here.
 NSString *SGL(NSString *key, NSString *english) { return english; }
@@ -207,6 +218,138 @@ static SGLyricsResult *lrclibAnswer(SGLyricsQuery *query, BOOL *answeredAtOnce) 
     return got;
 }
 
+static SGLyricsResult *sourceAnswer(SGLyricsAsk ask, SGLyricsQuery *query) {
+    __block SGLyricsResult *got;
+    __block BOOL answered = NO;
+    ask(query, ^(SGLyricsResult *result) {
+        CHECK(NSThread.isMainThread);
+        CHECK(!answered);
+        got = result;
+        answered = YES;
+    });
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
+    while (!answered && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
+    CHECK(answered);
+    return got;
+}
+
+static NSString *qqPayload(NSString *text, BOOL zipped) {
+    NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
+    if (zipped) {
+        uLongf size = compressBound(data.length);
+        NSMutableData *compressed = [NSMutableData dataWithLength:size];
+        CHECK(compress(compressed.mutableBytes, &size, data.bytes, data.length) == Z_OK);
+        compressed.length = size;
+        data = compressed;
+    }
+    return [data base64EncodedStringWithOptions:0];
+}
+
+static void checkQQWordsAndArtists(void) {
+    // Invented text, unequal absolute millisecond clocks, and a gap that must not be interpolated.
+    NSString *qrc = @"<QrcInfos><LyricInfo><Lyric_1 LyricContent=\"[ar:Fixture]\n"
+        "[1234,2000]Sun(1234,111)rise (1345,222)&amp; (1700,50)go(2000,333)\n"
+        "[5000,700]你(5000,123)好(5500,200)\"/></LyricInfo></QrcInfos>";
+    for (NSNumber *zipped in @[@NO, @YES]) {
+        SGLyricsResult *result = SGQQMusicResult(qqPayload(qrc, zipped.boolValue));
+        CHECK(result.wordTimed && result.synced && result.karaokeLines.count == 2);
+        SGKaraokeLine *line = result.karaokeLines[0];
+        CHECK(line.start == 1234 && line.end == 3234 && line.timing == SGKaraokeTimingWords);
+        CHECK(line.words.count == 3 && [SGKaraokeLineText(line) isEqual:@"Sunrise & go"]);
+        CHECK(line.words[0].start == 1234 && line.words[0].end == 1567);
+        CHECK(line.words[1].start == 1700 && line.words[1].end == 1750);
+        CHECK(line.words[2].start == 2000 && line.words[2].end == 2333);
+        line = result.karaokeLines[1];
+        CHECK([SGKaraokeLineText(line) isEqual:@"你好"] && line.words.count == 2 && line.words[1].joined);
+        CHECK(line.words[0].start == 5000 && line.words[0].end == 5123);
+        CHECK(line.words[1].start == 5500 && line.words[1].end == 5700);
+    }
+    for (NSString *bad in @[@"", @"not base64!", @"eJw=", @"////"]) CHECK(!SGQQMusicResult(bad));
+    CHECK(!SGQQMusicResult(@42));
+    for (NSString *bad in @[
+        @"<q LyricContent=\"[100,20]word(100,999999999999999999999999999999999999)\"/>",
+        @"<q LyricContent=\"[100,20]word(-1,20)\"/>",
+        @"<q LyricContent=\"[100,20]word(100,20)tail\"/>",
+        @"<q LyricContent=\"[100,20]a(110,5)b(105,5)\"/>",
+        @"<q LyricContent=\"[86400000,1]a(86400000,1)\"/>",
+        @"<q LyricContent=\"[100,20]a(100,20)\n[120,20]broken\"/>",
+        @"<q LyricContent=\"[100,20]&unknown;(100,20)\"/>",
+        @"<q LyricContent=\"[100,20]a(100,20)"
+    ]) CHECK(!SGQQMusicResult(qqPayload(bad, YES)));
+    NSString *large = [@"x" stringByPaddingToLength:(1 << 20) + 1 withString:@"x" startingAtIndex:0];
+    CHECK(!SGQQMusicResult(qqPayload(large, YES)));
+    CHECK(!SGQQMusicResult(qqPayload(large, NO)));
+    NSString *envelope = @"<q LyricContent=\"[by:]\n[100,20]a(100,20)\"/>";
+    NSString *padding = [@"x" stringByPaddingToLength:(1 << 20) - envelope.length withString:@"x" startingAtIndex:0];
+    NSString *atLimit = [envelope stringByReplacingOccurrencesOfString:@"[by:]" withString:
+        [NSString stringWithFormat:@"[by:%@]", padding]];
+    CHECK(SGQQMusicResult(qqPayload(atLimit, YES)).karaokeLines[0].words[0].end == 120);
+    CHECK(!SGQQMusicResult(qqPayload([atLimit stringByAppendingString:@" "], YES)));
+    SGLyricsResult *lrc = SGQQMusicResult(qqPayload(@"[00:01.234]plain\n[00:03.456]next", NO));
+    CHECK(lrc.synced && !lrc.wordTimed && lrc.karaokeLines[0].start == 1234 && lrc.karaokeLines[1].start == 3456);
+    CHECK(lrc.karaokeLines[0].timing != SGKaraokeTimingWords);
+    CHECK(!SGLyricsSameArtist(@"MIURA", @"IU") && !SGLyricsSameArtist(@"IU", @"MIURA"));
+    CHECK(SGLyricsSameArtist(@"IU", @"IU"));
+    CHECK(SGLyricsSameArtist(@"IU (아이유)", @"IU")); // explicit prefix alias
+    CHECK(SGLyricsSameArtist(@"아이유 (IU)", @"IU")); // explicit suffix alias
+    CHECK(SGLyricsSameArtist(@"Other & IU & Guest", @"IU")); // middle credit
+    CHECK(SGLyricsSameArtist(@"Other & IU (아이유) & Guest", @"IU")); // alias within a middle credit
+    CHECK(SGLyricsSameArtist(@"방탄소년단 (BTS)", @"BTS"));
+    CHECK(!SGLyricsSameArtist(@"xIUx", @"IU"));
+
+    SGLyricsQuery *query = [SGLyricsQuery new];
+    query.title = @"Fixture";
+    query.artist = @"IU";
+    query.seconds = 200;
+    __block NSUInteger lyricRequests = 0;
+    __block BOOL fallback = NO;
+    __block NSString *fallbackPayload = @"invalid";
+    sg_answer = ^id(NSURL *url, NSDictionary *body) {
+        CHECK(NSThread.isMainThread);
+        if (body[@"req"]) return @{@"req": @{@"data": @{@"body": @{@"song": @{@"list": @[
+            @{@"id": @1, @"title": @"Fixture", @"interval": @200, @"singer": @[@{@"name": @"MIURA"}]},
+            @{@"id": @2, @"title": @"Fixture", @"interval": @200, @"singer": @[@{@"name": @"IU"}]}
+        ]}}}}};
+        NSDictionary *params = body[@"music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"][@"param"];
+        CHECK([params[@"songID"] isEqual:@2] && [params[@"crypt"] isEqual:@0]);
+        lyricRequests++;
+        NSString *payload = fallback ? ([params[@"qrc"] boolValue] ? fallbackPayload :
+            qqPayload(@"[00:01.234]fallback", NO)) : qqPayload(qrc, YES);
+        return @{@"music.musichallSong.PlayLyricInfo.GetPlayLyricInfo": @{@"data": @{@"lyric": payload}}};
+    };
+    CHECK(sourceAnswer(SGQQMusicAsk, query).wordTimed && lyricRequests == 1);
+    fallback = YES;
+    lyricRequests = 0;
+    SGLyricsResult *answer = sourceAnswer(SGQQMusicAsk, query);
+    CHECK(answer.synced && !answer.wordTimed && lyricRequests == 2);
+    CHECK(answer.karaokeLines[0].start == 1234 && [SGKaraokeLineText(answer.karaokeLines[0]) isEqual:@"fallback"]);
+    // A bad clock beside a good one must reject the QRC, not become part of a genuinely timed word.
+    for (NSString *row in @[
+        @"[100,40]bad(-1,10)good(100,20)",
+        @"[100,40]good(100,20)bad(120,-10)",
+        @"[100,40]good(100,10)bad(+110,10)good(120,20)",
+        @"[100,40]bad(100.5,10)good(120,20)",
+        @"[100,40]bad(100,NaN)good(120,20)",
+        @"[100,40]bad(,10)good(120,20)",
+        @"[100,40]bad(100,10,0)good(120,20)"
+    ]) {
+        fallbackPayload = qqPayload([NSString stringWithFormat:@"<q LyricContent=\"%@\"/>", row], YES);
+        SGLyricsResult *mixed = sourceAnswer(SGQQMusicAsk, query);
+        CHECK(mixed.synced && !mixed.wordTimed);
+        CHECK(mixed.karaokeLines[0].start == 1234 && [SGKaraokeLineText(mixed.karaokeLines[0]) isEqual:@"fallback"]);
+    }
+    sg_answer = ^id(NSURL *url, id body) {
+        if ([url.host isEqual:@"krcs.kugou.com"]) return @{@"candidates": @[
+            @{@"id": @"wrong", @"accesskey": @"k", @"song": @"Fixture", @"singer": @"MIURA", @"duration": @200000},
+            @{@"id": @"right", @"accesskey": @"k", @"song": @"Fixture", @"singer": @"IU", @"duration": @200000}
+        ]};
+        CHECK([url.query containsString:@"id=right"]);
+        return @{@"status": @404};
+    };
+    CHECK(!sourceAnswer(SGKuGouAsk, query));
+}
+
 static NSString *param(NSURL *url, NSString *name) {
     for (NSURLQueryItem *item in [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO].queryItems) {
         if ([item.name isEqualToString:name]) return item.value;
@@ -283,9 +426,9 @@ static void checkLive(NSString *path) {
         return;
     }
     id lyric = root[@"music.musichallSong.PlayLyricInfo.GetPlayLyricInfo"][@"data"][@"lyric"];
-    NSString *lrc = [[NSString alloc] initWithData:[[NSData alloc] initWithBase64EncodedString:lyric options:0] encoding:NSUTF8StringEncoding];
-    SGLyricsResult *result = SGLyricsLRCResult(lrc);
-    printf("%s: QQ LRC, %lu timed lines\n", path.lastPathComponent.UTF8String, (unsigned long)result.karaokeLines.count);
+    SGLyricsResult *result = SGQQMusicResult(lyric);
+    printf("%s: QQ %s, %lu timed lines\n", path.lastPathComponent.UTF8String, result.wordTimed ? "QRC" : "LRC",
+           (unsigned long)result.karaokeLines.count);
     CHECK(result.synced && result.karaokeLines.count);
 }
 
@@ -659,6 +802,7 @@ int main(int argc, char **argv) {
         checkTimingNames();
         checkMalformedTiming();
         checkVoiceScaling();
+        checkQQWordsAndArtists();
         // Thai, Lao, Khmer and Burmese, long lines with no space, and Thai among Latin and brackets.
         checkSplit(@"ฉันรักเธอมากกว่าสิ่งใดในโลกนี้และจะอยู่เคียงข้างเธอตลอดไป", YES);
         checkSplit(@"วันนี้อากาศดีมากเราไปเดินเล่นที่สวนสาธารณะด้วยกันไหมนะที่รัก", YES);
@@ -765,19 +909,19 @@ int main(int argc, char **argv) {
         query.artist = @"周杰伦 feat. Someone";
         query.seconds = 269;
         __block SGLyricsResult *got = nil;
-        SGKuGouAsk(query, ^(SGLyricsResult *result) { got = result; });
+        got = sourceAnswer(SGKuGouAsk, query);
         CHECK([keyword isEqualToString:@"周杰伦 - 晴天"] && [duration isEqualToString:@"269000"]);
         CHECK([tried isEqualToArray:(@[@"7", @"i", @"e"])]);
         CHECK(got.synced && got.wordTimed && got.karaokeLines.count == 3 && got.texts.count == 3);
         [tried removeAllObjects];
         good = @"g";   // fourth in line: never asked
         got = [SGLyricsResult new];
-        SGKuGouAsk(query, ^(SGLyricsResult *result) { got = result; });
+        got = sourceAnswer(SGKuGouAsk, query);
         CHECK([tried isEqualToArray:(@[@"7", @"i", @"e"])] && !got);
         query.artist = @"";
         got = [SGLyricsResult new];
         [tried removeAllObjects];
-        SGKuGouAsk(query, ^(SGLyricsResult *result) { got = result; });
+        got = sourceAnswer(SGKuGouAsk, query);
         CHECK(!got && !tried.count);
 
         // QQ Music: the first result with the title, a singer and the length is taken, and its LRC read.
@@ -796,13 +940,13 @@ int main(int argc, char **argv) {
         };
         query.artist = @"周杰伦";
         got = nil;
-        SGQQMusicAsk(query, ^(SGLyricsResult *result) { got = result; });
-        CHECK([asked[@"songID"] isEqual:@97773] && [asked[@"qrc"] isEqual:@0] && [asked[@"crypt"] isEqual:@0]);
+        got = sourceAnswer(SGQQMusicAsk, query);
+        CHECK([asked[@"songID"] isEqual:@97773] && [asked[@"qrc"] isEqual:@1] && [asked[@"crypt"] isEqual:@0]);
         CHECK(got.synced && !got.wordTimed && got.karaokeLines.count == 2 && got.karaokeLines[1].start == 3500);
         query.seconds = 200;   // no recording that long: nothing asked for lyrics
         asked = nil;
         got = [SGLyricsResult new];
-        SGQQMusicAsk(query, ^(SGLyricsResult *result) { got = result; });
+        got = sourceAnswer(SGQQMusicAsk, query);
         CHECK(!got && !asked);
 
         checkNewSources();

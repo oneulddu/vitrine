@@ -4,6 +4,19 @@
 #import "Core/SGCore.h"
 #import "LyricsSources.h"
 
+NSString *SGLyricsMatchKey(NSString *text) {
+    static NSCharacterSet *dropped;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableCharacterSet *building = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
+        [building formUnionWithCharacterSet:NSCharacterSet.punctuationCharacterSet];
+        [building formUnionWithCharacterSet:NSCharacterSet.symbolCharacterSet];
+        dropped = [building copy];
+    });
+    if (![text isKindOfClass:NSString.class]) return @"";
+    return [[text.lowercaseString componentsSeparatedByCharactersInSet:dropped] componentsJoinedByString:@""];
+}
+
 NSString *SGLyricsFoldedText(NSString *text) {
     static NSCharacterSet *kept;
     static dispatch_once_t once;
@@ -107,6 +120,26 @@ NSInteger SGLyricsSongRank(NSString *title, NSString *artist, NSString *songTitl
     if (!byLead(songArtists, leadNames(artist))) return 0;
     NSSet<NSString *> *version = versionOf(songTitle);
     return [version isEqualToSet:SGLyricsTitleVersion(title)] ? 3 : version.count == 0 ? 2 : 1;
+}
+
+// The provider matcher allows catalog aliases and joined credits, unlike the stricter song rank above.
+// Short names may touch either edge, but never match only inside an unrelated name.
+BOOL SGLyricsSameArtist(NSString *credited, NSString *artist) {
+    NSString *name = SGLyricsMatchKey(credited), *lead = SGLyricsMatchKey(SGLyricsLeadArtist(artist));
+    if (!name.length || !lead.length) return NO;
+    NSString *shorter = name.length < lead.length ? name : lead;
+    NSString *longer = name.length < lead.length ? lead : name;
+    if (shorter.length >= 4) return [longer containsString:shorter];
+    if ([longer hasPrefix:shorter] || [longer hasSuffix:shorter]) return YES;
+    // A middle credit or parenthesized alias is explicit, not an interior substring.
+    NSString *credit = name.length < lead.length ? SGLyricsLeadArtist(artist) : credited;
+    for (NSString *component in namesJoinedIn(credit)) {
+        NSArray *parts = [component componentsSeparatedByCharactersInSet:
+            [NSCharacterSet characterSetWithCharactersInString:@"()（）、"]];
+        for (NSString *part in parts)
+            if ([SGLyricsMatchKey(part) isEqualToString:shorter]) return YES;
+    }
+    return NO;
 }
 
 static NSString *stringIn(id value) {

@@ -179,6 +179,19 @@ BOOL SGRPlayerFollowsCover(void);
 void SGRPlayerSetCoverAccent(UIColor *cover);
 void SGRPlayerPaintCover(UIView *stack);
 
+// Glass circles behind the header's down arrow and ⋯ (PlayerHeader.x), in the ordinary player and the AI DJ's. On until
+// switched off; off, the buttons are Spotify's as drawn, with their actions, touches and accessibility, and the grabber
+// stays. Followed at once (SGRPlayerLookChanged).
+#define SGRKeyPlayerHeaderGlass @"spotifyglass.redesign.player.headerGlass"
+// The Music app's glyphs for Connect (AirPlay audio) and the queue (a bulleted list) over Spotify's own in the footer
+// (PlayerFooter.x), the AI DJ's Connect included (DJPlayer.x). On until switched off; off, Spotify's glyphs show again,
+// in the colors and state Spotify gives them. Followed at once (SGRPlayerLookChanged).
+#define SGRKeyPlayerMusicIcons @"spotifyglass.redesign.player.musicIcons"
+// The unit views that draw what those two switches change, each made to lay out again when one is flipped on the
+// Player page (PlayerSettings.m), so the open player follows without a restart. Watching a view again changes nothing.
+void SGRPlayerWatchLook(UIView *unitView);
+void SGRPlayerLookChanged(void);
+
 // Shuffle and repeat left out of the controls (PlayerControls.x), each on its own switch under Hide on the player, the
 // way the Music app keeps them off its main controls. Off until switched on, read at launch. The buttons go by alpha
 // and keep their slots, so previous, play and next stay where they are, centered.

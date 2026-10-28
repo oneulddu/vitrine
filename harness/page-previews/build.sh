@@ -8,23 +8,26 @@
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SRC=$(cd "$HERE/../../tweak/Sources" && pwd)
-OUT="$HERE/build"
+OUT=${HARNESS_BUILD_DIR:-"$HERE/build"}
 APP="$OUT/PagePreviewsHarness.app"
-rm -rf "$OUT"
 mkdir -p "$APP" "$OUT/gen" "$OUT/png"
 "${THEOS:?Set THEOS}/bin/logos.pl" -c generator=internal "$SRC/Redesigned/Kit/SGRAccent.x" > "$OUT/gen/SGRAccent.m"
+python3 "$HERE/../album-counts/cover-source.py" "$SRC" "$OUT/gen/cover-prefs.m"
 
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O0 -isysroot "$SDK" \
     -I"$SRC" -iquote "$SRC/Redesigned/Kit" -Wall -Werror -Wno-deprecated-declarations \
-    "$HERE/main.m" "$HERE/stubs.m" "$OUT/gen/SGRAccent.m" \
+    "$HERE/main.m" "$HERE/stubs.m" "$OUT/gen/SGRAccent.m" "$OUT/gen/cover-prefs.m" \
     "$SRC/Redesigned/Kit/SGRPagePreview.m" "$SRC/Redesigned/Kit/SGRTokens.m" "$SRC/Redesigned/Kit/SGRPalette.m" \
+    "$SRC/Redesigned/Kit/SGRAccentContext.m" "$SRC/Core/SGTopController.m" \
     "$SRC/Redesigned/Playlist/PlaylistSettings.m" "$SRC/Redesigned/Search/SearchSettings.m" \
     "$SRC/Redesigned/Home/HomeSettings.m" "$SRC/Redesigned/Home/HomeShelves.m" \
     "$SRC/Redesigned/Album/AlbumSettings.m" "$SRC/Redesigned/Album/AlbumNotes.m" "$SRC/Redesigned/Album/AlbumPlays.m" \
+    "$SRC/Redesigned/Album/AlbumPlaysText.m" \
     "$SRC/Redesigned/Album/AlbumPlaysPlace.m" "$SRC/Redesigned/Artist/ArtistSettings.m" \
     "$SRC/Shared/Player/SGLastTrack.m" "$SRC/Shared/AnimatedArtwork/MotionSources.m" \
-    "$SRC/Settings/SGPage.m" "$SRC/Settings/SGPageStyle.m" "$SRC/Settings/SGModPage.m" "$SRC/Settings/SGSettingsSearch.m" "$SRC/Settings/SGGlowSwitch.m" \
+    "$SRC/Shared/AnimatedArtwork/SGMotionTicket.m" \
+    "$SRC/Settings/SGPage.m" "$SRC/Settings/SGPageStyle.m" "$SRC/Settings/SGModPage.m" "$SRC/Settings/SGSettingsSearch.m" "$SRC/Settings/SGSettingsIndex.m" "$SRC/Settings/SGGlowSwitch.m" \
     "$SRC/Settings/SGSourcesPage.m" \
     "$SRC/Core/SGLog.m" "$SRC/Core/SGPrefs.m" "$SRC/Core/SGLocalize.m" "$SRC/Core/SGGlass.m" "$SRC/Core/SGViewTree.m" "$SRC/Core/SGFlagForce.m" "$SRC/Core/SGUIMode.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreImage -framework Foundation \

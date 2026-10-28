@@ -52,10 +52,11 @@ static void tryLyrics(NSArray<NSDictionary *> *candidates, NSUInteger index, voi
     NSDictionary *candidate = candidates[index];
     NSURL *url = SGLyricsURL(kDownload, @{@"ver": @"1", @"client": @"pc", @"id": stringIn(candidate[@"id"]),
                                           @"accesskey": stringIn(candidate[@"accesskey"]), @"fmt": @"krc", @"charset": @"utf8"});
-    SGLyricsGetJSON(url, headers(), ^(id root) {
+    SGLyricsGetJSONTransform(url, headers(), ^id(id root) {
         id status = [root isKindOfClass:NSDictionary.class] ? root[@"status"] : nil;
-        NSArray<SGKaraokeLine *> *lines = [status respondsToSelector:@selector(integerValue)] && [status integerValue] == 200
+        return [status respondsToSelector:@selector(integerValue)] && [status integerValue] == 200
             ? SGKuGouLines(root[@"content"]) : nil;
+    }, ^(NSArray<SGKaraokeLine *> *lines) {
         if (lines) {
             SGLog(@"kugou: lyrics %@ have %lu word timed lines", stringIn(candidate[@"id"]), (unsigned long)lines.count);
             done(lines);
@@ -66,6 +67,7 @@ static void tryLyrics(NSArray<NSDictionary *> *candidates, NSUInteger index, voi
 }
 
 SGLyricsAsk SGKuGouAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ SGKuGouAsk(query, done); }); return; }
     NSString *title = SGLyricsMatchKey(query.title), *lead = SGLyricsLeadArtist(query.artist);
     if (!title.length || !SGLyricsMatchKey(lead).length) {
         done(nil);
@@ -75,7 +77,7 @@ SGLyricsAsk SGKuGouAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *re
     NSMutableDictionary<NSString *, NSString *> *search = [@{@"ver": @"1", @"man": @"yes", @"client": @"mobi", @"hash": @"",
         @"album_audio_id": @"", @"keyword": [NSString stringWithFormat:@"%@ - %@", lead, query.title]} mutableCopy];
     if (ms > 0) search[@"duration"] = @(ms).stringValue;
-    SGLyricsGetJSON(SGLyricsURL(kSearch, search), headers(), ^(id root) {
+    SGLyricsGetJSONTransform(SGLyricsURL(kSearch, search), headers(), ^id(id root) {
         id candidates = [root isKindOfClass:NSDictionary.class] ? root[@"candidates"] : nil;
         NSMutableArray<NSDictionary *> *fitting = [NSMutableArray array];
         for (NSDictionary *candidate in [candidates isKindOfClass:NSArray.class] ? candidates : @[]) {
@@ -90,6 +92,8 @@ SGLyricsAsk SGKuGouAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *re
         [fitting sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
             return [@(labs(msIn(a) - ms)) compare:@(labs(msIn(b) - ms))];
         }];
+        return [fitting copy];
+    }, ^(NSArray *fitting) {
         if (!fitting.count) SGLog(@"kugou: no recording of %@ by %@ near %lds", query.title, lead, (long)query.seconds);
         tryLyrics(fitting, 0, ^(NSArray<SGKaraokeLine *> *lines) {
             if (!lines.count) {
