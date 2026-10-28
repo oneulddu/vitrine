@@ -201,7 +201,10 @@ static void waitUntil(BOOL (^done)(void)) {
 // it has. The sheet sends on the main queue and a double answers on it too, so two hops are enough.
 static void settle(void) {
     __block BOOL drained = NO;
-    dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
+    // Queued from a block on the main queue, the marker runs after anything that block's turn queued too.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        dispatch_async(dispatch_get_main_queue(), ^{ drained = YES; });
+    });
     waitUntil(^BOOL { return drained; });
     [sg_window.rootViewController.view layoutIfNeeded];
 }
