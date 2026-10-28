@@ -1,5 +1,63 @@
 # Changelog
 
+## [1.0.0-beta.23](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.22...v1.0.0-beta.23) (2026-10-28)
+
+
+### Features
+
+* QQ 단어 타이밍·Spotify 재생 수·설정 검색 등 추가 ([291e0f0](https://github.com/oneulddu/vitrine/commit/291e0f0370ad573f464d000914a01ac7fd184b72))
+* 곡별 효과 기억·앨범 노트·아티스트 아트워크 등 추가 ([95cc67c](https://github.com/oneulddu/vitrine/commit/95cc67c131e913914d0af30e24abbe306fc07e1a))
+* 미리 받기 조건·한글 발음·키보드 단축키 등 7가지 추가 ([c044265](https://github.com/oneulddu/vitrine/commit/c0442651147994d8996a353e7916804d3cbc8154))
+
+
+### Fixes
+
+* install.sh가 설치할 iPhone을 JSON과 PHONE_UDID로 고름 ([505957f](https://github.com/oneulddu/vitrine/commit/505957f7e5edbbccb362c804b462a1afa115dbfc))
+* Sing 명령 상태 경합·모델 다운로드 취소 경쟁 수정, 비활성 워커 정지 ([1b8ddf8](https://github.com/oneulddu/vitrine/commit/1b8ddf8a509e10563acfff01c397fa94d94dcbee))
+* 가사 요청 실패 로그에 자격 증명이 담긴 URL을 남기지 않게 ([a18f441](https://github.com/oneulddu/vitrine/commit/a18f441fddb3d81d4908e3943a97025da5553128))
+* 가사 응답의 null·과대값·잘린 TTML에 견디고 캐시 오류 수정 ([476682f](https://github.com/oneulddu/vitrine/commit/476682f7216c1108535153790260d48b3398751a))
+* 가사 측정 경합·AI 메뉴 곡 혼동 수정, Fluid 120Hz 제한 해제 ([4713459](https://github.com/oneulddu/vitrine/commit/471345903f8d49b841d96d1c6cb56c6835f7ae03))
+* 같은 리포트를 두 번 열 때 새 내용이 덮여쓰이지 않게 ([5a5a018](https://github.com/oneulddu/vitrine/commit/5a5a018b7dc66722b325d496fd6f36a8f52afd7c))
+* 곡이 바뀐 뒤 이전 곡 언어 메뉴가 현재 곡을 바꾸지 않게 ([e751358](https://github.com/oneulddu/vitrine/commit/e751358f0c6ca982cfadd580940e676b746ef45a))
+* 글꼴 가져오기가 그사이 바뀐 글꼴 선택을 덮어쓰지 않게 ([eef1d59](https://github.com/oneulddu/vitrine/commit/eef1d593ebdc605cc2b02d3e1ab3081cdface68a))
+* 네이티브 앨범 아트워크 탭·커버 없는 곡의 배경 바로잡기 ([da10186](https://github.com/oneulddu/vitrine/commit/da101869b5d5d1bd373e4dfef335e2bee5f96974))
+* 드라이버 토큰이 로그·내보내기·진단에 새지 않게하고 한 번 교체 ([2c085ea](https://github.com/oneulddu/vitrine/commit/2c085ea74c3609b036444b3913dd9d8f40684e0b))
+* 드라이버의 읽기 전용 pref가 로그 대기 기준점을 옮기지 않게 ([26b62c0](https://github.com/oneulddu/vitrine/commit/26b62c03935dc2af16e21a7a4e638f2c4ff5609a))
+* 로컬 가사 뷰어가 빠른 곡 전환에서 가사를 두 벌 보여주지 않게 ([fdc1407](https://github.com/oneulddu/vitrine/commit/fdc1407310f1821f78537b33d1a5528cb71a2418))
+* 로컬 곡 커버를 메인 밖에서 읽고 첫 읽기 실패를 복구 ([ca12a17](https://github.com/oneulddu/vitrine/commit/ca12a17de561dc65110a85537d96b4bd2bf6fb7c))
+* 무료 글꼴 다운로드가 그사이 바뀐 글꼴 선택을 덮어쓰지 않게 ([14e9109](https://github.com/oneulddu/vitrine/commit/14e91091c12a9bdfd8f70bb64bd9363f1a4713a7))
+* 비활성 메뉴 행 실행·아티스트 섹션 높이·한 글자 앨범 제목 수정 ([3bb343a](https://github.com/oneulddu/vitrine/commit/3bb343a6baa2de5ca3589a4e010a4fc056624d31))
+* 설정 미리보기에서 Colours 배경이 단색으로 멈추지 않게 ([281c1cc](https://github.com/oneulddu/vitrine/commit/281c1cc50f15e88cd75a3a8025174fe2666def5d))
+* 스타일 미리보기 라벨·같은 앨범 Halo 커버·다운로드 글리프·가사 탐색 고정 수정 ([330cfec](https://github.com/oneulddu/vitrine/commit/330cfec775d0565f879514e8927327f37d44051b))
+* 시계 변경에 흔들리지 않는 청취 시간, 폰트·커버 가져오기를 메인 밖으로 ([d27302c](https://github.com/oneulddu/vitrine/commit/d27302ce0ab0b6ccbc32ba790502468e9adc8252))
+* 오디오 출력 전환 중 DSP 동시 렌더·감쇠 누락·유닛 누수 수정 ([4516dfa](https://github.com/oneulddu/vitrine/commit/4516dfa6d2ecc8263e12b2dcca2bec430dbccc8c))
+* 음절 단위 가사 단어가 줄 끝에서 갈리지 않게 ([dcfb0b8](https://github.com/oneulddu/vitrine/commit/dcfb0b8c8ef15308b66aec1be5c2939f869e966d))
+* 일시정지한 새 곡을 잠금화면이 이전 곡으로 되돌리지 않게 ([4dabac9](https://github.com/oneulddu/vitrine/commit/4dabac99d4994bd41c0e0e1dc9273ac6cc517fc5))
+* 잘못된 설정값 실행 크래시와 What's New·투어·리포트 오류 수정 ([ecdd00b](https://github.com/oneulddu/vitrine/commit/ecdd00be256b8d02c353fec15742fc877c1f3a60))
+* 잠금화면 가사·아트워크의 낡은 상태와 번역 누락 바로잡기 ([3a17a7c](https://github.com/oneulddu/vitrine/commit/3a17a7ccd1eb2fd8fdc8438a7629d0d4a647edfc))
+* 잠금화면 커버를 기본 아트워크 우선·교정 가능하게, URI 로딩은 병렬로 ([fad8d27](https://github.com/oneulddu/vitrine/commit/fad8d27e9a0bc254091894b01df79b988a98a5f1))
+* 재사용된 홈 카드에 바로가기 타일 스타일이 되살아나지 않게 ([116a6f0](https://github.com/oneulddu/vitrine/commit/116a6f0bc20a552519e1e370d1f280ce70665357))
+* 재생 통계가 늦게 도착한 곡 메타데이터를 기록 ([541a988](https://github.com/oneulddu/vitrine/commit/541a98879a205362b8caaaa4a5644b5da20d668e))
+* 정수 출력 클리핑·Lossless 메인 파일 작업·꺼진 출력 제어 비용 수정 ([7e22e3e](https://github.com/oneulddu/vitrine/commit/7e22e3e9a3cb1f93f9e4fc4e45c804d391330c59))
+* 청취 기록이 실패·강제 종료·가져오기 중에 사라지지 않게 ([8e49753](https://github.com/oneulddu/vitrine/commit/8e49753b79580f8867136c6f90f5fd90f82b53b7))
+* 커버 아래 가사 줄이 Spotify 미리보기와 겹치지 않게 ([f262802](https://github.com/oneulddu/vitrine/commit/f262802ec1554824d05610c466e7c8405703a237))
+* 탭 탐색 확인이 다음 곡·빠른 재생에서 다시 탐색하지 않게 ([436aadb](https://github.com/oneulddu/vitrine/commit/436aadbe41b0ffc494318e67b29a23a9b60f5100))
+* 탭 하나일 때 최소화 막고 탭 아이콘·미리보기 갱신 바로잡기 ([44429ee](https://github.com/oneulddu/vitrine/commit/44429ee290ef032256d7d41d15cbbbab8467f198))
+* 플레이어 사진 배경을 메인 밖에서 준비하고 늦은 가져오기가 새 선택을 덮지 않게 ([46db1c7](https://github.com/oneulddu/vitrine/commit/46db1c765e9564e9a65ddc3eedccdbbadb407bd3))
+* 홈 모델이 없을 때 Top picks 오선택 반복과 ⋯ 레이아웃 진단 비용 제거 ([27e4fd3](https://github.com/oneulddu/vitrine/commit/27e4fd3c94c7780383463efd0692d6fef23c3640))
+
+
+### Performance
+
+* 가사 PiP·잠금화면이 저장된 번역을 메인 밖에서 읽게 ([46e6d80](https://github.com/oneulddu/vitrine/commit/46e6d805bacbdaa92e6e8271a35d1436f4a7ce35))
+* 가사 단어 조립을 선형으로, 로컬 LRC 조회를 메인 밖으로, 실패 기록에 상한 ([4f766d6](https://github.com/oneulddu/vitrine/commit/4f766d6a3ab1120c0f214d7c01f1d03afe4b36f3))
+* 가사 목소리 정렬을 선형으로, Spicy·Deezer 키체인을 한 번만 읽게 ([fcd4baa](https://github.com/oneulddu/vitrine/commit/fcd4baae17a4aa361a486193a548cb067459c906))
+* 가사 상태가 그대로면 사진 배경을 다시 꾸미지 않게 ([167d37c](https://github.com/oneulddu/vitrine/commit/167d37c74eafaf91486d4f9adea487f63996e70a))
+* 번역 서비스 키 표시가 매초 키체인을 조회하지 않게 ([41f2d50](https://github.com/oneulddu/vitrine/commit/41f2d50e388dd684255d3cf03a96d684204a0912))
+* 앨범 재생 횟수가 곡마다 전체 기록을 다시 세지 않게 ([f1ef66d](https://github.com/oneulddu/vitrine/commit/f1ef66d83f5c3b648560012448c20c986bfef11b))
+* 잠금화면 모션 캐시 작업을 메인 밖으로 옮기기 ([dde2575](https://github.com/oneulddu/vitrine/commit/dde257593a1ef1edcaefa28b9a46210a8ce90ed8))
+* 저장된 번역 요약을 메인에서 매초 다시 세지 않게 ([230d147](https://github.com/oneulddu/vitrine/commit/230d14794fbb5a916bd6fd8e8742707d04556d78))
+
 ## [1.0.0-beta.22](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.21...v1.0.0-beta.22) (2026-10-25)
 
 
