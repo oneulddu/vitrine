@@ -634,6 +634,9 @@ static BOOL hasKanji(SGKaraokeLine *line) {
 // A run of words set in rows as wide as the page: where each goes along its row, which row, and where
 // it sits along the sweep, the rows laid end to end. A joined word follows the one before it flush:
 // the scripts that do not space their words would otherwise read with a gap between every syllable.
+// A word timed syllable by syllable is a run of one word and the joined ones after it, and a joined
+// one that does not fit takes the whole run to the next row with it, so a word is never split; only
+// a run that starts its row, or is wider than a row, is broken inside.
 typedef struct {
     CGFloat x, width, offset;
     NSUInteger row;
@@ -647,7 +650,26 @@ static NSUInteger flow(NSArray<SGKaraokeWord *> *words, UIFont *font, CGFloat wi
         CGFloat wide = ceil([words[i].text sizeWithAttributes:attributes].width);
         CGFloat lead = x > 0 && !words[i].joined ? space : 0;
         if (x > 0 && x + lead + wide > width) {
-            x = lead = 0;
+            NSUInteger first = i;
+            while (first > 0 && words[first].joined) first--;
+            CGFloat runWide = 0;
+            for (NSUInteger k = first; k < words.count && (k == first || words[k].joined); k++) {
+                runWide += ceil([words[k].text sizeWithAttributes:attributes].width);
+            }
+            if (words[i].joined && places[first].row == row && places[first].x > 0 && runWide <= width) {
+                // The run restarts at the row's start, where a word takes no space before it.
+                CGFloat from = places[first].x;
+                for (NSUInteger k = first; k < i; k++) {
+                    places[k].x -= from;
+                    places[k].offset -= space;
+                    places[k].row = row + 1;
+                }
+                x -= from;
+                offset -= space;
+                lead = 0;
+            } else {
+                x = lead = 0;
+            }
             row++;
         }
         x += lead;

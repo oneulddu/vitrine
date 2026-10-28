@@ -143,6 +143,7 @@ static void googleHolds(void) {
 #include "auto-check.inc"
 #endif
 #include "review-check.inc"
+#include "wrap-check.inc"
 
 void SGHarnessRunTranslationCheck(UIWindow *window) {
     addToLookupChecks();
@@ -318,6 +319,7 @@ void SGHarnessRunTranslationCheck(UIWindow *window) {
     // A timer leaves the dispatch-main callback before the automatic tests pump their nested run loop.
     // Otherwise queued translator completions cannot run while this main-queue block is still executing.
     [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:NO block:^(NSTimer *timer) {
+        wrapChecks();
         reviewChecks(window);
 #ifdef SG_HARNESS_AUTO_TRANSLATION
         autoCheck(window);
