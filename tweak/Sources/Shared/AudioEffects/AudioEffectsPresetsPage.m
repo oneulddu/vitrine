@@ -310,8 +310,10 @@ enum { kSaveRow, kImportRow, kActionRows };
         field.keyboardAppearance = UIKeyboardAppearanceDark;
     }];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    // The alert holds its actions and their handlers, so the handler must not hold the alert back.
+    __weak UIAlertController *weakAlert = alert;
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.save", @"Save") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        NSString *name = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        NSString *name = [weakAlert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         if (!name.length) return;
         SGDSPSaveUserPreset(name);
         self->_mine = userPresetNames();

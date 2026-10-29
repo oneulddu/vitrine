@@ -14,6 +14,11 @@ switch on with it); each built-in preset over the others, keeping the headphone'
 master switch on; a saved preset reset and loaded back, Graphic EQ included, the master switch left out of it
 and turned on by loading it.
 
+Stale downloads (a URLProtocol double holds each response): a download finished after another output's pick, after
+None, and after an edit made through the settings setters while it was in flight (a saved or pasted curve, a
+built-in or saved preset loaded, a reset) must leave the newer curve and headphone alone; one with no edit in between
+is applied.
+
 Online: `results/INDEX.md` fetched from raw.githubusercontent.com (8850 headphones in October 2026), cached
 and read back, Sennheiser HD 600 by oratory1990 found and its GraphicEQ applied, and a dozen headphones spread
 across the index checked to have their GraphicEQ file where the address says. The cached copy is removed after.

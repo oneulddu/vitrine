@@ -87,6 +87,11 @@ void SGDSPSetNumber(NSString *key, double value);
 NSString *SGDSPString(NSString *key);
 void SGDSPSetString(NSString *key, NSString *value);
 
+// Counts every write to the Graphic EQ's curve or its headphone (a save, a paste, a preset load, a reset, a
+// correction applied or an output's remembered one), so a download started before the latest write can tell
+// that it would overwrite something newer.
+NSUInteger SGDSPGraphicEqRevision(void);
+
 // The equalizer's and the compander's gains as numbers (15 and 7 of them), from and to their keys.
 NSArray<NSNumber *> *SGDSPGains(NSString *key);
 void SGDSPSetGains(NSString *key, NSArray<NSNumber *> *gains);

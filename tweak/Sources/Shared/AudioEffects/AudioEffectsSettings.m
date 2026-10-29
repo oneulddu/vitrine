@@ -105,7 +105,14 @@ NSString *SGDSPString(NSString *key) {
     return [value isKindOfClass:NSString.class] ? value : (stringDefaults()[key] ?: @"");
 }
 
+static _Atomic NSUInteger sg_graphicEqRevision;
+
+NSUInteger SGDSPGraphicEqRevision(void) {
+    return sg_graphicEqRevision;
+}
+
 void SGDSPSetString(NSString *key, NSString *value) {
+    if ([key isEqualToString:SGKeyDSPGraphicEqNodes] || [key isEqualToString:SGKeyDSPGraphicEqHeadphone]) ++sg_graphicEqRevision;
     [store() setObject:value ?: @"" forKey:key];
     SGDSPApply(SGDSPEffectOf(key));
 }
@@ -142,6 +149,7 @@ void SGDSPSetGains(NSString *key, NSArray<NSNumber *> *gains) {
 }
 
 void SGDSPResetAll(void) {
+    ++sg_graphicEqRevision;
     for (size_t i = 0; i < sizeof kNumbers / sizeof *kNumbers; i++) [store() removeObjectForKey:kNumbers[i].key];
     for (NSString *key in stringDefaults()) [store() removeObjectForKey:key];
     for (NSString *effect in SGDSPEffectSwitches()) [store() removeObjectForKey:effect];

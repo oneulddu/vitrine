@@ -151,6 +151,20 @@ static void checkPresets(void) {
     check([SGDSPUserPresetNames() isEqualToArray:@[@"Mine"]], @"a preset deleted");
 }
 
+// A download of `headphone` held in flight while `during` edits the settings, then released: `expected` says
+// what the settings must hold afterwards, and the request's callback must have been completed.
+static void checkEditDuringDownload(NSString *what, SGAutoEqHeadphone *headphone, void (^during)(void), BOOL (^expected)(void)) {
+    [pending removeAllObjects];
+    __block BOOL done = NO;
+    SGAutoEqApply(headphone, ^(NSString *error) { done = YES; });
+    waitFor(^BOOL { return pending.count == 1; });
+    if (pending.count != 1) { check(NO, [what stringByAppendingString:@": download intercepted"]); return; }
+    during();
+    [(AuditProtocol *)pending[0] finish];
+    waitFor(^BOOL { return done; });
+    check(done && expected(), what);
+}
+
 static void checkStaleDownload(void) {
     pending = [NSMutableArray array];
     [NSURLProtocol registerClass:AuditProtocol.class];
@@ -183,6 +197,39 @@ static void checkStaleDownload(void) {
     [(AuditProtocol *)pending[0] finish];
     waitFor(^BOOL { return done; });
     check(done && !SGDSPSwitch(SGKeyDSPGraphicEq), @"a newer None pick cancels the pending correction");
+
+    // Edits made while a download is in flight, through the same setters the pages use.
+    checkEditDuringDownload(@"nothing in between: the download is applied", headphone, ^{}, ^BOOL {
+        return SGDSPSwitch(SGKeyDSPGraphicEq) && [SGDSPString(SGKeyDSPGraphicEqNodes) isEqualToString:@"GraphicEQ: 20 -9;"]
+               && [SGDSPString(SGKeyDSPGraphicEqHeadphone) isEqualToString:@"Audit/A"];
+    });
+    checkEditDuringDownload(@"a saved or pasted curve (the Graphic EQ editor's save)", headphone, ^{
+        SGDSPSetString(SGKeyDSPGraphicEqHeadphone, @"");
+        SGDSPSetString(SGKeyDSPGraphicEqNodes, @"GraphicEQ: 100 4;");
+    }, ^BOOL {
+        return [SGDSPString(SGKeyDSPGraphicEqNodes) isEqualToString:@"GraphicEQ: 100 4;"] && !SGDSPString(SGKeyDSPGraphicEqHeadphone).length;
+    });
+    checkEditDuringDownload(@"a built-in preset loaded", headphone, ^{
+        SGDSPSetString(SGKeyDSPGraphicEqHeadphone, @"Audit/Kept");
+        SGDSPSetString(SGKeyDSPGraphicEqNodes, @"GraphicEQ: 200 5;");
+        SGDSPLoadBuiltInPreset(0);
+    }, ^BOOL {
+        return [SGDSPString(SGKeyDSPGraphicEqNodes) isEqualToString:@"GraphicEQ: 200 5;"]
+               && [SGDSPString(SGKeyDSPGraphicEqHeadphone) isEqualToString:@"Audit/Kept"];
+    });
+    checkEditDuringDownload(@"a user preset loaded", headphone, ^{
+        SGDSPSaveUserPreset(@"Audit mine");
+        SGDSPSetString(SGKeyDSPGraphicEqHeadphone, @"");
+        SGDSPSetString(SGKeyDSPGraphicEqNodes, @"GraphicEQ: 300 6;");
+        SGDSPLoadUserPreset(@"Audit mine");
+    }, ^BOOL {
+        return [SGDSPString(SGKeyDSPGraphicEqNodes) isEqualToString:@"GraphicEQ: 200 5;"]
+               && [SGDSPString(SGKeyDSPGraphicEqHeadphone) isEqualToString:@"Audit/Kept"];
+    });
+    checkEditDuringDownload(@"a reset", headphone, ^{ SGDSPResetAll(); }, ^BOOL {
+        return !SGDSPSwitch(SGKeyDSPGraphicEq) && !SGDSPString(SGKeyDSPGraphicEqHeadphone).length
+               && [SGDSPString(SGKeyDSPGraphicEqNodes) isEqualToString:@"GraphicEQ: 0.0 0.0;"];
+    });
     [NSURLProtocol unregisterClass:AuditProtocol.class];
 }
 

@@ -264,9 +264,12 @@ void SGAutoEqApply(SGAutoEqHeadphone *headphone, void (^done)(NSString *)) {
     }
     NSString *outputUID = [sg_outputUID copy];
     NSUInteger generation = ++sg_pickGeneration;
+    NSUInteger revision = SGDSPGraphicEqRevision();
     fetchText(url, ^(NSString *text, NSString *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (generation != sg_pickGeneration || !(outputUID == sg_outputUID || [outputUID isEqualToString:sg_outputUID])) {
+            // A pick, an output change, or any write to the curve or headphone since the request makes it stale.
+            if (generation != sg_pickGeneration || revision != SGDSPGraphicEqRevision()
+                || !(outputUID == sg_outputUID || [outputUID isEqualToString:sg_outputUID])) {
                 // Complete the UI request without applying or remembering stale audio.
                 done(nil);
                 return;

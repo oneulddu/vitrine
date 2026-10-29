@@ -77,6 +77,11 @@ the mono mix it gets is the measured level 6 dB down, the sine being in one chan
     xcrun simctl install <udid> build/sim/AudioEffectsHarness.app
     xcrun simctl launch --console-pty <udid> com.vojta.audioeffectsharness
 
+`THEOS=$HOME/theos ./build-presets-page.sh` builds `sim/presets-page.m` (`build/presets-page/PresetsPageHarness.app`,
+`com.vojta.presetspageharness`): the real Presets page opens its Save dialog, which is cancelled in one round and
+saved with a typed name in the next, and the page is popped; the dialog and the page must both be freed (it fails
+if the Save handler holds its own alert), and Save must still store the name. Failures exit 1.
+
 Use a device of your own (`xcrun simctl create`), by UDID. The app has the shared scene delegate (`../scene.m`),
 without which iOS 27 kills it at launch; 2026-10-06 all passed on the iOS 27.0 simulator. The tweak's own lines
 are in the unified log:
