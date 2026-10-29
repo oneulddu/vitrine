@@ -77,7 +77,7 @@ their check executable in the workflow.
 | `lyrics-pip/build.sh` | Catalyst PiP text decision (`LyricsPiPText.m`) for synthetic lines and positions, plus frame fitting checks (`LyricsPiPFrame.m`) and sample frame PNGs. |
 | `lyrics-sources/build.sh` | Offline provider/parser/language fixtures. |
 | `lyrics-sources/state-build.sh` | Real keeper and concurrent source walk with fake replies. |
-| `lyrics-store/build.sh` | Foundation codec, isolated disk reads/writes/deletion, and oldest-first count/byte pruning; run `lyrics-store/build/lyrics-store` after building. |
+| `lyrics-store/build.sh` | Foundation codec, isolated disk reads/writes/deletion, and oldest-first count/byte pruning; builds into a temporary directory and runs the checks itself. |
 | `lyrics-translation/build.sh` | Default checks include `check-ai.m`; also `--auto-retry-only`. |
 | `lyrics-translation/ondevice-kept-check.sh` | Catalyst Swift check: on-device translation keeps target-language lines as completed results. |
 | `meaning-translate/build.sh` | Catalyst meaning sheet's Translate / Show Original over translation doubles for every provider route: stale replies, dismissal, duplicate taps, retry, language change, attribution kept. |

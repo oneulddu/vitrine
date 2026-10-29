@@ -109,7 +109,7 @@ HARNESSES = [
     {"name": "Lyrics walk", "dir": "lyrics-walk",
      "run": "sh harness/lyrics-walk/build.sh"},
     {"name": "Offline lyrics store", "dir": "lyrics-store",
-     "run": "sh harness/lyrics-store/build.sh && harness/lyrics-store/build/lyrics-store"},
+     "run": "sh harness/lyrics-store/build.sh"},
     {"name": "Lyrics state and concurrent walk", "dir": "lyrics-sources",
      "run": "sh harness/lyrics-sources/state-build.sh"},
     {"name": "Lyrics translation and AI", "dir": "lyrics-translation",

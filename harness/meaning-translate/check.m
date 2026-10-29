@@ -560,7 +560,11 @@ static void run(void) {
     [sg_window makeKeyAndVisible];
     // A timer, not a queued block: the checks pump the run loop for a double's answer, and the main queue is not
     // drained reentrantly from a block still running on it.
-    [NSTimer scheduledTimerWithTimeInterval:0.4 repeats:NO block:^(NSTimer *timer) {
+    // A slow CI runner can take longer than a moment to attach the window to its scene: wait up to five seconds.
+    CFTimeInterval started = CACurrentMediaTime();
+    [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:YES block:^(NSTimer *timer) {
+        if (!self.window.windowScene && CACurrentMediaTime() - started < 5) return;
+        [timer invalidate];
         if (!self.window.windowScene) HARNESS_FAIL(@"the window never joined a scene");
         run();
     }];
