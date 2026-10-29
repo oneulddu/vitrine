@@ -426,7 +426,14 @@ Shared:
                   Still (one frame) or Animated (15 fps). Layout (SGKeyLockScreenLyricsLayout, under Lyrics style): Left
                   as above (the default), Centered (each line centred in the same column) or Poster (the line alone at
                   1.6 times the size in the heavy weight, left-aligned, its translation under it; at a rest the next
-                  line alone in its place, dimmed). In every layout a block still too tall at the smallest size, whose
+                  line alone in its place, dimmed), Messages or Vinyl (scenes of their own, drawn only between 17% and
+                  65% of the screen and held as one frame under either style: Messages on black, the previous line a
+                  grey bubble on the left, the current line a #0A84FF bubble on the right, a pill of three dots while a
+                  next line is coming, never its words, sides swapped right to left, the current bubble at most 4
+                  lines and the previous 2 after shrinking to 0.6; Vinyl on #0E0E0E, a still record of 45 to 60% of the
+                  visible width with the cover as its round label, a lighter rim and a soft glow, the current line in
+                  New York italic under it, the next line at 55% white; harness/lyrics-clip/ `scenes`, `unchanged.sh`
+                  and `mutations.py`). In the first three layouts a block still too tall at the smallest size, whose
                   bottom would pass 65% of the screen, lets go of the line sung last, then the next line, then the
                   translation, and last keeps the whole lines of the line that fit from 17% down, the last ending in an
                   ellipsis. Fallbacks use the screen's native width and the shared

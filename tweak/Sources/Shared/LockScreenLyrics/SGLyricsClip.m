@@ -3,6 +3,11 @@
 #import <Accelerate/Accelerate.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreText/CoreText.h>
+#if TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>   // Vinyl's serif design, which Core Text does not name
+#else
+#import <AppKit/AppKit.h>
+#endif
 #import "SGLyricsClip.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
 
@@ -261,17 +266,317 @@ static CGImageRef newWords(NSString *previous, NSString *line, NSString *transla
     return image;
 }
 
+// Messages and Vinyl paint the whole clip. Their sizes are shares of the card, the strip of the clip the lock screen
+// shows: its width W (kScreen of the clip's) and its height H, the clip's. All they draw stays between kTop and
+// kLowest of the height, where the other layouts keep their words, clear of the clock and the media controls.
+// Messages on black, of W: the bubbles kMessagesSide in from each side, the stack ending at kLowest. A bubble is at
+// most kBubbleWidth of the stack's width, its corners kBubbleRadius round, its words kBubbleFont tall and
+// kBubbleLineHeight of that apart, at most kMineLines lines of the line and kTheirsLines of the line sung last,
+// kBubblePadX by kBubblePadY in, kBubbleGap from the next bubble. The typing bubble is a pill, its three dots in
+// kSecondary kDot of the font size across and kDotGap of it apart.
+static const uint32_t kMessagesBackground = 0x000000, kTheirs = 0x262629, kMine = 0x0A84FF, kSecondary = 0x8E8E93;
+static const CGFloat kMessagesSide = 0.05;
+static const CGFloat kBubbleWidth = 0.74, kBubbleRadius = 0.045, kBubbleFont = 0.05, kBubbleLineHeight = 1.3;
+static const CFIndex kMineLines = 4, kTheirsLines = 2;
+static const CGFloat kBubblePadX = 0.03, kBubblePadY = 0.02, kBubbleGap = 0.015, kDot = 0.3, kDotGap = 0.22;
+// Vinyl on kVinylBackground, of W: a kDisc record kRecordMost across, less down to kRecordLeast when the words need
+// the room, in a glow of kGlowAlpha white kGlow wide; its rim kRimAlpha white, grooves kGroove apart at kGrooveAlpha
+// white from kGroovesFrom of the label out to kGroovesTo of the record, and a sheen of two wedges at kSheenAlpha
+// white; the cover as its label, a circle kLabel of the record across (kLabelPlain without one), round a spindle hole
+// kSpindle of it across. The words kRecordGap under it, centred kVinylSide in from each side: the line in italic
+// serif kVinylFont tall, kVinylLineHeight of that apart (kVinylCJKLineHeight with Chinese, Japanese or Korean in it);
+// the next line kVinylNextGap under it in the system font kVinylNextFont tall, kVinylNextLineHeight of that apart,
+// kVinylNextAlpha white. The record and the words are centred together between kTop and kLowest, the glow inside.
+static const uint32_t kVinylBackground = 0x0E0E0E, kDisc = 0x050505, kLabelPlain = 0x2A2A2C;
+static const CGFloat kRecordMost = 0.6, kRecordLeast = 0.45, kRecordGap = 0.04, kLabel = 0.38, kSpindle = 0.028;
+static const CGFloat kGlow = 0.04, kGlowAlpha = 0.12;
+static const CGFloat kRimAlpha = 0.25, kGroove = 0.005, kGrooveAlpha = 0.05, kGroovesFrom = 1.15, kGroovesTo = 0.96, kSheenAlpha = 0.09;
+static const CGFloat kVinylSide = 0.1, kVinylFont = 0.08, kVinylLineHeight = 1.2, kVinylCJKLineHeight = 1.35;
+static const CGFloat kVinylNextFont = 0.046, kVinylNextLineHeight = 1.25, kVinylNextAlpha = 0.55, kVinylNextGap = 0.02;
+
+static CGColorRef newColor(uint32_t rgb, CGFloat alpha) CF_RETURNS_RETAINED {
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGFloat parts[] = {(rgb >> 16 & 0xFF) / 255.0, (rgb >> 8 & 0xFF) / 255.0, (rgb & 0xFF) / 255.0, alpha};
+    CGColorRef color = CGColorCreate(space, parts);
+    CGColorSpaceRelease(space);
+    return color;
+}
+
+static void setFill(CGContextRef context, uint32_t rgb, CGFloat alpha) {
+    CGColorRef color = newColor(rgb, alpha);
+    CGContextSetFillColorWithColor(context, color);
+    CGColorRelease(color);
+}
+
+// `text` in `font`, white at `alpha`, its lines `lineHeight` apart, `before` under what comes before it.
+static NSAttributedString *styled(NSString *text, CTFontRef font, CGFloat alpha, CGFloat lineHeight, CGFloat before,
+                                  CTTextAlignment alignment) {
+    CTParagraphStyleSetting settings[] = {
+        {kCTParagraphStyleSpecifierMinimumLineHeight, sizeof(lineHeight), &lineHeight},
+        {kCTParagraphStyleSpecifierMaximumLineHeight, sizeof(lineHeight), &lineHeight},
+        {kCTParagraphStyleSpecifierParagraphSpacingBefore, sizeof(before), &before},
+        {kCTParagraphStyleSpecifierAlignment, sizeof(alignment), &alignment},
+    };
+    CTParagraphStyleRef paragraph = CTParagraphStyleCreate(settings, sizeof(settings) / sizeof(settings[0]));
+    CGColorRef color = newColor(0xFFFFFF, alpha);
+    NSAttributedString *words = [[NSAttributedString alloc] initWithString:keptWhole(text) attributes:@{
+        (id)kCTFontAttributeName: (__bridge id)font,
+        (id)kCTParagraphStyleAttributeName: (__bridge id)paragraph,
+        (id)kCTForegroundColorAttributeName: (__bridge id)color,
+    }];
+    CFRelease(paragraph);
+    CGColorRelease(color);
+    return words;
+}
+
+// The size `words` take wrapped at `width`, in whole pixels.
+static CGSize sizeOf(NSAttributedString *words, CGFloat width) {
+    CTFramesetterRef setter = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)words);
+    CGSize fits = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRangeMake(0, 0), NULL, CGSizeMake(width, CGFLOAT_MAX), NULL);
+    CFRelease(setter);
+    return CGSizeMake(ceil(fits.width), ceil(fits.height));
+}
+
+// `words` in `box` (Core Graphics counts up from the bottom), from its top; words running past it end in an ellipsis
+// after the whole lines that fit, placed `flush` of the way across.
+static void drawIn(CGContextRef context, NSAttributedString *words, CGRect box, CGFloat flush) {
+    CTFramesetterRef setter = CTFramesetterCreateWithAttributedString((__bridge CFAttributedStringRef)words);
+    CGPathRef path = CGPathCreateWithRect(box, NULL);
+    CTFrameRef frame = CTFramesetterCreateFrame(setter, CFRangeMake(0, 0), path, NULL);
+    if (CTFrameGetVisibleStringRange(frame).length < (CFIndex)words.length) drawCut(frame, words, context, box, flush);
+    else CTFrameDraw(frame, context);
+    CFRelease(frame);
+    CGPathRelease(path);
+    CFRelease(setter);
+}
+
+// Whether `text` is written right to left, by the language it reads as.
+static BOOL rightToLeft(NSString *text) {
+    if (!text.length) return NO;
+    NSString *language = CFBridgingRelease(CFStringTokenizerCopyBestStringLanguage((__bridge CFStringRef)text, CFRangeMake(0, (CFIndex)text.length)));
+    return language && [NSLocale characterDirectionForLanguage:language] == NSLocaleLanguageDirectionRightToLeft;
+}
+
+// Messages: from the top, the line sung last (theirs, on the left), the line (mine, on the right) and while a next
+// line is coming the typing dots (theirs), never its words; sides swapped for words written right to left. The stack
+// ends at kLowest and grows up; held to their lines the bubbles stay far below kTop at any size.
+static void drawMessages(CGContextRef context, NSString *previous, NSString *line, NSString *next, CGSize size) {
+    CGFloat W = size.width * kScreen, H = size.height, stack = W * (1 - 2 * kMessagesSide);
+    CGFloat left = (size.width - W) / 2 + W * kMessagesSide;
+    CGFloat padX = W * kBubblePadX, padY = W * kBubblePadY, gap = W * kBubbleGap, inside = stack * kBubbleWidth - 2 * padX;
+    setFill(context, kMessagesBackground, 1);
+    CGContextFillRect(context, (CGRect){CGPointZero, size});
+    BOOL flipped = rightToLeft(line.length ? line : previous.length ? previous : next);
+    // 0 the line sung last, 1 the line, 2 the typing dots (no words). As Left does, the words are set smaller until
+    // each bubble holds them in its lines; past the smallest size they end in an ellipsis after those.
+    BOOL shown[3] = {previous.length > 0, line.length > 0, next.length > 0};
+    NSString *texts[2] = {previous, line};
+    const CFIndex most[2] = {kTheirsLines, kMineLines};
+    NSAttributedString *words[2] = {nil, nil};
+    CGSize content[3] = {CGSizeZero, CGSizeZero, CGSizeZero};
+    CGFloat fontSize = 0, lineHeight = 0;
+    for (CGFloat scale = 1; scale >= kSmallest - 0.01; scale -= 0.1) {
+        fontSize = W * kBubbleFont * scale;
+        lineHeight = fontSize * kBubbleLineHeight;
+        CTFontRef font = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize, NULL);
+        BOOL held = YES;
+        for (int i = 0; i < 2; i++) {
+            if (!shown[i]) continue;
+            words[i] = styled(texts[i], font, 1, lineHeight, 0, kCTTextAlignmentNatural);
+            CGSize wrapped = sizeOf(words[i], inside);
+            CGFloat lines = ceil(most[i] * lineHeight);
+            held = held && wrapped.height <= lines;
+            content[i] = CGSizeMake(MIN(wrapped.width + 1, inside), MIN(wrapped.height, lines));
+        }
+        CFRelease(font);
+        if (held) break;
+    }
+    content[2] = CGSizeMake(fontSize * (3 * kDot + 2 * kDotGap), ceil(lineHeight));
+    CGSize bubbles[3];
+    CGFloat tall = 0;
+    for (int i = 0, count = 0; i < 3; i++) {
+        if (!shown[i]) continue;
+        bubbles[i] = CGSizeMake(ceil(content[i].width + 2 * padX), ceil(content[i].height + 2 * padY));
+        tall += bubbles[i].height + (count++ ? gap : 0);
+    }
+    CGFloat y = H * kLowest - tall;   // from the top
+    for (int i = 0; i < 3; i++) {
+        if (!shown[i]) continue;
+        BOOL onLeft = (i != 1) != flipped;
+        CGRect box = CGRectMake(round(onLeft ? left : left + stack - bubbles[i].width), round(H - y - bubbles[i].height),
+                                bubbles[i].width, bubbles[i].height);
+        CGFloat radius = MIN(MIN(i == 2 ? box.size.height / 2 : W * kBubbleRadius, box.size.height / 2), box.size.width / 2);
+        CGPathRef path = CGPathCreateWithRoundedRect(box, radius, radius, NULL);
+        setFill(context, i == 1 ? kMine : kTheirs, 1);
+        CGContextAddPath(context, path);
+        CGContextFillPath(context);
+        CGPathRelease(path);
+        CGRect inner = CGRectInset(box, padX, padY);
+        if (i < 2) {
+            drawIn(context, words[i], inner, flipped ? 1 : 0);
+        } else {
+            CGFloat dot = fontSize * kDot, step = dot + fontSize * kDotGap;
+            setFill(context, kSecondary, 1);
+            for (int d = 0; d < 3; d++)
+                CGContextFillEllipseInRect(context, CGRectMake(inner.origin.x + d * step, CGRectGetMidY(inner) - dot / 2, dot, dot));
+        }
+        y += bubbles[i].height + gap;
+    }
+}
+
+// New York italic, the system's serif design; Georgia Italic where there is none.
+static CTFontRef newSerifItalic(CGFloat size) CF_RETURNS_RETAINED {
+#if TARGET_OS_IPHONE
+    UIFontDescriptor *serif = [[UIFont systemFontOfSize:size].fontDescriptor fontDescriptorWithDesign:UIFontDescriptorSystemDesignSerif];
+    serif = [serif fontDescriptorWithSymbolicTraits:UIFontDescriptorTraitItalic];
+    id font = serif ? [UIFont fontWithDescriptor:serif size:size] : nil;
+#else
+    NSFontDescriptor *serif = [[NSFont systemFontOfSize:size].fontDescriptor fontDescriptorWithDesign:NSFontDescriptorSystemDesignSerif];
+    serif = [serif fontDescriptorWithSymbolicTraits:NSFontDescriptorTraitItalic];
+    id font = serif ? [NSFont fontWithDescriptor:serif size:size] : nil;
+#endif
+    return font ? (CTFontRef)CFBridgingRetain(font) : CTFontCreateWithName(CFSTR("Georgia-Italic"), size, NULL);
+}
+
+// Whether `text` has Chinese, Japanese or Korean letters in it.
+static BOOL hasCJK(NSString *text) {
+    for (NSUInteger i = 0; i < text.length; i++) {
+        unichar c = [text characterAtIndex:i];
+        if (isHangul(c) || (c >= 0x3040 && c <= 0x30FF) || (c >= 0x3400 && c <= 0x4DBF) || (c >= 0x4E00 && c <= 0x9FFF)) return YES;
+    }
+    return NO;
+}
+
+// Vinyl's words at `scale` of their size: the line, and the next one under it.
+static NSAttributedString *vinylWords(NSString *line, NSString *next, CGFloat W, CGFloat scale) {
+    NSMutableAttributedString *words = [NSMutableAttributedString new];
+    if (line.length) {
+        CGFloat size = W * kVinylFont * scale, lineHeight = size * (hasCJK(line) ? kVinylCJKLineHeight : kVinylLineHeight);
+        CTFontRef font = newSerifItalic(size);
+        [words appendAttributedString:styled(line, font, 1, lineHeight, 0, kCTTextAlignmentCenter)];
+        CFRelease(font);
+    }
+    if (next.length) {
+        CGFloat size = W * kVinylNextFont * scale;
+        CTFontRef font = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, size, NULL);
+        NSString *text = words.length ? [@"\n" stringByAppendingString:next] : next;
+        [words appendAttributedString:styled(text, font, kVinylNextAlpha, size * kVinylNextLineHeight, words.length ? W * kVinylNextGap : 0,
+                                             kCTTextAlignmentCenter)];
+        CFRelease(font);
+    }
+    return words;
+}
+
+// Vinyl: the record, and under it the line and the next one.
+static void drawVinyl(CGContextRef context, CGImageRef cover, NSString *line, NSString *next, CGSize size) {
+    CGFloat W = size.width * kScreen, H = size.height, middle = size.width / 2;
+    CGFloat glow = round(W * kGlow), gap = round(W * kRecordGap), width = round(W * (1 - 2 * kVinylSide));
+    // The band less the glow's reach above and below, so what is centred in it is centred in the band.
+    CGFloat room = floor(H * (kLowest - kTop)) - 2 * glow;
+    setFill(context, kVinylBackground, 1);
+    CGContextFillRect(context, (CGRect){CGPointZero, size});
+    // The record as large as it may be with the words at their full size under it. In what is left the words, as
+    // Left does, are set smaller until they fit; past the smallest size the next line goes, and last the line ends in
+    // an ellipsis after the whole lines that fit.
+    NSAttributedString *words = vinylWords(line, next, W, 1);
+    CGFloat full = words.length ? sizeOf(words, width).height + 1 + gap : 0;
+    CGFloat diameter = round(MIN(MAX(room - full, W * kRecordLeast), W * kRecordMost)), wordsRoom = room - diameter - gap, tall = 0;
+    for (int step = 0; step < 2 && words.length; step++) {
+        if (step == 1) {
+            if (!line.length || !next.length) continue;
+            next = nil;
+        }
+        for (CGFloat scale = 1; scale >= kSmallest - 0.01; scale -= 0.1) {
+            words = vinylWords(line, next, W, scale);
+            tall = sizeOf(words, width).height + 1;
+            if (tall <= wordsRoom) break;
+        }
+        if (tall <= wordsRoom) break;
+    }
+    tall = MIN(tall, wordsRoom);
+    CGFloat block = diameter + (words.length ? gap + tall : 0), top = round(H * kTop + glow + (room - block) / 2);   // from the top
+    CGFloat radius = diameter / 2, label = diameter * kLabel / 2;
+    CGRect disc = CGRectMake(round(middle - radius), H - top - diameter, diameter, diameter);
+    CGPoint centre = CGPointMake(CGRectGetMidX(disc), CGRectGetMidY(disc));
+    CGContextSaveGState(context);
+    CGColorRef halo = newColor(0xFFFFFF, kGlowAlpha);
+    CGContextSetShadowWithColor(context, CGSizeZero, glow, halo);
+    CGColorRelease(halo);
+    setFill(context, kDisc, 1);
+    CGContextFillEllipseInRect(context, disc);
+    CGContextRestoreGState(context);
+    CGContextSaveGState(context);
+    CGContextAddEllipseInRect(context, disc);
+    CGContextClip(context);
+    CGColorRef groove = newColor(0xFFFFFF, kGrooveAlpha), rim = newColor(0xFFFFFF, kRimAlpha);
+    CGContextSetStrokeColorWithColor(context, groove);
+    CGContextSetLineWidth(context, 1);
+    for (CGFloat r = label * kGroovesFrom; r < radius * kGroovesTo; r += W * kGroove)
+        CGContextStrokeEllipseInRect(context, CGRectMake(centre.x - r, centre.y - r, 2 * r, 2 * r));
+    CGContextSetStrokeColorWithColor(context, rim);
+    CGContextSetLineWidth(context, 2);
+    CGContextStrokeEllipseInRect(context, CGRectInset(disc, 1, 1));
+    CGColorRelease(groove);
+    CGColorRelease(rim);
+    // Two soft bands of light across it, corner to corner (a linear gradient: the conic one needs iOS 17).
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGFloat sheen[] = {1, 1, 1, 0,  1, 1, 1, kSheenAlpha,  1, 1, 1, 0,  1, 1, 1, kSheenAlpha,  1, 1, 1, 0};
+    CGFloat stops[] = {0.15, 0.3, 0.5, 0.7, 0.85};
+    CGGradientRef gradient = CGGradientCreateWithColorComponents(space, sheen, stops, sizeof(stops) / sizeof(stops[0]));
+    CGContextDrawLinearGradient(context, gradient, CGPointMake(CGRectGetMinX(disc), CGRectGetMaxY(disc)),
+                                CGPointMake(CGRectGetMaxX(disc), CGRectGetMinY(disc)), 0);
+    CGGradientRelease(gradient);
+    CGColorSpaceRelease(space);
+    CGContextRestoreGState(context);
+    // The label: the cover cropped to its circle, about the middle.
+    CGRect labelBox = CGRectMake(centre.x - label, centre.y - label, 2 * label, 2 * label);
+    CGContextSaveGState(context);
+    CGContextAddEllipseInRect(context, labelBox);
+    CGContextClip(context);
+    if (cover) {
+        CGFloat w = CGImageGetWidth(cover), h = CGImageGetHeight(cover), fill = 2 * label / MIN(w, h);
+        CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+        CGContextDrawImage(context, CGRectMake(centre.x - w * fill / 2, centre.y - h * fill / 2, w * fill, h * fill), cover);
+    } else {
+        setFill(context, kLabelPlain, 1);
+        CGContextFillRect(context, labelBox);
+    }
+    CGContextRestoreGState(context);
+    CGFloat hole = diameter * kSpindle / 2;
+    setFill(context, kVinylBackground, 1);
+    CGContextFillEllipseInRect(context, CGRectMake(centre.x - hole, centre.y - hole, 2 * hole, 2 * hole));
+    if (words.length) drawIn(context, words, CGRectMake(round(middle - width / 2), H - top - block, width, tall), 0.5);
+}
+
+// A scene's whole picture, the size of the clip.
+static CGImageRef newScene(CGImageRef cover, NSString *previous, NSString *line, NSString *next, CGSize size,
+                           SGLyricsClipLayout layout) CF_RETURNS_RETAINED {
+    CGContextRef context = newContext(size, NULL, 0);
+    if (layout == SGLyricsClipMessages) drawMessages(context, previous, line, next, size);
+    else drawVinyl(context, cover, line, next, size);
+    CGImageRef image = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    return image;
+}
+
+// What goes over the backdrop: a scene's picture, or the words.
+static CGImageRef newPicture(CGImageRef cover, NSString *previous, NSString *line, NSString *translation, NSString *next,
+                             CGSize size, SGLyricsClipLayout layout) CF_RETURNS_RETAINED {
+    if (SGLyricsClipIsScene(layout)) return newScene(cover, previous, line, next, size, layout);
+    return newWords(nil, line, translation, next, size, layout, NULL);
+}
+
 // A frame `phase` of the way through the loop, 0 to 1, into `context`.
 static void drawFrame(CGContextRef context, CGImageRef backdrop, CGImageRef words, CGSize size, double phase) {
     CGFloat grow = kBreath * (1 - cos(2 * M_PI * phase)) / 2;
     CGRect bounds = {CGPointZero, size};
-    CGContextDrawImage(context, CGRectInset(bounds, -size.width * grow / 2, -size.height * grow / 2), backdrop);
+    if (backdrop) CGContextDrawImage(context, CGRectInset(bounds, -size.width * grow / 2, -size.height * grow / 2), backdrop);
     if (words) CGContextDrawImage(context, bounds, words);
 }
 
-CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, NSString *line, NSString *translation, NSString *next, CGSize size,
-                                       SGLyricsClipLayout layout) {
-    CGImageRef words = newWords(nil, line, translation, next, size, layout, NULL);
+CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, CGImageRef cover, NSString *previous, NSString *line,
+                                       NSString *translation, NSString *next, CGSize size, SGLyricsClipLayout layout) {
+    CGImageRef words = newPicture(cover, previous, line, translation, next, size, layout);
     CGContextRef context = newContext(size, NULL, 0);
     drawFrame(context, backdrop, words, size, 0);
     CGImageRef frame = CGBitmapContextCreateImage(context);
@@ -280,14 +585,16 @@ CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, NSString *line, NSSt
     return frame;
 }
 
-BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, NSString *line, NSString *translation, NSString *next,
-                                 CGSize size, SGLyricsClipStyle style, SGLyricsClipLayout layout) {
+BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, CGImageRef cover, NSString *previous, NSString *line,
+                                 NSString *translation, NSString *next, CGSize size, SGLyricsClipStyle style,
+                                 SGLyricsClipLayout layout) {
     // Written beside the file and moved over it once whole, so a clip cut off halfway is never found.
     NSURL *partial = [file URLByAppendingPathExtension:@"partial"];
     [NSFileManager.defaultManager removeItemAtURL:partial error:nil];
     AVAssetWriter *writer = [AVAssetWriter assetWriterWithURL:partial fileType:AVFileTypeMPEG4 error:nil];
     if (!writer) return NO;
-    int32_t frames = style == SGLyricsClipAnimated ? kLoopSeconds * kFPS : 1;
+    // A scene has no backdrop to breathe: one frame, held as long as the loop.
+    int32_t frames = style == SGLyricsClipAnimated && !SGLyricsClipIsScene(layout) ? kLoopSeconds * kFPS : 1;
     CMTime length = CMTimeMake(style == SGLyricsClipAnimated ? kLoopSeconds : kStillSeconds, 1);
     AVAssetWriterInput *input = [AVAssetWriterInput assetWriterInputWithMediaType:AVMediaTypeVideo outputSettings:@{
         AVVideoCodecKey: AVVideoCodecTypeH264,
@@ -312,7 +619,7 @@ BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, NSString *lin
     [writer addInput:input];
     if (![writer startWriting]) return NO;
     [writer startSessionAtSourceTime:kCMTimeZero];
-    CGImageRef words = newWords(nil, line, translation, next, size, layout, NULL);
+    CGImageRef words = newPicture(cover, previous, line, translation, next, size, layout);
     BOOL ok = YES;
     for (int32_t i = 0; i < frames && ok; i++) {
         while (!input.readyForMoreMediaData && writer.status == AVAssetWriterStatusWriting) [NSThread sleepForTimeInterval:0.002];

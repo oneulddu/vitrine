@@ -209,8 +209,8 @@ CGSize SGLyricsClipSize(CGFloat pixels) { return CGSizeMake(24, 32); }
 CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) {
     return CGImageRetain(cover ?: blue.CGImage);
 }
-CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, NSString *line, NSString *translation, NSString *next, CGSize size,
-                                       SGLyricsClipLayout layout) {
+CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, CGImageRef cover, NSString *previous, NSString *line,
+                                       NSString *translation, NSString *next, CGSize size, SGLyricsClipLayout layout) {
     return CGImageRetain(backdrop);
 }
 NSString *SGLyricsClipLook(NSURL *motion, SGLyricsClipStyle style, SGLyricsClipLayout layout) {
@@ -240,8 +240,9 @@ static void recordClip(NSURL *file, NSString *line, NSString *translation) {
         clipGateTimedOut = dispatch_semaphore_wait(clipRelease, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0;
     }
 }
-BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, NSString *line, NSString *translation, NSString *next,
-                                 CGSize size, SGLyricsClipStyle style, SGLyricsClipLayout layout) {
+BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, CGImageRef cover, NSString *previous, NSString *line,
+                                 NSString *translation, NSString *next, CGSize size, SGLyricsClipStyle style,
+                                 SGLyricsClipLayout layout) {
     recordClip(file, line, translation);
     return writeFrame(file, backdrop);
 }

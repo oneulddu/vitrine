@@ -1078,6 +1078,8 @@
 "settings.lockscreen.low_data.subtitle" = "움직이는 아트워크, 노래당 최대 약 7MB. Vitrine 전체의 움직이는 아트워크에 적용됩니다.";
 "settings.lockscreen.low_data.title" = "저데이터 모드에서 다운로드";
 "settings.lockscreen.lyrics_layout.choice.centered" = "가운데 정렬";
+"settings.lockscreen.lyrics_layout.choice.messages" = "메시지";
+"settings.lockscreen.lyrics_layout.choice.vinyl" = "바이닐";
 "settings.lockscreen.lyrics_layout.choice.left" = "왼쪽 정렬";
 "settings.lockscreen.lyrics_layout.choice.poster" = "포스터";
 "settings.lockscreen.lyrics_layout.subtitle" = "가사가 놓이는 위치입니다. '포스터'는 현재 줄만 크게 표시합니다.";

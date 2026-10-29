@@ -74,7 +74,7 @@ their check executable in the workflow.
 | `local-files/build.sh` | Isolated metadata and imported LRC checks, the cover resolver, and the native cover watcher (`watcher.m`) updating to system artwork that arrives after its retries. |
 | `local-files/suggest-build.py` | Find Info's pure parts on the Mac: query cleaning, the three-second duration window, ranking, JSON parsing and size caps, artwork URL rewriting, and that accepting only fills the editor (with mutations). |
 | `lyrics/translation-check.sh` | Catalyst lyrics-menu assertions, not screenshots alone. |
-| `lyrics-clip/build.sh` | Default synthetic still/animated clips with decode assertions. |
+| `lyrics-clip/build.sh` | Default synthetic still/animated clips with decode assertions, and the Messages and Vinyl scenes (`scenes`). `unchanged.sh` (needs Git history) proves Left, Centered and Poster pixel-identical to the commit before the scenes; `mutations.py` breaks each scene rule once. |
 | `lyrics-pip/build.sh` | Catalyst PiP text decision (`LyricsPiPText.m`) for synthetic lines and positions, plus frame fitting checks (`LyricsPiPFrame.m`) and sample frame PNGs. |
 | `lyrics-sources/build.sh` | Offline provider/parser/language fixtures. |
 | `lyrics-sources/state-build.sh` | Real keeper and concurrent source walk with fake replies. |

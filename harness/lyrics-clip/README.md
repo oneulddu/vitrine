@@ -27,6 +27,32 @@ stand-in.
 Five additional still clips exercise each selected background through the real encoder and existing
 decoded-frame layout checks. `OUT=<unique temporary directory>` isolates build/output artifacts.
 
+`scenes.m` checks the two layouts that paint the whole picture, Messages and Vinyl, against the spec's numbers as the
+review revised them (notes/cleanroom-specs/chroma-plus/lockscreen-layouts.md; W is the card's width, the 9:19.5 strip
+the phone shows, H the height). Fixtures in both: the line with the one before and the next, no line before, no next
+line, a very long Latin and a very long CJK line, right to left (Arabic), emoji, and for Vinyl no cover; each preview
+is saved as `build/scenes/<layout>-<fixture>.png`. Every one draws only between 17% and 65% of H, where the other
+layouts keep their words. Messages: the line in a #0A84FF bubble, another next line draws the very same frame (its
+words never show), no grey bubble without a next line and the dots under the line with one, the line sung last at the
+stack's left edge and the line at its right (swapped right to left), the stack ending at 65% of H with nothing but its
+bubbles drawn, every bubble's four corners alike and the typing one a pill, a long line held to 4 lines and a long
+line sung last to 2 at 0.6 of the size, a bubble at most 74% of the stack wide, and the cover and translation left
+out. Vinyl: the record 0.6 W across when the words fit and 0.45 W under a long line, centred, the record and the words
+centred in the band together, a glow about it and a 25% white rim, the cover as a label 38% of the record (a flat dark
+one without), the words centred 4% W under it, the line's lines 1.2 of its size apart (1.35 with CJK), the next line
+at 55% white, and the line sung last and the translation left out. Each layout's clip is written Still and Animated
+and read back: one frame, held 2 s or 4 s.
+
+    ./build.sh && build/lyrics-clip scenes [cover.jpg]
+
+`unchanged.sh` builds `frames.m` twice, against SGLyricsClip.m as it was at BASE (the commit before Messages and
+Vinyl) and against the tree's, and fails on any pixel of any case above in Left, Centered or Poster that differs,
+with the scenes' inputs handed to today's. `mutations.py` breaks each of those rules once in a copy of the sources and
+checks the harness fails at that rule.
+
+    sh unchanged.sh
+    python3 mutations.py
+
 `motion` renders Moving artwork with lyrics (`SGLyricsClipWriteOverMotion`, `motion.m`) over two stand-ins
 it makes, a bright busy flag (720x1280, 30 fps, a Canvas's shape) and a dark field (904x1206, 24 fps, an
 Apple Music cover's), and over any videos given: a line with the one before and after, the same with its

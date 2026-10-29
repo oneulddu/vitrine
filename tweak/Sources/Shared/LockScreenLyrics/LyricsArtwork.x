@@ -176,8 +176,9 @@ static UIImage *previewFor(NSString *artworkID, SGLockLine *line, CGSize size) {
                                                            line.seconds, line.layout) : NULL;
     if (tryMotion && !frame) markMotionFailed(line.motion, artworkID);
     if (!frame) {
-        CGImageRef backdrop = SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
-        frame = SGLyricsClipFrameWithLayout(backdrop, line.line, line.translation, line.next, size, line.layout);
+        CGImageRef backdrop = SGLyricsClipIsScene(line.layout) ? NULL : SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
+        frame = SGLyricsClipFrameWithLayout(backdrop, line.cover.CGImage, line.previous, line.line, line.translation, line.next, size,
+                                            line.layout);
         CGImageRelease(backdrop);
     }
     if (frame && currentLine(line)) [sg_previews setObject:(preview = [UIImage imageWithCGImage:frame]) forKey:artworkID];
@@ -198,8 +199,9 @@ static BOOL writeClip(NSString *artworkID, SGLockLine *line, CGSize size) {
     if (tryMotion && !over) markMotionFailed(line.motion, artworkID);
     BOOL ok = over;
     if (!ok) {
-        CGImageRef backdrop = SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
-        ok = SGLyricsClipWriteWithLayout(file, backdrop, line.line, line.translation, line.next, size, line.style, line.layout);
+        CGImageRef backdrop = SGLyricsClipIsScene(line.layout) ? NULL : SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
+        ok = SGLyricsClipWriteWithLayout(file, backdrop, line.cover.CGImage, line.previous, line.line, line.translation, line.next,
+                                         size, line.style, line.layout);
         CGImageRelease(backdrop);
     }
     // The first few of a launch of each kind, and any that fails: one a line would fill the log.
@@ -321,11 +323,12 @@ static SGLockLine *lineAt(NSArray<SGKaraokeLine *> *lines, NSInteger index, BOOL
                           UIImage *cover, SGLyricsClipStyle style, SGLyricsClipLayout layout, SGLyricsBackgroundStyle background,
                           CGSize size) {
     SGLockLine *shown = [SGLockLine new];
-    // Resting, the line sung is let go and the one coming shows alone.
+    // Resting, the line sung is let go and the one coming shows alone. The line sung last shows over moving artwork
+    // and in Messages; the clip leaves it out elsewhere.
     shown.line = resting ? nil : textAt(lines, index);
     shown.translation = translationAt(lines, index, resting);
     shown.next = textAt(lines, index + 1);
-    shown.previous = motion && !resting ? textAt(lines, index - 1) : nil;
+    shown.previous = resting ? nil : textAt(lines, index - 1);
     shown.cover = cover;
     shown.style = style;
     shown.layout = layout;
@@ -425,8 +428,9 @@ static NSTimeInterval update(void) {
         SGLyricsClipLayout layout = (SGLyricsClipLayout)SGInt(SGKeyLockScreenLyricsLayout, SGLyricsClipLeft);
         SGLyricsBackgroundStyle background = SGLyricsBackgroundRead(@"spotifyglass.lockscreen.background");
         CGSize size = SGLyricsClipSize(UIScreen.mainScreen.nativeBounds.size.width);
-        NSURL *motion = SGLockScreenArtwork() == SGLockArtworkMotionLyrics && [sg_motionURI isEqualToString:SGURIString(state.track.URI)]
-            ? sg_motion : nil;
+        // A scene covers the whole picture, so it is drawn over the cover even under Moving artwork with lyrics.
+        NSURL *motion = SGLockScreenArtwork() == SGLockArtworkMotionLyrics && !SGLyricsClipIsScene(layout)
+            && [sg_motionURI isEqualToString:SGURIString(state.track.URI)] ? sg_motion : nil;
         if (motion && motionFailed(motion)) motion = nil;
         // A line over moving artwork decodes and encodes up to 240 frames, one over the cover a still frame: a phone
         // already hot gets the cover, as Sing.x keeps its model below Serious, and the motion back once it cools.

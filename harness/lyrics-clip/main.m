@@ -6,6 +6,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "Shared/LockScreenLyrics/SGLyricsClip.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
+#import "fixtures.h"
 
 static int failures;
 // The words keep between the clock (the top 15% of the screen) and the media controls (the bottom 35%).
@@ -14,22 +15,6 @@ static const CGFloat kWordsFrom = 0.15, kWordsTo = 0.65;
 static void check(BOOL ok, NSString *what) {
     printf("  %s %s\n", ok ? "ok  " : "FAIL", what.UTF8String);
     if (!ok) failures++;
-}
-
-// A stand-in cover: two colored halves and a light disc, so the blur and the darkening show.
-static CGImageRef newCover(void) {
-    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-    CGContextRef context = CGBitmapContextCreate(NULL, 640, 640, 8, 0, space, kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
-    CGContextSetRGBFillColor(context, 0.9, 0.3, 0.2, 1);
-    CGContextFillRect(context, CGRectMake(0, 0, 640, 320));
-    CGContextSetRGBFillColor(context, 0.2, 0.4, 0.9, 1);
-    CGContextFillRect(context, CGRectMake(0, 320, 640, 320));
-    CGContextSetRGBFillColor(context, 0.95, 0.9, 0.7, 1);
-    CGContextFillEllipseInRect(context, CGRectMake(200, 200, 240, 240));
-    CGImageRef cover = CGBitmapContextCreateImage(context);
-    CGContextRelease(context);
-    CGColorSpaceRelease(space);
-    return cover;
 }
 
 static CGImageRef newImageAt(NSString *path) {
@@ -159,6 +144,7 @@ static void verify(NSURL *url, CGImageRef backdrop, CGSize size, SGLyricsClipSty
 }
 
 int motionMain(NSURL *out, int argc, char **argv);
+int scenesMain(NSURL *out, CGImageRef cover);
 
 int main(int argc, char **argv) {
     @autoreleasepool {
@@ -167,6 +153,14 @@ int main(int argc, char **argv) {
             NSURL *motionOut = [NSURL fileURLWithPath:[here stringByAppendingPathComponent:@"motion"] isDirectory:YES];
             [NSFileManager.defaultManager createDirectoryAtURL:motionOut withIntermediateDirectories:YES attributes:nil error:nil];
             return motionMain(motionOut, argc - 2, argv + 2);
+        }
+        NSURL *scenesOut = [NSURL fileURLWithPath:[here stringByAppendingPathComponent:@"scenes"] isDirectory:YES];
+        [NSFileManager.defaultManager createDirectoryAtURL:scenesOut withIntermediateDirectories:YES attributes:nil error:nil];
+        if (argc > 1 && !strcmp(argv[1], "scenes")) {
+            CGImageRef cover = argc > 2 ? newImageAt([NSString stringWithUTF8String:argv[2]]) : newCover();
+            int failed = scenesMain(scenesOut, cover);
+            CGImageRelease(cover);
+            return failed ? 1 : 0;
         }
         NSURL *out = [NSURL fileURLWithPath:[here stringByAppendingPathComponent:@"clips"] isDirectory:YES];
         [NSFileManager.defaultManager createDirectoryAtURL:out withIntermediateDirectories:YES attributes:nil error:nil];
@@ -177,25 +171,7 @@ int main(int argc, char **argv) {
         CGImageRef backdrop = SGLyricsClipBackdrop(cover, size);
         printf("the default backdrop, %.0fx%.0f: %.0f ms\n", size.width, size.height, (CFAbsoluteTimeGetCurrent() - made) * 1000);
         CGImageRef plain = SGLyricsClipBackdrop(NULL, size);
-        // name, line, its translation, next
-        NSArray *cases = @[
-            @[@"short", @"Hold on", @"", @"we're almost there"],
-            @[@"long", @"And every word I never said keeps ringing out across the quiet of the night", @"", @"until the morning finds us"],
-            @[@"cjk", @"夜空に光る星を数えながら", @"", @"君の名前を呼んだ"],
-            @[@"translated", @"夜空に光る星を数えながら", @"밤하늘에 빛나는 별을 세면서", @"君の名前を呼んだ"],
-            @[@"translated-long", @"And every word I never said keeps ringing out across the quiet of the night",
-              @"내가 하지 못한 모든 말들이 고요한 밤을 가로질러 계속 울려 퍼져", @"until the morning finds us"],
-            @[@"break", @"", @"번역만 있는 쉼", @"The first line, coming up"],
-            @[@"last", @"The very last line", @"", @""],
-            @[@"empty", @"", @"", @""],
-            // Too tall even at the smallest size: the next line and the translation go, and the line ends in an ellipsis.
-            @[@"overflow", [@"" stringByPaddingToLength:900 withString:@"Every word I never said keeps ringing out across the quiet night, " startingAtIndex:0],
-              [@"" stringByPaddingToLength:300 withString:@"and every promise I forgot comes back to find me here again, " startingAtIndex:0],
-              @"until the morning finds us"],
-            @[@"overflow-cjk", [@"" stringByPaddingToLength:420 withString:@"夜空に光る星を数えながら君の名前を何度も呼んだ、" startingAtIndex:0],
-              [@"" stringByPaddingToLength:200 withString:@"밤하늘에 빛나는 별을 세면서 너의 이름을 몇 번이고 불렀어, " startingAtIndex:0],
-              @"君の名前を呼んだ"],
-        ];
+        NSArray *cases = clipCases();
         // Every case in each layout, Left (the files' plain names) in both styles, the others Still.
         NSArray *layoutNames = @[@"", @"-centered", @"-poster"];
         for (SGLyricsClipLayout layout = SGLyricsClipLeft; layout <= SGLyricsClipPoster; layout++) {
@@ -205,7 +181,8 @@ int main(int argc, char **argv) {
                     NSString *name = [NSString stringWithFormat:@"%@%@-%@.mp4", c[0], layoutNames[layout], style == SGLyricsClipStill ? @"still" : @"animated"];
                     NSURL *url = [out URLByAppendingPathComponent:name];
                     CFAbsoluteTime start = CFAbsoluteTimeGetCurrent();
-                    BOOL written = SGLyricsClipWriteWithLayout(url, [c[0] isEqual:@"empty"] ? plain : backdrop, c[1], c[2], c[3], size, style, layout);
+                    BOOL written = SGLyricsClipWriteWithLayout(url, [c[0] isEqual:@"empty"] ? plain : backdrop, NULL, nil, c[1], c[2], c[3],
+                                                               size, style, layout);
                     double ms = (CFAbsoluteTimeGetCurrent() - start) * 1000;
                     printf("%s\n", name.UTF8String);
                     check(written, [NSString stringWithFormat:@"written in %.0f ms", ms]);
@@ -220,8 +197,9 @@ int main(int argc, char **argv) {
         // What each layout does with the words, on the preview frame (the clip's, before the encoder).
         printf("layouts\n");
         {
-            CGImageRef leftFrame = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, @"we're almost there", size, SGLyricsClipLeft);
-            CGImageRef centredFrame = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, @"we're almost there", size, SGLyricsClipCentered);
+            CGImageRef leftFrame = SGLyricsClipFrame(backdrop, @"Hold on", nil, @"we're almost there", size);
+            CGImageRef centredFrame = SGLyricsClipFrameWithLayout(backdrop, NULL, nil, @"Hold on", nil, @"we're almost there", size,
+                                                                  SGLyricsClipCentered);
             CGRect left = litBounds(leftFrame, backdrop), centred = litBounds(centredFrame, backdrop);
             CGImageRelease(leftFrame);
             CGImageRelease(centredFrame);
@@ -231,10 +209,12 @@ int main(int argc, char **argv) {
             check(fabs(CGRectGetMidX(centred) - size.width / 2) < size.width * 0.01 && CGRectGetMinX(centred) > CGRectGetMinX(left) + size.width * 0.05,
                   [NSString stringWithFormat:@"Centered sits in the middle (%.0f to %.0f of %.0f)", CGRectGetMinX(centred), CGRectGetMaxX(centred), size.width]);
             check(fabs(CGRectGetMidY(centred) - CGRectGetMidY(left)) < 2, @"Centered at Left's height");
-            CGImageRef alone = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, nil, size, SGLyricsClipLeft);
-            CGImageRef poster = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, nil, size, SGLyricsClipPoster);
-            CGImageRef posterNext = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", nil, @"we're almost there", size, SGLyricsClipPoster);
-            CGImageRef posterTold = SGLyricsClipFrameWithLayout(backdrop, @"Hold on", @"조금만 버텨", @"we're almost there", size, SGLyricsClipPoster);
+            CGImageRef alone = SGLyricsClipFrame(backdrop, @"Hold on", nil, nil, size);
+            CGImageRef poster = SGLyricsClipFrameWithLayout(backdrop, NULL, nil, @"Hold on", nil, nil, size, SGLyricsClipPoster);
+            CGImageRef posterNext = SGLyricsClipFrameWithLayout(backdrop, NULL, nil, @"Hold on", nil, @"we're almost there", size,
+                                                                SGLyricsClipPoster);
+            CGImageRef posterTold = SGLyricsClipFrameWithLayout(backdrop, NULL, nil, @"Hold on", @"조금만 버텨", @"we're almost there",
+                                                                size, SGLyricsClipPoster);
             double small = wordsIn(alone, backdrop, kWordsFrom, kWordsTo), large = wordsIn(poster, backdrop, kWordsFrom, kWordsTo);
             CGRect a = litBounds(alone, backdrop), p = litBounds(poster, backdrop);
             check(p.size.height > a.size.height * 1.45 && large > small * 2,
@@ -280,6 +260,7 @@ int main(int argc, char **argv) {
         check(preview && CGImageGetWidth(preview) == size.width && CGImageGetHeight(preview) == size.height, @"the preview frame is the clip's size");
         savePNG(preview, [out URLByAppendingPathComponent:@"preview.png"]);
         CGImageRelease(preview);
+        failures += scenesMain(scenesOut, cover);
         CGImageRelease(backdrop);
         CGImageRelease(plain);
         CGImageRelease(cover);

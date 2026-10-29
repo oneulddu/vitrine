@@ -30,7 +30,7 @@ NSArray *SGLockScreenMotionRows(void) {
                                       SGKeyLockScreenLyricsStyle, @[SGL(@"settings.lockscreen.lyrics_style.choice.still", @"Still"), SGL(@"settings.lockscreen.lyrics_style.choice.animated", @"Animated")], 0);
         style.visible = ^BOOL { return SGLockArtworkShowsLyrics(SGLockScreenArtwork()); };
         SGModRow *layout = SGChoiceRow(SGL(@"settings.lockscreen.lyrics_layout.title", @"Layout"), SGL(@"settings.lockscreen.lyrics_layout.subtitle", @"Where the lyrics sit. Poster shows the line alone, larger."),
-                                       SGKeyLockScreenLyricsLayout, @[SGL(@"settings.lockscreen.lyrics_layout.choice.left", @"Left"), SGL(@"settings.lockscreen.lyrics_layout.choice.centered", @"Centered"), SGL(@"settings.lockscreen.lyrics_layout.choice.poster", @"Poster")], 0);
+                                       SGKeyLockScreenLyricsLayout, @[SGL(@"settings.lockscreen.lyrics_layout.choice.left", @"Left"), SGL(@"settings.lockscreen.lyrics_layout.choice.centered", @"Centered"), SGL(@"settings.lockscreen.lyrics_layout.choice.poster", @"Poster"), SGL(@"settings.lockscreen.lyrics_layout.choice.messages", @"Messages"), SGL(@"settings.lockscreen.lyrics_layout.choice.vinyl", @"Vinyl")], 0);
         layout.visible = style.visible;
         SGModRow *translation = SGOptionRow(SGL(@"settings.lockscreen.translations.title", @"Translations"), SGL(@"settings.lockscreen.translations.subtitle", @"Under the line, when the lyrics have one or automatic translation makes one"), SGKeyLockScreenTranslation);
         translation.visible = style.visible;
