@@ -13,8 +13,15 @@ static void songLanguageChecks(void) {
     SGLyricsSetLanguageRule(@"ja", YES, YES);
     SGLyricsSetLanguageRule(@"en", YES, YES);
     SGHarnessPlayingTrack = track;
+    __block BOOL analysed = NO;
+    __block NSString *detectedLanguage = nil;
+    SGRAnalyzeLyricsLanguage(lines, @"en", ^(BOOL foreign, NSString *detected) { analysed = YES; detectedLanguage = detected; });
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:3];
+    while (!analysed && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    check(analysed, @"song language is available before constructing its settled menu");
     __block BOOL applied = NO;
-    UIMenu *menu = SGRSongLanguageMenu(track, lines, ^{ applied = YES; });
+    UIMenu *menu = SGRSongLanguageMenu(track, detectedLanguage, ^{ applied = YES; });
     UIMenuElement *pick = itemIn(menu, SGRLanguageName(@"ja"));
     UIMenuElement *automatic = itemIn(menu, @"Automatic");
     UIMenuElement *keep = itemIn(menu, [NSString stringWithFormat:@"Keep for %@ Songs", SGRLanguageName(@"en")]);
@@ -59,7 +66,7 @@ static void songLanguageChecks(void) {
     SGLyricsSetTrackLanguage(track, @"en");
     SGRSetLyricsTextShown(SGRLyricsTextTranslation, YES);
     SGRSetLyricsTextShown(SGRLyricsTextPronunciation, NO);
-    menu = SGRSongLanguageMenu(track, lines, ^{ applied = YES; });
+    menu = SGRSongLanguageMenu(track, detectedLanguage, ^{ applied = YES; });
     applied = NO;
     tapped = tap(itemIn(menu, [NSString stringWithFormat:@"Keep for %@ Songs", SGRLanguageName(@"en")]));
     ruled = SGLyricsLanguageRule(@"en", &translation, &pronunciation);

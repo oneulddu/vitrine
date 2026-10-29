@@ -96,7 +96,12 @@ static void autoCheck(UIWindow *window) {
     check(googleCalls == 1 && bingCalls == 1 && ((SGKaraokeLine *)lines[1]).translation.length, @"saved translation is reused without a new chain");
 
     autoSetup(YES);
-    SGHarnessGoogle = ^(NSArray *sent, SGHarnessDone done) { googleCalls++; done(@[@"", @"first part", @""], @"partial"); };
+    SGHarnessGoogle = ^(NSArray *sent, SGHarnessDone done) {
+        googleCalls++;
+        NSMutableArray *answer = [NSMutableArray array];
+        for (SGKaraokeLine *line in sent) [answer addObject:[SGKaraokeLineText(line) isEqual:@"tres cuatro"] ? @"first part" : @""];
+        done(answer, @"partial");
+    };
     lines = autoSong(@"auto-partial"); pump();
     check(googleCalls == 1 && bingCalls == 1 && [translations(lines) isEqual:@"source | first part* | B: cinco seis*"], @"partial success survives the next provider");
     tap(item(autoPlayer, @"Remove Translation")); pump();
@@ -159,7 +164,7 @@ static void autoCheck(UIWindow *window) {
     SGHarnessGoogle = ^(NSArray *sent, SGHarnessDone done) { googleCalls++; sg_held = done; };
     lines = autoSong(@"auto-hide"); pump();
     tap(item(autoPlayer, @"Hide Translation"));
-    if (sg_held) sg_held(@[@"", @"hidden part", @""], @"partial"); pump();
+    if (sg_held) sg_held(@[@"hidden part", @""], @"partial"); pump();
     check(!shown() && bingCalls == 0 && [((SGKaraokeLine *)lines[1]).translation isEqual:@"hidden part"], @"hiding retains an in-flight partial answer but stops further providers");
     lines = autoSong(@"auto-hidden-new"); pump();
     check(googleCalls == 1 && item(autoPlayer, @"Show Translation"), @"hidden new song sends nothing and still offers Show Translation");
@@ -189,7 +194,7 @@ static void autoCheck(UIWindow *window) {
     [args setObject:@"ko" forKey:@"translateTo"];
     [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil]; pump();
     if (stale) stale(markAll(lines, @"old language: "), nil);
-    if (sg_held) sg_held(markAll(lines, @"new language: "), nil); pump();
+    if (sg_held) sg_held(markAll([lines subarrayWithRange:NSMakeRange(1, 2)], @"new language: "), nil); pump();
     check(googleCalls == 2 && bingCalls == 0 && [((SGKaraokeLine *)lines[1]).translation hasPrefix:@"new language:"], @"target change rejects the old reply and starts only the new target");
 
     autoSetup(YES);
@@ -218,7 +223,7 @@ static void autoCheck(UIWindow *window) {
     SGHarnessOpenAI = nil;
 
     autoSetup(YES);
-    SGHarnessGoogle = ^(NSArray *sent, SGHarnessDone done) { googleCalls++; done(@[@"", @"partial status", @""], nil); };
+    SGHarnessGoogle = ^(NSArray *sent, SGHarnessDone done) { googleCalls++; done(@[@"partial status", @""], nil); };
     SGHarnessBing = ^(NSArray *sent, SGHarnessDone done) { bingCalls++; done(nil, @"Bing Translator could not be reached."); };
     autoSong(@"auto-partial-status"); pump();
     SGRAutoTranslationProgress *partialStatus = SGRAutoTranslationProgressFor(@"auto-partial-status", @"en");

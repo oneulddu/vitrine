@@ -1,6 +1,7 @@
 #import <NaturalLanguage/NaturalLanguage.h>
 #import "Core/SGCore.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/Lyrics/LyricsLanguage.h"
 #import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "AutoTranslation.h"
@@ -100,9 +101,33 @@ BOOL SGRLyricsInAnotherLanguage(NSArray<SGKaraokeLine *> *lines, NSString *langu
 BOOL SGRLyricsShouldTranslate(BOOL foreign) {
     return foreign || SGHidden(SGKeyLyricsTranslateEverySong);
 }
-BOOL SGRLyricsTranslationAllowed(NSString *track, NSArray<SGKaraokeLine *> *lines) {
+void SGRAnalyzeLyricsLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language,
+                             void (^done)(BOOL foreign, NSString *detected)) {
+    static NSCache *answers;
+    static dispatch_queue_t worker;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        answers = [NSCache new]; answers.countLimit = SGLyricsLanguageCacheSongLimit;
+        worker = dispatch_queue_create("com.vitrine.lyrics.language", DISPATCH_QUEUE_SERIAL);
+    });
+    NSArray *snapshot = SGLyricsLanguageSnapshot(lines);
+    NSMutableArray *texts = [NSMutableArray arrayWithCapacity:snapshot.count];
+    for (SGKaraokeLine *line in snapshot) [texts addObject:SGKaraokeLineText(line) ?: @""];
+    NSArray *key = @[[texts copy], [language copy] ?: @""];
+    NSArray *cached = [answers objectForKey:key];
+    if (cached) { done([cached[0] boolValue], [cached[1] length] ? cached[1] : nil); return; }
+    dispatch_async(worker, ^{
+        NSArray *answer = [answers objectForKey:key];
+        if (!answer) {
+            answer = @[@(SGRLyricsInAnotherLanguage(snapshot, key[1])), SGLyricsDetectedLanguage(snapshot) ?: @""];
+            [answers setObject:answer forKey:key];
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{ done([answer[0] boolValue], [answer[1] length] ? answer[1] : nil); });
+    });
+}
+BOOL SGRLyricsTranslationAllowed(NSString *track, NSString *detectedLanguage) {
     BOOL translation = YES, pronunciation = NO;
-    NSString *source = SGLyricsSongLanguage(track, lines);
+    NSString *source = SGLyricsTrackLanguage(track) ?: detectedLanguage;
     return !(source && SGLyricsLanguageRule(source, &translation, &pronunciation) && !translation);
 }
 
@@ -161,8 +186,11 @@ void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *line
         return mayContinue() && [language isEqual:SGLyricsGeminiLanguage()];
     }, ^{
     loaded();
-    if (!SGRAutoTranslationEnabled() || !SGRLyricsShouldTranslate(SGRLyricsInAnotherLanguage(lines, language)) ||
-        !SGRLyricsTranslationAllowed(track, lines)) return;
+    if (!SGRAutoTranslationEnabled()) return;
+    SGRAnalyzeLyricsLanguage(lines, language, ^(BOOL foreign, NSString *detected) {
+    if (!mayContinue() || ![language isEqual:SGLyricsGeminiLanguage()] ||
+        !SGRAutoTranslationEnabled() || !SGRLyricsShouldTranslate(foreign) ||
+        !SGRLyricsTranslationAllowed(track, detected)) return;
     BOOL untranslated = NO;
     for (SGKaraokeLine *line in lines) {
         if (!line.translation.length && SGRLyricsHasWords(line)) { untranslated = YES; break; }
@@ -177,6 +205,7 @@ void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *line
         ^(NSArray *sent, NSString *song, NSString *to, SGRAutoTranslated progress, SGRAutoTranslated done) {
             SGRAutoTranslateInOrder(sent, song, to, revision, mayContinue, progress, done);
         }, nil, nil);
+    });
     });
 }
 
@@ -472,11 +501,13 @@ static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> 
     self.done = nil; self.progress = nil;
     done(!cancelled && any ? [self.answer copy] : nil, nil);
 }
-- (void)take:(NSArray *)values {
-    if (![values isKindOfClass:NSArray.class] || values.count != self.answer.count) return;
+- (void)take:(NSArray *)values indexes:(NSArray<NSNumber *> *)indexes {
+    if (![values isKindOfClass:NSArray.class] || values.count != indexes.count) return;
     NSMutableIndexSet *filled = [NSMutableIndexSet indexSet];
-    [self.missing enumerateIndexesUsingBlock:^(NSUInteger i, BOOL *stop) {
-        id text = values[i];
+    [indexes enumerateObjectsUsingBlock:^(NSNumber *index, NSUInteger sent, BOOL *stop) {
+        NSUInteger i = index.unsignedIntegerValue;
+        if (![self.missing containsIndex:i]) return;
+        id text = values[sent];
         if ([text isKindOfClass:NSString.class] && [text length] <= 64000 &&
             [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) {
             self.answer[i] = text;
@@ -506,14 +537,23 @@ static void translateUsing(SGRAutoTranslator provider, NSArray<SGKaraokeLine *> 
         self.total - self.missing.count, self.total, step);
     if (![self current]) { [self finish:YES]; return; }
     if (!self.mayContinue()) { self.interrupted = YES; [self finish:NO]; return; }
+    BOOL contextual = provider == SGRAutoTranslatorAppleIntelligence || provider == SGRAutoTranslatorGemini ||
+        provider == SGRAutoTranslatorClaude || provider == SGRAutoTranslatorOpenAI;
+    NSMutableArray *sent = [NSMutableArray array], *indexes = [NSMutableArray array];
+    [self.lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
+        if (contextual || [self.missing containsIndex:i]) {
+            [sent addObject:line];
+            [indexes addObject:@(i)];
+        }
+    }];
     __block BOOL answered = NO;
-    translateUsing(provider, self.lines, self.track, self.language, self.fresh, ^(NSArray *values, NSString *error) {
-        if (!answered && self.step == step && [self current]) [self take:values];
+    translateUsing(provider, sent, self.track, self.language, self.fresh, ^(NSArray *values, NSString *error) {
+        if (!answered && self.step == step && [self current]) [self take:values indexes:indexes];
     }, ^(NSArray *values, NSString *error) {
         if (answered || self.step != step || self.finished) return;
         answered = YES;
         if (![self current]) { [self finish:YES]; return; }
-        [self take:values];
+        [self take:values indexes:indexes];
         if (self.missing.count) self.failure = failureOf(error);
         dispatch_async(dispatch_get_main_queue(), ^{ [self runNext]; });
     });

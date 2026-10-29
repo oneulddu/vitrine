@@ -144,8 +144,18 @@ static void googleHolds(void) {
 #endif
 #include "review-check.inc"
 #include "wrap-check.inc"
+#include "round-one-check.inc"
 
 void SGHarnessRunTranslationCheck(UIWindow *window) {
+    if (getenv("SG_LYRICS_ROUND_ONE_ONLY")) {
+        [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:NO block:^(NSTimer *timer) {
+            roundOneChecks(window);
+            printf("%d failed\n", sg_failed);
+            fflush(stdout);
+            exit(sg_failed);
+        }];
+        return;
+    }
     if (getenv("SG_LYRICS_WRAP_ONLY")) {
         wrapChecks();
         printf("%d failed\n", sg_failed);
@@ -330,6 +340,7 @@ void SGHarnessRunTranslationCheck(UIWindow *window) {
 #ifdef SG_HARNESS_AUTO_TRANSLATION
         autoCheck(window);
 #endif
+        roundOneChecks(window);
         printf("%d failed\n", sg_failed);
         fflush(stdout);
         exit(sg_failed);

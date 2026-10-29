@@ -1,5 +1,6 @@
 // A song's language and the choices that follow it, shared by both looks.
 #import "Lyrics.h"
+#import "LyricsLanguage.h"
 #import <NaturalLanguage/NaturalLanguage.h>
 
 NSNotificationName const SGLyricsLanguageDidChangeNotification = @"spotifyglass.lyrics.languageDidChange";
@@ -15,18 +16,44 @@ static NSString *baseLanguage(NSString *tag) {
     return [languageTag(tag) componentsSeparatedByString:@"-"].firstObject;
 }
 
+NSArray<SGKaraokeLine *> *SGLyricsLanguageSnapshot(NSArray<SGKaraokeLine *> *lines) {
+    NSMutableArray *snapshot = [NSMutableArray arrayWithCapacity:lines.count];
+    for (SGKaraokeLine *line in lines) {
+        SGKaraokeLine *copy = [SGKaraokeLine new];
+        NSMutableArray *words = [NSMutableArray arrayWithCapacity:line.words.count];
+        for (SGKaraokeWord *word in line.words) {
+            SGKaraokeWord *value = [SGKaraokeWord new];
+            value.text = [word.text copy];
+            value.joined = word.joined;
+            [words addObject:value];
+        }
+        copy.words = [words copy];
+        [snapshot addObject:copy];
+    }
+    return [snapshot copy];
+}
+
+static NSArray *languageKey(NSArray<SGKaraokeLine *> *lines) {
+    NSMutableArray *key = [NSMutableArray arrayWithCapacity:lines.count];
+    for (SGKaraokeLine *line in lines) [key addObject:[SGKaraokeLineText(line) copy] ?: @""];
+    return [key copy];
+}
+
+static NSCache *languageCache(void) {
+    static NSCache *kept;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ kept = [NSCache new]; kept.countLimit = SGLyricsLanguageCacheSongLimit; });
+    return kept;
+}
+
 NSString *SGLyricsDetectedLanguage(NSArray<SGKaraokeLine *> *lines) {
     if (!lines.count) return nil;
-    static NSMapTable<NSArray *, NSString *> *kept;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        kept = [NSMapTable mapTableWithKeyOptions:NSPointerFunctionsWeakMemory | NSPointerFunctionsObjectPointerPersonality
-                                    valueOptions:NSPointerFunctionsStrongMemory];
-    });
-    NSString *cached = [kept objectForKey:lines];
+    NSArray *key = languageKey(lines);
+    NSCache *kept = languageCache();
+    NSString *cached = [kept objectForKey:key];
     if (cached) return cached.length ? cached : nil;
     if (SGLyricsLooksJapanese(lines)) {
-        [kept setObject:@"ja" forKey:lines];
+        [kept setObject:@"ja" forKey:key];
         return @"ja";
     }
     NLLanguageRecognizer *recognizer = [NLLanguageRecognizer new];
@@ -55,7 +82,7 @@ NSString *SGLyricsDetectedLanguage(NSArray<SGKaraokeLine *> *lines) {
     }
     // Short or divided lines should not silently impose another language's display choices.
     NSString *answer = total >= 8 && highest / total >= 0.6 ? best : nil;
-    [kept setObject:answer ?: @"" forKey:lines];
+    [kept setObject:answer ?: @"" forKey:key];
     return answer;
 }
 

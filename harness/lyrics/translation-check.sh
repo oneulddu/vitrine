@@ -3,7 +3,7 @@
 # the Mac, no simulator. Prints PASS and FAIL lines and exits with the number of failures.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC=$(cd "$HERE/../.." && pwd)/tweak/Sources
+SRC=${HARNESS_SOURCE_DIR:-$(cd "$HERE/../.." && pwd)/tweak/Sources}
 OUT=${HARNESS_BUILD_DIR:-$(mktemp -d /tmp/lyrics-translation-check.XXXXXX)}
 trap 'rm -rf "$OUT"' EXIT
 APP=$OUT/Check.app

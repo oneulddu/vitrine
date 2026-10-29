@@ -77,6 +77,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
 // line with itself, marked.
 @interface SGOnDeviceTranslation : NSObject
 @end
+void (^SGHarnessOnDevice)(NSArray<NSString *> *, void (^)(NSArray<NSString *> *, NSString *));
 @implementation SGOnDeviceTranslation
 + (BOOL)translationAvailable { return [NSUserDefaults.standardUserDefaults boolForKey:@"onDevice"]; }
 + (BOOL)appleIntelligenceAvailable:(NSString *)languageTag { return [NSUserDefaults.standardUserDefaults boolForKey:@"intelligence"]; }
@@ -86,6 +87,7 @@ void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *li
     dispatch_async(dispatch_get_main_queue(), ^{ done(out, nil); });
 }
 + (void)translate:(NSArray<NSString *> *)lines to:(NSString *)languageTag done:(void (^)(NSArray<NSString *> *, NSString *))done {
+    if (SGHarnessOnDevice) { SGHarnessOnDevice(lines, done); return; }
     [self answer:lines as:@"iPhone: " done:done];
 }
 + (void)translate:(NSArray<NSString *> *)lines to:(NSString *)languageTag from:(UIView *)view done:(void (^)(NSArray<NSString *> *, NSString *))done {
@@ -249,10 +251,11 @@ NSNotificationName const SGSingButtonDidChangeNotification = @"SGSingButtonDidCh
 
 // The other translators and the lyrics' tools (LyricsTools.m): off in the harness, so the menu offers what it
 // did before, with Sync and Search LRCLIB under it.
-BOOL SGDeepLKeySet(void) { return NO; }
+BOOL SGDeepLKeySet(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"deepl"]; }
 BOOL SGOpenAIKeySet(void) { return [NSUserDefaults.standardUserDefaults boolForKey:@"openai"]; }
+void (^SGHarnessDeepL)(NSArray<SGKaraokeLine *> *, void (^)(NSArray<NSString *> *, NSString *));
 void SGLyricsTranslateWithDeepL(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
-                               void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+                               void (^done)(NSArray<NSString *> *translations, NSString *error)) { if (SGHarnessDeepL) SGHarnessDeepL(lines, done); else done(nil, @"harness"); }
 // Google answers as a check sets it to (translation-check.m), else turns the song down.
 void (^SGHarnessGoogle)(NSArray<SGKaraokeLine *> *lines, void (^done)(NSArray<NSString *> *translations, NSString *error));
 void SGLyricsTranslateWithGoogle(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,

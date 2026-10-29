@@ -44,8 +44,12 @@ extern NSString *const kTranslationLines, *const kTranslationRemoved, *const kTr
 void SGRTranslationChanged(NSString *track, NSString *language, NSString *what);
 BOOL SGRLyricsHasWords(SGKaraokeLine *line);
 BOOL SGRLyricsInAnotherLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language);
+// Capture immutable text on main, infer both languages off main. Cached answers return immediately;
+// otherwise completion runs on main. Callers must reject a result whose song/target has changed.
+void SGRAnalyzeLyricsLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language,
+                             void (^done)(BOOL foreign, NSString *detected));
 BOOL SGRLyricsShouldTranslate(BOOL foreign);
-BOOL SGRLyricsTranslationAllowed(NSString *track, NSArray<SGKaraokeLine *> *lines);
+BOOL SGRLyricsTranslationAllowed(NSString *track, NSString *detectedLanguage);
 void SGRAutoTranslateInOrder(NSArray<SGKaraokeLine *> *lines, NSString *track, NSString *language,
                              NSUInteger revision, BOOL (^mayContinue)(void), SGRAutoTranslated progress, SGRAutoTranslated done);
 // SGRAutoTranslateWithoutView, for the lock screen, is declared low in Shared/LockScreenLyrics/LockScreenLyrics.h and

@@ -341,7 +341,10 @@ Shared:
                   the default is Apple Translate, Bing, Google, DeepL, Gemini, Claude, the configured AI service,
                   then Apple Intelligence. Only available services are tried, once each in order, until all missing
                   lines are filled or the list ends. Each answer keeps earlier successful lines and source/saved
-                  translations. Existing Google/Bing opt-ins and API keys still apply; no new service is enabled.
+                  translations. A later Google, Bing, DeepL or on-device translator receives only the lines still
+                  missing, mapped back by position; AI translators keep the whole song for context. Whether the
+                  lyrics are in another language, and the song's language, are worked out off the main thread from
+                  a snapshot of the lines and cached by text and target. Existing Google/Bing opt-ins and API keys still apply; no new service is enabled.
                   A visible current-song view starts one shared chain after its lines settle. Hidden translations,
                   a language rule set to off, and background/detached views do not start another request. A song
                   or display change stops the next fallback; an in-flight answer can still be cached without

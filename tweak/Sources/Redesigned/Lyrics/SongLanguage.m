@@ -22,8 +22,8 @@ static void follow(NSString *language) {
     if (SGFlag(SGRKeyLyricsPronunciation, NO) != pronunciation) SGRSetLyricsTextShown(SGRLyricsTextPronunciation, pronunciation);
 }
 
-UIMenu *SGRSongLanguageMenu(NSString *trackID, NSArray<SGKaraokeLine *> *lines, void (^apply)(void)) {
-    NSString *set = SGLyricsTrackLanguage(trackID), *detected = SGLyricsDetectedLanguage(lines);
+UIMenu *SGRSongLanguageMenu(NSString *trackID, NSString *detected, void (^apply)(void)) {
+    NSString *set = SGLyricsTrackLanguage(trackID);
     NSString *language = set ?: detected;
     NSMutableArray<UIMenuElement *> *picks = [NSMutableArray array];
     UIAction *automatic = [UIAction actionWithTitle:SGL(@"settings.songlanguage.automatic", @"Automatic")

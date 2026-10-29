@@ -1810,6 +1810,9 @@ typedef struct {
     BOOL _autoQueued;
     BOOL _madeTranslation;   // whether a line shows a translation made here, which the menu can make again or remove
     BOOL _foreign;        // whether the song is in a language other than the one translations are asked in
+    BOOL _languageReady;
+    NSUInteger _languageRequest;
+    NSString *_detectedLanguage;
     NSArray<SGKaraokeLine *> *_passedOver;   // lines kept for the song that changed nothing here, not looked at again
     UIView *_extrasBox;   // the Kit's glass and _extras over it, which holds none, so its alpha can fade
     UIButton *_extras;
@@ -2206,12 +2209,12 @@ NSString *SGRLyricsShareText(NSString *line, NSString *title, NSString *artist, 
     if (_sample) return;
     NSUInteger asked = ++_meaningsAsked;
     NSArray<SGKaraokeLine *> *lines = _lines;
-    NSString *track = _track, *language = SGLyricsSongLanguage(_track, lines) ?: @"";
+    NSString *track = _track, *language = [self songLanguage] ?: @"";
     __weak SGRKaraokeView *weakSelf = self;
     SGLyricsMeaningsFor(_track, lines, ^(NSDictionary<NSNumber *, NSArray<SGLyricsMeaning *> *> *byLine) {
         SGRKaraokeView *page = weakSelf;
         if (!page || asked != page->_meaningsAsked || lines != page->_lines || ![track isEqual:page->_track] ||
-            ![language isEqual:(SGLyricsSongLanguage(page->_track, page->_lines) ?: @"")]) return;
+            ![language isEqual:([page songLanguage] ?: @"")]) return;
         page->_meanings = byLine;
         for (NSNumber *key in page->_shown) [page->_shown[key] markMeaning:byLine[key]];
     });
@@ -2450,6 +2453,7 @@ NSString *SGRLyricsShareText(NSString *line, NSString *title, NSString *artist, 
     [CATransaction setDisableActions:YES];
     _fade.locations = locations;
     [CATransaction commit];
+    [self updateScrollExtent];
 }
 
 // A line's view going away takes the menu with it: the menu's arrow points at a view that is gone otherwise, and
@@ -2525,9 +2529,8 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     _hasSpoken = _hasTranslation = _untranslated = _hasNotes = NO;
     _plain = SGKaraokeLinesTiming(_lines) == SGKaraokeTimingNone;
     if (!_sample) SGLyricsSyncSavedTranslation(_track, SGLyricsGeminiLanguage(), _lines);
-    _foreign = SGRLyricsInAnotherLanguage(_lines, SGLyricsGeminiLanguage());
+    [self analyzeLanguage];
     if (!_sample) [self takeSavedAI];
-    if (!_sample) [self followLanguageRule];
     NSInteger sungTo = 0;   // the top of the song counts as where the singing before the first line ends
     for (NSUInteger i = 0; i < count; i++) {
         SGKaraokeLine *line = _lines[i];
@@ -2539,7 +2542,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     }
     [self countTranslations];
     [self offerExtras];
-    [self askMeanings];
+    if (_languageReady) [self askMeanings];
     [self queueAutomaticTranslation];
 }
 
@@ -2555,6 +2558,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 // Measures the song for the width and, once that is in, places it; Spotify's own lines stay in view
 // until then, since the page shows nothing of its own before it has lines to show.
 - (void)rebuild {
+    if (!_languageReady) return;
     [self dropLineViews];
     _browsing = NO;
     _scroll.contentOffset = CGPointZero;
@@ -2587,7 +2591,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
                                                        translation:_hasTranslation && (_sample || SGFlag(SGRKeyLyricsTranslation, NO))
                                                          romanised:romanised];
     style.drawingStyle = SGRLyricsDrawingStyleForID(_sampleStyleIdentifier ?: SGRLyricsStyleNow());
-    BOOL japanese = _sample ? SGLyricsLooksJapanese(_lines) : [SGLyricsSongLanguage(_track, _lines) isEqual:@"ja"];
+    BOOL japanese = [[self songLanguage] isEqual:@"ja"];
     style.japanese = japanese;
     style.hangul = SGFlag(SGKeyLyricsPronunciationHangul, NO);
     style.hiragana = SGFlag(SGKeyLyricsJapaneseKana, NO);
@@ -2602,7 +2606,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 - (void)restyle {
     [self queueAutomaticTranslation];
     [self offerExtras];
-    if (!_lines || _builtWidth <= 0) return;
+    if (!_languageReady || !_lines || _builtWidth <= 0) return;
     if (!_tops) {
         [self rebuild];   // invalidate the pending measurement, which captured the previous style
         return;
@@ -2838,7 +2842,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     UIDeferredMenuElement *tools = [UIDeferredMenuElement elementWithUncachedProvider:^(void (^completion)(NSArray<UIMenuElement *> *)) {
         completion(@[[SGRKaraokeView songToolsFor:track view:weakSelf]]);
     }];
-    UIMenu *songLanguage = SGRSongLanguageMenu(track, _lines, ^{ [weakSelf translationsChanged]; });
+    UIMenu *songLanguage = SGRSongLanguageMenu(track, _detectedLanguage, ^{ [weakSelf translationsChanged]; });
     NSMutableArray<UIMenuElement *> *groups = [NSMutableArray array];
     if (items.count) [groups addObject:[UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:items]];
     [groups addObject:songLanguage];
@@ -2952,10 +2956,10 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     [self queueAutomaticTranslation];
 }
 - (BOOL)automaticTranslationVisible {
-    if (_sample || !self.window || !_lines.count || ![_track isEqual:SGKaraokePlayingTrack()] ||
+    if (!_languageReady || _sample || !self.window || !_lines.count || ![_track isEqual:SGKaraokePlayingTrack()] ||
         UIApplication.sharedApplication.applicationState != UIApplicationStateActive || !SGFlag(SGRKeyLyricsTranslation, NO)) return NO;
     for (UIView *view = self; view; view = view.superview) if (view.hidden || view.alpha < 0.01) return NO;
-    return SGRLyricsTranslationAllowed(_track, _lines);
+    return SGRLyricsTranslationAllowed(_track, _detectedLanguage);
 }
 - (void)automaticTranslationIfNeeded {
     if (![self automaticTranslationVisible]) return;
@@ -3053,6 +3057,39 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 
 // A rule kept for the song's language sets the translation and pronunciation switches as the song comes in,
 // once per song, so a pick made from the menu afterwards stands until the next one.
+- (NSString *)songLanguage {
+    return (_sample ? nil : SGLyricsTrackLanguage(_track)) ?: _detectedLanguage;
+}
+
+- (void)analyzeLanguage {
+    NSUInteger request = ++_languageRequest;
+    NSArray *lines = _lines;
+    NSString *track = _track, *target = SGLyricsGeminiLanguage();
+    _languageReady = NO;
+    _foreign = YES; // Too little evidence counts as foreign; no automatic request starts before the answer.
+    _detectedLanguage = nil;
+    __block BOOL immediate = YES;
+    __weak SGRKaraokeView *weakSelf = self;
+    SGRAnalyzeLyricsLanguage(lines, target, ^(BOOL foreign, NSString *detected) {
+        SGRKaraokeView *view = weakSelf;
+        if (!view || request != view->_languageRequest || lines != view->_lines ||
+            ![track isEqual:view->_track] || ![target isEqual:SGLyricsGeminiLanguage()]) return;
+        view->_foreign = foreign;
+        view->_detectedLanguage = detected;
+        view->_languageReady = YES;
+        if (!view->_sample) [view followLanguageRule];
+        if (immediate) return;
+        // First presentation waits for the same language/style the synchronous path used.
+        // Already rendered lines remain in place; language work never clears them or resets scrolling.
+        if (!view->_tops) [view rebuild];
+        else [view restyle];
+        [view offerExtras];
+        [view askMeanings];
+        [view queueAutomaticTranslation];
+    });
+    immediate = NO;
+}
+
 - (void)followLanguageRule {
     // Once per song for every lyrics view there is: the player's and the full screen page's each have one, and the
     // second opened must not undo a switch flipped by hand in the first.
@@ -3061,7 +3098,7 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
     if (!_track || ![_track isEqualToString:SGKaraokePlayingTrack()] || [ruled isEqualToString:_track]) return;
     ruled = _track;
     NSString *track = _track;
-    NSString *language = SGLyricsSongLanguage(_track, _lines);
+    NSString *language = [self songLanguage];
     BOOL translation = NO, pronunciation = NO;
     if (!language || !SGLyricsLanguageRule(language, &translation, &pronunciation)) return;
     SGLog(@"karaoke: %@ is in %@, which shows %@translation and %@pronunciation", _track, language,
@@ -3340,15 +3377,31 @@ static NSArray<SGKaraokeLine *> *withoutMade(NSArray<SGKaraokeLine *> *lines) {
 // below, lit; the stack moves on to it once the line at the anchor is sung out.
 - (void)placeLinesAnimated:(BOOL)animated {
     [self stir];
-    if (_browsing || !_tops.count) return;
+    if (!_tops.count) return;
+    if (_browsing) {
+        [self placeCreditAnimated:NO];
+        [self updateScrollExtent];
+        return;
+    }
     _focusTop = _tops[(NSUInteger)MAX(_focus, 0)].doubleValue;
     [self showLinesInSight];
     for (NSNumber *key in _shown) [self placeLine:_shown[key] at:key.integerValue animated:animated];
     [self placeBreak];
     [self placeCreditAnimated:animated];
-    // Room to scroll until the first line or the last one reaches the anchor.
-    CGFloat lastTop = _tops.lastObject.doubleValue + (_openBreak >= 0 ? [self breakRoom] : 0);
-    _scroll.contentInset = UIEdgeInsetsMake(_focusTop, 0, MAX(0, lastTop - _focusTop), 0);
+    [self updateScrollExtent];
+}
+
+- (void)updateScrollExtent {
+    if (!_tops.count) return;
+    CGFloat height = self.bounds.size.height;
+    CGFloat anchor = _browsing ? _browseAnchor : height * kAnchor;
+    NSInteger openBreak = _browsing ? _browseBreak : _openBreak;
+    CGFloat bottom = anchor + _stackEnd - _focusTop + (openBreak >= 0 ? [self breakRoom] : 0);
+    if (_credit.text.length) bottom = MAX(bottom, CGRectGetMaxY(_credit.frame));
+    // The third mask stop is the last fully opaque point, before the fade and bottom controls.
+    CGFloat visibleBottom = height * [_fade.locations[2] doubleValue];
+    CGFloat lastTop = _tops.lastObject.doubleValue + (openBreak >= 0 ? [self breakRoom] : 0);
+    _scroll.contentInset = UIEdgeInsetsMake(_focusTop, 0, MAX(MAX(0, lastTop - _focusTop), bottom - visibleBottom), 0);
 }
 
 // The credit, under the last line as Spotify's and Apple Music's are: it moves with the stack, so it is seen at the
@@ -3416,6 +3469,7 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     _credit.text = text;
     _credit.hidden = !_showing || !text.length;
     [self placeCreditAnimated:NO];
+    [self updateScrollExtent];
 }
 
 - (NSArray *)accessibilityElements {
