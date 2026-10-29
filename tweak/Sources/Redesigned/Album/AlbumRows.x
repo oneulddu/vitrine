@@ -97,6 +97,21 @@ static void applyHairline(UIView *row) {
 @implementation SGRCreditChange
 @end
 
+// The badge picture a row keeps from one pass to the next, with how the source badge looked when it was drawn.
+@interface SGRDrawnBadge : NSObject
+@property (nonatomic, strong) UIImageView *view;
+@property (nonatomic, weak) UIView *source;
+@property (nonatomic) CGSize size;
+@property (nonatomic) CGFloat alpha;
+@property (nonatomic, strong) UITraitCollection *traits;
+@property (nonatomic, strong) UIColor *tint, *fill;
+// Hide explicit badge swaps this for a transparent one (Kit/SGRExplicitBadge.x), which the picture takes with it.
+@property (nonatomic, strong) CALayer *mask;
+@end
+
+@implementation SGRDrawnBadge
+@end
+
 static BOOL hidesCredits(void) {
     static NSInteger on = -1;
     if (on < 0) on = SGEnabled(SGRKeyAlbumHideTrackArtists);
@@ -147,12 +162,48 @@ static UIImage *pictureOf(UIView *badge) {
     }];
 }
 
-// Puts back what the last change took. YES when there was one.
+static BOOL sameColor(UIColor *a, UIColor *b) {
+    return a == b || [a isEqual:b];
+}
+
+static char kDrawnKey;
+
+static void dropDrawnBadge(UIView *cell) {
+    SGRDrawnBadge *kept = objc_getAssociatedObject(cell, &kDrawnKey);
+    if (!kept) return;
+    [kept.view removeFromSuperview];
+    objc_setAssociatedObject(cell, &kDrawnKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// The row's picture of `badge`: the one it already has while the badge is the same view and looks the same (size,
+// traits, tint, fill, alpha and mask), else a new one drawn now.
+static UIImageView *drawnBadgeFor(UIView *cell, UIView *badge) {
+    SGRDrawnBadge *kept = objc_getAssociatedObject(cell, &kDrawnKey);
+    if (kept && kept.source == badge && CGSizeEqualToSize(kept.size, badge.bounds.size) && kept.alpha == badge.alpha
+        && [kept.traits isEqual:badge.traitCollection] && sameColor(kept.tint, badge.tintColor)
+        && sameColor(kept.fill, badge.backgroundColor) && kept.mask == badge.layer.mask) return kept.view;
+    dropDrawnBadge(cell);
+    kept = [SGRDrawnBadge new];
+    kept.view = [[UIImageView alloc] initWithImage:pictureOf(badge)];
+    kept.view.userInteractionEnabled = NO;
+    kept.view.isAccessibilityElement = NO;
+    kept.source = badge;
+    kept.size = badge.bounds.size;
+    kept.alpha = badge.alpha;
+    kept.traits = badge.traitCollection;
+    kept.tint = badge.tintColor;
+    kept.fill = badge.backgroundColor;
+    kept.mask = badge.layer.mask;
+    objc_setAssociatedObject(cell, &kDrawnKey, kept, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return kept.view;
+}
+
+// Puts back what the last change took, except the drawn badge, which the pass that follows keeps or drops. YES when
+// there was one.
 static BOOL restoreCredit(UIView *cell) {
     SGRCreditChange *change = objc_getAssociatedObject(cell, &kChangeKey);
     if (!change) return NO;
     objc_setAssociatedObject(cell, &kChangeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    [change.drawnBadge removeFromSuperview];
     // The transform before the frame, which is meaningless under one. Each only where it is still this change's:
     // a pass of Spotify's since may have put its own there.
     UILabel *title = change.title;
@@ -225,16 +276,14 @@ static void applyCredit(UIView *cell, UIView *row, UIView *page) {
     title.transform = change.shift;
 
     if (badge) {
-        UIImageView *drawn = [[UIImageView alloc] initWithImage:pictureOf(badge)];
-        drawn.userInteractionEnabled = NO;
-        drawn.isAccessibilityElement = NO;
+        UIImageView *drawn = drawnBadgeFor(cell, badge);
         CGSize size = badge.bounds.size;
         CGFloat textWidth = MIN(ceil(text.width), narrowWidth);
         CGFloat x = textAtRight ? narrowWidth - textWidth - kBadgeGap - size.width : textWidth + kBadgeGap;
         CGRect inTitle = CGRectMake(x, (title.bounds.size.height - size.height) / 2, size.width, size.height);
         // Through the title, whose transform the conversion takes along.
         drawn.frame = [title convertRect:inTitle toView:row];
-        [row addSubview:drawn];
+        if (drawn.superview != row) [row addSubview:drawn];
         change.drawnBadge = drawn;
         change.badge = badge;
         change.badgeAlpha = badge.alpha;
@@ -505,15 +554,17 @@ static void applyRow(UIView *cell, UIView *page) {
     unwatch((UIView *)self);
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
-    if (!SGRIsTrackContent(cell.contentView.subviews.firstObject)) return;
-    UIView *page = SGRAlbumPageOf(cell);
+    UIView *page = SGRIsTrackContent(cell.contentView.subviews.firstObject) ? SGRAlbumPageOf(cell) : nil;
     if (page) applyRow(cell, page);
+    // A pass that draws no badge drops the picture the last one kept.
+    if (!((SGRCreditChange *)objc_getAssociatedObject(cell, &kChangeKey)).drawnBadge) dropDrawnBadge(cell);
 }
 
 - (void)prepareForReuse {
     %orig;
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
     unwatch(cell);
+    dropDrawnBadge(cell);
     BOOL changed = restoreCredit(cell);
     changed = restoreCount(cell) || changed;
     if (changed || SGRIsTrackContent(cell.contentView.subviews.firstObject)) [cell setNeedsLayout];

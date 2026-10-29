@@ -623,6 +623,82 @@ static NSString *trailingLabel(UIView *root) {
         NSLog(@"[harness] reused, laid out again: row %@", rowState(trackCells[0]));
     });
 
+    // `verify-badge`: a row that draws its explicit badge again after the title keeps that picture while the
+    // source badge looks the same, and draws it anew for a size, appearance or badge change and after reuse; reused
+    // for a row with no badge it has none. Exits nonzero on failure.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"verify-badge"]) at(3, ^{
+        UICollectionViewCell *cell = trackCells[2];
+        UIView *row = cell.contentView.subviews.firstObject.subviews.firstObject;
+        UIView *(^source)(void) = ^UIView *{ return byIdentifier(cell, @"Components.UI.ExplicitIcon"); };
+        UIImageView *(^drawnBadge)(void) = ^UIImageView *{
+            [cell layoutIfNeeded];
+            UIImageView *found = nil;
+            for (UIView *v in row.subviews) {
+                if (![v isKindOfClass:UIImageView.class]) continue;
+                HARNESS_CHECK(!found);
+                found = (UIImageView *)v;
+            }
+            return found;
+        };
+        UIImageView *(^layOutAgain)(void) = ^UIImageView *{ [cell setNeedsLayout]; return drawnBadge(); };
+
+        // The first pass may have drawn it before the row had the window's traits: one more settles it.
+        layOutAgain();
+        UIImageView *first = layOutAgain();
+        UIImage *picture = first.image;
+        HARNESS_CHECK(first && picture && source().alpha == 0);
+        for (int i = 0; i < 5; i++) {
+            UIImageView *again = layOutAgain();
+            HARNESS_CHECK(again == first && again.image == picture);
+        }
+
+        UIView *badge = source();
+        CGRect frame = badge.frame;
+        badge.bounds = CGRectMake(0, 0, 15, 15);
+        UIImageView *resized = layOutAgain();
+        HARNESS_CHECK(resized && resized.image != picture && resized.image.size.width == 15);
+        badge.frame = frame;
+        UIImage *sized = layOutAgain().image;
+        HARNESS_CHECK(sized && sized.size.width == frame.size.width && sized != picture);
+
+        cell.overrideUserInterfaceStyle = UIUserInterfaceStyleLight;
+        UIImage *light = layOutAgain().image;
+        HARNESS_CHECK(light && light != sized);
+        HARNESS_CHECK(layOutAgain().image == light);
+        cell.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+        UIImage *dark = layOutAgain().image;
+        HARNESS_CHECK(dark && dark != light);
+
+        // Hide explicit badge changes only the source badge's mask (Kit/SGRExplicitBadge.x), on a row not reused.
+        UIView *shown = source();
+        CALayer *transparent = [CALayer layer];
+        shown.layer.mask = transparent;
+        UIImage *masked = layOutAgain().image;
+        HARNESS_CHECK(masked && masked != dark);
+        HARNESS_CHECK(layOutAgain().image == masked);
+        shown.layer.mask = nil;
+        HARNESS_CHECK(layOutAgain().image != masked);
+        dark = layOutAgain().image;
+
+        UIImage *beforeReuse = layOutAgain().image;
+        [cell prepareForReuse];
+        HARNESS_CHECK(!drawnBadge() || drawnBadge().image != beforeReuse);
+        UIImage *reused = layOutAgain().image;
+        HARNESS_CHECK(reused && reused != beforeReuse);
+
+        UIView *other = box(row, UIView.class, frame, @"Components.UI.ExplicitIcon");
+        other.backgroundColor = UIColor.redColor;
+        [badge removeFromSuperview];
+        UIImage *swapped = layOutAgain().image;
+        HARNESS_CHECK(swapped && swapped != reused && source() == other);
+
+        [other removeFromSuperview];
+        [cell prepareForReuse];
+        HARNESS_CHECK(!layOutAgain());
+        NSLog(@"[harness] PASS the album row's drawn badge is kept while unchanged and redrawn on change");
+        exit(0);
+    });
+
     // and under it the footer Spotify sends: the album's own line, the copyright, and the sections the
     // redesign drops -- each with the 16pt spacer Spotify puts between them. Fans also like stands for a
     // section no switch names. They sit in a real collection view, which is what AlbumSections.x keeps what
