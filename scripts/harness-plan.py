@@ -142,6 +142,8 @@ HARNESSES = [
      "run": "sh harness/player/title-notification-check.sh"},
     {"name": "Player repeat transitions", "dir": "player",
      "run": "sh harness/player/repeat-check.sh"},
+    {"name": "Player lyrics layout", "dir": "player",
+     "run": "sh harness/player/lyrics-layout-check.sh && python3 harness/player/lyrics-layout-mutation-check.py"},
     {"name": "Player lyric line", "dir": "player-lyric-line",
      "run": "sh harness/player-lyric-line/build.sh"},
     {"name": "Player refinements", "dir": "player-refinements", "theos": True,

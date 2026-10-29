@@ -97,6 +97,7 @@ their check executable in the workflow.
 | `library/rows-check.sh` | Simulator executable through Logos: the Library row separator spans from the artwork's text edge, mirrored right to left. |
 | `home-podcasts/check.sh` | Catalyst Home filter menu through Logos: the Podcasts and audiobooks switch shown and hidden, audiobook chips, return to the default chip once, live flip. |
 | `playlist/creator-check.sh` | Simulator executable through Logos: the playlist header's creator lookup keeps one-character names and skips the facepile's initial. |
+| `player/lyrics-layout-check.sh` | Catalyst, `PlayerLyrics.x`'s measurements as compiled: the lyric viewport and its controls keep the player's own bounds while the cover cell pages between tracks; `lyrics-layout-mutation-check.py` proves the old artwork-bound viewport fails. |
 | `player/repeat-check.sh` | Production repeat-mode transition (`SGPlayerAdvanceRepeat`) extracted from `PlayerState.x`: every flag combination, command order and returned answer; no simulator. |
 | `player/upcoming-tracks-check.sh` | Production upcoming-track parsing (`SGURIString`, `SGPlayerUpcomingTracks`) extracted from `PlayerState.x` and run against Foundation doubles; no simulator. |
 | `player-lyric-line/build.sh` | Catalyst fitting (shrink and whole-word portions) and the line's wait/re-arm rules for synthetic lines and positions. |

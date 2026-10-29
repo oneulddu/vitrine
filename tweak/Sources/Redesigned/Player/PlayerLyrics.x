@@ -315,7 +315,10 @@ static SGRLyricsLayout layoutIn(UIView *host) {
     l.lift = top - CGRectGetMinY(row);
     l.shift = title ? kThumbSide + kThumbGap : 0;
     CGFloat lines = MAX(CGRectGetMaxY(l.thumb), top + row.size.height) + kLyricsTop;
-    l.stage = CGRectMake(CGRectGetMinX(area), lines, area.size.width, CGRectGetMinY(bar) - kLyricsBottom - lines);
+    // The artwork band belongs to a paging cell: on a skip its x can still be between pages.
+    // Only its vertical room belongs to the lyrics. The lyric viewport and its controls belong
+    // to the stationary player, not the outgoing or incoming cover.
+    l.stage = CGRectMake(CGRectGetMinX(host.bounds), lines, host.bounds.size.width, CGRectGetMinY(bar) - kLyricsBottom - lines);
     l.ok = l.stage.size.height > kLivingHeight / 2 && l.lift < 0;
     return l;
 }
