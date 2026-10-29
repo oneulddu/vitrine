@@ -170,7 +170,7 @@ SKIP_PARTS = {"build", ".build"}
 # use their process name even when CFFIXED_USER_HOME points somewhere else.
 SHARED_PREFERENCE_DOMAINS = {
     "check": {
-        "appearance-page", "driver", "genius-lyrics", "local-files", "lyrics-sources",
+        "appearance-page", "driver", "fonts", "genius-lyrics", "local-files", "lyrics-sources",
         "lyrics-translation", "lyrics-walk", "native-declutter", "player",
         "prefs", "radio-modes", "spicy-lyrics", "ui-refinements", "update",
     },

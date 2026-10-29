@@ -143,8 +143,6 @@ NSString *SGKaraokePlayingTrack(void) { return nil; }
 NSInteger SGInt(NSString *key, NSInteger fallback) { return fallback; }
 BOOL SGFlag(NSString *key, BOOL fallback) { return [key isEqual:SGRKeyLyricsAutoTranslation] ? autoRetryEnabled : [key isEqual:SGKeyLyricsBingTranslate] ? bingEnabled : [key isEqual:SGKeyLyricsGoogleTranslate] ? googleEnabled : [key isEqual:SGKeyLyricsTranslateTitles] ? titlesEnabled : fallback; }
 BOOL SGHidden(NSString *key) { return SGFlag(key, NO); }
-NSString *SGLyricsSongLanguage(NSString *track, NSArray<SGKaraokeLine *> *lines) { return nil; }
-BOOL SGLyricsLanguageRule(NSString *language, BOOL *translation, BOOL *pronunciation) { return NO; }
 static UIAlertController *keyPrompt;
 @interface SGKeyPresenter : UIViewController
 @end
