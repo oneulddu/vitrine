@@ -94,7 +94,7 @@ their check executable in the workflow.
 | `player-lyric-line/build.sh` | Catalyst fitting (shrink and whole-word portions) and the line's wait/re-arm rules for synthetic lines and positions. |
 | `player-visualiser/build.sh` | Catalyst `PlayerVisualiser.m` under stubs: the Lyrics visualizer clears its words when the lyrics are replaced by unsynced ones, and the display link asks the screen's full rate while drawing skips to 60/30/15 Hz. |
 | `player-refinements/check.sh` | Catalyst rolling-digit rules and the real roll on a label in a window, plus Star add button and Plain checkmark through Logos; no simulator. |
-| `prefs/check.sh` | Foundation preference validation plus counter persistence and file-hash checks (`counters.m`). |
+| `prefs/check.sh` | Foundation preference validation plus counter persistence and file-hash checks (`counters.m`), and the Load ahead gate read through `SGEnabled` for wrong kinds and stock reset (`optional-work.m`). |
 | `radio-modes/build.sh` | Foundation Spotify mocks, spoofing off/on. |
 | `settings-bars/build.sh` | Catalyst `SGInsetForBars` over a 6,000-view mock window: walks counted across repeated layouts, inset follows a bar resized, hidden, removed, added, or a table moved to another window. |
 | `settings-search/build.sh` | Mod Settings search: page-at-a-time index on a real run loop, keywords below titles, recent places by setting name across looks and languages. |

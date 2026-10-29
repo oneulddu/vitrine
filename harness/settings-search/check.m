@@ -343,6 +343,32 @@ static void runChecks(void) {
           ![redesignedAccent.place isEqualToArray:nativeAccent.place],
           @"the redesign's setting of the same title is a place of its own");
 
+    // A look that changes under one page that stays open (Redesigned UI flipped, restart put off): the rows are named
+    // again by the page's own block each time the index starts, so a place made after the flip is the new look's and
+    // a recent of the old look leads nowhere.
+    __block NSString *storedLook = @"native";
+    SGModRow *lookedRow = pageRow(@"Home", ^UIViewController *{ return pageOf(@"Home", @[row(@"Gradient", nil)]); });
+    SGModPage *openRoot = pageOf(@"Vitrine", @[lookedRow]);
+    SGSettingsIndexRenamesWith(openRoot, ^{ lookedRow.searchIdentifier = [@"page.home." stringByAppendingString:storedLook]; });
+    SGSearchForgetRecents();
+    SGSettingsIndex *beforeFlip = [SGSettingsIndex new];
+    [beforeFlip startWithRoot:openRoot];
+    while (beforeFlip.running) pass(beforeFlip);
+    SGSettingsHit *homeBefore = [beforeFlip hitsForQuery:@"home"].firstObject;
+    check([homeBefore.place isEqualToArray:@[@"page.home.native"]], @"the page row is named for the look stored when the index starts");
+    SGSearchRememberPlace(homeBefore.place);
+    storedLook = @"redesigned";
+    SGSettingsIndex *afterFlip = [SGSettingsIndex new];
+    [afterFlip startWithRoot:openRoot];
+    while (afterFlip.running) pass(afterFlip);
+    SGSettingsHit *homeAfter = [afterFlip hitsForQuery:@"home"].firstObject;
+    check([homeAfter.place isEqualToArray:@[@"page.home.redesigned"]], @"after the stored look changes the same page row is named for the new look");
+    check([[afterFlip hitsForQuery:@"gradient"].firstObject.place isEqualToArray:(@[@"page.home.redesigned", @"row.Gradient"])],
+          @"and so are the rows under it");
+    check([afterFlip recentHits].count == 0, @"a recent of the other look does not open this look's page");
+    SGSearchRememberPlace(homeAfter.place);
+    check([afterFlip recentHits].count == 1 && [afterFlip recentHits].firstObject == homeAfter, @"a recent of this look opens it");
+
     // A language switch: the titles are translated, and the stored place still finds its row, because it holds names.
     SGModPage *translated = pageOf(@"외관", @[row(@"강조 색", nil)]);
     translated.sections[0].rows[0].searchIdentifier = @"row.appearance.native.accentcolor";

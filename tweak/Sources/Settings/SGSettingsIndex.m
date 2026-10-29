@@ -1,4 +1,5 @@
 #import "SGSettingsIndex.h"
+#import <objc/runtime.h>
 
 static const NSUInteger kDepth = 2;       // the page itself, then two levels of pages under it
 static const NSUInteger kMostHits = 60;
@@ -182,6 +183,12 @@ static SGSettingsHit *hitFor(SGModRow *row, SGModRow *lead, NSArray<NSString *> 
 @implementation SGSettingsPending
 @end
 
+static char kRenameKey;
+
+void SGSettingsIndexRenamesWith(SGModPage *page, void (^rename)(void)) {
+    objc_setAssociatedObject(page, &kRenameKey, rename, OBJC_ASSOCIATION_COPY_NONATOMIC);
+}
+
 @implementation SGSettingsIndex {
     NSMutableArray<SGSettingsHit *> *_all;
     NSMutableArray<SGSettingsPending *> *_todo;
@@ -191,7 +198,10 @@ static SGSettingsHit *hitFor(SGModRow *row, SGModRow *lead, NSArray<NSString *> 
     _generation++;
     _all = [NSMutableArray array];
     _todo = [NSMutableArray array];
-    if (root) [self read:root trail:@[] names:@[] opener:nil top:nil depth:0];
+    if (!root) return;
+    void (^rename)(void) = objc_getAssociatedObject(root, &kRenameKey);
+    if (rename) rename();
+    [self read:root trail:@[] names:@[] opener:nil top:nil depth:0];
 }
 
 - (BOOL)running {

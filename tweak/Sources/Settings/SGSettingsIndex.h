@@ -26,6 +26,11 @@ NSArray<NSArray<NSString *> *> *SGSearchRecents(void);
 void SGSearchRememberPlace(NSArray<NSString *> *place);
 void SGSearchForgetRecents(void);
 
+// A page whose rows are named by something that can change while the page stays open (the stored look) gives the
+// search the block that names them again; every start of the index runs it before reading the page, so a place is
+// always made of the names the rows have now.
+void SGSettingsIndexRenamesWith(SGModPage *page, void (^rename)(void));
+
 #pragma mark - a row the search finds
 
 @interface SGSettingsHit : NSObject

@@ -18,6 +18,7 @@
 #import "Settings/SGPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Settings/SGModPage.h"
+#import "Settings/SGSettingsIndex.h"
 #import "Native/Home/Home.h"
 #import "Native/Playlist/Playlist.h"
 #import "Native/Album/Album.h"
@@ -69,10 +70,18 @@ static NSString *namedForLook(NSString *name) {
     return [NSString stringWithFormat:@"page.%@.%@", name, SGRedesignedUIStored() ? @"redesigned" : @"native"];
 }
 
+// A look-named row of the main page, remembered in `looked` as (row, name) so the page can name it again when the
+// stored look changes under the open page (modSettingsPage's end).
+static SGModRow *foundByLook(NSMutableArray<NSArray *> *looked, SGModRow *row, NSString *name, NSString *keywords) {
+    [looked addObject:@[row, name]];
+    return foundBy(row, namedForLook(name), keywords);
+}
+
 static UIViewController *modSettingsPage(void) {
     // Opening the page is the only thing that asks; the cache keeps it to once every six hours.
     SGCheckForUpdate(NO);
     NSMutableArray<SGModSection *> *sections = [NSMutableArray array];
+    NSMutableArray<NSArray *> *looked = [NSMutableArray array];
     // A build the lock screen cannot open leads the page, above the tweaks: it is the one thing here
     // that no switch can put right, and it is worth reading before anything else.
     SGModRow *signing = SGSigningWarningRow();
@@ -89,51 +98,51 @@ static UIViewController *modSettingsPage(void) {
     // The tile colors are the system palette's, in dark mode except where SGColorRGB gives a lighter or deeper shade.
     [sections addObject:SGNotedSection(nil, @[
         SGRedesignedUIRow(),
-        foundBy(pageRow(SGL(@"settings.main.appearance.title", @"Appearance"), @"paintpalette.fill", UIColor.systemPurpleColor, ^UIViewController *{ return SGAppearancePage(); }),
-                namedForLook(@"appearance"),
+        foundByLook(looked, pageRow(SGL(@"settings.main.appearance.title", @"Appearance"), @"paintpalette.fill", UIColor.systemPurpleColor, ^UIViewController *{ return SGAppearancePage(); }),
+                @"appearance",
                 SGL(@"settings.search.appearance.keywords", @"theme colour color typeface font amoled black dark icon")),
-        foundBy(pageRow(SGL(@"settings.main.tabbar.title", @"Tab bar"), @"rectangle.bottomthird.inset.filled", UIColor.systemGrayColor, ^UIViewController *{ return SGNavbarPage(); }),
-                namedForLook(@"tabbar"),
+        foundByLook(looked, pageRow(SGL(@"settings.main.tabbar.title", @"Tab bar"), @"rectangle.bottomthird.inset.filled", UIColor.systemGrayColor, ^UIViewController *{ return SGNavbarPage(); }),
+                @"tabbar",
                 SGL(@"settings.search.tabbar.keywords", @"navigation bar tabs bottom")),
     ], SGRestartNote)];
 
     // Each look keeps its own screen builders; only the redesign has a Search page.
-    SGModRow *playlists = foundBy(pageRow(SGL(@"settings.home.playlists.row.title", @"Playlists"), @"music.note.list", UIColor.systemBlueColor, ^UIViewController *{ return SGRedesignedUIStored() ? SGRPlaylistSettingsPage() : SGPlaylistSettingsPage(); }),
-                                  namedForLook(@"playlists"),
+    SGModRow *playlists = foundByLook(looked, pageRow(SGL(@"settings.home.playlists.row.title", @"Playlists"), @"music.note.list", UIColor.systemBlueColor, ^UIViewController *{ return SGRedesignedUIStored() ? SGRPlaylistSettingsPage() : SGPlaylistSettingsPage(); }),
+                                  @"playlists",
                                   SGL(@"settings.search.playlists.keywords", @"playlist page album cover"));
-    SGModRow *search = foundBy(pageRow(SGL(@"settings.main.search.title", @"Search"), @"magnifyingglass", UIColor.systemYellowColor, ^UIViewController *{ return SGRSearchSettingsPage(); }),
-                               namedForLook(@"search"),
+    SGModRow *search = foundByLook(looked, pageRow(SGL(@"settings.main.search.title", @"Search"), @"magnifyingglass", UIColor.systemYellowColor, ^UIViewController *{ return SGRSearchSettingsPage(); }),
+                               @"search",
                                SGL(@"settings.search.search.keywords", @"browse categories chips"));
     search.visible = redesigned;
     SGWithNew(search, @"searchPage");
     // Only the redesign has a Library page of its own: its compact header, with Spotify's controls in a menu.
-    SGModRow *library = foundBy(pageRow(SGL(@"settings.main.library.title", @"Library"), @"books.vertical.fill", UIColor.systemPurpleColor, ^UIViewController *{ return SGRLibrarySettingsPage(); }),
-                                namedForLook(@"library"),
+    SGModRow *library = foundByLook(looked, pageRow(SGL(@"settings.main.library.title", @"Library"), @"books.vertical.fill", UIColor.systemPurpleColor, ^UIViewController *{ return SGRLibrarySettingsPage(); }),
+                                @"library",
                                 SGL(@"settings.search.library.keywords", @"your library filter chips sort grid list compact"));
     library.visible = redesigned;
     SGWithNew(library, @"libraryPage");
-    SGModRow *albums = foundBy(pageRow(SGL(@"settings.main.albums.title", @"Albums"), @"square.stack.fill", SGColorRGB(0x34C759), ^UIViewController *{ return SGRedesignedUIStored() ? SGRAlbumSettingsPage() : SGAlbumSettingsPage(); }),
-                               namedForLook(@"albums"),
+    SGModRow *albums = foundByLook(looked, pageRow(SGL(@"settings.main.albums.title", @"Albums"), @"square.stack.fill", SGColorRGB(0x34C759), ^UIViewController *{ return SGRedesignedUIStored() ? SGRAlbumSettingsPage() : SGAlbumSettingsPage(); }),
+                               @"albums",
                                SGL(@"settings.search.albums.keywords", @"album cover notes credits"));
-    SGModRow *artists = foundBy(pageRow(SGL(@"settings.main.artists.title", @"Artists"), @"music.mic", SGColorRGB(0x30B0C7), ^UIViewController *{ return SGRedesignedUIStored() ? SGRArtistSettingsPage() : SGArtistSettingsPage(); }),
-                                namedForLook(@"artists"),
+    SGModRow *artists = foundByLook(looked, pageRow(SGL(@"settings.main.artists.title", @"Artists"), @"music.mic", SGColorRGB(0x30B0C7), ^UIViewController *{ return SGRedesignedUIStored() ? SGRArtistSettingsPage() : SGArtistSettingsPage(); }),
+                                @"artists",
                                 SGL(@"settings.search.artists.keywords", @"artist header photo bio"));
-    SGModRow *home = foundBy(pageRow(SGL(@"settings.main.home_library.title", @"Home & Library"), @"house.fill", UIColor.systemBrownColor, ^UIViewController *{ return SGHomeSettingsPage(); }),
-                             namedForLook(@"home"),
+    SGModRow *home = foundByLook(looked, pageRow(SGL(@"settings.main.home_library.title", @"Home & Library"), @"house.fill", UIColor.systemBrownColor, ^UIViewController *{ return SGHomeSettingsPage(); }),
+                             @"home",
                              SGL(@"settings.search.home.keywords", @"library your library home page gradient"));
     home.visible = native;
-    SGModRow *redesignedHome = foundBy(pageRow(SGL(@"settings.main.home.title", @"Home"), @"house.fill", UIColor.systemBrownColor, ^UIViewController *{ return SGRHomeSettingsPage(); }),
-                                       namedForLook(@"home"),
+    SGModRow *redesignedHome = foundByLook(looked, pageRow(SGL(@"settings.main.home.title", @"Home"), @"house.fill", UIColor.systemBrownColor, ^UIViewController *{ return SGRHomeSettingsPage(); }),
+                                       @"home",
                                        SGL(@"settings.search.home.keywords", @"library your library home page gradient"));
     redesignedHome.visible = redesigned;
     [sections addObject:SGSection(nil, @[
         redesignedHome,
         home,
-        foundBy(pageRow(SGL(@"settings.main.player.title", @"Player"), @"play.fill", UIColor.systemPinkColor, ^UIViewController *{ return SGPlayerSettingsPage(); }),
-                namedForLook(@"player"),
+        foundByLook(looked, pageRow(SGL(@"settings.main.player.title", @"Player"), @"play.fill", UIColor.systemPinkColor, ^UIViewController *{ return SGPlayerSettingsPage(); }),
+                @"player",
                 SGL(@"settings.search.player.keywords", @"now playing shuffle repeat gestures sleep timer queue")),
-        foundBy(pageRow(SGL(@"settings.main.lyrics.title", @"Lyrics"), @"quote.bubble.fill", UIColor.systemOrangeColor, ^UIViewController *{ return SGLyricsSettingsPage(); }),
-                namedForLook(@"lyrics"),
+        foundByLook(looked, pageRow(SGL(@"settings.main.lyrics.title", @"Lyrics"), @"quote.bubble.fill", UIColor.systemOrangeColor, ^UIViewController *{ return SGLyricsSettingsPage(); }),
+                @"lyrics",
                 SGL(@"settings.search.lyrics.keywords", @"karaoke translation romanization furigana sync delay")),
         albums,
         artists,
@@ -215,6 +224,11 @@ static UIViewController *modSettingsPage(void) {
     SGModPage *page = [[SGModPage alloc] initWithTitle:@"Vitrine" intro:nil sections:sections footer:nil];
     page.tiles = YES;
     page.searchable = YES;
+    // The page can stay open as Redesigned UI is flipped and the root is not rebuilt (the restart can be put off), so
+    // the search names these rows again whenever it reads the page, with the page each of them opens.
+    SGSettingsIndexRenamesWith(page, ^{
+        for (NSArray *entry in looked) ((SGModRow *)entry[0]).searchIdentifier = namedForLook(entry[1]);
+    });
     return page;
 }
 

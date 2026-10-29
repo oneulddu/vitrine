@@ -1,5 +1,6 @@
 #import "SGOptionalWork.h"
 #import "SGLog.h"
+#import "SGPrefs.h"
 #import <Network/Network.h>
 #import <os/lock.h>
 
@@ -51,8 +52,7 @@ SGOptionalWorkReason SGOptionalWorkReasonForInputs(BOOL lowPower, NSProcessInfoT
 }
 
 BOOL SGOptionalWorkMayRun(BOOL allowsExpensive) {
-    id enabled = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLoadAhead];
-    if (enabled && ![enabled boolValue]) return NO;
+    if (!SGEnabled(SGKeyLoadAhead)) return NO;
     SGOptionalNetwork network = networkNow();
     NSProcessInfo *process = NSProcessInfo.processInfo;
     SGOptionalWorkReason reason = SGOptionalWorkReasonForInputs(process.lowPowerModeEnabled, process.thermalState,
