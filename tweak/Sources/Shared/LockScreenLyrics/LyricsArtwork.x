@@ -14,6 +14,7 @@
 #import <MediaPlayer/MediaPlayer.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <os/lock.h>
+#import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Core/SGFileHash.h"
 #import "LockScreenLyrics.h"
@@ -43,6 +44,7 @@ static const double kShortest = 2, kLongest = 8;
 @property (nonatomic) SGLyricsBackgroundStyle background;
 @property (nonatomic) CGSize size;
 @property (nonatomic) NSUInteger generation;
+@property (nonatomic) BOOL stillPending;  // under sg_lock; only one ordinary-artwork miss per snapshot
 @end
 
 @implementation SGLockLine
@@ -96,6 +98,7 @@ static NSString *sg_coverKey;  // content identity, including no-cover, in both 
 static NSUInteger sg_coverGeneration, sg_renderGeneration, sg_settingsRevision;
 static BOOL sg_settingsPending;
 static NSString *sg_shownID;   // the artwork handed over last, nil for none; read on sg_queue too
+static UIImage *sg_stillPreview; // last ready lyric frame in this generation, under sg_lock
 static NSObject *sg_lock;
 static dispatch_queue_t sg_queue;   // writes the clips, one at a time
 // Under sg_lock: demand and cache maintenance stay FIFO, ahead of the replaceable next-line job.
@@ -115,7 +118,7 @@ static BOOL currentLine(SGLockLine *line) {
 }
 
 static void invalidateRenders(void) {
-    @synchronized (sg_lock) { sg_renderGeneration++; sg_prefetch = nil; }
+    @synchronized (sg_lock) { sg_renderGeneration++; sg_prefetch = nil; sg_stillPreview = nil; }
 }
 
 static BOOL stillShown(NSString *artworkID) {
@@ -158,6 +161,16 @@ static void enqueueClip(void (^job)(void), BOOL prefetch) {
 static CFAbsoluteTime sg_askedAt, sg_previewAskedAt;
 // Previews drawn ahead, by artwork ID.
 static NSCache<NSString *, UIImage *> *sg_previews;
+// Keep the composed still with its animated offer. MediaPlayer falls back to the ordinary artwork
+// while changing clips; leaving Spotify's cover there makes every lyric change flash that cover.
+static char sg_stillKey, sg_nativeKey;
+
+// One unwrap rule for both app-side cover readers and setter/resend round trips. NSNull records that
+// Spotify supplied no native artwork; the composed lyric image must never become a source cover.
+static MPMediaItemArtwork *nativeArtwork(MPMediaItemArtwork *artwork) {
+    id original = objc_getAssociatedObject(artwork, &sg_nativeKey);
+    return original ? (original == NSNull.null ? nil : original) : artwork;
+}
 
 static NSURL *clipFile(NSString *artworkID) {
     // Local-track identities contain full metadata; only their digest belongs in a filename.
@@ -166,7 +179,8 @@ static NSURL *clipFile(NSString *artworkID) {
     return [folder() URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"mp4"]];
 }
 
-// On sg_previewQueue. Moving artwork that will not read uses the selected fallback background.
+// Only on sg_previewQueue, including misses from the synchronous ordinary-artwork handler.
+// Moving artwork that will not read uses the selected fallback background.
 static UIImage *previewFor(NSString *artworkID, SGLockLine *line, CGSize size) {
     if (!currentLine(line)) return nil;
     UIImage *preview = [sg_previews objectForKey:artworkID];
@@ -176,12 +190,18 @@ static UIImage *previewFor(NSString *artworkID, SGLockLine *line, CGSize size) {
                                                            line.seconds, line.layout) : NULL;
     if (tryMotion && !frame) markMotionFailed(line.motion, artworkID);
     if (!frame) {
-        CGImageRef backdrop = SGLyricsClipIsScene(line.layout) ? NULL : SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
+        CGImageRef backdrop = SGLyricsClipIsScene(line.layout) || line.layout == SGLyricsClipOverArtwork
+            ? NULL : SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
         frame = SGLyricsClipFrameWithLayout(backdrop, line.cover.CGImage, line.previous, line.line, line.translation, line.next, size,
                                             line.layout);
         CGImageRelease(backdrop);
     }
-    if (frame && currentLine(line)) [sg_previews setObject:(preview = [UIImage imageWithCGImage:frame]) forKey:artworkID];
+    if (frame && currentLine(line)) {
+        [sg_previews setObject:(preview = [UIImage imageWithCGImage:frame]) forKey:artworkID];
+        @synchronized (sg_lock) {
+            if (line.generation == sg_renderGeneration && [artworkID isEqual:sg_shownID]) sg_stillPreview = preview;
+        }
+    }
     CGImageRelease(frame);
     return preview;
 }
@@ -199,7 +219,8 @@ static BOOL writeClip(NSString *artworkID, SGLockLine *line, CGSize size) {
     if (tryMotion && !over) markMotionFailed(line.motion, artworkID);
     BOOL ok = over;
     if (!ok) {
-        CGImageRef backdrop = SGLyricsClipIsScene(line.layout) ? NULL : SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
+        CGImageRef backdrop = SGLyricsClipIsScene(line.layout) || line.layout == SGLyricsClipOverArtwork
+            ? NULL : SGLyricsBackgroundCreate(line.cover.CGImage, size, line.background);
         ok = SGLyricsClipWriteWithLayout(file, backdrop, line.cover.CGImage, line.previous, line.line, line.translation, line.next,
                                          size, line.style, line.layout);
         CGImageRelease(backdrop);
@@ -225,7 +246,8 @@ static void drawAhead(NSString *artworkID, SGLockLine *line) {
 API_AVAILABLE(ios(26.0))
 static MPMediaItemAnimatedArtwork *artworkFor(NSString *artworkID, SGLockLine *line) {
     CGSize size = line.size;
-    return [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:artworkID
+    NSString *title = SGPlayerState().track.trackTitle;
+    MPMediaItemAnimatedArtwork *artwork = [[MPMediaItemAnimatedArtwork alloc] initWithArtworkID:artworkID
         previewImageRequestHandler:^(CGSize wanted, void (^completion)(UIImage *)) {
             if (!currentLine(line)) { completion(nil); return; }
             sg_previewAskedAt = CFAbsoluteTimeGetCurrent();
@@ -253,7 +275,77 @@ static MPMediaItemAnimatedArtwork *artworkFor(NSString *artworkID, SGLockLine *l
                 completion(ok && stillShown(artworkID) ? clipFile(artworkID) : nil);
             }, NO);
         }];
+    MPMediaItemArtwork *still = [[MPMediaItemArtwork alloc] initWithBoundsSize:size requestHandler:^UIImage *(CGSize wanted) {
+        UIImage *ready = [sg_previews objectForKey:artworkID], *previous;
+        BOOL start = NO;
+        @synchronized (sg_lock) {
+            if (line.generation != sg_renderGeneration) return nil;
+            if (ready) {
+                if ([artworkID isEqual:sg_shownID]) sg_stillPreview = ready;
+                return ready;
+            }
+            previous = sg_stillPreview;
+            if (!line.stillPending) { line.stillPending = YES; start = YES; }
+        }
+        // Callers include main-thread cover readers. A miss never renders or waits on this thread;
+        // keep the last lyric frame (or nothing on first demand), never Spotify's plain cover.
+        if (start) dispatch_async(sg_previewQueue, ^{
+            UIImage *image = previewFor(artworkID, line, size);
+            @synchronized (sg_lock) { line.stillPending = NO; }
+            if (!image) return;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!currentLine(line) || !stillShown(artworkID)) return;
+                // Fresh artwork objects discard any MediaPlayer cache of the pending response.
+                SGNowPlayingSetExtras(@"lyrics", @{MPNowPlayingInfoProperty3x4AnimatedArtwork: artworkFor(artworkID, line)}, title);
+            });
+        });
+        return previous;
+    }];
+    objc_setAssociatedObject(artwork, &sg_stillKey, still, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return artwork;
 }
+
+// This hook runs inside NowPlayingExtras' hook (the tweak's sorted source order), so it sees the
+// complete offer. Restore the native artwork before replacing it: getter/resend round trips and
+// clearing lyrics must not feed a composed lyric frame back into the cover resolver.
+%hook MPNowPlayingInfoCenter
+- (NSDictionary *)nowPlayingInfo {
+    NSDictionary *info = %orig;
+    id shown = info[MPMediaItemPropertyArtwork];
+    id native = nativeArtwork(shown);
+    if (native == shown) return info;
+    NSMutableDictionary *source = [info mutableCopy];
+    if (native) source[MPMediaItemPropertyArtwork] = native;
+    else [source removeObjectForKey:MPMediaItemPropertyArtwork];
+    return source;
+}
+- (void)setNowPlayingInfo:(NSDictionary *)info {
+    if (@available(iOS 26.0, *)) {
+    id supplied = info[MPMediaItemPropertyArtwork], native = nativeArtwork(supplied);
+    id animated = info[MPNowPlayingInfoProperty3x4AnimatedArtwork];
+    MPMediaItemArtwork *still = objc_getAssociatedObject(animated, &sg_stillKey);
+    if (!still && native == supplied) {
+        %orig;
+        return;
+    }
+    NSMutableDictionary *composed = [info mutableCopy];
+    if (still) {
+        // A fresh wrapper belongs to this publication, not a mutable global "current image".
+        MPMediaItemArtwork *fallback = [[MPMediaItemArtwork alloc] initWithBoundsSize:still.bounds.size
+            requestHandler:^UIImage *(CGSize wanted) { return [still imageWithSize:wanted]; }];
+        objc_setAssociatedObject(fallback, &sg_nativeKey, native ?: NSNull.null, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        composed[MPMediaItemPropertyArtwork] = fallback;
+    } else if (native) {
+        composed[MPMediaItemPropertyArtwork] = native;
+    } else {
+        [composed removeObjectForKey:MPMediaItemPropertyArtwork];
+    }
+    %orig(composed);
+    return;
+    }
+    %orig;
+}
+%end
 
 static void clear(void) {
     invalidateRenders();
@@ -429,7 +521,7 @@ static NSTimeInterval update(void) {
         SGLyricsBackgroundStyle background = SGLyricsBackgroundRead(@"spotifyglass.lockscreen.background");
         CGSize size = SGLyricsClipSize(UIScreen.mainScreen.nativeBounds.size.width);
         // A scene covers the whole picture, so it is drawn over the cover even under Moving artwork with lyrics.
-        NSURL *motion = SGLockScreenArtwork() == SGLockArtworkMotionLyrics && !SGLyricsClipIsScene(layout)
+        NSURL *motion = SGLockScreenArtwork() == SGLockArtworkMotionLyrics && !SGLyricsClipIsScene(layout) && layout != SGLyricsClipOverArtwork
             && [sg_motionURI isEqualToString:SGURIString(state.track.URI)] ? sg_motion : nil;
         if (motion && motionFailed(motion)) motion = nil;
         // A line over moving artwork decodes and encodes up to 240 frames, one over the cover a still frame: a phone
@@ -564,6 +656,7 @@ static void tick(void) {
 
 %ctor {
     if (@available(iOS 26.0, *)) {
+        %init;
         sg_lock = [NSObject new];
         sg_queue = dispatch_queue_create("spotifyglass.lockscreen.lyrics", DISPATCH_QUEUE_SERIAL);
         sg_clipRequests = [NSMutableArray array];

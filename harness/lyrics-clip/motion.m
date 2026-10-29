@@ -273,7 +273,7 @@ static double lumaAt(const uint8_t *q) {
     return 0.2126 * q[0] + 0.7152 * q[1] + 0.0722 * q[2];
 }
 
-// The picture behind a translation and the next line, in the middle 9:19.5 strip a phone shows. `words` is a
+// The picture behind a translation and the next line, across the visible frame. `words` is a
 // frame with them and `behind` the same frame with them as spaces; rows where `words` is lighter are the lines',
 // and the last two runs of them (the translation and the next line, or the line and its translation run
 // together and the next) are looked at. Returns the picture's pattern there, the mean step between neighbouring
@@ -286,7 +286,7 @@ static double behindDimmed(CGImageRef words, CGImageRef behind, double *dimmed, 
     double pattern = -1;
     *dimmed = 0;
     *outside = 255;
-    size_t left = w * (1 - 9 / 19.5 * 4 / 3) / 2, right = w - left, runs[8][2], n = 0, unlit = 0;
+    size_t left = 0, right = w - 1, runs[8][2], n = 0, unlit = 0;
     BOOL in = NO;
     for (size_t y = 0; w == w2 && h == h2 && y < h; y++) {
         BOOL lit = NO;
@@ -478,12 +478,11 @@ int motionMain(NSURL *out, int argc, char **argv) {
             }
             savePNG(first, [url URLByAppendingPathExtension:@"png"]);
             BOOL words = [c[1] length] || [c[2] length] || [c[3] length];
-            // The words sit in the upper middle, between the clock (the top 15%) and the controls (the bottom 35%); a
-            // dimmed line alone is looked for where the picture is dimmed most, 0.24 to 0.48 of the height.
-            double band = [c[2] length] || ![c[3] length] ? whiteIn(first, 0.15, 0.65, 225) : whiteIn(first, 0.30, 0.50, 120);
+            CGFloat safeTop = (.17 - .10) / (1179.0 / 2556 * 4 / 3), safeBottom = (.65 - .10) / (1179.0 / 2556 * 4 / 3);
+            double band = whiteIn(first, safeTop, safeBottom, [c[2] length] || ![c[3] length] ? 225 : 120);
             if (words) check(band > 0.003, [NSString stringWithFormat:@"words in the upper middle (%.2f%% white)", band * 100]);
             else check(band < 0.0005, [NSString stringWithFormat:@"no words when there are none (%.3f%% white)", band * 100]);
-            check(whiteIn(first, 0, 0.15, 225) < 0.0005 && whiteIn(first, 0.65, 1, 225) < 0.0005, @"nothing white under the clock or the controls");
+            check(whiteIn(first, 0, safeTop, 225) < 0.0005 && whiteIn(first, safeBottom, 1, 225) < 0.0005, @"nothing white under the clock or the controls");
             double moved = differ(first, middle);
             check(moved > 2, [NSString stringWithFormat:@"the picture moves (%.1f of 255 between the start and the middle)", moved]);
             CGImageRef preview = SGLyricsClipMotionFrame(video, c[1], c[2], translation, c[3], from, seconds, layout);

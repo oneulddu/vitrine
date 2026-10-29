@@ -22,6 +22,7 @@ typedef NS_ENUM(NSInteger, SGLyricsClipLayout) {
     SGLyricsClipMessages,    // a chat on black: the line sung last in a grey bubble, the line in a blue one on the other
                              // side, and while a next line is coming a grey bubble of three dots
     SGLyricsClipVinyl,       // a record with the cover as its label, the line in italic serif under it and the next one dimmed
+    SGLyricsClipOverArtwork, // sharp cover, previous/current/translation over a feathered local scrim
 };
 
 // Messages and Vinyl paint the whole picture: no backdrop, no translation, never over moving artwork.
@@ -39,6 +40,7 @@ CGImageRef SGLyricsClipBackdrop(CGImageRef cover, CGSize size) CF_RETURNS_RETAIN
 // smaller under the line, and only with it. `backdrop` is behind the words of Left, Centered and Poster, which
 // leave out `cover` and `previous`. Scenes (SGLyricsClipIsScene) leave out `backdrop`, which may be NULL for them,
 // and the translation: Messages draws `previous`, Vinyl `cover` (a plain label for NULL).
+// OverArtwork uses `cover` sharp, ignoring `backdrop`, and keeps `previous` above the line instead of `next`.
 CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, CGImageRef cover, NSString *previous, NSString *line,
                                        NSString *translation, NSString *next, CGSize size, SGLyricsClipLayout layout) CF_RETURNS_RETAINED;
 // Writes the clip as H.264 to `file`, replacing it, and returns once it is written; NO if it was not.

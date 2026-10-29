@@ -9,8 +9,9 @@
 #import "fixtures.h"
 
 static int failures;
-// The words keep between the clock (the top 15% of the screen) and the media controls (the bottom 35%).
-static const CGFloat kWordsFrom = 0.15, kWordsTo = 0.65;
+// Full-width 3:4 frame, placed 10% down a 1179x2556 screen. Words occupy screen y=17...65%.
+static const CGFloat kWordsFrom = (.17 - .10) / (1179.0 / 2556 * 4 / 3);
+static const CGFloat kWordsTo = (.65 - .10) / (1179.0 / 2556 * 4 / 3);
 
 static void check(BOOL ok, NSString *what) {
     printf("  %s %s\n", ok ? "ok  " : "FAIL", what.UTF8String);
@@ -119,8 +120,9 @@ static void verify(NSURL *url, CGImageRef backdrop, CGSize size, SGLyricsClipSty
         // Against the backdrop, so the dimmed lines count too.
         double middle = wordsIn(first, backdrop, kWordsFrom, kWordsTo);
         double top = wordsIn(first, backdrop, 0, kWordsFrom), bottom = wordsIn(first, backdrop, kWordsTo, 1);
-        // A lone next line, smaller and dimmed, lights about 0.3%.
-        if (hasWords) check(middle > 0.002,[NSString stringWithFormat:@"words between the clock and the controls (%.2f%% lit)", middle * 100]);
+        // Keep the same minimum ink count as 0.2% of the old half-frame band, independent of
+        // the now larger safe region's area. A wider safe region must not dilute a valid small line.
+        if (hasWords) check(middle * (kWordsTo - kWordsFrom) > 0.001,[NSString stringWithFormat:@"words between the clock and the controls (%.2f%% lit)", middle * 100]);
         else check(middle < 0.001, [NSString stringWithFormat:@"no words when there are none (%.2f%% lit)", middle * 100]);
         check(top < 0.001 && bottom < 0.001, [NSString stringWithFormat:@"no words under the clock or the controls (%.3f%% / %.3f%% lit)",
                                                                         top * 100, bottom * 100]);
@@ -203,7 +205,7 @@ int main(int argc, char **argv) {
             CGRect left = litBounds(leftFrame, backdrop), centred = litBounds(centredFrame, backdrop);
             CGImageRelease(leftFrame);
             CGImageRelease(centredFrame);
-            CGFloat strip = size.width * 9 / 19.5 * 4 / 3, from = (size.width - strip) / 2;
+            CGFloat strip = size.width, from = 0;
             check(fabs(CGRectGetMinX(left) - (from + strip * 0.08)) < size.width * 0.01,
                   [NSString stringWithFormat:@"Left starts 8%% of the strip in (at %.0f, want %.0f)", CGRectGetMinX(left), from + strip * 0.08]);
             check(fabs(CGRectGetMidX(centred) - size.width / 2) < size.width * 0.01 && CGRectGetMinX(centred) > CGRectGetMinX(left) + size.width * 0.05,

@@ -6,16 +6,16 @@ translation without its line left out), the last line, an empty clip, and two bl
 space (a very long Latin line and a very long CJK one, each with a long translation, which drop lines and
 end in an ellipsis), each as a Still and as Animated in the Left layout and as a Still in Centered
 (`-centered`) and Poster (`-poster`), over a stand-in cover or the image given. It checks each layout's
-place on the preview frame: Left 8% of the strip in, Centered in its middle at Left's height, Poster's line
+place on the preview frame: Left 8% of its full width in, Centered in its middle at Left's height, Poster's line
 larger and heavier, left-aligned, with no next line and its translation kept (`preview-poster-translated.png`). It checks that a translation adds words under its line and none
 without it, and saves that preview as `preview-translated.png`. Every file is read back with
 AVFoundation and checked: its length (2 s for a still, 4 s for an animated loop), its 3:4 size, H.264,
-how many frames it holds (1 or 60), words (the line, or a lone dimmed next line) between 15% and 65% of
-the height and none, dimmed ones included, under the clock (the top 15%) or the media controls (the
+how many frames it holds (1 or 60), words (the line, or a lone dimmed next line) between 17% and 65% of
+the screen height and none, dimmed ones included, under the clock or the media controls (the
 bottom 35%), and the words the same at the end as at the start (within 6% for a block filling the space,
 for the encoder's loss on the letters' edges). It prints how long the default backdrop
-and each clip took to make. The first frame of each clip is saved next to it as a PNG; a phone shows its
-middle 9:19.5 strip.
+and each clip took to make. The first frame of each clip is saved next to it as a PNG; the phone shows its
+full width.
 
     ./build.sh && build/lyrics-clip [cover.jpg]
 
@@ -28,13 +28,13 @@ Five additional still clips exercise each selected background through the real e
 decoded-frame layout checks. `OUT=<unique temporary directory>` isolates build/output artifacts.
 
 `scenes.m` checks the two layouts that paint the whole picture, Messages and Vinyl, against the spec's numbers as the
-review revised them (notes/cleanroom-specs/chroma-plus/lockscreen-layouts.md; W is the card's width, the 9:19.5 strip
-the phone shows, H the height). Fixtures in both: the line with the one before and the next, no line before, no next
+review revised them (notes/cleanroom-specs/chroma-plus/lockscreen-layouts.md; W is the full card width,
+H its height, with safe bounds mapped from screen coordinates). Fixtures in both: the line with the one before and the next, no line before, no next
 line, a very long Latin and a very long CJK line, right to left (Arabic), emoji, and for Vinyl no cover; each preview
-is saved as `build/scenes/<layout>-<fixture>.png`. Every one draws only between 17% and 65% of H, where the other
+is saved as `build/scenes/<layout>-<fixture>.png`. Every one draws only between 17% and 65% of screen height, where the other
 layouts keep their words. Messages: the line in a #0A84FF bubble, another next line draws the very same frame (its
 words never show), no grey bubble without a next line and the dots under the line with one, the line sung last at the
-stack's left edge and the line at its right (swapped right to left), the stack ending at 65% of H with nothing but its
+stack's left edge and the line at its right (swapped right to left), the stack ending at 65% of screen height with nothing but its
 bubbles drawn, every bubble's four corners alike and the typing one a pill, a long line held to 4 lines and a long
 line sung last to 2 at 0.6 of the size, a bubble at most 74% of the stack wide, and the cover and translation left
 out. Vinyl: the record 0.6 W across when the words fit and 0.45 W under a long line, centred, the record and the words
@@ -45,9 +45,9 @@ and read back: one frame, held 2 s or 4 s.
 
     ./build.sh && build/lyrics-clip scenes [cover.jpg]
 
-`unchanged.sh` builds `frames.m` twice, against SGLyricsClip.m as it was at BASE (the commit before Messages and
-Vinyl) and against the tree's, and fails on any pixel of any case above in Left, Centered or Poster that differs,
-with the scenes' inputs handed to today's. `mutations.py` breaks each of those rules once in a copy of the sources and
+`unchanged.sh` is a compatibility entry point for `regression.sh`: the visible-frame geometry intentionally
+differs from beta.23, so historical pixel identity is no longer an acceptance criterion. `frames.m` remains a
+historical frame-comparison utility. `mutations.py` breaks each scene rule in a copy of the sources and
 checks the harness fails at that rule.
 
     sh unchanged.sh
@@ -61,7 +61,7 @@ stretch round the video's end, one longer than the video (written whole), a brea
 blocks too tall for the space with the lines either side; over the two stand-ins in all three layouts, over
 videos given in Left. Each is
 read back and checked: length, the 3:4 cut's size, H.264, frames at up to 30 fps, words in the upper middle
-and nothing white under the clock (the top 15%) or the controls (the bottom 35%), the picture moving, and the preview the same as the first
+and nothing white outside the screen's 17–65% safe region, the picture moving, and the preview the same as the first
 frame. With the translation, it draws the same preview again with the lines as spaces, the picture behind them
 alone, and over the flag checks the picture behind the translation and the next line in the phone's strip:
 little pattern left (the mean step between neighbouring pixels under 0.65 of 255; the narrower blur and fixed
@@ -81,3 +81,33 @@ memory used.
     build/lyrics-clip motion cut video.mp4    # the video cut alone, to compare
 
 These land in `build/motion/`. AVFoundation's encoder needs the sandbox off.
+
+`regression.sh` renders the reported English sentence and Korean translation without forced line separators at the 1179×2556
+uncropped phone projection: full frame width, top at 10% of screen height; neutral space outside it is not
+system chrome. It checks 8% frame margins and screen-space safe heights (17–65%, centre 40%).
+All layouts share that mapping, including Messages and Vinyl. Over the artwork uses a broad side-anchored
+gradient without a flat plateau and subtle shadow; white-cover current-line contrast is at least 4.5:1,
+dimmed-line contrast 3:1. Sharp aspect fill and both styles are checked.
+The harness observes the actual Core Text frames at the draw boundary: Left, Centered, Poster, Vinyl
+and Over the artwork each have an 84%-wide column, and a long sentence's longest shaped line must
+exceed 70% of the visible width. Font size and fitting rules are unchanged. The reported Left/Centered
+fixture naturally occupies two English lines and one Korean line, not the previous forced three/two.
+`OUT=<directory>` keeps its review PNGs; otherwise all outputs are temporary. `regression-mutations.py`
+breaks margin, the old crop/vertical assumptions, contrast, plateau and blur independently.
+`REVIEW_ONLY=1 SRC=<snapshot>` renders reference PNGs without running assertions.
+These are native Mac commands, not simulator apps.
+
+`THEOS=$HOME/theos python3 harness/lyrics-clip/publish-check.py` runs the existing Catalyst Now Playing
+harness plus a sequence captured at the actual system setter: composed ordinary artwork accompanies
+each lyric offer, Spotify's cover resend cannot replace it, and disabling restores native artwork.
+`--mutate` removes that fallback and requires the regression to fail. Rendering and the OS are doubles
+in that lifecycle check; `regression.sh` renders the production compositor. Phone clip transitions
+still require a device check.
+
+The publication check also switches directly from Lyrics to Every song with motion sources disabled
+and no further Spotify artwork update: both preview and clip must use the native cover, not lyrics.
+`--mutate-native` removes getter unwrapping and must fail that case. A held cold renderer proves a
+main-thread ordinary-artwork request returns without rendering or waiting, then receives a freshly
+published composed frame; `--mutate-main` restores synchronous rendering and must fail the thread check.
+While a line is pending, the ordinary fallback may hold the previous lyric frame (or be absent on first
+demand), never the native cover. Paused lyric retention is unchanged.

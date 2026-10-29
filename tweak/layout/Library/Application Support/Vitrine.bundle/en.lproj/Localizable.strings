@@ -1099,6 +1099,7 @@
 "settings.lockscreen.lyrics_layout.choice.messages" = "Messages";
 "settings.lockscreen.lyrics_layout.choice.poster" = "Poster";
 "settings.lockscreen.lyrics_layout.choice.vinyl" = "Vinyl";
+"settings.lockscreen.lyrics_layout.choice.over_artwork" = "Over the artwork";
 "settings.lockscreen.lyrics_layout.subtitle" = "Where the lyrics sit. Poster shows the line alone, larger.";
 "settings.lockscreen.lyrics_layout.title" = "Layout";
 "settings.lockscreen.lyrics_style.choice.animated" = "Animated";

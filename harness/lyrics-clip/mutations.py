@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Breaks each rule harness/lyrics-clip guards for Messages and Vinyl, and Left/Centered/Poster's sameness, once in a
+"""Breaks each rule harness/lyrics-clip guards for Messages and Vinyl, and the visible-frame margin, once in a
 copy of tweak/Sources, and checks that the harness fails at that rule's check. The next-words, heading and tail-corner
 mutants draw what the layouts must not."""
 import os
@@ -16,10 +16,10 @@ CLIP = "Shared/LockScreenLyrics/SGLyricsClip.m"
 MINE_FILL = "        setFill(context, i == 1 ? kMine : kTheirs, 1);\n        CGContextAddPath(context, path);\n        CGContextFillPath(context);\n"
 STACK_TOP = "    CGFloat y = H * kLowest - tall;   // from the top\n"
 CASES = [
-    ("band-bottom", "kTop = 0.17, kLowest = 0.65;", "kTop = 0.17, kLowest = 0.7;",
-     "FAIL nothing drawn below 65% of the height", "scenes"),
-    ("band-top", "kTop = 0.17, kLowest = 0.65;", "kTop = 0.1, kLowest = 0.65;",
-     "FAIL nothing drawn above 17% of the height", "scenes"),
+    ("band-bottom", "kSafeScreenBottom = 0.65,", "kSafeScreenBottom = 0.7,",
+     "FAIL nothing drawn below 65% of the screen", "scenes"),
+    ("band-top", "kSafeScreenTop = 0.17,", "kSafeScreenTop = 0.1,",
+     "FAIL nothing drawn above 17% of the screen", "scenes"),
     ("blue", "kMine = 0x0A84FF,", "kMine = 0x2F5BFF,", "FAIL the line in a #0A84FF bubble", "scenes"),
     ("next-words", "        } else {\n            CGFloat dot = fontSize * kDot",
      "        } else if (YES) {\n            CTFontRef f = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, fontSize, NULL);\n"
@@ -34,7 +34,7 @@ CASES = [
     ("no-mirror", "BOOL flipped = rightToLeft(", "BOOL flipped = NO && rightToLeft(",
      "FAIL mirrored right to left", "scenes"),
     ("stack-bottom", STACK_TOP, "    CGFloat y = H * kLowest - tall - 20;   // from the top\n",
-     "FAIL the bubbles end at 65% of the height", "scenes"),
+     "FAIL the bubbles end at 65% of the screen", "scenes"),
     ("heading", STACK_TOP, STACK_TOP + "    setFill(context, kSecondary, 1);\n"
      "    CGContextFillRect(context, CGRectMake(left, round(H - y + 20), 200, 16));\n",
      "FAIL nothing but the three bubbles drawn", "scenes"),
@@ -61,7 +61,7 @@ CASES = [
      "FAIL the line's lines 1.35 of its size apart with CJK", "scenes"),
     ("scene-animated", "style == SGLyricsClipAnimated && !SGLyricsClipIsScene(layout) ?", "style == SGLyricsClipAnimated ?",
      "FAIL the clip reads back", "scenes"),
-    ("left-margin", "kMargin = 0.08,", "kMargin = 0.081,", "FAIL short-left draws as before", "unchanged"),
+    ("left-margin", "kMargin = 0.08,", "kMargin = 0.24,", "FAIL existing layout keeps the 8%", "unchanged"),
 ]
 
 for name, before, after, expected, run in CASES:

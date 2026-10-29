@@ -11,15 +11,15 @@
 #import "SGLyricsClip.h"
 #import "Shared/LyricsBackground/LyricsBackground.h"
 
-// The lock screen fills a 9:19.5 screen with the 3:4 clip, scaled to its height, so only the middle kScreen of
-// the clip's width shows and heights map one to one. The words are left-aligned kMargin of that shown width in
-// from its left edge and wrap at kColumn of it; the middle of the words sits kCentreY down, in the upper middle,
-// their top no higher than kTop and their bottom no lower than kLowest, clear of the clock above and the media
-// controls (the bottom 35%) below. Centered sets each line in the middle of the same column.
-// ponytail: from the screen's shape and a reference picture, not measured on a lock screen; tune on a device.
-static const CGFloat kScreen = 9 / 19.5 * 4 / 3;
+// IMG_1800 shows the whole 3:4 frame across the screen, not a centre crop. Its text centre places
+// the frame's top about 10% down a 1179x2556 screen. Map screen-safe heights into that frame once;
+// all six layouts use its full width. The clock is at 11%, the media controls start at 68%.
+static const CGFloat kFrameScreenTop = 0.10, kFrameScreenHeight = (4.0 / 3) * 1179 / 2556;
+static const CGFloat kSafeScreenTop = 0.17, kSafeScreenBottom = 0.65, kTextScreenCentre = 0.4;
+#define kTop ((kSafeScreenTop - kFrameScreenTop) / kFrameScreenHeight)
+#define kLowest ((kSafeScreenBottom - kFrameScreenTop) / kFrameScreenHeight)
+#define kCentreY ((kTextScreenCentre - kFrameScreenTop) / kFrameScreenHeight)
 static const CGFloat kMargin = 0.08, kColumn = 0.84;
-static const CGFloat kCentreY = 0.4, kTop = 0.17, kLowest = 0.65;
 // Poster sets the line kPosterScale of the size in a heavy weight (UIFontWeightHeavy's trait), alone; its
 // translation keeps the size it has under the other layouts.
 static const CGFloat kPosterScale = 1.6, kPosterWeight = 0.56;
@@ -33,6 +33,10 @@ static const CGFloat kTallest = 0.4;
 static const CGFloat kNextScale = 0.6, kNextAlpha = 0.5, kNextGap = 0.5;
 // A translation sits close under its line, in the regular weight at this share of the line's size and this white.
 static const CGFloat kTranslationScale = 0.62, kTranslationAlpha = 0.8, kTranslationGap = 0.15;
+// OverArtwork: a continuous side-anchored Gaussian, without a rectangular core or cutoff.
+// Reaches are in frame widths; the vertical reach grows with the text block.
+static const CGFloat kArtworkScrimAlpha = 0.94, kArtworkSideReach = 1.8, kArtworkVerticalReach = 0.6;
+static const CGFloat kArtworkShadowAlpha = 0.45;
 // A still is one frame held this long; an animated clip breathes once over kLoopSeconds, which is all it
 // plays before the lock screen loops it.
 static const int32_t kStillSeconds = 2;
@@ -198,7 +202,7 @@ static CGImageRef newWords(NSString *previous, NSString *line, NSString *transla
         previous = nil;
         if (line.length) next = nil;
     }
-    CGFloat screen = size.width * kScreen, width = round(screen * kColumn);
+    CGFloat screen = size.width, width = round(screen * kColumn);
     CGFloat fontSize = size.width * kFont, lineSize = layout == SGLyricsClipPoster ? fontSize * kPosterScale : fontSize;
     CTFramesetterRef setter = NULL;
     NSAttributedString *words = nil;
@@ -240,9 +244,22 @@ static CGImageRef newWords(NSString *previous, NSString *line, NSString *transla
     CGPathRef path = CGPathCreateWithRect(box, NULL);
     CTFrameRef frame = CTFramesetterCreateFrame(setter, CFRangeMake(0, 0), path, NULL);
     CGContextRef context = newContext(size, NULL, 0);
-    if (drawn) {
+    if (layout == SGLyricsClipOverArtwork) {
+        CGFloat reachX = size.width * kArtworkSideReach, reachY = height / 2 + size.width * kArtworkVerticalReach;
+        uint8_t *pixels = CGBitmapContextGetData(context);
+        size_t stride = CGBitmapContextGetBytesPerRow(context);
+        for (size_t y = 0; y < (size_t)size.height; y++) {
+            CGFloat dy = (y - (top + height / 2)) / reachY;
+            for (size_t x = 0; x < (size_t)size.width; x++) {
+                CGFloat dx = (x - box.origin.x) / reachX;
+                CGFloat fade = exp(-(dx * dx + dy * dy));
+                pixels[y * stride + x * 4 + 3] = (uint8_t)round(255 * kArtworkScrimAlpha * fade);
+            }
+        }
+    }
+    if (drawn || layout == SGLyricsClipOverArtwork) {
         CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
-        CGFloat shade[] = {0, 0, 0, kShadowAlpha};
+        CGFloat shade[] = {0, 0, 0, layout == SGLyricsClipOverArtwork ? kArtworkShadowAlpha : kShadowAlpha};
         CGColorRef color = CGColorCreate(space, shade);
         CGContextSetShadowWithColor(context, CGSizeZero, lineSize * kShadowBlur, color);
         CGColorRelease(color);
@@ -267,7 +284,7 @@ static CGImageRef newWords(NSString *previous, NSString *line, NSString *transla
 }
 
 // Messages and Vinyl paint the whole clip. Their sizes are shares of the card, the strip of the clip the lock screen
-// shows: its width W (kScreen of the clip's) and its height H, the clip's. All they draw stays between kTop and
+// shows: its full width W and its height H. All they draw stays between kTop and
 // kLowest of the height, where the other layouts keep their words, clear of the clock and the media controls.
 // Messages on black, of W: the bubbles kMessagesSide in from each side, the stack ending at kLowest. A bubble is at
 // most kBubbleWidth of the stack's width, its corners kBubbleRadius round, its words kBubbleFont tall and
@@ -283,7 +300,7 @@ static const CGFloat kBubblePadX = 0.03, kBubblePadY = 0.02, kBubbleGap = 0.015,
 // the room, in a glow of kGlowAlpha white kGlow wide; its rim kRimAlpha white, grooves kGroove apart at kGrooveAlpha
 // white from kGroovesFrom of the label out to kGroovesTo of the record, and a sheen of two wedges at kSheenAlpha
 // white; the cover as its label, a circle kLabel of the record across (kLabelPlain without one), round a spindle hole
-// kSpindle of it across. The words kRecordGap under it, centred kVinylSide in from each side: the line in italic
+// kSpindle of it across. The words kRecordGap under it, centred in the shared kColumn: the line in italic
 // serif kVinylFont tall, kVinylLineHeight of that apart (kVinylCJKLineHeight with Chinese, Japanese or Korean in it);
 // the next line kVinylNextGap under it in the system font kVinylNextFont tall, kVinylNextLineHeight of that apart,
 // kVinylNextAlpha white. The record and the words are centred together between kTop and kLowest, the glow inside.
@@ -291,7 +308,7 @@ static const uint32_t kVinylBackground = 0x0E0E0E, kDisc = 0x050505, kLabelPlain
 static const CGFloat kRecordMost = 0.6, kRecordLeast = 0.45, kRecordGap = 0.04, kLabel = 0.38, kSpindle = 0.028;
 static const CGFloat kGlow = 0.04, kGlowAlpha = 0.12;
 static const CGFloat kRimAlpha = 0.25, kGroove = 0.005, kGrooveAlpha = 0.05, kGroovesFrom = 1.15, kGroovesTo = 0.96, kSheenAlpha = 0.09;
-static const CGFloat kVinylSide = 0.1, kVinylFont = 0.08, kVinylLineHeight = 1.2, kVinylCJKLineHeight = 1.35;
+static const CGFloat kVinylFont = 0.08, kVinylLineHeight = 1.2, kVinylCJKLineHeight = 1.35;
 static const CGFloat kVinylNextFont = 0.046, kVinylNextLineHeight = 1.25, kVinylNextAlpha = 0.55, kVinylNextGap = 0.02;
 
 static CGColorRef newColor(uint32_t rgb, CGFloat alpha) CF_RETURNS_RETAINED {
@@ -361,7 +378,7 @@ static BOOL rightToLeft(NSString *text) {
 // line is coming the typing dots (theirs), never its words; sides swapped for words written right to left. The stack
 // ends at kLowest and grows up; held to their lines the bubbles stay far below kTop at any size.
 static void drawMessages(CGContextRef context, NSString *previous, NSString *line, NSString *next, CGSize size) {
-    CGFloat W = size.width * kScreen, H = size.height, stack = W * (1 - 2 * kMessagesSide);
+    CGFloat W = size.width, H = size.height, stack = W * (1 - 2 * kMessagesSide);
     CGFloat left = (size.width - W) / 2 + W * kMessagesSide;
     CGFloat padX = W * kBubblePadX, padY = W * kBubblePadY, gap = W * kBubbleGap, inside = stack * kBubbleWidth - 2 * padX;
     setFill(context, kMessagesBackground, 1);
@@ -469,8 +486,8 @@ static NSAttributedString *vinylWords(NSString *line, NSString *next, CGFloat W,
 
 // Vinyl: the record, and under it the line and the next one.
 static void drawVinyl(CGContextRef context, CGImageRef cover, NSString *line, NSString *next, CGSize size) {
-    CGFloat W = size.width * kScreen, H = size.height, middle = size.width / 2;
-    CGFloat glow = round(W * kGlow), gap = round(W * kRecordGap), width = round(W * (1 - 2 * kVinylSide));
+    CGFloat W = size.width, H = size.height, middle = size.width / 2;
+    CGFloat glow = round(W * kGlow), gap = round(W * kRecordGap), width = round(W * kColumn);
     // The band less the glow's reach above and below, so what is centred in it is centred in the band.
     CGFloat room = floor(H * (kLowest - kTop)) - 2 * glow;
     setFill(context, kVinylBackground, 1);
@@ -563,7 +580,14 @@ static CGImageRef newScene(CGImageRef cover, NSString *previous, NSString *line,
 static CGImageRef newPicture(CGImageRef cover, NSString *previous, NSString *line, NSString *translation, NSString *next,
                              CGSize size, SGLyricsClipLayout layout) CF_RETURNS_RETAINED {
     if (SGLyricsClipIsScene(layout)) return newScene(cover, previous, line, next, size, layout);
+    if (layout == SGLyricsClipOverArtwork) return newWords(previous, line, translation, line.length ? nil : next, size, layout, NULL);
     return newWords(nil, line, translation, next, size, layout, NULL);
+}
+
+static CGImageRef newBackdrop(CGImageRef backdrop, CGImageRef cover, CGSize size, SGLyricsClipLayout layout) CF_RETURNS_RETAINED {
+    if (layout == SGLyricsClipOverArtwork)
+        return SGLyricsBackgroundCreate(cover, size, (SGLyricsBackgroundStyle){SGLyricsBackgroundCover, 0, 0, 0});
+    return CGImageRetain(backdrop);
 }
 
 // A frame `phase` of the way through the loop, 0 to 1, into `context`.
@@ -577,11 +601,13 @@ static void drawFrame(CGContextRef context, CGImageRef backdrop, CGImageRef word
 CGImageRef SGLyricsClipFrameWithLayout(CGImageRef backdrop, CGImageRef cover, NSString *previous, NSString *line,
                                        NSString *translation, NSString *next, CGSize size, SGLyricsClipLayout layout) {
     CGImageRef words = newPicture(cover, previous, line, translation, next, size, layout);
+    CGImageRef background = newBackdrop(backdrop, cover, size, layout);
     CGContextRef context = newContext(size, NULL, 0);
-    drawFrame(context, backdrop, words, size, 0);
+    drawFrame(context, background, words, size, 0);
     CGImageRef frame = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
     CGImageRelease(words);
+    CGImageRelease(background);
     return frame;
 }
 
@@ -620,6 +646,7 @@ BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, CGImageRef co
     if (![writer startWriting]) return NO;
     [writer startSessionAtSourceTime:kCMTimeZero];
     CGImageRef words = newPicture(cover, previous, line, translation, next, size, layout);
+    CGImageRef background = newBackdrop(backdrop, cover, size, layout);
     BOOL ok = YES;
     for (int32_t i = 0; i < frames && ok; i++) {
         while (!input.readyForMoreMediaData && writer.status == AVAssetWriterStatusWriting) [NSThread sleepForTimeInterval:0.002];
@@ -629,7 +656,7 @@ BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, CGImageRef co
         if (!ok) break;
         CVPixelBufferLockBaseAddress(buffer, 0);
         CGContextRef context = newContext(size, CVPixelBufferGetBaseAddress(buffer), CVPixelBufferGetBytesPerRow(buffer));
-        drawFrame(context, backdrop, words, size, (double)i / frames);
+        drawFrame(context, background, words, size, (double)i / frames);
         CGContextRelease(context);
         CVPixelBufferUnlockBaseAddress(buffer, 0);
         CVBufferSetAttachment(buffer, kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2, kCVAttachmentMode_ShouldPropagate);
@@ -639,6 +666,7 @@ BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, CGImageRef co
         CVPixelBufferRelease(buffer);
     }
     CGImageRelease(words);
+    CGImageRelease(background);
     if (!ok) {
         [writer cancelWriting];
         return NO;

@@ -1096,6 +1096,7 @@
 "settings.lockscreen.lyrics_layout.choice.centered" = "가운데 정렬";
 "settings.lockscreen.lyrics_layout.choice.messages" = "메시지";
 "settings.lockscreen.lyrics_layout.choice.vinyl" = "바이닐";
+"settings.lockscreen.lyrics_layout.choice.over_artwork" = "앨범아트 위에";
 "settings.lockscreen.lyrics_layout.choice.left" = "왼쪽 정렬";
 "settings.lockscreen.lyrics_layout.choice.poster" = "포스터";
 "settings.lockscreen.lyrics_layout.subtitle" = "가사가 놓이는 위치입니다. '포스터'는 현재 줄만 크게 표시합니다.";

@@ -422,7 +422,9 @@ Shared:
                   full-screen artwork (LyricsArtwork.x): a new artwork ID per line, its 3:4 H.264 clip (the line in bold
                   and the next one smaller, in the regular weight at 0.6 of its size and half white, over the selected
                   background, SGLyricsClip.m; left-aligned 8% of the screen's width in, wrapping at 84% of it, the block
-                  centred 40% down and its top no higher than 17%, clear of the clock and the media controls) written only when the lock screen asks for it,
+                  centred 40% down and its top no higher than 17%, clear of the clock and the media controls;
+                  the whole 3:4 frame is visible across the screen, starting about 10% down on the 1179×2556 reference,
+                  so screen heights are mapped into the frame rather than assuming a centre crop) written only when the lock screen asks for it,
                   Still (one frame) or Animated (15 fps). Layout (SGKeyLockScreenLyricsLayout, under Lyrics style): Left
                   as above (the default), Centered (each line centred in the same column) or Poster (the line alone at
                   1.6 times the size in the heavy weight, left-aligned, its translation under it; at a rest the next
@@ -432,8 +434,13 @@ Shared:
                   next line is coming, never its words, sides swapped right to left, the current bubble at most 4
                   lines and the previous 2 after shrinking to 0.6; Vinyl on #0E0E0E, a still record of 45 to 60% of the
                   visible width with the cover as its round label, a lighter rim and a soft glow, the current line in
-                  New York italic under it, the next line at 55% white; harness/lyrics-clip/ `scenes`, `unchanged.sh`
-                  and `mutations.py`). In the first three layouts a block still too tall at the smallest size, whose
+                  New York italic under it, the next line at 55% white; harness/lyrics-clip/ `scenes`, `regression.sh`
+                  and `mutations.py`). Over the artwork (last choice; default unchanged) keeps the cover sharp and
+                  centre-filled, with the previous line, current line and translation over a broad side-anchored
+                  Gaussian gradient with no flat box or cutoff, plus a subtle text shadow. On white, the current
+                  line keeps at least 4.5:1 contrast and the dimmed lines 3:1. Still holds it, Animated gently
+                  breathes the cover, including under Moving artwork with lyrics.
+                  In the first three layouts a block still too tall at the smallest size, whose
                   bottom would pass 65% of the screen, lets go of the line sung last, then the next line, then the
                   translation, and last keeps the whole lines of the line that fit from 17% down, the last ending in an
                   ellipsis. Fallbacks use the screen's native width and the shared
@@ -442,7 +449,9 @@ Shared:
                   previous song's cover. Missing or failed covers use the dark fallback; late results are
                   guarded by track, source URL and generation. Previews are drawn on a queue apart from the clips, and while the
                   lock screen is asking, the next line's preview and clip are drawn ahead and a ready preview is handed
-                  over at once. iOS still shows the plain cover for about half a second at each change of artwork. Picking it or another artwork applies at once.
+                  over at once. Each lyric offer also supplies its composed frame as ordinary Now Playing artwork,
+                  so the clip transition's fallback is lyrics, not the plain cover; turning lyrics off restores the
+                  native artwork. Picking it or another artwork applies at once.
                   Moving artwork with lyrics (the choice's fifth value, 4) draws each line over the track's moving
                   artwork, which LockScreenMotion.x finds and hands over (SGLyricsArtworkSetMotion): the clip is the
                   stretch of the video the song is at while the line shows (its start taken round the video's length,

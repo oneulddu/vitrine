@@ -14,11 +14,10 @@ static void check(BOOL ok, NSString *what) {
     if (!ok) failures++;
 }
 
-// The card is the strip of the clip the lock screen shows: 9:19.5 of the 3:4 clip's height across (W), and its whole
-// height (H). Everything is drawn between 17% and 65% of H, the band Left, Centered and Poster keep their words in,
-// clear of the clock above and the controls below.
-static const CGFloat kCardOfWidth = 9 / 19.5 * 4 / 3;
-static const CGFloat kBandTop = 0.17, kBandBottom = 0.65;
+// The whole 3:4 card is shown across the screen, its top 10% down. Independent screen-space expectations.
+static const CGFloat kCardOfWidth = 1;
+static const CGFloat kBandTop = (.17 - .10) / (1179.0 / 2556 * 4 / 3);
+static const CGFloat kBandBottom = (.65 - .10) / (1179.0 / 2556 * 4 / 3);
 static const uint32_t kBlack = 0x000000, kTheirs = 0x262629, kMine = 0x0A84FF, kVinylGround = 0x0E0E0E, kDisc = 0x050505;
 // Messages, of W: bubbles 4.5% round, words 5% tall at 1.3 line height, set down to 0.6 of that, 2% padding above and
 // below; at most 4 lines of the line, 2 of the line sung last.
@@ -95,7 +94,9 @@ static size_t offColour(CGImageRef image, CGFloat from, CGFloat to, uint32_t rgb
     size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image), off = 0;
     NSData *data = rgba(image);
     const uint8_t *bytes = data.bytes;
-    for (size_t y = (size_t)floor(from * height); y < (size_t)ceil(to * height) && y < height; y++)
+    // Classify by pixel centres. Mapping screen fractions gives non-integral frame boundaries;
+    // floor/ceil of both ends used to count an inside edge row as outside too.
+    for (size_t y = (size_t)ceil(from * height - .5); y < (size_t)ceil(to * height - .5) && y < height; y++)
         for (size_t x = 0; x < width; x++) off += rgbOf(bytes + (y * width + x) * 4) != rgb;
     return off;
 }
@@ -227,8 +228,8 @@ int scenesMain(NSURL *out, CGImageRef cover) {
             savePNG(image, [out URLByAppendingPathComponent:file]);
             printf("%s\n", file.UTF8String);
             size_t high = offColour(image, 0, kBandTop, ground), low = offColour(image, kBandBottom, 1, ground);
-            check(high == 0, [NSString stringWithFormat:@"nothing drawn above 17%% of the height (the clock) (%zu pixels)", high]);
-            check(low == 0, [NSString stringWithFormat:@"nothing drawn below 65%% of the height (the controls) (%zu pixels)", low]);
+            check(high == 0, [NSString stringWithFormat:@"nothing drawn above 17%% of the screen (the clock) (%zu pixels)", high]);
+            check(low == 0, [NSString stringWithFormat:@"nothing drawn below 65%% of the screen (the controls) (%zu pixels)", low]);
             check(offColour(image, kBandTop, kBandBottom, ground) > 0, @"something drawn between them");
             if (layout == SGLyricsClipMessages)
                 check(colourBounds(image, kMine).size.width > 0, @"the line in a #0A84FF bubble");
@@ -278,7 +279,7 @@ int scenesMain(NSURL *out, CGImageRef cover) {
                loneGrey, typingGrey]);
         CGRect all = boundsOf(full, drawn);
         check(fabs(CGRectGetMaxY(all) - kBandBottom * H) <= 1.5,
-              [NSString stringWithFormat:@"the bubbles end at 65%% of the height (at %.0f, want %.0f)", CGRectGetMaxY(all), kBandBottom * H]);
+              [NSString stringWithFormat:@"the bubbles end at 65%% of the screen (at %.0f, want %.0f)", CGRectGetMaxY(all), kBandBottom * H]);
         NSArray<NSValue *> *bubbles = runsOf(full, drawn);
         BOOL onlyBubbles = bubbles.count == 3;
         for (NSValue *b in bubbles) onlyBubbles = onlyBubbles && countIn(full, b.rectValue, kTheirs) + countIn(full, b.rectValue, kMine) > 0;

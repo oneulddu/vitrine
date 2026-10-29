@@ -1,4 +1,4 @@
-// unchanged.sh's two halves: `write <dir>` saves the preview frame of every case of fixtures.h in Left, Centered and
+// Historical comparison tool (not a current acceptance gate): `write <dir>` saves every fixture in Left, Centered and
 // Poster as raw RGBA, `check <dir>` draws them again and fails on any pixel that differs. Built with -DSG_BASELINE
 // against SGLyricsClip.m as it was before Messages and Vinyl, in its signature then; built without, against today's,
 // with the scenes' inputs (the cover and the line sung last) handed over too, which those three layouts must leave out.
