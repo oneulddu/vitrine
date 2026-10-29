@@ -324,10 +324,6 @@ void SGRPlayerMenuSetBackground(SGRPlayerBackgroundKind kind);
 // shares (App/Pages.m).
 UIViewController *SGRPlayerSettingsPage(NSArray *more);
 
-// Alpha 0, no touches, hidden from accessibility, set again on every call: for Spotify's Swift views,
-// which SGRSuppress cannot keep (PlayerControls.x).
-void SGRPlayerVanish(UIView *view);
-
 // The play glyph over the play button in `host`, a controls unit's view: the ordinary player's
 // (PlayerControls.x) and the AI DJ's (DJPlayer.x) share it, with its state, spinner and tap handling.
 void SGRPlayerPlayGlyphIn(UIView *host);

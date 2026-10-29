@@ -23,6 +23,11 @@ static inline float SGOutputFloat(unsigned bits) {
     memcpy(&value, &bits, sizeof value);
     return value;
 }
+static inline void storeFloat(atomic_uint *slot, float value) {
+    uint32_t bits;
+    memcpy(&bits, &value, sizeof bits);
+    atomic_store(slot, bits);
+}
 // Serialized writers. Atomic fields make a failed snapshot attempt race-free.
 static inline void SGOutputPublish(SGOutputPublication *publication, SGOutputSettings settings) {
     atomic_fetch_add(&publication->sequence, 1);

@@ -96,4 +96,3 @@ UIViewController *SGAboutPage(void);   // the Mod page
 // to add more text or a recording, refresh the diagnostics, send again or delete it. The screen is
 // recorded with ReplayKit in the app, microphone off, and a red Stop floats over Spotify until it ends.
 UIViewController *SGReportListPage(void);            // the page, opening a new report at its top
-UIViewController *SGReportPageFor(NSString *identifier);   // one kept report, identifier from its list entry

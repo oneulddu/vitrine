@@ -37,7 +37,6 @@ static UIView *tabBarOf(UIView *item) {
     %orig;
     SGComposeTabBar((UIView *)self);
     holdHome((UIView *)self);
-    SGLogTabBarRow((UIView *)self);
 }
 %end
 
@@ -47,7 +46,6 @@ static void itemDidLayOut(UIView *item) {
     if (!bar) return;
     SGComposeTabBar(bar);
     holdHome(bar);
-    SGLogTabBarRow(bar);
 }
 
 %hook _TtC23NavigationUI_TabBarImpl21TabBarItemElementView

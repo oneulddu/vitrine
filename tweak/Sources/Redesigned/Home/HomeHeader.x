@@ -55,13 +55,6 @@ static const CGFloat kTintHeight = 480;
 @end
 static NSString *sg_tabName;
 
-static void vanish(UIView *view) {
-    if (!view) return;
-    if (view.alpha != 0) view.alpha = 0;
-    view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 static NSString *tabName(UIWindow *window) {
     if (sg_tabName || !window) return sg_tabName ?: @"Home";
     static NSUInteger tries;
@@ -485,14 +478,14 @@ static void layoutHeader(UIViewController *page) {
     sg_pageView = view;
     UIView *header = sg_header;
     UIStackView *stack = sg_stack;
-    vanish(sg_scrim);
+    SGRVanish(sg_scrim);
     syncPodcastChips(stack);
     layoutHeaderOnceSized(page, header);
 
     UIView *face = nil;
     for (UIView *part in stack.arrangedSubviews) {
         if (SGRIsAvatar(part) && !face) face = part;
-        else vanish(part);
+        else SGRVanish(part);
     }
     // A face that stopped being the avatar drops the scroll's transform and fade.
     if (sg_face && sg_face != face) rise(sg_face, CGAffineTransformIdentity, 1);

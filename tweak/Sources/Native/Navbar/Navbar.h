@@ -22,7 +22,6 @@ void SGSetNavbarStock(NSArray<NSString *> *stock);
 
 // Navbar.x, called from the tab bar's layout passes in TabBarHooks.x.
 void SGComposeTabBar(UIView *tabBar);
-void SGLogTabBarRow(UIView *tabBar);
 // Lays the bar out again after the Navbar page changes something, so it does not wait for a touch.
 void SGRefreshTabBar(void);
 

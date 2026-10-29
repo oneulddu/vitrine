@@ -340,7 +340,7 @@ UIView *SGRPlayerConnectGlyphIn(UIView *host, UIView *connect) {
         dispatch_async(dispatch_get_main_queue(), ^{ [weakHost setNeedsLayout]; });
     }
     SGForEachView(connect, ^(UIView *view) {
-        if ([view isKindOfClass:UILabel.class] || [NSStringFromClass(view.class) containsString:@"MarqueeLabel"]) SGRPlayerVanish(view);
+        if ([view isKindOfClass:UILabel.class] || [NSStringFromClass(view.class) containsString:@"MarqueeLabel"]) SGRVanish(view);
     });
     if (glyph) standInForConnect((UIImageView *)glyph);
     return glyph;
@@ -455,17 +455,17 @@ void SGRPlayerLowerRow(UIView *row) {
 
     UIView *share = SGRFindByIdentifier(host, @"ShareButtonNowPlayingView", &kShareKey);
     // The arranged view goes too: a view that takes touches swallows them even with nothing on it.
-    SGRPlayerVanish(share);
-    SGRPlayerVanish(arrangedAround(share, host));
+    SGRVanish(share);
+    SGRVanish(arrangedAround(share, host));
     // Spotify's clip button, hidden in every clean tree, would turn up where the queue moves to.
     UIView *trimmer = SGRFindByIdentifier(host, @"nowplaying-npv-media-trimmer-navigation-button", &kTrimmerKey);
-    SGRPlayerVanish(trimmer);
-    SGRPlayerVanish(arrangedAround(trimmer, host));
+    SGRVanish(trimmer);
+    SGRVanish(arrangedAround(trimmer, host));
     // "From <friend>" on a track a friend shared sits in the middle of the row, over Connect, which the
     // row moves there; the Music app has no such chip.
     UIView *sharedBy = SGRFindByIdentifier(host, @"Components.UI.SharedByChip", &kSharedByKey);
-    SGRPlayerVanish(sharedBy);
-    SGRPlayerVanish(arrangedAround(sharedBy, host));
+    SGRVanish(sharedBy);
+    SGRVanish(arrangedAround(sharedBy, host));
 
     SGRGlyphButton *lyrics = SGRPlayerLyricsGlyphIn(host);
     lyrics.bounds = CGRectMake(0, 0, 44, 44);

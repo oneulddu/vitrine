@@ -773,7 +773,3 @@ enum { SGReportSectionText, SGReportSectionActions, SGReportSectionList, SGRepor
 UIViewController *SGReportListPage(void) {
     return [[SGReportPage alloc] initWithReport:nil];
 }
-
-UIViewController *SGReportPageFor(NSString *identifier) {
-    return [[SGReportPage alloc] initWithReport:identifier];
-}

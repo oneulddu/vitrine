@@ -34,6 +34,10 @@ void SGRConcealView(UIView *view);
 // on the next call, and a log line says so once.
 void SGRSuppress(UIView *view);
 
+// Alpha 0, no touches, hidden from accessibility, set again on every call: for Spotify's Swift views,
+// which SGRSuppress cannot keep.
+void SGRVanish(UIView *view);
+
 // Digits of one width in the label, kept through Spotify's own setText:, setAttributedText: and
 // setFont: by a runtime subclass of the instance, like SGRSuppress. Idempotent.
 void SGRMonospacedDigits(UILabel *label);

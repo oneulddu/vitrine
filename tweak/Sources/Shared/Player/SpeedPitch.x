@@ -223,12 +223,6 @@ static float loadFloat(atomic_uint *slot) {
     return value;
 }
 
-static void storeFloat(atomic_uint *slot, float value) {
-    uint32_t bits;
-    memcpy(&bits, &value, sizeof bits);
-    atomic_store(slot, bits);
-}
-
 static double seconds(uint64_t ticks) {
     return ticks * sg_secondsPerTick;
 }

@@ -18,7 +18,6 @@ typedef NS_ENUM(NSInteger, SGHomeChoice) {
     SGHomeChoiceTint,       // which color it fades
     SGHomeChoiceStrength,   // how far up or down that color is taken
     SGHomeChoiceHeight,     // how far down the page it reaches
-    SGHomeChoiceCount,
 };
 
 NSArray<NSString *> *SGHomeChoiceNames(SGHomeChoice choice);

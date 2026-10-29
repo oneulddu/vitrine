@@ -51,7 +51,7 @@ static void skipGlyph(UIView *host, NSString *identifier, const void *findKey, N
     // Spotify's own icon, a Swift view SGRSuppress cannot keep (PlayerControls.x), or a plain image view.
     SGForEachView(button, ^(UIView *view) {
         if (view == glyph) return;
-        if (icon && [view isKindOfClass:icon]) SGRPlayerVanish(view);
+        if (icon && [view isKindOfClass:icon]) SGRVanish(view);
         else if ([view isKindOfClass:UIImageView.class] && view.superview == button) SGRSuppress(view);
     });
     SGRPlayerPlaceGlyph(glyph, button, skipDrop(host, button));
@@ -114,8 +114,8 @@ static void styleFooter(UIViewController *unit) {
 
     // No share button; its holder goes too, since a view that takes touches swallows them with nothing on it.
     UIView *share = SGRFindByIdentifier(host, @"ShareButtonNowPlayingView", &kShareKey);
-    SGRPlayerVanish(share);
-    SGRPlayerVanish(holderIn(host, share));
+    SGRVanish(share);
+    SGRVanish(holderIn(host, share));
 
     SGRGlyphButton *lyrics = SGRPlayerLyricsGlyphIn(host);
     lyrics.bounds = CGRectMake(0, 0, 44, 44);

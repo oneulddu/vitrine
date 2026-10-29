@@ -22,4 +22,3 @@ SGOptionalWorkReason SGOptionalWorkReasonForInputs(BOOL lowPower, NSProcessInfoT
 
 // Any queue. Only for advance work, never a current-track or visible-page request.
 BOOL SGOptionalWorkMayRun(BOOL allowsExpensive);
-BOOL SGOptionalWorkNetworkExpensive(void);

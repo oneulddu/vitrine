@@ -418,64 +418,6 @@ void SGRRefreshTabBar(void) {
     [sg_navbarRoot setNeedsLayout];
 }
 
-// What the row settled on, logged whenever it changes: `make log` then says whether the items fit,
-// what is holding their width, and in what order the bar ended up.
-void SGRLogTabBarRow(UIView *tabBar) {
-    // The row SGRComposeTabBar found in this bar on the same pass, just before.
-    UIStackView *stack = sg_row;
-    if (!stack) return;
-    // The line is written out only when a frame, an item, the stack's settings or the boxes read off them changed. shortcut: items
-    // past the 16th are not compared, raise it if a bar ever holds more.
-    struct {
-        CGRect bar, stack, icon, label;
-        NSInteger axis, distribution, alignment;
-        CGFloat spacing;
-        NSUInteger count;
-        struct { const void *item; CGRect frame; BOOL hidden; } items[16];
-    } key;
-    memset(&key, 0, sizeof key);   // padding too, for memcmp
-    key.bar = tabBar.frame;
-    key.stack = stack.frame;
-    key.icon = sg_iconBox;
-    key.label = sg_labelBox;
-    key.axis = stack.axis;
-    key.distribution = stack.distribution;
-    key.alignment = stack.alignment;
-    key.spacing = stack.spacing;
-    for (UIView *item in stack.arrangedSubviews) {
-        NSUInteger i = key.count++;
-        if (i >= 16) continue;
-        key.items[i].item = (__bridge const void *)item;
-        key.items[i].frame = item.frame;
-        key.items[i].hidden = item.hidden;
-    }
-    static typeof(key) lastKey;
-    if (!memcmp(&key, &lastKey, sizeof key)) return;
-    memcpy(&lastKey, &key, sizeof key);
-    NSMutableString *out = [NSMutableString stringWithFormat:@"row in %@ %@, icon %@ label %@, stack %@ axis %ld dist %ld align %ld spacing %.1f autolayout %d",
-                            NSStringFromClass(tabBar.class), NSStringFromCGRect(tabBar.frame),
-                            NSStringFromCGRect(sg_iconBox), NSStringFromCGRect(sg_labelBox), NSStringFromCGRect(stack.frame),
-                            (long)stack.axis, (long)stack.distribution, (long)stack.alignment, stack.spacing,
-                            !stack.translatesAutoresizingMaskIntoConstraints];
-    NSUInteger index = 0;
-    for (UIView *item in stack.arrangedSubviews) {
-        [out appendFormat:@"\n  %lu %@ %@%@ autolayout %d", (unsigned long)index++, NSStringFromClass(item.class),
-             NSStringFromCGRect(item.frame), item.hidden ? @" hidden" : @"",
-             !item.translatesAutoresizingMaskIntoConstraints];
-        for (NSLayoutConstraint *c in item.constraints) {
-            if (c.firstAttribute == NSLayoutAttributeWidth || c.secondAttribute == NSLayoutAttributeWidth) [out appendFormat:@"\n    %@", c];
-        }
-    }
-    for (NSLayoutConstraint *c in stack.constraints) [out appendFormat:@"\n  own %@", c];
-    for (NSLayoutConstraint *c in stack.superview.constraints) {
-        if (c.firstItem == stack || c.secondItem == stack) [out appendFormat:@"\n  held %@", c];
-    }
-    static NSString *last;
-    if ([out isEqualToString:last]) return;
-    last = [out copy];
-    SGLogLong(@"navbar", out);
-}
-
 // Whether Spotify reads its own item list through this ObjC bridge decides whether the bar can be
 // composed at the model level, where the order, the taps and the widths would all follow by
 // themselves, instead of by moving views about. Silence in the log says it cannot.

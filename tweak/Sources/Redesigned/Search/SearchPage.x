@@ -28,13 +28,6 @@ static __weak UICollectionView *sg_list;
 static __weak UIStackView *sg_row;
 static __weak UIView *sg_scrim;
 
-static void vanish(UIView *view) {
-    if (!view) return;
-    if (view.alpha != 0) view.alpha = 0;
-    if (view.userInteractionEnabled) view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 // A depth first search that leaves the list out: the header and the scrim sit beside it, and its cells are hundreds of views.
 static UIView *findOutsideList(UIView *view, NSString *identifier) {
     for (UIView *sub in view.subviews) {
@@ -80,13 +73,13 @@ static NSString *titleText(UIStackView *row) {
 }
 
 static void layoutHeader(UIStackView *row) {
-    vanish(sg_scrim);
+    SGRVanish(sg_scrim);
 
     UIView *face = nil;
     NSString *text = titleText(row);
     for (UIView *part in row.arrangedSubviews) {
         if (SGRIsAvatar(part) && !face) face = part;
-        else vanish(part);
+        else SGRVanish(part);
     }
     if (row.semanticContentAttribute != UISemanticContentAttributeForceRightToLeft) {
         row.semanticContentAttribute = UISemanticContentAttributeForceRightToLeft;

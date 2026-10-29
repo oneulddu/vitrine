@@ -3,6 +3,7 @@
 #import "SGSingEngine.h"
 #import "SGSingSeparator.h"
 #import "Shared/AudioEffects/SGDSPEffects.h"
+#import "Shared/Player/SGOutputControl.h"
 
 enum {
     kRing = kSGSingRate * 10,        // what the rings hold: the longest lead and a window, with room to spare
@@ -117,12 +118,6 @@ static float loadFloat(atomic_uint *slot) {
     float value;
     memcpy(&value, &bits, sizeof value);
     return value;
-}
-
-static void storeFloat(atomic_uint *slot, float value) {
-    uint32_t bits;
-    memcpy(&bits, &value, sizeof bits);
-    atomic_store(slot, bits);
 }
 
 #pragma mark - the render thread

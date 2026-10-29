@@ -75,7 +75,3 @@ BOOL SGOptionalWorkMayRun(BOOL allowsExpensive) {
     });
     return NO;
 }
-
-BOOL SGOptionalWorkNetworkExpensive(void) {
-    return networkNow().expensive;
-}

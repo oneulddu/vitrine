@@ -67,15 +67,8 @@ static char kTitleKey, kRowWatchedKey, kListKey, kInsetKey, kHeightKey, kFoldedK
 static char kRecentsKey, kSearchKey, kPlusKey, kHeaderTitleKey;
 static char kBackKey, kMenuKey, kFolderPlusKey, kPlayKey, kPauseKey, kFolderTitleKey;
 
-static void vanish(UIView *view) {
-    if (!view) return;
-    if (view.alpha != 0) view.alpha = 0;
-    if (view.userInteractionEnabled) view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 void SGRLibraryClearScrim(UIView *header) {
-    vanish(SGRChildNamed(header, @"GradientView"));
+    SGRVanish(SGRChildNamed(header, @"GradientView"));
 }
 
 UIScrollView *SGRLibraryListIn(UIView *page) {
@@ -187,7 +180,7 @@ static void layoutTitle(UIView *header, UIView *spotifyTitle, CGFloat leading, C
 // placed in the order it reads, nothing while the header has no control laid out.
 static NSArray<UIView *> *placeRoot(UIView *header) {
     UIView *spotifyTitle = SGRFindByIdentifier(header, @"YourLibraryHeader.title", &kHeaderTitleKey);
-    vanish(spotifyTitle);
+    SGRVanish(spotifyTitle);
     static const void *keys[] = {&kRecentsKey, &kSearchKey, &kPlusKey};
     NSMutableArray<UIView *> *trailing = controlsIn(header, @[
         @"YourLibraryHeader.recents", @"YourLibraryHeader.search", @"YourLibraryHeader.plus",
@@ -218,7 +211,7 @@ static NSArray<UIView *> *placeRoot(UIView *header) {
 // where Spotify has it. Answers what it placed in the order it reads, the back button first.
 static NSArray<UIView *> *placeFolder(UIView *header) {
     UIView *spotifyTitle = SGRFindByIdentifier(header, @"YourLibraryFolderHeader.title", &kFolderTitleKey);
-    vanish(spotifyTitle);
+    SGRVanish(spotifyTitle);
     UIView *back = SGRFindByIdentifier(header, @"YourLibraryFolderHeader.back", &kBackKey);
     static const void *keys[] = {&kMenuKey, &kFolderPlusKey, &kPlayKey, &kPauseKey};
     NSMutableArray<UIView *> *placed = controlsIn(header, @[
@@ -245,7 +238,7 @@ static void foldChips(UIView *header, UIView *control, UIView *filters, UIScroll
     if (!objc_getAssociatedObject(filters, &kFoldedKey)) {
         objc_setAssociatedObject(filters, &kFoldedKey, @(filters.alpha), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    vanish(filters);
+    SGRVanish(filters);
 
     CGFloat wanted = CGRectGetMaxY(SGFrameIn(control, header));
     NSArray<NSNumber *> *spotify = objc_getAssociatedObject(header, &kHeightKey);   // its height, the band

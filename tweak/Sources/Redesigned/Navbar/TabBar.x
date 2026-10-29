@@ -905,7 +905,6 @@ static BOOL sg_itemsLaidOut;
     sg_itemsLaidOut = outerLaidOut;
     holdHome(bar);
     syncBar(bar);
-    SGRLogTabBarRow(bar);
 }
 %end
 
@@ -921,7 +920,6 @@ static void itemDidLayOut(UIView *item) {
     SGRComposeTabBar(bar);
     holdHome(bar);
     syncBar(bar);
-    SGRLogTabBarRow(bar);
 }
 
 %hook _TtC23NavigationUI_TabBarImpl21TabBarItemElementView

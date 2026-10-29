@@ -46,13 +46,6 @@ static BOOL sg_tappedPaused;
 static __weak SGRGlyphView *sg_playGlyph;
 static __weak UIView *sg_controlsHost;
 
-void SGRPlayerVanish(UIView *view) {
-    if (!view) return;
-    if (view.alpha != 0) view.alpha = 0;
-    view.userInteractionEnabled = NO;
-    view.accessibilityElementsHidden = YES;
-}
-
 static NSMutableSet<NSString *> *sg_loggedMessages;
 #define kLogFormat @"redesign player: %@ not found, left as Spotify's"
 
@@ -92,7 +85,7 @@ static void skipGlyph(UIView *host, NSString *identifier, const void *findKey, N
     if (!icon) icon = NSClassFromString(@"SPTEncoreIconView");
     SGRGlyphView *glyph = SGRPlayerGlyphFor(button, &kGlyphKey, symbol, kSkipGlyphSize);
     SGForEachView(content, ^(UIView *view) {
-        if (view != glyph && [view isKindOfClass:icon]) SGRPlayerVanish(view);
+        if (view != glyph && [view isKindOfClass:icon]) SGRVanish(view);
     });
     SGRPlayerPlaceGlyph(glyph, content, 0);
     // The touches are the button's; the platter goes in with the glyph, under it.

@@ -1,6 +1,7 @@
 #import <UIKit/UIGestureRecognizerSubclass.h>
 #import "Core/SGCore.h"
 #import "SGRPress.h"
+#import "SGRHeroVeil.h"
 #import "SGRTokens.h"
 
 // A scrolling press waits this long for the finger to rest, and is over once it moves this far: a scroll view
@@ -63,13 +64,6 @@ static UIColor *rowWashColor(void) {
     if (self.changed) self.changed(pressed, tapped);
 }
 
-static UIScrollView *scrollerAbove(UIView *view) {
-    for (UIView *v = view.superview; v; v = v.superview) {
-        if ([v isKindOfClass:UIScrollView.class]) return (UIScrollView *)v;
-    }
-    return nil;
-}
-
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     if (_tracking) {
         for (UITouch *touch in touches) [self ignoreTouch:touch forEvent:event];
@@ -78,7 +72,7 @@ static UIScrollView *scrollerAbove(UIView *view) {
     UITouch *touch = touches.anyObject;
     BOOL scrolling = self.kind == SGRPressKindScrolling;
     // A touch that stops a gliding list only stops it.
-    if (touches.count > 1 || (scrolling && scrollerAbove(self.view).decelerating) || (self.begins && !self.begins(touch))) {
+    if (touches.count > 1 || (scrolling && SGRHeroVeilScrollAbove(self.view).decelerating) || (self.begins && !self.begins(touch))) {
         self.state = UIGestureRecognizerStateFailed;
         return;
     }

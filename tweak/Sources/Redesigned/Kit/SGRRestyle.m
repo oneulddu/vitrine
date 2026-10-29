@@ -183,6 +183,13 @@ void SGRRestoreCell(UICollectionViewCell *cell, const void *key) {
     cell.accessibilityElementsHidden = NO;
 }
 
+void SGRVanish(UIView *view) {
+    if (!view) return;
+    if (view.alpha != 0) view.alpha = 0;
+    view.userInteractionEnabled = NO;
+    view.accessibilityElementsHidden = YES;
+}
+
 void SGRSuppress(UIView *view) {
     if (!view) return;
     BOOL kept = adopt(view, "SGRSuppressed_", ^(Class subclass, Class original) {

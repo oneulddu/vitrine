@@ -396,13 +396,11 @@ static void reveal(UIWindow *window) {
 
 static void requestOrientations(UIWindowScene *scene, UIInterfaceOrientationMask mask) {
     __weak UIWindow *window = sg_window;
-    if (@available(iOS 16.0, *)) {
-        UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
-        [scene requestGeometryUpdateWithPreferences:preferences errorHandler:^(NSError *error) {
-            SGLog(@"redesign player: the scene did not turn: %@", error.localizedDescription);
-            dispatch_async(dispatch_get_main_queue(), ^{ reveal(window); });
-        }];
-    }
+    UIWindowSceneGeometryPreferencesIOS *preferences = [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
+    [scene requestGeometryUpdateWithPreferences:preferences errorHandler:^(NSError *error) {
+        SGLog(@"redesign player: the scene did not turn: %@", error.localizedDescription);
+        dispatch_async(dispatch_get_main_queue(), ^{ reveal(window); });
+    }];
 }
 
 void SGRPlayerLandscapeLinesChanged(void) {
@@ -433,7 +431,7 @@ void SGRPlayerShowLandscape(BOOL show) {
         window.userInteractionEnabled = NO;
         // A sheet up over the lines (a line's meanings) goes with them, or it would be left on a hidden window.
         [window.rootViewController dismissViewControllerAnimated:NO completion:nil];
-        if (@available(iOS 16.0, *)) [window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
+        [window.rootViewController setNeedsUpdateOfSupportedInterfaceOrientations];
         requestOrientations(scene, UIInterfaceOrientationMaskPortrait);
         // Faded out as the scene turns back; the player is key again once it is gone, unless the lines came
         // back meanwhile.

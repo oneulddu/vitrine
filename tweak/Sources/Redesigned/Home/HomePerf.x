@@ -63,7 +63,7 @@ static void startRestMeter(void) {
     if (timer || !SGFlag(@"spotifyglass.redesign.debug.homeRestMeter", NO)) return;
     meter = [SGRHomeRestMeter new];
     CADisplayLink *link = [CADisplayLink displayLinkWithTarget:meter selector:@selector(tick:)];
-    if (@available(iOS 15.0, *)) link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+    link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
     [link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
     timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, dispatch_get_main_queue());
     dispatch_source_set_timer(timer, dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), NSEC_PER_SEC, NSEC_PER_SEC / 20);
@@ -123,7 +123,7 @@ void SGRHomeProbeEnd(SGRHomeProbe probe, CFTimeInterval began) {
     memcpy(_time, sg_time, sizeof(_time));
     _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
     // A link left at its default rate holds the whole app to 60 Hz while it runs (CLAUDE.md).
-    if (@available(iOS 15.0, *)) _link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
+    _link.preferredFrameRateRange = CAFrameRateRangeMake(80, 120, 120);
     [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
 }
 
