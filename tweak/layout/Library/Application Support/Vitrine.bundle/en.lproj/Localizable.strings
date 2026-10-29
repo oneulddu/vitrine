@@ -313,12 +313,17 @@
 "settings.audioeffects.headphones.applying.a11y" = "Applying";
 "settings.audioeffects.headphones.applying.value" = "Applying";
 "settings.audioeffects.headphones.footer" = "From AutoEq by Jaakko Pasanen, MIT License. Pull down to fetch the list again.";
+"settings.audioeffects.headphones.form.all" = "All";
+"settings.audioeffects.headphones.form.earbuds" = "Earbuds";
+"settings.audioeffects.headphones.form.inear" = "In-ear";
+"settings.audioeffects.headphones.form.overear" = "Over-ear";
 "settings.audioeffects.headphones.header" = "Corrections that make your headphones sound neutral, measured by AutoEq. Picking one turns Audio effects and the Graphic EQ on with it.";
 "settings.audioeffects.headphones.loading" = "Loading AutoEq's list…";
 "settings.audioeffects.headphones.nomatch" = "No headphones match";
 "settings.audioeffects.headphones.none" = "None";
 "settings.audioeffects.headphones.output.footer" = "With this on, the correction you pick is kept for %@. It comes back each time audio plays through %@, and goes off on outputs with none remembered.";
 "settings.audioeffects.headphones.playingnow.format" = "%@ · playing now";
+"settings.audioeffects.headphones.preset.subtitle.format" = "Applied while %@ plays";
 "settings.audioeffects.headphones.remembered.header" = "Remembered outputs";
 "settings.audioeffects.headphones.rememberfor.format" = "Remember %@ for this output";
 "settings.audioeffects.headphones.retry.format" = "%@. Tap to try again.";
@@ -327,6 +332,7 @@
 "settings.audioeffects.headphones.title" = "Headphones";
 "settings.audioeffects.headphones.usefor.format" = "Use for %@";
 "settings.audioeffects.headphones.whileplays.format" = "%@ while it plays";
+"settings.audioeffects.headphones.withpreset.format" = "%@ · preset %@";
 "settings.audioeffects.impulseresponse.title" = "Impulse response";
 "settings.audioeffects.intro" = "Changes apply straight away.";
 "settings.audioeffects.library.ddcfiles.title" = "DDC files";

@@ -137,15 +137,44 @@ NSArray<NSNumber *> *SGDSPGains(NSString *key) {
     return gains;
 }
 
-void SGDSPSetGains(NSString *key, NSArray<NSNumber *> *gains) {
+// The gains as the text stored: a list of numbers or of their text, every band within the limit.
+static NSString *gainsText(NSString *key, NSArray *gains) {
     NSUInteger count = gainCount(key);
     double limit = gainLimit(key);
     NSMutableArray<NSString *> *parts = [NSMutableArray arrayWithCapacity:count];
     for (NSUInteger i = 0; i < count; i++) {
-        double gain = i < gains.count ? gains[i].doubleValue : 0;
+        double gain = i < gains.count ? [gains[i] doubleValue] : 0;
         [parts addObject:[NSString stringWithFormat:@"%.2f", MAX(-limit, MIN(limit, gain))]];
     }
-    SGDSPSetString(key, [parts componentsJoinedByString:@";"]);
+    return [parts componentsJoinedByString:@";"];
+}
+
+void SGDSPSetGains(NSString *key, NSArray<NSNumber *> *gains) {
+    SGDSPSetString(key, gainsText(key, gains));
+}
+
+NSDictionary<NSString *, id> *SGDSPEffectiveValues(NSDictionary<NSString *, id> *values) {
+    NSMutableDictionary<NSString *, id> *effective = [NSMutableDictionary dictionary];
+    for (NSString *effect in SGDSPEffectSwitches()) {
+        id value = values[effect];
+        effective[effect] = @([value isKindOfClass:NSNumber.class] && [value boolValue]);
+    }
+    for (size_t i = 0; i < sizeof kNumbers / sizeof *kNumbers; i++) {
+        SGDSPRange range = kNumbers[i].range;
+        id value = values[kNumbers[i].key];
+        effective[kNumbers[i].key] = @([value isKindOfClass:NSNumber.class] ? MAX(range.min, MIN(range.max, [value doubleValue])) : range.fallback);
+    }
+    for (NSString *key in stringDefaults()) {
+        id value = values[key];
+        BOOL gains = [key isEqualToString:SGKeyDSPCompanderGains] || [key isEqualToString:SGKeyDSPEqualizerGains];
+        if (gains) {
+            effective[key] = gainsText(key, [value isKindOfClass:NSArray.class] ? value
+                                              : [value isKindOfClass:NSString.class] ? [value componentsSeparatedByString:@";"] : @[]);
+        } else {
+            effective[key] = [value isKindOfClass:NSString.class] ? value : stringDefaults()[key];
+        }
+    }
+    return effective;
 }
 
 void SGDSPResetAll(void) {

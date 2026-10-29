@@ -99,6 +99,11 @@ void SGDSPSetGains(NSString *key, NSArray<NSNumber *> *gains);
 // Every key above back to its value until set; the master switch stays as it is.
 void SGDSPResetAll(void);
 
+// Every key the setters keep, each with the value the settings would read for it were `values` stored: a key
+// left out has its value until set, a number is within its range, a switch a flag, and gains (a list or text)
+// the text SGDSPSetGains writes. Two sets of values that sound the same have the same result.
+NSDictionary<NSString *, id> *SGDSPEffectiveValues(NSDictionary<NSString *, id> *values);
+
 #pragma mark - the lists the choices pick from
 
 extern const double SGDSPEqualizerFrequencies[15];     // Hz, 25 ... 16000

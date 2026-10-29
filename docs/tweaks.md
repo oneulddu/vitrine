@@ -627,7 +627,17 @@ Shared:
                   every AVAudioSessionRouteChangeNotification to another output (AudioEffects.x), a remembered output
                   gets its correction or None, and any other output takes off a correction that came on for one; a
                   pick made with nothing remembered and a curve of the user's own stay, and the master switch is
-                  never touched. Checked on the Mac by `harness/audio-effects/build.sh route`. A preset of the
+                  never touched. A remembered output can also name one of the user's presets (Preset under Use for
+                  <output>, None unless picked): entering it first stores the user's values, a digest of what is
+                  about to be applied and the output under spotifyglass.audioOutputs.baseline, marked pending, then
+                  applies the preset in one burst (the correction over its Graphic EQ); leaving restores the baseline
+                  only while the values still match the digest (else the user's changes stay and the baseline goes),
+                  and a restore is marked pending too, so a kill in the middle of either is finished at the next route
+                  call; a relaunch on the same output applies nothing, and deleting a preset takes it off every
+                  output, settling the playing one. The digest is over every key's effective value
+                  (SGDSPEffectiveValues). AutoEq's search filters by All, In-ear, Over-ear and Earbuds from the
+                  entry's path. Checked on the Mac by `harness/audio-effects/build.sh route` (two-process kill cases)
+                  and `harness/autoeq/`. A preset of the
                   user's is shared from a swipe or a long press as a file (`<name>.vitrine-preset.json`:
                   {"format": "vitrine.audio-preset", "version": 1, "name", "values"}) through the share sheet, and
                   Import preset file… reads one from Files on a queue of its own: another format, a later version,

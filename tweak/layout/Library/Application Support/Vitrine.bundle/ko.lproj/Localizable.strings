@@ -311,6 +311,10 @@
 "settings.audioeffects.headphones.applyerror.title" = "%@을(를) 적용할 수 없음";
 "settings.audioeffects.headphones.applying.a11y" = "적용 중";
 "settings.audioeffects.headphones.applying.value" = "적용 중";
+"settings.audioeffects.headphones.form.all" = "전체";
+"settings.audioeffects.headphones.form.earbuds" = "이어버드";
+"settings.audioeffects.headphones.form.inear" = "인이어";
+"settings.audioeffects.headphones.form.overear" = "오버이어";
 "settings.audioeffects.headphones.footer" = "AutoEq(Jaakko Pasanen 제작, MIT 라이선스) 제공. 목록을 새로고침하려면 아래로 당기십시오.";
 "settings.audioeffects.headphones.header" = "AutoEq에서 측정한 헤드폰을 중립적인 사운드로 만들어 주는 보정입니다. 하나를 선택하면 오디오 효과와 그래픽 EQ가 함께 켜집니다.";
 "settings.audioeffects.headphones.loading" = "AutoEq 목록을 불러오는 중…";
@@ -318,6 +322,7 @@
 "settings.audioeffects.headphones.none" = "없음";
 "settings.audioeffects.headphones.output.footer" = "이 기능을 켜면 선택한 보정이 %@에 유지됩니다. 오디오가 %@(으)로 재생될 때마다 다시 적용되며, 기억된 항목이 없는 출력 기기에서는 꺼집니다.";
 "settings.audioeffects.headphones.playingnow.format" = "%@ · 지금 재생 중";
+"settings.audioeffects.headphones.preset.subtitle.format" = "%@(으)로 재생하는 동안 적용";
 "settings.audioeffects.headphones.remembered.header" = "기억된 출력 기기";
 "settings.audioeffects.headphones.rememberfor.format" = "이 출력 기기에 %@ 기억";
 "settings.audioeffects.headphones.retry.format" = "%@. 탭하여 다시 시도하십시오.";
@@ -326,6 +331,7 @@
 "settings.audioeffects.headphones.title" = "헤드폰";
 "settings.audioeffects.headphones.usefor.format" = "%@에 사용";
 "settings.audioeffects.headphones.whileplays.format" = "재생 중 %@ 사용";
+"settings.audioeffects.headphones.withpreset.format" = "%@ · 프리셋 %@";
 "settings.audioeffects.impulseresponse.title" = "임펄스 응답";
 "settings.audioeffects.intro" = "변경 사항이 즉시 적용됩니다.";
 "settings.audioeffects.library.ddcfiles.title" = "DDC 파일";

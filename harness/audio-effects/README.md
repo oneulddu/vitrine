@@ -45,7 +45,17 @@ inputs and checks are unchanged.
 
 `./build.sh route && build/route-check` checks the corrections remembered per output (AutoEq.m) through the real
 settings, a route change being a direct call: the speaker, a pair remembered with a pick, another with None, a pick
-made with nothing remembered, a hand-made curve, the effects left off, forgetting and renaming.
+made with nothing remembered, a hand-made curve, the effects left off, forgetting and renaming. It also checks the
+preset per output: entering a mapped output (preset applied, baseline and digest stored before the first apply, the
+master switch untouched), leaving unchanged (baseline restored, then cleared), leaving after a user change (values
+kept, baseline dropped), mapped to mapped (first baseline kept), a deleted preset (None), None chosen on the playing
+output, the output's correction over the preset, a launch killed on a mapped output, and a relaunch on the same
+mapped output after an edit (edits, baseline and digest kept, nothing applied; leaving keeps the edits), and a launch
+killed part-way through a move from one mapped output to another (a child process that dies at the 13th apply),
+then started on the speaker (the original values back) or on the target (its preset applied whole), and one killed
+part-way through the restore on leaving for the speaker (the original values back, the baseline gone). Those four are
+each two child processes. Also: a sparse preset whose defaults the user sets by hand is no change, and deleting the
+preset the playing output uses (unchanged: values back; changed: kept) or one other outputs have leaves them None.
 
 `./build.sh presets && build/preset-files-check` checks preset files (AudioEffectsPresets.m) through the real settings:
 a preset written and read back with a name safe for Files, the master switch left out, a taken name numbered, and

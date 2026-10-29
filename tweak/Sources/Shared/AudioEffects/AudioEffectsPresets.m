@@ -4,6 +4,7 @@
 #import "AudioEffects.h"
 #import "AudioEffectsApply.h"
 #import "AudioEffectsPresets.h"
+#import <CommonCrypto/CommonDigest.h>
 #import <math.h>
 
 static NSString *const kPrefix = @"spotifyglass.dsp.";
@@ -117,11 +118,42 @@ void SGDSPSaveUserPreset(NSString *name) {
     SGDSPSaveUserPresetValues(name, currentValues());
 }
 
-BOOL SGDSPLoadUserPreset(NSString *name) {
-    NSDictionary *values = userPresets()[name];
-    if (![values isKindOfClass:NSDictionary.class]) return NO;
+NSDictionary<NSString *, id> *SGDSPUserPresetValues(NSString *name) {
+    NSDictionary *values = name ? userPresets()[name] : nil;
+    return [values isKindOfClass:NSDictionary.class] ? values : nil;
+}
+
+NSDictionary<NSString *, id> *SGDSPCurrentValues(void) {
+    return currentValues();
+}
+
+// The settings are written in one main-thread burst, which SGDSPApply hands the engine as one reconfiguration.
+void SGDSPApplyValues(NSDictionary<NSString *, id> *values) {
     SGDSPResetAll();
     for (NSString *key in values) setValue(key, values[key]);
+}
+
+NSString *SGDSPValuesDigest(NSDictionary<NSString *, id> *values) {
+    NSMutableString *text = [NSMutableString string];
+    NSDictionary<NSString *, id> *effective = SGDSPEffectiveValues(values);
+    for (NSString *key in [effective.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+        id value = effective[key];
+        if ([value isKindOfClass:NSString.class]) [text appendFormat:@"%@=s%@\n", key, value];
+        else if ([SGDSPEffectOf(key) isEqualToString:key]) [text appendFormat:@"%@=b%d\n", key, [value boolValue]];
+        else [text appendFormat:@"%@=n%.9g\n", key, [value doubleValue]];
+    }
+    unsigned char hash[CC_SHA256_DIGEST_LENGTH];
+    NSData *bytes = [text dataUsingEncoding:NSUTF8StringEncoding];
+    CC_SHA256(bytes.bytes, (CC_LONG)bytes.length, hash);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:2 * CC_SHA256_DIGEST_LENGTH];
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) [hex appendFormat:@"%02x", hash[i]];
+    return hex;
+}
+
+BOOL SGDSPLoadUserPreset(NSString *name) {
+    NSDictionary *values = SGDSPUserPresetValues(name);
+    if (!values) return NO;
+    SGDSPApplyValues(values);
     turnOn();
     return YES;
 }
@@ -130,6 +162,7 @@ void SGDSPDeleteUserPreset(NSString *name) {
     NSMutableDictionary *presets = [userPresets() mutableCopy];
     [presets removeObjectForKey:name];
     [store() setObject:presets forKey:SGKeyDSPUserPresets];
+    SGAutoEqPresetDeleted(name);
 }
 
 #pragma mark - preset files

@@ -14,6 +14,9 @@ switch on with it); each built-in preset over the others, keeping the headphone'
 master switch on; a saved preset reset and loaded back, Graphic EQ included, the master switch left out of it
 and turned on by loading it.
 
+The headphone form filter (All, In-ear, Over-ear, Earbuds) on `sample-INDEX.md`, read from this folder: the folder's
+text decides, in any case, and a folder that says no form shows under All only.
+
 Stale downloads (a URLProtocol double holds each response): a download finished after another output's pick, after
 None, and after an edit made through the settings setters while it was in flight (a saved or pasted curve, a
 built-in or saved preset loaded, a reset) must leave the newer curve and headphone alone; one with no edit in between

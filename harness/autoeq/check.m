@@ -94,6 +94,23 @@ static void checkParsing(void) {
     check(SGAutoEqSearch(all, @"").count == 6, @"search: empty shows all");
 }
 
+// The form filter on a sample INDEX.md: the folder's text decides, case aside; a folder that says none shows under All only.
+static void checkForms(void) {
+    NSString *index = [NSString stringWithContentsOfFile:@"sample-INDEX.md" encoding:NSUTF8StringEncoding error:nil];
+    NSArray<SGAutoEqHeadphone *> *all = SGAutoEqParseIndex(index);
+    check(all.count == 7, @"the sample index has 7 headphones");
+    NSArray<NSString *> *(^names)(SGAutoEqForm) = ^NSArray<NSString *> *(SGAutoEqForm form) {
+        return [[SGAutoEqFilterByForm(all, form) valueForKey:@"name"] sortedArrayUsingSelector:@selector(compare:)];
+    };
+    check(SGAutoEqFilterByForm(all, SGAutoEqFormAll).count == 7, @"All shows every headphone, those with no form too");
+    check([names(SGAutoEqFormInEar) isEqualToArray:(@[@"1MORE Quad Driver", @"Etymotic ER4SR"])], @"In-ear: the folders saying in-ear, in any case");
+    check([names(SGAutoEqFormOverEar) isEqualToArray:(@[@"AKG K371", @"Sennheiser HD 600"])], @"Over-ear: the folders saying over-ear, in any case");
+    check([names(SGAutoEqFormEarbuds) isEqualToArray:(@[@"Apple EarPods", @"Moondrop Chu"])], @"Earbuds: the folders saying earbud, singular or plural");
+    NSArray<SGAutoEqHeadphone *> *searched = SGAutoEqSearch(all, @"rtings");
+    check(SGAutoEqFilterByForm(searched, SGAutoEqFormInEar).count == 0, @"a form that leaves nothing leaves an empty list (the page says No headphones match)");
+    check(SGAutoEqFilterByForm(searched, SGAutoEqFormEarbuds).count == 1, @"a form filters a search's result");
+}
+
 static void checkPresets(void) {
     clearDefaults();
     NSString *line = SGDSPGraphicEqLine(@"  GraphicEQ: 20 -1.2;\n 21 -1.1;\n\n");
@@ -288,6 +305,7 @@ int main(int argc, char **argv) {
     @autoreleasepool {
         applied = [NSCountedSet set];
         checkParsing();
+        checkForms();
         checkPresets();
         checkStaleDownload();
         if (argc > 1 && !strcmp(argv[1], "online")) checkOnline();

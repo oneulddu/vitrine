@@ -63,6 +63,17 @@ NSArray<SGAutoEqHeadphone *> *SGAutoEqSearch(NSArray<SGAutoEqHeadphone *> *all, 
     return found;
 }
 
+NSArray<SGAutoEqHeadphone *> *SGAutoEqFilterByForm(NSArray<SGAutoEqHeadphone *> *all, SGAutoEqForm form) {
+    static NSString *const words[] = {nil, @"in-ear", @"over-ear", @"earbud"};
+    if (form == SGAutoEqFormAll) return all;
+    NSMutableArray<SGAutoEqHeadphone *> *found = [NSMutableArray array];
+    for (SGAutoEqHeadphone *headphone in all) {
+        NSString *folder = headphone.path.stringByRemovingPercentEncoding ?: headphone.path;
+        if ([folder rangeOfString:words[form] options:NSCaseInsensitiveSearch].location != NSNotFound) [found addObject:headphone];
+    }
+    return found;
+}
+
 #pragma mark - downloads
 
 static NSURL *cachedIndex(void) {
@@ -157,8 +168,11 @@ static void takeOff(void) {
 static void rememberPick(void) {
     if (!sg_outputUID.length || !outputs()[sg_outputUID]) return;
     BOOL on = SGAutoEqCorrectionInUse();
-    setOutput(sg_outputUID, @{@"name": sg_outputName ?: sg_outputUID, @"path": on ? SGDSPString(SGKeyDSPGraphicEqHeadphone) : @"",
-                              @"nodes": on ? SGDSPString(SGKeyDSPGraphicEqNodes) : @""});
+    NSMutableDictionary *entry = [outputs()[sg_outputUID] mutableCopy];
+    entry[@"name"] = sg_outputName ?: sg_outputUID;
+    entry[@"path"] = on ? SGDSPString(SGKeyDSPGraphicEqHeadphone) : @"";
+    entry[@"nodes"] = on ? SGDSPString(SGKeyDSPGraphicEqNodes) : @"";
+    setOutput(sg_outputUID, entry);
     setFollowed(sg_outputUID);
     changed();
 }
@@ -182,18 +196,94 @@ void SGAutoEqTakeOff(void) {
     rememberPick();
 }
 
-void SGAutoEqOutputChanged(NSString *uid, NSString *name) {
-    if (!uid.length || [uid isEqualToString:sg_outputUID]) return;
+#pragma mark - a preset per output
+
+static NSDictionary *storedBaseline(void) {
+    id value = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyDSPOutputBaseline];
+    return [value isKindOfClass:NSDictionary.class] && [value[@"values"] isKindOfClass:NSDictionary.class]
+           && [value[@"applied"] isKindOfClass:NSString.class] ? value : nil;
+}
+
+// The user's preset the entry names, as the values to apply: the preset's, with the entry's remembered
+// correction over its Graphic EQ. Nil for None and for a preset since deleted.
+static NSDictionary<NSString *, id> *presetValuesFor(NSDictionary *entry) {
+    NSString *name = [entry[@"preset"] isKindOfClass:NSString.class] ? entry[@"preset"] : nil;
+    NSDictionary<NSString *, id> *preset = name.length ? SGDSPUserPresetValues(name) : nil;
+    if (!preset) return nil;
+    NSMutableDictionary<NSString *, id> *values = [preset mutableCopy];
+    NSString *path = entry[@"path"], *nodes = entry[@"nodes"];
+    if (path.length && nodes.length) {
+        values[SGKeyDSPGraphicEq] = @YES;
+        values[SGKeyDSPGraphicEqNodes] = nodes;
+        values[SGKeyDSPGraphicEqHeadphone] = path;
+    }
+    return values;
+}
+
+// The baseline is stored, with the digest of what is about to be applied, before anything is: a launch killed
+// in between finds both. Moving between outputs with a preset keeps the first baseline. The baseline names the
+// output the preset was applied for, so a relaunch on that output can tell it was never left, and is pending
+// until the apply is done, so a launch can tell values the apply left half-way from the user's own edits.
+static void applyPreset(NSDictionary<NSString *, id> *values, NSString *outputUID) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    NSDictionary *saved = storedBaseline();
+    if (!saved && followed().length) takeOff();   // another output's correction is not the user's to keep
+    NSDictionary *before = saved ? saved[@"values"] : SGDSPCurrentValues();
+    NSDictionary *done = @{@"values": before, @"applied": SGDSPValuesDigest(values), @"output": outputUID};
+    NSMutableDictionary *pending = [done mutableCopy];
+    pending[@"pending"] = @YES;
+    [store setObject:pending forKey:SGKeyDSPOutputBaseline];
+    setFollowed(@"");
+    SGDSPApplyValues(values);
+    [store setObject:done forKey:SGKeyDSPOutputBaseline];
+}
+
+// The user's values come back when they are what the preset left (or an apply or an earlier restore was cut
+// short); otherwise they changed something and keep it. Either way the baseline goes, after the restore is
+// done. It is pending while the restore runs, so a launch that finds it half-done puts the values back again:
+// applying them is the same each time.
+static void leavePreset(NSDictionary *saved) {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    BOOL untouched = [saved[@"pending"] boolValue] || [SGDSPValuesDigest(SGDSPCurrentValues()) isEqualToString:saved[@"applied"]];
+    if (untouched) {
+        NSMutableDictionary *restoring = [saved mutableCopy];
+        restoring[@"pending"] = @YES;
+        [store setObject:restoring forKey:SGKeyDSPOutputBaseline];
+        SGDSPApplyValues(saved[@"values"]);
+    }
+    SGLog(@"autoeq: left a preset, %@", untouched ? @"the earlier values are back" : @"the values changed meanwhile, kept");
+    setFollowed(@"");
+    [store removeObjectForKey:SGKeyDSPOutputBaseline];
+}
+
+// `launch`: the first output this process hears of, which may be the one the last launch was killed on.
+static void arriveAtOutput(BOOL launch) {
     ++sg_pickGeneration;
-    sg_outputUID = [uid copy];
-    sg_outputName = name.length ? [name copy] : sg_outputUID;
+    NSString *uid = sg_outputUID;
     NSDictionary *entry = outputs()[uid];
-    if (entry) {
-        if (![entry[@"name"] isEqual:sg_outputName]) {
-            NSMutableDictionary *renamed = [entry mutableCopy];
-            renamed[@"name"] = sg_outputName;
-            setOutput(uid, renamed);
+    if (entry && ![entry[@"name"] isEqual:sg_outputName]) {
+        NSMutableDictionary *renamed = [entry mutableCopy];
+        renamed[@"name"] = sg_outputName;
+        setOutput(uid, renamed);
+        entry = renamed;
+    }
+    NSDictionary<NSString *, id> *preset = presetValuesFor(entry);
+    NSDictionary *saved = storedBaseline();
+    if (preset) {
+        // Still on the output the preset was applied for: entered already, so the user's edits since stay, and
+        // the baseline with its digest, which they will differ from when this output is left.
+        if (launch && [saved[@"output"] isEqual:uid] && ![saved[@"pending"] boolValue]) {
+            SGLog(@"autoeq: %@ is where the last launch ended, its preset %@ stays as it is", sg_outputName, entry[@"preset"]);
+            changed();
+            return;
         }
+        applyPreset(preset, uid);
+        SGLog(@"autoeq: %@ connected, its preset %@ applied", sg_outputName, entry[@"preset"]);
+        changed();
+        return;
+    }
+    if (saved) leavePreset(saved);
+    if (entry) {
         NSString *path = entry[@"path"], *nodes = entry[@"nodes"];
         if (path.length && nodes.length) {
             SGDSPSetString(SGKeyDSPGraphicEqNodes, nodes);
@@ -214,6 +304,46 @@ void SGAutoEqOutputChanged(NSString *uid, NSString *name) {
     changed();
 }
 
+void SGAutoEqOutputChanged(NSString *uid, NSString *name) {
+    if (!uid.length || [uid isEqualToString:sg_outputUID]) return;
+    BOOL launch = !sg_outputUID;
+    sg_outputUID = [uid copy];
+    sg_outputName = name.length ? [name copy] : sg_outputUID;
+    arriveAtOutput(launch);
+}
+
+void SGAutoEqPresetDeleted(NSString *name) {
+    NSMutableDictionary<NSString *, NSDictionary *> *all = [outputs() mutableCopy];
+    BOOL playing = NO, any = NO;
+    for (NSString *uid in outputs()) {
+        if (![outputs()[uid][@"preset"] isEqual:name]) continue;
+        NSMutableDictionary *entry = [outputs()[uid] mutableCopy];
+        [entry removeObjectForKey:@"preset"];
+        all[uid] = entry;
+        any = YES;
+        playing = playing || [uid isEqualToString:sg_outputUID];
+    }
+    if (!any) return;
+    [NSUserDefaults.standardUserDefaults setObject:all forKey:SGKeyDSPOutputs];
+    if (playing) arriveAtOutput(NO);
+    else changed();
+}
+
+void SGAutoEqSetOutputPreset(NSString *name) {
+    if (!sg_outputUID.length || (!name.length && ![SGAutoEqOutputPreset(sg_outputUID) length])) return;
+    if (!SGAutoEqOutputRemembered(sg_outputUID)) SGAutoEqRememberOutput(YES);
+    NSMutableDictionary *entry = [outputs()[sg_outputUID] mutableCopy];
+    if (name.length) entry[@"preset"] = name;
+    else [entry removeObjectForKey:@"preset"];
+    setOutput(sg_outputUID, entry);
+    arriveAtOutput(NO);
+}
+
+NSString *SGAutoEqOutputPreset(NSString *uid) {
+    id name = outputs()[uid][@"preset"];
+    return [name isKindOfClass:NSString.class] ? name : @"";
+}
+
 NSString *SGAutoEqOutputUID(void) {
     return sg_outputUID;
 }
@@ -228,7 +358,7 @@ void SGAutoEqRememberOutput(BOOL remember) {
         SGAutoEqForgetOutput(sg_outputUID);
         return;
     }
-    setOutput(sg_outputUID, @{@"name": sg_outputName, @"path": @"", @"nodes": @""});
+    if (!outputs()[sg_outputUID]) setOutput(sg_outputUID, @{@"name": sg_outputName, @"path": @"", @"nodes": @""});
     rememberPick();
 }
 
@@ -250,7 +380,7 @@ NSArray<NSDictionary<NSString *, NSString *> *> *SGAutoEqRememberedOutputs(void)
     NSMutableArray *list = [NSMutableArray array];
     [outputs() enumerateKeysAndObjectsUsingBlock:^(NSString *uid, NSDictionary *entry, BOOL *stop) {
         if (![entry isKindOfClass:NSDictionary.class]) return;
-        [list addObject:@{@"uid": uid, @"name": entry[@"name"] ?: uid, @"path": entry[@"path"] ?: @""}];
+        [list addObject:@{@"uid": uid, @"name": entry[@"name"] ?: uid, @"path": entry[@"path"] ?: @"", @"preset": SGAutoEqOutputPreset(uid)}];
     }];
     [list sortUsingDescriptors:@[[NSSortDescriptor sortDescriptorWithKey:@"name" ascending:YES selector:@selector(localizedCaseInsensitiveCompare:)]]];
     return list;

@@ -340,6 +340,8 @@ UIViewController *SGDSPPresetsPage(void) {
 @end
 
 static const CGFloat kSearchTop = 8;   // the field's gap from the card over it
+static const CGFloat kFormGap = 4;     // between the field and the form filter under it
+static const CGFloat kFormHeight = 32;
 
 typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
     SGDSPHeadphoneOutput,       // Use for <output>, while an output is known and no search is on
@@ -351,6 +353,9 @@ typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
     SGDSPHeadphoneSections,
 };
 
+// The Output section's rows: Use for <output>, then its Preset.
+enum { kUseRow, kPresetRow, kOutputRows };
+
 @implementation SGDSPHeadphoneList {
     NSArray<SGAutoEqHeadphone *> *_all, *_shown;
     NSString *_message;          // loading, or why the list did not come
@@ -358,6 +363,8 @@ typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
     NSString *_applying;         // the path being downloaded
     NSArray<NSDictionary<NSString *, NSString *> *> *_remembered;
     UISearchBar *_search;
+    UISegmentedControl *_formControl;
+    SGAutoEqForm _form;          // All each time the page opens: it is not kept
     UIView *_searchHeader, *_header, *_footer;
     BOOL _searching;             // the field in use, so only the list shows under it
 }
@@ -383,11 +390,24 @@ typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
     _searchHeader = [UIView new];
     _search.translatesAutoresizingMaskIntoConstraints = NO;
     [_searchHeader addSubview:_search];
+    // The form filter, in the order of SGAutoEqForm.
+    _formControl = [[UISegmentedControl alloc] initWithItems:@[
+        SGL(@"settings.audioeffects.headphones.form.all", @"All"), SGL(@"settings.audioeffects.headphones.form.inear", @"In-ear"),
+        SGL(@"settings.audioeffects.headphones.form.overear", @"Over-ear"), SGL(@"settings.audioeffects.headphones.form.earbuds", @"Earbuds")]];
+    _formControl.selectedSegmentIndex = _form;
+    _formControl.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    _formControl.translatesAutoresizingMaskIntoConstraints = NO;
+    [_formControl addTarget:self action:@selector(formChanged) forControlEvents:UIControlEventValueChanged];
+    [_searchHeader addSubview:_formControl];
     [NSLayoutConstraint activateConstraints:@[
         [_search.leadingAnchor constraintEqualToAnchor:_searchHeader.leadingAnchor constant:-8],
         [_search.trailingAnchor constraintEqualToAnchor:_searchHeader.trailingAnchor constant:8],
         [_search.topAnchor constraintEqualToAnchor:_searchHeader.topAnchor constant:kSearchTop],
         [_search.heightAnchor constraintEqualToConstant:44],
+        [_formControl.leadingAnchor constraintEqualToAnchor:_searchHeader.leadingAnchor],
+        [_formControl.trailingAnchor constraintEqualToAnchor:_searchHeader.trailingAnchor],
+        [_formControl.topAnchor constraintEqualToAnchor:_search.bottomAnchor constant:kFormGap],
+        [_formControl.heightAnchor constraintEqualToConstant:kFormHeight],
     ]];
     _header = SGNote(SGL(@"settings.audioeffects.headphones.header", @"Corrections that make your headphones sound neutral, measured by AutoEq. Picking one turns Audio effects and the Graphic EQ on with it."));
     table.tableHeaderView = _header;
@@ -442,8 +462,13 @@ typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
     });
 }
 
+- (void)formChanged {
+    _form = (SGAutoEqForm)_formControl.selectedSegmentIndex;
+    [self filter];
+}
+
 - (void)filter {
-    _shown = SGAutoEqSearch(_all ?: @[], _search.text);
+    _shown = SGAutoEqFilterByForm(SGAutoEqSearch(_all ?: @[], _search.text), _form);
     BOOL searching = _search.isFirstResponder || _search.text.length > 0;
     BOOL changed = searching != _searching;
     _searching = searching;
@@ -478,11 +503,11 @@ typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
     switch (section) {
         case SGDSPHeadphoneMessage: return _message ? 1 : 0;
-        case SGDSPHeadphoneOutput: return SGAutoEqOutputUID() && !_searching ? 1 : 0;
+        case SGDSPHeadphoneOutput: return SGAutoEqOutputUID() && !_searching ? kOutputRows : 0;
         case SGDSPHeadphoneRemembered: return _searching ? 0 : (NSInteger)_remembered.count;
         case SGDSPHeadphoneSearch: return 0;
         case SGDSPHeadphoneNone: return _searching ? 0 : 1;
-        default: return _all && !_shown.count && _search.text.length ? 1 : (NSInteger)_shown.count;
+        default: return _all && !_shown.count ? 1 : (NSInteger)_shown.count;
     }
 }
 
@@ -492,7 +517,7 @@ typedef NS_ENUM(NSInteger, SGDSPHeadphoneSection) {
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
-    if (section == SGDSPHeadphoneSearch) return kSearchTop + 44 + 4;
+    if (section == SGDSPHeadphoneSearch) return kSearchTop + 44 + kFormGap + kFormHeight + 4;
     if ([self tableView:table numberOfRowsInSection:section] == 0) return CGFLOAT_MIN;
     return section == SGDSPHeadphoneRemembered ? SGSectionHeaderHeight() : SGSectionGap;
 }
@@ -516,9 +541,51 @@ static NSString *correctionName(NSString *path) {
     return path.length ? SGAutoEqNameOf(path) : SGL(@"settings.audioeffects.headphones.none", @"None");
 }
 
+// The name of the user's preset an output plays; empty for None, which a preset since deleted is too.
+static NSString *outputPresetName(NSString *uid) {
+    NSString *name = SGAutoEqOutputPreset(uid);
+    return SGDSPUserPresetExists(name) ? name : @"";
+}
+
+// The Preset row's choice: None and the user's presets in a menu, the one in use ticked.
+- (UIButton *)presetButton {
+    NSString *current = outputPresetName(SGAutoEqOutputUID());
+    NSMutableArray<UIMenuElement *> *items = [NSMutableArray array];
+    UIAction *none = [UIAction actionWithTitle:SGL(@"settings.audioeffects.headphones.none", @"None") image:nil identifier:nil
+        handler:^(UIAction *action) { SGAutoEqSetOutputPreset(nil); }];
+    none.state = current.length ? UIMenuElementStateOff : UIMenuElementStateOn;
+    [items addObject:none];
+    for (NSString *name in userPresetNames()) {
+        UIAction *item = [UIAction actionWithTitle:userPresetTitle(name) image:nil identifier:nil
+            handler:^(UIAction *action) { SGAutoEqSetOutputPreset(name); }];
+        item.state = [name isEqualToString:current] ? UIMenuElementStateOn : UIMenuElementStateOff;
+        [items addObject:item];
+    }
+    UIButtonConfiguration *configuration = [UIButtonConfiguration plainButtonConfiguration];
+    configuration.title = current.length ? userPresetTitle(current) : SGL(@"settings.audioeffects.headphones.none", @"None");
+    configuration.baseForegroundColor = SGGrey();
+    configuration.image = [UIImage systemImageNamed:@"chevron.up.chevron.down"];
+    configuration.imagePlacement = NSDirectionalRectEdgeTrailing;
+    configuration.imagePadding = 6;
+    UIButton *button = [UIButton buttonWithConfiguration:configuration primaryAction:nil];
+    button.menu = [UIMenu menuWithChildren:items];
+    button.showsMenuAsPrimaryAction = YES;
+    button.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    [button sizeToFit];
+    return button;
+}
+
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
     UITableViewCell *cell = SGDequeueCell(table, @"headphone");
     cell.accessoryView = nil;
+    if (path.section == SGDSPHeadphoneOutput && path.row == kPresetRow) {
+        SGFillCell(cell, SGL(@"settings.audioeffects.preset.title", @"Preset"),
+                   [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.preset.subtitle.format", @"Applied while %@ plays"), SGAutoEqOutputName()], nil, nil);
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        cell.accessoryView = [self presetButton];
+        cell.accessibilityTraits = UIAccessibilityTraitNone;
+        return cell;
+    }
     if (path.section == SGDSPHeadphoneOutput) {
         NSString *uid = SGAutoEqOutputUID();
         BOOL remembered = SGAutoEqOutputRemembered(uid);
@@ -537,7 +604,9 @@ static NSString *correctionName(NSString *path) {
     if (path.section == SGDSPHeadphoneRemembered) {
         NSDictionary<NSString *, NSString *> *output = _remembered[(NSUInteger)path.row];
         BOOL now = [output[@"uid"] isEqualToString:SGAutoEqOutputUID()];
-        SGFillCell(cell, output[@"name"], now ? [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.playingnow.format", @"%@ · playing now"), correctionName(output[@"path"])] : correctionName(output[@"path"]), nil, nil);
+        NSString *detail = correctionName(output[@"path"]), *preset = outputPresetName(output[@"uid"]);
+        if (preset.length) detail = [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.withpreset.format", @"%@ · preset %@"), detail, userPresetTitle(preset)];
+        SGFillCell(cell, output[@"name"], now ? [NSString stringWithFormat:SGL(@"settings.audioeffects.headphones.playingnow.format", @"%@ · playing now"), detail] : detail, nil, nil);
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
         cell.accessibilityTraits = UIAccessibilityTraitNone;
         cell.accessibilityHint = SGL(@"settings.audioeffects.headphones.swipehint", @"Swipe left to remove");

@@ -24,7 +24,19 @@ void SGDSPLoadBuiltInPreset(NSInteger index);
 NSArray<NSString *> *SGDSPUserPresetNames(void);   // sorted
 void SGDSPSaveUserPreset(NSString *name);          // replaces one of the same name
 BOOL SGDSPLoadUserPreset(NSString *name);
+// Deleting one an output plays settles it as leaving that output does (SGAutoEqPresetDeleted).
 void SGDSPDeleteUserPreset(NSString *name);
+// The values of the user's preset `name`, nil when there is none.
+NSDictionary<NSString *, id> *SGDSPUserPresetValues(NSString *name);
+// Every spotifyglass.dsp.* key as stored now (what a user preset saves; never the master switch).
+NSDictionary<NSString *, id> *SGDSPCurrentValues(void);
+// Resets every effect, then sets `values` through the setters, as one reconfiguration. Unlike loading a
+// preset it leaves the master switch as it is.
+void SGDSPApplyValues(NSDictionary<NSString *, id> *values);
+// A digest of `values` as the settings read them (SGDSPEffectiveValues: a key left out is its default, a number
+// within its range, a switch a flag): the digest of the values about to be applied equals the digest of
+// SGDSPCurrentValues() once they are, until something changes, whether or not a key was set explicitly.
+NSString *SGDSPValuesDigest(NSDictionary<NSString *, id> *values);
 
 #pragma mark - preset files
 
@@ -67,6 +79,16 @@ NSArray<SGAutoEqHeadphone *> *SGAutoEqParseIndex(NSString *markdown);
 NSURL *SGAutoEqGraphicEqURL(NSString *path);
 // The headphones whose name and source hold every word of the query, case and accents aside.
 NSArray<SGAutoEqHeadphone *> *SGAutoEqSearch(NSArray<SGAutoEqHeadphone *> *all, NSString *query);
+
+// A headphone's form, told by its folder's text ("in-ear", "over-ear", "earbud", case aside). A headphone
+// whose folder says none of them is shown under All only.
+typedef NS_ENUM(NSInteger, SGAutoEqForm) {
+    SGAutoEqFormAll,
+    SGAutoEqFormInEar,
+    SGAutoEqFormOverEar,
+    SGAutoEqFormEarbuds,
+};
+NSArray<SGAutoEqHeadphone *> *SGAutoEqFilterByForm(NSArray<SGAutoEqHeadphone *> *all, SGAutoEqForm form);
 // The headphone a folder names, for the page's row: its last part, decoded.
 NSString *SGAutoEqNameOf(NSString *path);
 
@@ -92,6 +114,16 @@ void SGAutoEqTakeOff(void);
 // EQ plays because its output connected, empty when none does.
 #define SGKeyDSPOutputs          @"spotifyglass.audioOutputs"
 #define SGKeyDSPOutputFollowed   @"spotifyglass.audioOutputs.followed"
+// An output's entry may also hold "preset", the name of one of the user's presets. While audio plays through
+// it the preset's values are applied (the entry's remembered correction over its Graphic EQ). The user's own
+// values are kept here first: {values: SGDSPCurrentValues() from before, applied: the digest of what was applied,
+// output: the UID it was applied for}. Written before the preset is applied, removed once the user's values are
+// back or are kept as they are. While a preset is being applied, or the values put back, it also holds
+// pending = YES (dropped when the apply is done, the baseline when the restore is): a launch that finds it was
+// killed half-way, the values in the settings are half one set and half the other, not the user's edits, and
+// are put back. A launch on that same output, with no pending, leaves the values and
+// the baseline as they are.
+#define SGKeyDSPOutputBaseline   @"spotifyglass.audioOutputs.baseline"
 // Posted on the main thread when the output or what is remembered changes.
 #define SGAutoEqOutputsChangedNotification @"SGAutoEqOutputsChangedNotification"
 
@@ -100,6 +132,13 @@ void SGAutoEqTakeOff(void);
 // off a correction that came on for a remembered one; a correction picked with no output remembered, and a
 // curve of the user's own, stay. Nothing happens while the UID stays the same. The master switch is left as
 // it is: a route change never turns the effects on.
+//
+// An output with a preset (a preset since deleted counts as none) gets it as one reconfiguration, the user's
+// values kept under SGKeyDSPOutputBaseline first. Going to an output without one puts those values back when
+// nothing was changed meanwhile, else keeps what the user has and forgets them; going to another output with a
+// preset keeps the first baseline. A baseline left by a launch that was killed on such an output is settled the
+// same way when the first output is told, except that the first output being the one it was stored for is no
+// change of route: nothing is applied or restored, and the baseline stays for when that output is left.
 void SGAutoEqOutputChanged(NSString *uid, NSString *name);
 // The output playing now, nil before the first call.
 NSString *SGAutoEqOutputUID(void);
@@ -108,5 +147,14 @@ NSString *SGAutoEqOutputName(void);
 void SGAutoEqRememberOutput(BOOL remember);
 BOOL SGAutoEqOutputRemembered(NSString *uid);
 void SGAutoEqForgetOutput(NSString *uid);
-// The remembered outputs, sorted by name: {uid, name, path}.
+// The remembered outputs, sorted by name: {uid, name, path, preset}, the last empty for None.
 NSArray<NSDictionary<NSString *, NSString *> *> *SGAutoEqRememberedOutputs(void);
+// The output playing now plays the user's preset `name` (nil or empty for None), remembering the output when it
+// is not yet; applied at once.
+void SGAutoEqSetOutputPreset(NSString *name);
+// The preset name stored for the output, empty for None.
+NSString *SGAutoEqOutputPreset(NSString *uid);
+// A user's preset was deleted: every output that had it has None instead. When the output playing now is one,
+// it is left as a route change to an output without a preset would: the baseline's values come back when nothing
+// was changed meanwhile, else the user's values stay, and the baseline goes.
+void SGAutoEqPresetDeleted(NSString *name);
