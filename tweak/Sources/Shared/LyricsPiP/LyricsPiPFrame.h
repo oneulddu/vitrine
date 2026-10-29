@@ -2,6 +2,7 @@
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
 #import "LyricsPiPStyle.h"
+#import "Shared/LyricsBackground/LyricsBackground.h"
 
 typedef struct {
     CGFloat size;
@@ -24,3 +25,9 @@ SGLyricsPiPTextFit SGLyricsPiPFitRole(NSString *text, CGSize box, SGLyricsPiPSty
 void SGLyricsPiPDrawStyledFrame(CGContextRef context, NSArray<NSString *> *content,
     SGLyricsPiPStyle *style, CGImageRef background, CGImageRef cover);
 NSData *SGLyricsPiPStyledPNG(NSArray<NSString *> *content, SGLyricsPiPStyle *style, CGImageRef cover);
+// The PiP background preferences, read once into a value a render can use on any thread.
+SGLyricsBackgroundStyle SGLyricsPiPReadBackground(void);
+// The frame itself, without the PNG round trip. Takes only values (`style`, `background` from the caller's
+// snapshot), so it can run off main; the caller owns the returned image.
+CGImageRef SGLyricsPiPCreateStyledImage(NSArray<NSString *> *content, SGLyricsPiPStyle *style, CGImageRef cover,
+    SGLyricsBackgroundStyle background) CF_RETURNS_RETAINED;

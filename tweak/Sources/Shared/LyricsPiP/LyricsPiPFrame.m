@@ -228,20 +228,26 @@ void SGLyricsPiPDrawStyledFrame(CGContextRef context, NSArray<NSString *> *conte
 NSData *SGLyricsPiPFramePNG(NSArray<NSString *> *content) {
     return SGLyricsPiPStyledPNG(content, SGLyricsPiPReadStyle(), NULL);
 }
-NSData *SGLyricsPiPStyledPNG(NSArray<NSString *> *content, SGLyricsPiPStyle *style, CGImageRef cover) {
+SGLyricsBackgroundStyle SGLyricsPiPReadBackground(void) {
+    return SGLyricsBackgroundRead(@"spotifyglass.lyrics.pip.background");
+}
+CGImageRef SGLyricsPiPCreateStyledImage(NSArray<NSString *> *content, SGLyricsPiPStyle *style, CGImageRef cover,
+    SGLyricsBackgroundStyle backgroundStyle) {
     size_t width = style.raster.width, height = style.raster.height;
-    NSMutableData *pixels = [NSMutableData dataWithLength:width * 4 * height];
     CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-    CGContextRef context = CGBitmapContextCreate(pixels.mutableBytes, width, height, 8, width * 4, space,
+    CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, width * 4, space,
                                                  kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
     CGColorSpaceRelease(space);
-    if (!context) return nil;
-    CGImageRef background = SGLyricsBackgroundCreate(cover, style.raster,
-        SGLyricsBackgroundRead(@"spotifyglass.lyrics.pip.background"));
+    if (!context) return NULL;
+    CGImageRef background = SGLyricsBackgroundCreate(cover, style.raster, backgroundStyle);
     SGLyricsPiPDrawStyledFrame(context, content, style, background, cover);
     if (background) CGImageRelease(background);
     CGImageRef image = CGBitmapContextCreateImage(context);
     CGContextRelease(context);
+    return image;
+}
+NSData *SGLyricsPiPStyledPNG(NSArray<NSString *> *content, SGLyricsPiPStyle *style, CGImageRef cover) {
+    CGImageRef image = SGLyricsPiPCreateStyledImage(content, style, cover, SGLyricsPiPReadBackground());
     if (!image) return nil;
     NSMutableData *data = [NSMutableData data];
     CGImageDestinationRef destination = CGImageDestinationCreateWithData((__bridge CFMutableDataRef)data, CFSTR("public.png"), 1, NULL);

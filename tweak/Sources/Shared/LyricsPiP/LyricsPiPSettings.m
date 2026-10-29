@@ -7,6 +7,25 @@
 #import "LyricsPiPFrame.h"
 #import "Shared/Fonts/FontLibrary.h"
 
+// The newest preview request of one page. A render running off main reads it to drop itself once a newer
+// request exists, so a dragged slider renders only where the finger stopped, not at every step.
+@interface SGLyricsPiPPreviewTicket : NSObject
+@property (atomic) NSUInteger latest;
+@end
+@implementation SGLyricsPiPPreviewTicket
+@end
+
+// Not static only so the lyrics-pip harness can hold the queue while it submits a burst of requests.
+dispatch_queue_t SGLyricsPiPPreviewQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("spotifyglass.lyrics.pip.preview", dispatch_queue_attr_make_with_qos_class(
+            DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0));
+    });
+    return queue;
+}
+
 // SGModPage remains the native grouped settings page; its preview is a real CPU-rendered frame from the
 // production renderer. The main page carries it as a scrolling header. The font and role pages pin it above
 // their rows, so it stays in view while a family, size or weight changes, and cap the whole pinned header so
@@ -24,6 +43,10 @@
 @property (nonatomic, copy) NSString *hiddenNote;
 @property (nonatomic) CGSize raster;
 @property (nonatomic) BOOL refreshQueued;
+// A page under another one, or not yet shown, renders nothing; it redraws when it comes back.
+@property (nonatomic) BOOL onScreen;
+@property (nonatomic) BOOL previewStale;
+@property (nonatomic, strong) SGLyricsPiPPreviewTicket *ticket;
 @end
 @implementation SGLyricsPiPSettingsPage
 - (void)viewDidLoad {
@@ -56,7 +79,20 @@
         name:NSUserDefaultsDidChangeNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(previewChanged:)
         name:SGFontLibraryChangedNotification object:nil];
+    self.ticket = [SGLyricsPiPPreviewTicket new];
     [self updatePreview];
+}
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    self.onScreen = YES;
+    if (self.previewStale) [self updatePreview];
+}
+- (void)viewWillDisappear:(BOOL)animated {
+    [super viewWillDisappear:animated];
+    self.onScreen = NO;
+    // A render already queued or running is for a page that is no longer shown: drop it, and draw afresh on return.
+    self.ticket.latest++;
+    self.previewStale = YES;
 }
 - (void)previewChanged:(NSNotification *)note {
     // Defaults may post off main and several times for one change (a reset removes ten keys): one render per burst.
@@ -94,8 +130,26 @@
         if (sample[slot.unsignedIntegerValue].length) [spoken addObject:sample[slot.unsignedIntegerValue]];
     self.preview.accessibilityValue = [spoken componentsJoinedByString:@", "];
     self.raster = SGLyricsPiPReadStyle().raster;
-    self.preview.image = [UIImage imageWithData:SGLyricsPiPFramePNG(sample)];
     [self.view setNeedsLayout];
+    self.previewStale = !self.onScreen;
+    if (!self.onScreen) return;
+    // Everything the render reads is copied here on main; the encode-free bitmap is drawn on the preview
+    // queue and only the newest request is shown.
+    SGLyricsPiPStyle *style = SGLyricsPiPReadStyle();
+    SGLyricsBackgroundStyle background = SGLyricsPiPReadBackground();
+    SGLyricsPiPPreviewTicket *ticket = self.ticket;
+    NSUInteger request = ++ticket.latest;
+    __weak SGLyricsPiPSettingsPage *weakSelf = self;
+    dispatch_async(SGLyricsPiPPreviewQueue(), ^{
+        if (ticket.latest != request) return;
+        CGImageRef frame = SGLyricsPiPCreateStyledImage(sample, style, NULL, background);
+        if (!frame) return;
+        UIImage *image = [UIImage imageWithCGImage:frame scale:1 orientation:UIImageOrientationUp];
+        CGImageRelease(frame);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (ticket.latest == request) weakSelf.preview.image = image;
+        });
+    });
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];

@@ -57,13 +57,58 @@ static UIImageView *findPreview(UIView *view) {
 static UIImageView *previewIn(UIViewController *controller, CGSize size) {
     controller.overrideUserInterfaceStyle = UIUserInterfaceStyleDark; // as SGPage does
     controller.view.frame = (CGRect){CGPointZero, size};
+    [controller viewWillAppear:NO]; // a page draws its preview only while it is the one shown
     [controller.view setNeedsLayout];
     [controller.view layoutIfNeeded];
     return findPreview(controller.view);
 }
+// The pixels in one fixed format, so a bitmap handed over directly and a decoded PNG compare equal.
 static NSData *pixels(UIImage *image) {
-    return image.CGImage ? CFBridgingRelease(CGDataProviderCopyData(CGImageGetDataProvider(image.CGImage))) : nil;
+    CGImageRef cg = image.CGImage;
+    if (!cg) return nil;
+    size_t width = CGImageGetWidth(cg), height = CGImageGetHeight(cg);
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef context = CGBitmapContextCreate(NULL, width, height, 8, width * 4, space,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    CGColorSpaceRelease(space);
+    CGContextDrawImage(context, CGRectMake(0, 0, width, height), cg);
+    NSData *data = [NSData dataWithBytes:CGBitmapContextGetData(context) length:width * 4 * height];
+    CGContextRelease(context);
+    return data;
 }
+// The preview queue is the page's own; holding it keeps submitted renders waiting until the gate is signalled.
+extern dispatch_queue_t SGLyricsPiPPreviewQueue(void);
+static dispatch_semaphore_t holdPreviewQueue(void) {
+    dispatch_semaphore_t gate = dispatch_semaphore_create(0);
+    dispatch_async(SGLyricsPiPPreviewQueue(), ^{ dispatch_semaphore_wait(gate, DISPATCH_TIME_FOREVER); });
+    return gate;
+}
+// Returns once everything already submitted to main has run, including the second hop a change takes.
+static void drainMain(void) {
+    __block BOOL done = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ dispatch_async(dispatch_get_main_queue(), ^{ done = YES; }); });
+    SGTestAssert(SGTestPump(^BOOL { return done; }), @"main queue drains");
+}
+// A size change as the page sees it: stored, announced, and the page's update run.
+static void changeSize(SGModPage *page, double value) {
+    page.sections[0].rows[0].setNumber(value);
+    [NSNotificationCenter.defaultCenter postNotificationName:NSUserDefaultsDidChangeNotification object:NSUserDefaults.standardUserDefaults];
+    drainMain();
+}
+// Every submitted render has finished and its result, if any, has reached main.
+static void settle(void) {
+    dispatch_sync(SGLyricsPiPPreviewQueue(), ^{});
+    drainMain();
+}
+// Counts the images a preview is given, to see how many renders of a burst were shown.
+@interface SGImageCounter : NSObject
+@property (nonatomic) NSUInteger images;
+@end
+@implementation SGImageCounter
+- (void)observeValueForKeyPath:(NSString *)path ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    if (change[NSKeyValueChangeNewKey] != NSNull.null) self.images++;
+}
+@end
 static NSArray *sample(BOOL pronunciation, BOOL translation) {
     return @[@"별빛을 따라 걸어요", @"A new day is on its way", @"Sample lyrics · Vitrine",
         pronunciation ? @"Byeolbicheul ttara georeoyo" : @"", translation ? @"We walk beneath the stars" : @"",
@@ -174,7 +219,7 @@ void SGTestSettings(void) {
     SGTestSetting(translationKey, @NO);
     SGModPage *fonts = (id)page.sections[2].rows[1].page();
     UIImageView *fontPreview = previewIn(fonts, CGSizeMake(667, 375));
-    SGTestAssert(fontPreview && shows(fontPreview, sample(NO, NO)) && [fontPreview.accessibilityLabel isEqual:@"Sample preview"] &&
+    SGTestAssert(fontPreview && SGTestPump(^BOOL { return shows(fontPreview, sample(NO, NO)); }) && [fontPreview.accessibilityLabel isEqual:@"Sample preview"] &&
         [fontPreview.accessibilityValue containsString:@"별빛을 따라 걸어요"] && ![fontPreview.accessibilityValue containsString:@"Byeolbicheul"] &&
         ![fontPreview.accessibilityValue containsString:@"beneath"], @"font page shows a labeled production sample without switched-off supplements");
     pinnedLayout(fonts, fontPreview, @"font", nil);
@@ -194,8 +239,8 @@ void SGTestSettings(void) {
     SGModPage *translation = (id)page.sections[2].rows[4].page();
     UIImageView *translationPreview = previewIn(translation, CGSizeMake(320, 568));
     NSString *hiddenNote = @"Pronunciation is off on the lyrics screen, so it is hidden.";
-    SGTestAssert(shows(pronunciationPreview, sample(NO, YES)) && [labelIn(pronunciation.tableView.tableHeaderView).text isEqual:hiddenNote] &&
-        shows(translationPreview, sample(NO, YES)) && !translation.tableView.tableHeaderView,
+    SGTestAssert(SGTestPump(^BOOL { return shows(pronunciationPreview, sample(NO, YES)) && shows(translationPreview, sample(NO, YES)); }) && [labelIn(pronunciation.tableView.tableHeaderView).text isEqual:hiddenNote] &&
+        !translation.tableView.tableHeaderView,
         @"supplement pages say when their line is hidden and stay quiet when it shows");
     pinnedLayout(pronunciation, pronunciationPreview, @"pronunciation", hiddenNote);
     NSDictionary *now = [defaults persistentDomainForName:domain];
@@ -213,11 +258,44 @@ void SGTestSettings(void) {
         @"weight menu stores the role weight");
     SGTestAssert(SGTestPump(^BOOL { return shows(originalPreview, sample(NO, YES)); }) && ![pixels(originalPreview.image) isEqual:before],
         @"weight menu redraws the pinned preview");
+    // A page under another one (the parent while a child is pushed) draws nothing, and draws the current
+    // settings when it is shown again.
+    NSData *shown = pixels(originalPreview.image);
+    [original viewWillDisappear:NO];
+    changeSize(original, 30);
+    settle();
+    SGTestAssert([pixels(originalPreview.image) isEqual:shown], @"a page that is not shown renders no preview");
+    [original viewWillAppear:NO];
+    SGTestAssert(SGTestPump(^BOOL { return shows(originalPreview, sample(NO, YES)); }) && ![pixels(originalPreview.image) isEqual:shown],
+        @"a page shown again draws the settings changed meanwhile");
+    // A render already queued when the page is covered is dropped, not published under the page that covers it.
+    shown = pixels(originalPreview.image);
+    dispatch_semaphore_t gate = holdPreviewQueue();
+    changeSize(original, 35);
+    [original viewWillDisappear:NO];
+    dispatch_semaphore_signal(gate);
+    settle();
+    SGTestAssert([pixels(originalPreview.image) isEqual:shown], @"a render queued before the page was covered is not shown");
+    [original viewWillAppear:NO];
+    SGTestAssert(SGTestPump(^BOOL { return shows(originalPreview, sample(NO, YES)); }) && ![pixels(originalPreview.image) isEqual:shown],
+        @"returning to the page draws the current settings");
+    // A dragged slider: 40 requests queue up behind a held render; only the newest is drawn and shown.
+    SGImageCounter *counter = [SGImageCounter new];
+    [originalPreview addObserver:counter forKeyPath:@"image" options:NSKeyValueObservingOptionNew context:NULL];
+    gate = holdPreviewQueue();
+    for (NSUInteger step = 0; step < 40; step++) changeSize(original, 24 + step);
+    dispatch_semaphore_signal(gate);
+    settle();
+    [originalPreview removeObserver:counter forKeyPath:@"image"];
+    SGTestAssert(SGLyricsPiPReadStyle().sizes[0].doubleValue == 63 && shows(originalPreview, sample(NO, YES)),
+        @"after a drag the preview matches the size where it stopped");
+    SGTestAssert(counter.images == 1, @"a drag shows only the newest render, not one per step");
+    original.sections[0].rows[0].setNumber(64);
     originalPreview.image = nil;
     [NSNotificationCenter.defaultCenter postNotificationName:SGFontLibraryChangedNotification object:nil];
     SGTestAssert(SGTestPump(^BOOL { return shows(originalPreview, sample(NO, YES)); }), @"font library changes redraw the preview");
     UIImageView *mainPreview = previewIn(page, CGSizeMake(375, 667));
-    SGTestAssert(mainPreview.superview == page.tableView.tableHeaderView && shows(mainPreview, sample(NO, YES)),
+    SGTestAssert(mainPreview.superview == page.tableView.tableHeaderView && SGTestPump(^BOOL { return shows(mainPreview, sample(NO, YES)); }),
         @"main page keeps its scrolling sample header with the same supplement rule");
     [defaults setBool:YES forKey:pronunciationKey]; // a stored lyrics-screen choice the reset must keep
     page.sections[2].rows[5].action();
