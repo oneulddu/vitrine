@@ -8,17 +8,18 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Shared/Gestures/Gestures.h"
+#import "Shared/Gestures/GestureHold.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "NowPlaying.h"
 
 #pragma mark - hold to play faster
 
-// Holding either side of the cover plays at kHoldSpeed until the finger lifts, and the speed set before
-// comes back. The middle third is left alone, and a hold that starts to move is a swipe to the next track.
-// It is a speed like the menu's, so with Pitch follows speed on (until switched off) it also plays an
-// octave higher, the way a record does.
-static const double kHoldSpeed = 2;
+// Holding either side of the cover plays at the chosen hold speed (Shared/Gestures/GestureHold.h) until the finger
+// lifts, and the speed set before comes back. The middle third is left alone, and a hold that starts to move is a
+// swipe to the next track. With the hold switched off the recognizer is disabled, so a press does nothing.
+// It is a speed like the menu's, so with Pitch follows speed on (until switched off) it also plays higher, the way
+// a record does.
 // The now playing bar's cover has a tilt view of its own, 40pt; the player's is about 354.
 static const CGFloat kCoverMinWidth = 200;
 static char kHoldKey;
@@ -45,11 +46,12 @@ static const NSTimeInterval kBadgeEnter = 0.2, kBadgeExit = 0.15;
             self.enabled = YES;   // cancels this hold
             return;
         }
+        double speed = SGGestureHoldSpeed();
         _before = SGPlayerSpeed();
-        SGSetPlayerSpeed(kHoldSpeed);
+        SGSetPlayerSpeed(speed);
         SGPlayFeedback(SGFeedbackGrab);
         [self showBadge:YES on:cover];
-        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, @"Playing at 2 times speed");
+        UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, SGGestureHoldAnnouncement(speed));
     } else if (self.state == UIGestureRecognizerStateEnded || self.state == UIGestureRecognizerStateCancelled
                || self.state == UIGestureRecognizerStateFailed) {
         if (_before > 0) SGSetPlayerSpeed(_before);
@@ -61,17 +63,21 @@ static const NSTimeInterval kBadgeEnter = 0.2, kBadgeExit = 0.15;
 // "2×" and a forward glyph on a capsule of the look's glass (SGGlassEffect: Liquid Glass from iOS 26, the dark
 // chrome blur before) at the top of the cover while it is held. What fades is the effect, never an alpha
 // over it, which UIKit draws a blur under wrongly or not at all.
+- (NSAttributedString *)badgeText {
+    UIFont *font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
+    NSTextAttachment *arrows = [NSTextAttachment textAttachmentWithImage:[[UIImage systemImageNamed:@"forward.fill"
+        withConfiguration:[UIImageSymbolConfiguration configurationWithFont:font]] imageWithTintColor:UIColor.whiteColor
+        renderingMode:UIImageRenderingModeAlwaysOriginal]];
+    NSMutableAttributedString *text = [[NSMutableAttributedString alloc]
+        initWithString:[SGGestureHoldSpeedLabel(SGGestureHoldSpeed()) stringByAppendingString:@"  "]
+        attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}];
+    [text appendAttributedString:[NSAttributedString attributedStringWithAttachment:arrows]];
+    return text;
+}
+
 - (void)showBadge:(BOOL)shown on:(UIView *)cover {
     if (shown && !_badge) {
         _badgeLabel = [UILabel new];
-        UIFont *font = [UIFont systemFontOfSize:15 weight:UIFontWeightSemibold];
-        NSTextAttachment *arrows = [NSTextAttachment textAttachmentWithImage:[[UIImage systemImageNamed:@"forward.fill"
-            withConfiguration:[UIImageSymbolConfiguration configurationWithFont:font]] imageWithTintColor:UIColor.whiteColor
-            renderingMode:UIImageRenderingModeAlwaysOriginal]];
-        NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:@"2×  "
-            attributes:@{NSFontAttributeName: font, NSForegroundColorAttributeName: UIColor.whiteColor}];
-        [text appendAttributedString:[NSAttributedString attributedStringWithAttachment:arrows]];
-        _badgeLabel.attributedText = text;
         _badgeLabel.textAlignment = NSTextAlignmentCenter;
         _badge = [[UIVisualEffectView alloc] initWithEffect:nil];
         _badge.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
@@ -81,6 +87,7 @@ static const NSTimeInterval kBadgeEnter = 0.2, kBadgeExit = 0.15;
         _badgeLabel.frame = _badge.bounds;
         [_badge.contentView addSubview:_badgeLabel];
     }
+    if (shown) _badgeLabel.attributedText = [self badgeText];   // the speed may have changed since the last hold
     if (!_badge) return;
     _badgeShown = shown;
     UIVisualEffectView *badge = _badge;
@@ -113,8 +120,14 @@ static const NSTimeInterval kBadgeEnter = 0.2, kBadgeExit = 0.15;
 @end
 
 static void watchHold(UIView *tilt) {
-    if (objc_getAssociatedObject(tilt, &kHoldKey) || tilt.bounds.size.width < kCoverMinWidth || !SGInPlayerCover(tilt)) return;
+    SGCoverHold *existing = objc_getAssociatedObject(tilt, &kHoldKey);
+    if (existing) {
+        existing.enabled = SGGestureHoldEnabled();
+        return;
+    }
+    if (tilt.bounds.size.width < kCoverMinWidth || !SGInPlayerCover(tilt)) return;
     SGCoverHold *hold = [[SGCoverHold alloc] initWithTarget:nil action:nil];
+    hold.enabled = SGGestureHoldEnabled();
     [hold addTarget:hold action:@selector(sg_held)];
     hold.minimumPressDuration = 0.35;
     [tilt addGestureRecognizer:hold];

@@ -160,29 +160,41 @@ static NSString *cellLabel(SGGestureAction action) {
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)table {
-    return 4;
+    return 6;
 }
 
+// The hold's speeds are listed only while the hold is on.
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
     switch (section) {
         case 1: return (NSInteger)SGGestureSplitNames().count;
         case 2: return (NSInteger)SGGestureStepChoices().count;
+        case 4: return SGGestureHoldEnabled() ? (NSInteger)SGGestureHoldSpeedChoices().count : 0;
         default: return 1;
     }
+}
+
+- (NSString *)holdSpeedNote {
+    return SGL(@"settings.gestures.hold_speed.note", @"With Pitch follows speed on, the pitch rises with the speed.");
 }
 
 - (UIView *)tableView:(UITableView *)table viewForHeaderInSection:(NSInteger)section {
     if (section == 1) return SGSectionHeader(table, SGL(@"settings.gestures.split.header", @"Split"));
     if (section == 2) return SGSectionHeader(table, SGL(@"settings.gestures.step.header", @"Seek step"));
+    if (section == 4 && SGGestureHoldEnabled()) return SGSectionHeader(table, SGL(@"settings.gestures.hold_speed.header", @"Hold speed"));
     return nil;
 }
 
 - (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
+    if (section == 4) return SGGestureHoldEnabled() ? SGSectionHeaderHeight() : CGFLOAT_MIN;
     return section == 1 || section == 2 ? SGSectionHeaderHeight() : SGSectionGap;
 }
 
+- (UIView *)tableView:(UITableView *)table viewForFooterInSection:(NSInteger)section {
+    return section == 4 && SGGestureHoldEnabled() ? SGSectionFooter(table, [self holdSpeedNote]) : nil;
+}
+
 - (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
-    return CGFLOAT_MIN;
+    return section == 4 && SGGestureHoldEnabled() ? SGSectionFooterHeight(table, [self holdSpeedNote]) : CGFLOAT_MIN;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
@@ -193,8 +205,30 @@ static NSString *cellLabel(SGGestureAction action) {
             UISwitch *toggle = [UISwitch new];
             toggle.onTintColor = SGGreen();
             toggle.on = SGFlag(SGKeyGestures, NO);
+            toggle.tag = path.section;
             [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = toggle;
+            break;
+        }
+        case 3: {
+            SGFillCell(cell, [NSString stringWithFormat:SGL(@"settings.gestures.hold.title", @"Hold edge for %@"), SGGestureHoldSpeedLabel(SGGestureHoldSpeed())],
+                       SGL(@"settings.gestures.hold.subtitle", @"Either side of the cover, until you let go"), nil, nil);
+            UISwitch *toggle = [UISwitch new];
+            toggle.onTintColor = SGGreen();
+            toggle.on = SGGestureHoldEnabled();
+            toggle.tag = path.section;
+            [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
+            cell.accessoryView = toggle;
+            break;
+        }
+        case 4: {
+            SGFillCell(cell, SGGestureHoldSpeedLabel(SGGestureHoldSpeedChoices()[(NSUInteger)path.row].doubleValue), nil, nil, nil);
+            cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+            if (path.row == SGGestureHoldSpeedChoice()) {
+                UIImageView *tick = SGSymbolView(@"checkmark", 13, UIImageSymbolWeightSemibold, 16);
+                tick.tintColor = SGGreen();
+                cell.accessoryView = tick;
+            }
             break;
         }
         case 1:
@@ -223,13 +257,19 @@ static NSString *cellLabel(SGGestureAction action) {
     [table deselectRowAtIndexPath:path animated:YES];
     if (path.section == 1) SGSetInt(SGKeyGestureSplit, path.row);
     else if (path.section == 2) SGSetInt(SGKeyGestureStep, path.row);
-    else if (path.section == 3) SGResetGestureZones();
+    else if (path.section == 4) SGSetInt(SGKeyGestureHoldSpeed, path.row);
+    else if (path.section == 5) SGResetGestureZones();
     else return;
     [self refresh];
 }
 
 - (void)toggled:(UISwitch *)toggle {
-    SGSetEnabled(SGKeyGestures, toggle.on);
+    if (toggle.tag == 3) {
+        SGSetEnabled(SGKeyGestureHold, toggle.on);
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:4] withRowAnimation:UITableViewRowAnimationFade];
+    } else {
+        SGSetEnabled(SGKeyGestures, toggle.on);
+    }
 }
 
 @end

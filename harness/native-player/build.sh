@@ -16,7 +16,8 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     -I"$SRC" -I"$SRC/Native/Player" -isysroot "$SDK" -Wno-deprecated-declarations \
     "$(dirname "$0")/main.m" "$(dirname "$0")/player-stubs.m" "$(dirname "$0")/../scene.m" "$OUT"/gen/*.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGGlass.m \
-    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m \
+    "$SRC"/Core/SGBackdrop.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m "$SRC"/Core/SGLocalize.m \
+    "$SRC"/Shared/Gestures/GestureHold.m \
     "$SRC"/Native/Declutter/Declutter.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework CoreImage -framework Foundation \
     -o "$OUT/NativePlayerHarness.app/NativePlayerHarness"

@@ -116,7 +116,10 @@ Shared:
                   the provider pins 9.1.88's ios-reprise-liquid-glass-override.mode to default in both looks (after an All flags
                   override) and logs the server's own value once, as a force_disabled would take the glass off the redesign.
                   It also pins 9.1.90's ios-navigationui-tabbar-impl.is_liquid_glass_tab_bar_enabled off in both looks.
-    Gestures/     the double tap zones on the player: the grid, what each cell does, the recognizer (each look hooks it on)
+    Gestures/     the double tap zones on the player: the grid, what each cell does, the recognizer (each look hooks it on);
+                  and the hold on either side of the cover (GestureHold.m): `spotifyglass.gestures.hold`, on until
+                  switched off, and `spotifyglass.gestures.hold.speed`, 1.5×, 2× (the default) or 3×, read when a hold
+                  begins, the speed from before the hold restored on release; harness/gesture-hold/
     Lyrics/       the lyrics engine for the redesign's Apple Music style lyrics and the lock screen: lines read from
                   color-lyrics and the player's clock (KaraokeSource.x), words timed by estimate inside Spotify's line
                   times (KaraokeTiming.m, which splits Thai, Lao, Khmer and Burmese at the system's dictionary words), which line to name where two voices sing at once (the one that came in first,
@@ -866,7 +869,8 @@ Native:
     NowPlayingBar/ the device button hidden, the bar's flags
     Player/       the full screen player (Player.x), its cards and buttons hidden and a hidden lyric preview's room given
                   to the cover (PlayerDeclutter.x), the glass lyrics card (LyricsCard.x), the gestures' hookup and the hold
-                  on either side of the cover that plays at 2x until the finger lifts (PlayerGestures.x), the list's pull
+                  on either side of the cover that plays at the Gestures page's hold speed until the finger lifts
+                  (PlayerGestures.x), the list's pull
                   held off while the progress bar is scrubbed (PlayerScrub.x), the Queue & devices flags. The scrub and
                   the cover's room are checked in the simulator against harness/native-player/
     Lyrics/       the full screen lyrics page on glass, and a tap on the lyrics' footer opening the pages a credit
@@ -971,8 +975,8 @@ Redesigned:
                   menu (ContextMenu/), Spotify's rows and then Speed, Pitch & Reverb, which opens the sliders, Pitch
                   follows speed and Keep for This Song in a popover from the ⋯ (SpeedPitchMenu.x, Shared/Player), and the backgrounds it can switch
                   to (PlayerMenu.m), and a hold on either side of the
-                  cover plays at 2x until the finger lifts (PlayerArtwork.x), an octave higher while Pitch follows
-                  speed is on. Hide on the player's Shuffle and Repeat (spotifyglass.redesign.player.hideShuffle,
+                  cover plays at the Gestures page's hold speed (2× unless changed) until the finger lifts
+                  (PlayerArtwork.x), higher in pitch while Pitch follows speed is on (an octave at 2×). Hide on the player's Shuffle and Repeat (spotifyglass.redesign.player.hideShuffle,
                   .hideRepeat, read at launch) take those buttons off the controls by alpha in their slots, as the
                   Music app keeps them off its own (PlayerControls.x). With both hidden in portrait, previous and next
                   move outward so each is min(row width / 3, 140 pt) from play's center, less where that would take a

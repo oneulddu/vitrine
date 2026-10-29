@@ -575,6 +575,12 @@
 "settings.gestures.enable.subtitle" = "설정하려면 칸을 탭하십시오";
 "settings.gestures.enable.title" = "플레이어 이중 탭";
 "settings.gestures.footer.note" = "Spotify 자체 버튼의 탭 동작은 그대로 유지됩니다.";
+"settings.gestures.hold.subtitle" = "커버 양쪽 어느 쪽이든, 손을 뗄 때까지";
+"settings.gestures.hold.title" = "가장자리를 누르고 있으면 %@";
+"settings.gestures.hold_announcement.format" = "%g배속으로 재생 중";
+"settings.gestures.hold_speed.format" = "%g×";
+"settings.gestures.hold_speed.header" = "누르고 있을 때 속도";
+"settings.gestures.hold_speed.note" = "피치가 속도를 따름이 켜져 있으면 속도에 맞춰 음높이도 올라갑니다.";
 "settings.gestures.pick_action.title" = "여기서 이중 탭 동작";
 "settings.gestures.reset.title" = "처음부터 다시 설정";
 "settings.gestures.seek_back.format" = "−%g초";

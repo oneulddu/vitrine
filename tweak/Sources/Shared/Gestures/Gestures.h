@@ -1,6 +1,7 @@
 // Double tap zones over the player's artwork: the artwork already answers a sideways swipe with the
 // next track and a vertical drag with the cards below, so a double tap is what is left free.
 #import <UIKit/UIKit.h>
+#import "GestureHold.h"
 
 #define SGKeyGestures @"spotifyglass.gestures"
 #define SGKeyGestureSplit @"spotifyglass.gestures.split"

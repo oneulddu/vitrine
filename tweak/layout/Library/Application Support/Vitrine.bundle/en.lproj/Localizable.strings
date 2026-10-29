@@ -576,6 +576,12 @@
 "settings.gestures.enable.subtitle" = "Tap a cell to set it";
 "settings.gestures.enable.title" = "Double tap the player";
 "settings.gestures.footer.note" = "Spotify's own buttons keep their taps.";
+"settings.gestures.hold.subtitle" = "Either side of the cover, until you let go";
+"settings.gestures.hold.title" = "Hold edge for %@";
+"settings.gestures.hold_announcement.format" = "Playing at %g times speed";
+"settings.gestures.hold_speed.format" = "%g×";
+"settings.gestures.hold_speed.header" = "Hold speed";
+"settings.gestures.hold_speed.note" = "With Pitch follows speed on, the pitch rises with the speed.";
 "settings.gestures.pick_action.title" = "Double tap here";
 "settings.gestures.reset.title" = "Start over";
 "settings.gestures.seek_back.format" = "−%gs";
