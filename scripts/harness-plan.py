@@ -46,6 +46,8 @@ HARNESSES = [
      "run": "bash harness/ui-refinements/badge-check.sh"},
     {"name": "Settings search", "dir": "settings-search",
      "run": "sh harness/settings-search/build.sh"},
+    {"name": "Settings bars inset", "dir": "settings-bars",
+     "run": "sh harness/settings-bars/build.sh"},
     {"name": "Meaning translation", "dir": "meaning-translate",
      "run": "sh harness/meaning-translate/build.sh"},
     {"name": "Artist artwork", "dir": "artist-artwork",

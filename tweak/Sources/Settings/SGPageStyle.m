@@ -1,6 +1,7 @@
 #import "SGPageStyle.h"
 #import <CoreText/SFNTLayoutTypes.h>
 #import "Core/SGCore.h"
+#import <objc/runtime.h>
 
 static UIFont *sg_spotifyFont;
 
@@ -138,15 +139,79 @@ void SGFitNote(UITableView *table, UIView *wrapper, CGFloat top, CGFloat bottom)
     else table.tableFooterView = wrapper;
 }
 
-static CGFloat barsHeight(UIView *view) {
-    UIWindow *window = view.window;
-    __block CGFloat top = window.bounds.size.height;
+// The bars a table found in its window, held weakly and hidden or not, so a layout measures them without
+// walking the window's view tree (Spotify's is large, and a scroll lays the table out on every frame).
+@interface SGBarsMemory : NSObject
+@property (nonatomic, weak) UIWindow *window;
+@property (nonatomic, strong) NSHashTable<UIView *> *bars;
+@property (nonatomic) NSUInteger generation;
+@end
+
+@implementation SGBarsMemory
+@end
+
+static const void *kBarsMemoryKey = &kBarsMemoryKey;
+
+static BOOL isBarClassName(const char *name) {
+    return strstr(name, "NowPlaying_BarPageImpl") || strcmp(name, "_TtC23NavigationUI_TabBarImpl10TabBarView") == 0;
+}
+
+// Counts the times a bar was put into a window or taken out of one, anywhere. UIKit calls
+// -didMoveToWindow on the main thread, where the layouts that read this run too.
+static NSUInteger barGeneration;
+
+// The bar classes tell the count when one of their views changes window, which is the one signal a table has
+// that a bar came or went. The classes are the ones the walk below recognizes, and each is given its own
+// -didMoveToWindow that counts and then runs the one it had; no other class and no UIView method is touched.
+static void countBarMoves(void) {
+    static NSHashTable<Class> *hooked;
+    if (!hooked) hooked = [NSHashTable hashTableWithOptions:NSPointerFunctionsOpaqueMemory | NSPointerFunctionsOpaquePersonality];
+    SEL moved = @selector(didMoveToWindow);
+    unsigned int count = 0;
+    Class *classes = objc_copyClassList(&count);
+    for (unsigned int i = 0; i < count; i++) {
+        Class cls = classes[i];
+        if (!isBarClassName(class_getName(cls)) || [hooked containsObject:cls] || ![cls isSubclassOfClass:UIView.class]) continue;
+        [hooked addObject:cls];
+        IMP original = class_getMethodImplementation(cls, moved);
+        class_replaceMethod(cls, moved, imp_implementationWithBlock(^(UIView *view) {
+            barGeneration++;
+            ((void (*)(UIView *, SEL))original)(view, moved);
+        }), "v16@0:8");
+    }
+    free(classes);
+}
+
+// The walk runs when the table first lays out in a window or moves to another (every page is a new table), and
+// after any bar came or went in a window since the last one, so a bar attached beside remembered ones, or
+// attached to a window where none was found, is measured on the next layout; a layout with no change walks nothing.
+static NSArray<UIView *> *barsIn(UITableView *table, UIWindow *window) {
+    SGBarsMemory *memory = objc_getAssociatedObject(table, kBarsMemoryKey);
+    if (memory.window == window && memory.generation == barGeneration) return memory.bars.allObjects;
+    countBarMoves();
+    NSMutableArray<UIView *> *found = [NSMutableArray array];
     SGForEachView(window, ^(UIView *v) {
-        NSString *name = NSStringFromClass(v.class);
-        BOOL bar = [name containsString:@"NowPlaying_BarPageImpl"] || [name isEqualToString:@"_TtC23NavigationUI_TabBarImpl10TabBarView"];
-        if (!bar || v.hidden || v.alpha == 0 || v.bounds.size.height == 0) return;
-        top = MIN(top, SGFrameIn(v, window).origin.y);
+        if (isBarClassName(class_getName(v.class))) [found addObject:v];
     });
+    if (!memory) {
+        memory = [SGBarsMemory new];
+        objc_setAssociatedObject(table, kBarsMemoryKey, memory, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    memory.window = window;
+    memory.bars = [NSHashTable weakObjectsHashTable];
+    for (UIView *bar in found) [memory.bars addObject:bar];
+    memory.generation = barGeneration;
+    return found;
+}
+
+static CGFloat barsHeight(UITableView *table) {
+    UIWindow *window = table.window;
+    if (!window) return 0;
+    CGFloat top = window.bounds.size.height;
+    for (UIView *v in barsIn(table, window)) {
+        if (v.hidden || v.alpha == 0 || v.bounds.size.height == 0) continue;
+        top = MIN(top, SGFrameIn(v, window).origin.y);
+    }
     return window.bounds.size.height - top;
 }
 
