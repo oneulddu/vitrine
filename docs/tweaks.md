@@ -510,7 +510,17 @@ Shared:
                   with a menu to change it, Restore file's info; nothing is stored before Save, and a swipe away
                   with changes asks first), storing a title, artist, album and cover by the file's URI and laying them
                   over -[SPTPlayerTrack metadata] and the cover's image request (the redesign's artwork reads the
-                  stored cover itself, Redesigned/Kit/SGRBridges.x); the file is never written. Their
+                  stored cover itself, Redesigned/Kit/SGRBridges.x); the file is never written. Find Info at the
+                  sheet's foot (spotifyglass.localfiles.suggest, on: a button, nothing sent before a tap;
+                  LocalInfoLookup.m, LocalInfoReview.m) asks iTunes Search (term from the shown title and artist, or
+                  the file name cleaned of brackets, a leading track number and words like official or lyrics;
+                  media=music, entity=song, limit=10, the device's country; ephemeral, 15 s, no Low Data Mode, 2 MiB,
+                  redirects only to itunes.apple.com), keeps results within 3 s of the file's length, ranks them by
+                  title, artist and length, and shows the best beside the current values with a checkbox per
+                  differing field and Other Matches; Use only fills the sheet, the cover fetched then from an https
+                  mzstatic.com URL (4 MiB, decoded, then the picked-cover path), and Save stores it as any edit.
+                  Successful answers are kept in memory for the launch, 32 at most; harness/local-files/
+                  suggest-build.py and suggest-sim.py. Their
                   lyrics are kept under the URI and asked of the sources by name, since Spotify never asks for them;
                   with no source switched on, of LRCLIB alone, which then gets the file's title, artist, album and
                   length. A rename gives a new key (a cover alone does not), asked for at once while the file plays.

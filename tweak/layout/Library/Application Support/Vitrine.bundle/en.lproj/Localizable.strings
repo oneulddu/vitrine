@@ -485,6 +485,21 @@
 "settings.edit_info.not_an_image.message" = "Pick a JPEG, PNG or HEIC file.";
 "settings.edit_info.not_an_image.title" = "Not an image";
 "settings.edit_info.restore.title" = "Restore file's info";
+"settings.edit_info.suggest.comparison" = "Current: %@\nSuggested: %@";
+"settings.edit_info.suggest.cover_available" = "New cover available";
+"settings.edit_info.suggest.cover_error" = "The cover could not be loaded. Try again or uncheck Cover.";
+"settings.edit_info.suggest.cover_note" = "The suggested cover downloads only when you tap Use with Cover checked.";
+"settings.edit_info.suggest.empty" = "Apple Music has no song with this name within three seconds of this file's length.";
+"settings.edit_info.suggest.error" = "iTunes did not answer. Try again.";
+"settings.edit_info.suggest.low_data" = "Find Info is unavailable in Low Data Mode.";
+"settings.edit_info.suggest.other" = "Other Matches";
+"settings.edit_info.suggest.privacy" = "The song's name is sent to Apple's iTunes Search.";
+"settings.edit_info.suggest.reject" = "Not This Song";
+"settings.edit_info.suggest.title" = "Find Info";
+"settings.edit_info.suggest.unknown" = "Unknown";
+"settings.edit_info.suggest.unknown_duration" = "This file's length is unknown. Matches are not filtered by duration.";
+"settings.edit_info.suggest.use" = "Use";
+"settings.edit_info.suggest.year" = "Year";
 "settings.edit_info.title" = "Edit info";
 
 "settings.environment.app_changes.message" = "Some of what Vitrine does needs changes to the app that only its IPA build makes. Without them, %@. Build the IPA with Vitrine instead of injecting its .deb.";

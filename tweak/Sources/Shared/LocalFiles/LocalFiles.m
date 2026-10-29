@@ -146,12 +146,7 @@ NSString *SGLocalFileCoverInURL(NSString *url) {
     return path;
 }
 
-UIImage *SGLocalFileReadCover(NSURL *url) {
-    if (!url) return nil;
-    BOOL scoped = [url startAccessingSecurityScopedResource];
-    @try {
-        CGImageSourceRef source = CGImageSourceCreateWithURL((__bridge CFURLRef)url,
-            (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache: @NO});
+static UIImage *readCoverSource(CGImageSourceRef source) {
         if (!source) return nil;
         CGImageRef thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)@{
             (id)kCGImageSourceCreateThumbnailFromImageAlways: @YES,
@@ -164,6 +159,20 @@ UIImage *SGLocalFileReadCover(NSURL *url) {
         UIImage *image = [UIImage imageWithCGImage:thumbnail];
         CGImageRelease(thumbnail);
         return image;
+}
+
+UIImage *SGLocalFileReadCoverData(NSData *data) {
+    if (!data.length) return nil;
+    return readCoverSource(CGImageSourceCreateWithData((__bridge CFDataRef)data,
+        (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache: @NO}));
+}
+
+UIImage *SGLocalFileReadCover(NSURL *url) {
+    if (!url) return nil;
+    BOOL scoped = [url startAccessingSecurityScopedResource];
+    @try {
+        return readCoverSource(CGImageSourceCreateWithURL((__bridge CFURLRef)url,
+            (__bridge CFDictionaryRef)@{(id)kCGImageSourceShouldCache: @NO}));
     } @finally {
         if (scoped) [url stopAccessingSecurityScopedResource];
     }

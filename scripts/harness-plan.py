@@ -100,6 +100,8 @@ HARNESSES = [
      "run": "sh harness/listening-stats/build.sh && harness/listening-stats/build/listening-stats"},
     {"name": "Local files and LRC", "dir": "local-files", "theos": True,
      "run": "sh harness/local-files/build.sh"},
+    {"name": "Local file Find Info", "dir": "local-files",
+     "run": "python3 harness/local-files/suggest-build.py"},
     {"name": "Lyrics menu translation", "dir": "lyrics",
      "run": "sh harness/lyrics/translation-check.sh"},
     {"name": "Lyrics clips", "dir": "lyrics-clip",

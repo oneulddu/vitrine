@@ -72,6 +72,7 @@ their check executable in the workflow.
 | `head-gestures/build.sh` | Synthetic motion traces with expected gestures. |
 | `listening-stats/build.sh` | Synthetic imports, calendar cases and 100k-row checks. |
 | `local-files/build.sh` | Isolated metadata and imported LRC checks, the cover resolver, and the native cover watcher (`watcher.m`) updating to system artwork that arrives after its retries. |
+| `local-files/suggest-build.py` | Find Info's pure parts on the Mac: query cleaning, the three-second duration window, ranking, JSON parsing and size caps, artwork URL rewriting, and that accepting only fills the editor (with mutations). |
 | `lyrics/translation-check.sh` | Catalyst lyrics-menu assertions, not screenshots alone. |
 | `lyrics-clip/build.sh` | Default synthetic still/animated clips with decode assertions. |
 | `lyrics-pip/build.sh` | Catalyst PiP text decision (`LyricsPiPText.m`) for synthetic lines and positions, plus frame fitting checks (`LyricsPiPFrame.m`) and sample frame PNGs. |
@@ -145,6 +146,7 @@ scenarios are not promoted to CI by merely compiling them.
 | `live-activity-page/build.sh` | iOS simulator UI. |
 | `local-files/lyrics/build.sh` | iOS simulator lyrics UI. |
 | `local-files/sim/build-sim.sh` | iOS simulator editor and screenshots. |
+| `local-files/suggest-sim.py` | iOS simulator Edit info with Find Info against network fixtures: review sheet, Use, the picked cover's 1200 px bound, save through the overlay. |
 | `lossless/build.sh` | iOS simulator decoder probe. |
 | `lossless/handoff-build.sh` | iOS simulator audio chain. |
 | `lyrics/build.sh` | iOS simulator lyrics UI. |

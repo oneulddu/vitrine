@@ -16,6 +16,8 @@
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "LocalFiles.h"
+#import "LocalInfoLookup.h"
+#import "LocalInfoReview.h"
 
 // The sheet's own measures, as Speed and pitch has them.
 static const CGFloat kRowHeight = 56, kSideMargin = 16, kIconSide = 24;
@@ -63,6 +65,10 @@ static NSString *trimmed(NSString *text) {
     BOOL _hasStoredCover;
     BOOL _coverLoading;
     NSUInteger _coverRequest;
+    SGLocalInfoLookup *_infoLookup;
+    BOOL _findingInfo;
+    NSUInteger _infoRequest;
+    UIBarButtonItem *_findInfoButton;
 }
 
 - (instancetype)initWithURI:(NSString *)uri {
@@ -109,7 +115,31 @@ static NSString *trimmed(NSString *text) {
     self.title = SGL(@"settings.edit_info.title", @"Edit info");
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancel)];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemSave target:self action:@selector(save)];
+    id suggest = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLocalFileSuggest];
+    if (!suggest || [suggest boolValue]) {
+        _infoLookup = [SGLocalInfoLookup new];
+        _findInfoButton = [[UIBarButtonItem alloc] initWithTitle:SGL(@"settings.edit_info.suggest.title", @"Find Info")
+            style:UIBarButtonItemStylePlain target:self action:@selector(findInfo)];
+        self.toolbarItems = @[[[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil],
+                             _findInfoButton,
+                             [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil]];
+    }
     return self;
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self.navigationController setToolbarHidden:!_findInfoButton animated:NO];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    // Presenting the review/picker is not leaving the editor.
+    if (self.isBeingDismissed || self.navigationController.isBeingDismissed || self.isMovingFromParentViewController) {
+        ++_infoRequest;
+        [_infoLookup cancel];
+        _findingInfo = NO;
+    }
 }
 
 - (void)viewDidLoad {
@@ -144,6 +174,7 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (void)dealloc {
+    [_infoLookup cancel];
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
@@ -253,6 +284,59 @@ static NSString *trimmed(NSString *text) {
 
 #pragma mark - the actions
 
+- (void)acceptInfo:(NSDictionary<NSString *, NSString *> *)names cover:(UIImage *)cover {
+    for (NSUInteger i = 0; i < _fields.count; i++)
+        if (names[fieldKeys()[i]]) _fields[i].text = names[fieldKeys()[i]];
+    if (cover) [self useCover:cover];
+    else [self changed];
+}
+
+- (void)findInfo {
+    if (_findingInfo || !_infoLookup || _coverLoading) return;
+    [self.view endEditing:YES];
+    NSString *title = _fields[0].text ?: @"", *artist = _fields[1].text ?: @"";
+    NSString *query = SGLocalInfoQuery(title, artist, _tags[@"title"]);
+    NSTimeInterval seconds = [_tags[@"seconds"] doubleValue];
+    NSUInteger request = ++_infoRequest;
+    _findingInfo = YES;
+    _findInfoButton.enabled = NO;
+    __weak typeof(self) weakSelf = self;
+    [_infoLookup search:SGLocalInfoSearchURL(query, NSLocale.currentLocale.countryCode)
+        completion:^(NSArray<NSDictionary *> *parsed, NSError *error) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            NSArray *songs = parsed ? SGLocalInfoRank(parsed, title.length ? title : query, artist, seconds) : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                SGLocalFileEditor *editor = weakSelf;
+                if (!editor || request != editor->_infoRequest) return;
+                editor->_findingInfo = NO;
+                editor->_findInfoButton.enabled = YES;
+                if (!editor.view.window || editor.presentedViewController ||
+                    editor.navigationController.topViewController != editor ||
+                    editor.isBeingDismissed || editor.navigationController.isBeingDismissed) return;
+                if (songs.count) {
+                    SGLocalInfoReview *review = [[SGLocalInfoReview alloc] initWithSongs:songs current:editor.names
+                        cover:editor->_cover durationUnknown:seconds == 0 accept:^(NSDictionary *names, UIImage *cover) {
+                            [weakSelf acceptInfo:names cover:cover];
+                        }];
+                    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:review];
+                    SGPresentDark(nav);
+                    [editor presentViewController:nav animated:YES completion:nil];
+                    return;
+                }
+                NSString *message = parsed ?
+                    SGL(@"settings.edit_info.suggest.empty", @"Apple Music has no song with this name within three seconds of this file's length.") :
+                    [error.userInfo[NSURLErrorNetworkUnavailableReasonKey] integerValue] == NSURLErrorNetworkUnavailableReasonConstrained ?
+                    SGL(@"settings.edit_info.suggest.low_data", @"Find Info is unavailable in Low Data Mode.") :
+                    SGL(@"settings.edit_info.suggest.error", @"iTunes did not answer. Try again.");
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:nil message:message preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
+                SGPresentDark(alert);
+                [editor presentViewController:alert animated:YES completion:nil];
+            });
+        });
+    }];
+}
+
 - (void)restore {
     for (NSUInteger i = 0; i < _fields.count; i++) _fields[i].text = _tags[fieldKeys()[i]];
     [self.view endEditing:YES];
@@ -261,6 +345,8 @@ static NSString *trimmed(NSString *text) {
 
 - (void)save {
     if (_coverLoading) return;
+    ++_infoRequest;
+    [_infoLookup cancel];
     _coverRequest++;
     [self.view endEditing:YES];
     SGLocalFileSaveEdit(_uri, self.names, _coverChange == SGCoverPicked ? _cover : nil, _coverChange != SGCoverRemoved);
@@ -270,6 +356,8 @@ static NSString *trimmed(NSString *text) {
 - (void)cancel {
     if (self.isDirty) [self confirmDiscard];
     else {
+        ++_infoRequest;
+        [_infoLookup cancel];
         _coverRequest++;
         [self dismissViewControllerAnimated:YES completion:nil];
     }
@@ -278,6 +366,8 @@ static NSString *trimmed(NSString *text) {
 - (void)confirmDiscard {
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
     [sheet addAction:[UIAlertAction actionWithTitle:SGL(@"settings.edit_info.discard_changes", @"Discard changes") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+        ++self->_infoRequest;
+        [self->_infoLookup cancel];
         self->_coverRequest++;
         [self dismissViewControllerAnimated:YES completion:nil];
     }]];
@@ -291,6 +381,10 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (void)pickCoverFromFiles:(BOOL)files {
+    ++_infoRequest;
+    [_infoLookup cancel];
+    _findingInfo = NO;
+    _findInfoButton.enabled = YES;
     [self.view endEditing:YES];
     UIViewController *picker;
     if (files) {
@@ -365,6 +459,7 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
+    if (section == 2 && _findInfoButton) return SGL(@"settings.edit_info.suggest.privacy", @"The song's name is sent to Apple's iTunes Search.");
     return section == 0 ? SGL(@"settings.edit_info.footer", @"Kept by Vitrine for this file. The file itself is not changed.") : nil;
 }
 

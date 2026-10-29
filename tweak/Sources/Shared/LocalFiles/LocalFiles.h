@@ -45,6 +45,8 @@ void SGLocalFileLoadCover(NSString *uri, void (^completion)(UIImage *image));
 // Off main: decode an oriented thumbnail directly from a picked file, at the cover's save size.
 // Balances security-scoped access; nil for an unreadable/non-image file.
 UIImage *SGLocalFileReadCover(NSURL *url);
+// Off main: the same bounded decoder for a downloaded image, without writing a temporary file.
+UIImage *SGLocalFileReadCoverData(NSData *data);
 // Off main for a Photos image without a file URL: bound its size and apply imageOrientation.
 UIImage *SGLocalFileThumbnail(UIImage *image);
 // Where the stored covers are, and the one an edit names; nil when it names none.
