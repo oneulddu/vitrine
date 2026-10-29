@@ -22,6 +22,19 @@ static double number(NSString *key, double fallback, double low, double high) {
     double n = [value respondsToSelector:@selector(doubleValue)] ? [value doubleValue] : fallback;
     return isfinite(n) ? MIN(high, MAX(low, n)) : fallback;
 }
+// Nothing here registers a font with Core Text on the main thread (a multi-MB Korean family takes seconds). A
+// family not registered yet is asked for off main and answers nil, which draws in the system font until
+// SGFontLibraryChangedNotification lands; Fonts.x has already registered the app font at launch.
+static NSString *libraryFamily(NSString *identifier) {
+    NSString *family = SGFontLibraryRegisteredFamily(identifier);
+    if (!family) SGFontLibraryRegisterAsync(identifier, nil);
+    return family;
+}
+static NSString *customFamily(void) {
+    NSString *family = SGRegisteredCustomFont();
+    if (!family) SGRegisterCustomFontAsync();
+    return family;
+}
 static NSString *appFont(void) {
     NSUserDefaults *d = NSUserDefaults.standardUserDefaults;
     switch (SGAppFontChosen()) {
@@ -29,9 +42,9 @@ static NSString *appFont(void) {
         case SGAppFontRounded: return @"rounded";
         case SGAppFontSerif: return @"serif";
         case SGAppFontMono: return @"mono";
-        case SGAppFontCustom: return SGRegisterCustomFont() ?: @"system";
+        case SGAppFontCustom: return customFamily() ?: @"system";
         case SGAppFontFamily: return [d stringForKey:SGKeyAppFontFamily] ?: @"system";
-        case SGAppFontLibrary: return SGFontLibraryRegister([d stringForKey:SGKeyAppFontLibrary]) ?: @"system";
+        case SGAppFontLibrary: return libraryFamily([d stringForKey:SGKeyAppFontLibrary]) ?: @"system";
         default: return @"Spotify Mix UI";
     }
 }
@@ -50,8 +63,8 @@ static NSString *resolvedFont(NSString *font) {
     if (![key isEqual:next]) {
         key = next;
         resolved = [font isEqual:@"app"] ? appFont() :
-            [font isEqual:@"custom"] ? SGRegisterCustomFont() :
-            [font hasPrefix:@"library:"] ? SGFontLibraryRegister([font substringFromIndex:8]) : font;
+            [font isEqual:@"custom"] ? customFamily() :
+            [font hasPrefix:@"library:"] ? libraryFamily([font substringFromIndex:8]) : font;
     }
     return resolved ?: @"system";
 }
@@ -76,17 +89,17 @@ void SGLyricsPiPResetStyle(void) {
     for (NSUInteger i = 0; i < 3; i++)
         for (NSString *field in @[@"size", @"weight"]) [d removeObjectForKey:SGLyricsPiPRoleKey(i, field)];
 }
-NSArray<NSString *> *SGLyricsPiPFontChoices(void) {
+NSArray<NSString *> *SGLyricsPiPFontCandidates(void) {
     NSMutableArray *choices = [NSMutableArray arrayWithArray:@[@"app", @"system", @"rounded", @"serif", @"mono"]];
     [choices addObjectsFromArray:SGAppFontFamilies()];
-    NSString *custom = SGRegisterCustomFont();
-    if (custom) [choices addObject:@"custom"];
-    for (SGLibraryFont *font in SGFontLibrary()) {
-        if (!SGFontLibraryInstalled(font.identifier)) continue;
-        NSString *family = SGFontLibraryRegister(font.identifier);
-        if (family) [choices addObject:[@"library:" stringByAppendingString:font.identifier]];
-    }
+    [choices addObject:@"custom"];
+    for (SGLibraryFont *font in SGFontLibrary()) [choices addObject:[@"library:" stringByAppendingString:font.identifier]];
     return choices;
+}
+BOOL SGLyricsPiPFontAvailable(NSString *identifier) {
+    if ([identifier isEqual:@"custom"]) return SGRegisteredCustomFont() != nil;
+    if ([identifier hasPrefix:@"library:"]) return SGFontLibraryRegisteredFamily([identifier substringFromIndex:8]) != nil;
+    return YES;
 }
 NSString *SGLyricsPiPFontName(NSString *identifier) {
     if ([identifier isEqual:@"app"]) return SGL(@"settings.lyrics.pip.font.app", @"App font");
@@ -94,7 +107,7 @@ NSString *SGLyricsPiPFontName(NSString *identifier) {
     if ([identifier isEqual:@"rounded"]) return @"SF Rounded";
     if ([identifier isEqual:@"serif"]) return @"New York";
     if ([identifier isEqual:@"mono"]) return @"SF Mono";
-    if ([identifier isEqual:@"custom"]) return SGRegisterCustomFont() ?: SGL(@"settings.lyrics.pip.font.imported", @"Imported font");
+    if ([identifier isEqual:@"custom"]) return SGRegisteredCustomFont() ?: SGL(@"settings.lyrics.pip.font.imported", @"Imported font");
     if ([identifier hasPrefix:@"library:"]) return SGFontLibraryFont([identifier substringFromIndex:8]).name ?: @"San Francisco";
     return identifier;
 }

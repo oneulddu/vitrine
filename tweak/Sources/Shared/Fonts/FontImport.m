@@ -64,7 +64,7 @@ static NSString *importedFamily(void) {
 
 // A face iOS already carries under the same name (Chalkduster, say) is refused as a duplicate and is there
 // all the same, so what counts is whether the family has faces afterward. Files that are gone are skipped.
-NSString *SGRegisterCustomFont(void) {
+static NSString *registerCustom(void) {
     NSString *family = importedFamily();
     for (NSURL *url in storedFiles()) {
         CFErrorRef error = NULL;
@@ -74,6 +74,35 @@ NSString *SGRegisterCustomFont(void) {
         }
     }
     return family && [UIFont fontNamesForFamilyName:family].count ? family : nil;
+}
+
+// What registerCustom answered, published on the main thread by SGRegisterCustomFont or SGRegisterCustomFontAsync.
+static NSString *sg_registeredCustom;
+
+NSString *SGRegisterCustomFont(void) {
+    NSString *family = registerCustom();
+    sg_registeredCustom = family;
+    return family;
+}
+
+NSString *SGRegisteredCustomFont(void) {
+    return [sg_registeredCustom isEqualToString:[NSUserDefaults.standardUserDefaults stringForKey:SGKeyAppFontName]] ? sg_registeredCustom : nil;
+}
+
+// registerCustom on a queue of its own, one registration at a time; the answer is published on main.
+void SGRegisterCustomFontAsync(void) {
+    if (SGRegisteredCustomFont()) return;   // the files are registered already
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("spotifyglass.fontImport.registration", DISPATCH_QUEUE_SERIAL); });
+    dispatch_async(queue, ^{
+        NSString *family = registerCustom();
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (sg_registeredCustom == family || [sg_registeredCustom isEqualToString:family]) return;
+            sg_registeredCustom = family;
+            [NSNotificationCenter.defaultCenter postNotificationName:SGFontLibraryChangedNotification object:nil userInfo:@{@"identifier": @"custom"}];
+        });
+    });
 }
 
 // The imported files unregistered and deleted, and the choice forgotten.
@@ -187,17 +216,6 @@ static void pickFont(void (^done)(void)) {
 
 #pragma mark - the page
 
-// SGRegisterCustomFont on a queue of its own, one registration at a time; `done` runs on main with its answer.
-static void registerCustomOffMain(void (^done)(NSString *family)) {
-    static dispatch_queue_t queue;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ queue = dispatch_queue_create("spotifyglass.fontImport.registration", DISPATCH_QUEUE_SERIAL); });
-    dispatch_async(queue, ^{
-        NSString *family = SGRegisterCustomFont();
-        dispatch_async(dispatch_get_main_queue(), ^{ done(family); });
-    });
-}
-
 // Each choice is drawn in its own font. Core Text makes it, so the font chosen now (Fonts.x hooks UIFont) does
 // not dress every row in itself.
 static UIFont *previewFont(NSString *nameOrFamily, BOOL family, CGFloat size) {
@@ -243,7 +261,6 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     NSArray<SGLibraryFont *> *_free;   // the free families on this iPhone
     UIView *_footer;
     id _observer;
-    NSString *_customFamily;   // what registering the imported files answered, once it has landed
     BOOL _visible;             // between viewWillAppear: and viewDidDisappear:
 }
 
@@ -275,7 +292,9 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     // family was added or removed.
     _observer = [NSNotificationCenter.defaultCenter addObserverForName:SGFontLibraryChangedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         SGFontPage *strong = page;
-        if (strong && strong->_visible) [strong reloadFree];   // viewWillAppear: refreshes it when it comes back
+        if (!strong || !strong->_visible) return;   // viewWillAppear: refreshes it when it comes back
+        [strong refreshFooter];   // the imported family's style count
+        [strong reloadFree];
     }];
 }
 
@@ -300,15 +319,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
 // the cells registers a font synchronously.
 - (void)refresh {
     SGFontLibraryRegisterInstalled();
-    __weak SGFontPage *page = self;
-    registerCustomOffMain(^(NSString *family) {
-        SGFontPage *strong = page;
-        if (!strong || strong->_customFamily == family || [strong->_customFamily isEqualToString:family]) return;
-        strong->_customFamily = family;
-        if (!strong.isViewLoaded) return;
-        [strong refreshFooter];
-        [strong.tableView reloadData];
-    });
+    SGRegisterCustomFontAsync();
     [self refreshFooter];
     [self reloadFree];
 }
@@ -322,7 +333,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
 
 // The imported family once its files are registered; nil before that and when they are gone.
 - (NSString *)customFamily {
-    return [_customFamily isEqualToString:importedFamily()] ? _customFamily : nil;
+    return [SGRegisteredCustomFont() isEqualToString:importedFamily()] ? SGRegisteredCustomFont() : nil;
 }
 
 // How many faces the imported family has on this iPhone.

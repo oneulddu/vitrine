@@ -19,6 +19,10 @@ SGLyricsPiPStyle *SGLyricsPiPReadStyle(void);
 NSString *SGLyricsPiPRoleKey(NSUInteger role, NSString *field);
 void SGLyricsPiPResetStyle(void);
 // Stable identifiers, not indexes into a device-dependent font list. Never writes the app font.
-NSArray<NSString *> *SGLyricsPiPFontChoices(void);
+// Every font the PiP can offer, and whether it can be drawn now: an imported or downloaded family only once it is
+// registered (FontLibrary.h, Fonts.h), which the caller asks for and learns of by SGFontLibraryChangedNotification.
+// Both read caches; neither registers anything.
+NSArray<NSString *> *SGLyricsPiPFontCandidates(void);
+BOOL SGLyricsPiPFontAvailable(NSString *identifier);
 NSString *SGLyricsPiPFontName(NSString *identifier);
 CTFontRef SGLyricsPiPCreateFont(SGLyricsPiPStyle *style, NSUInteger role, CGFloat size) CF_RETURNS_RETAINED;

@@ -217,7 +217,10 @@ void SGTestSettings(void) {
     NSString *pronunciationKey = @"spotifyglass.redesign.lyricsPronunciation", *translationKey = @"spotifyglass.redesign.lyricsTranslation";
     SGTestSetting(pronunciationKey, @NO);
     SGTestSetting(translationKey, @NO);
+    extern int SGTestFontAsks;
+    int asksBefore = SGTestFontAsks;
     SGModPage *fonts = (id)page.sections[2].rows[1].page();
+    SGTestAssert(SGTestFontAsks == asksBefore + 2, @"opening the font page asks for the downloaded and the imported families");
     UIImageView *fontPreview = previewIn(fonts, CGSizeMake(667, 375));
     SGTestAssert(fontPreview && SGTestPump(^BOOL { return shows(fontPreview, sample(NO, NO)); }) && [fontPreview.accessibilityLabel isEqual:@"Sample preview"] &&
         [fontPreview.accessibilityValue containsString:@"별빛을 따라 걸어요"] && ![fontPreview.accessibilityValue containsString:@"Byeolbicheul"] &&

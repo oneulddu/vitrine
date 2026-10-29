@@ -14,7 +14,10 @@ NSArray<NSString *> *SGAppFontFamilies(void) { return @[]; }
 NSString *SGRegisterCustomFont(void) { return nil; }
 NSArray<SGLibraryFont *> *SGFontLibrary(void) { return @[]; }
 BOOL SGFontLibraryInstalled(NSString *identifier) { return NO; }
-NSString *SGFontLibraryRegister(NSString *identifier) { return nil; }
+NSString *SGRegisteredCustomFont(void) { return nil; }
+void SGRegisterCustomFontAsync(void) {}
+NSString *SGFontLibraryRegisteredFamily(NSString *identifier) { return nil; }
+void SGFontLibraryRegisterAsync(NSString *identifier, void (^done)(NSString *family)) {}
 SGLibraryFont *SGFontLibraryFont(NSString *identifier) { return nil; }
 
 double SGPlayerSpeed(void) { return 1; }

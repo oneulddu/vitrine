@@ -7,7 +7,8 @@
 // Main thread, except where a function says otherwise.
 #import <Foundation/Foundation.h>
 
-// Posted on the main thread when a download moves on, ends, or a family is removed. userInfo: @"identifier".
+// Posted on the main thread when a download moves on, ends, or a family is removed, and when the imported
+// family (Fonts.h) becomes registered (identifier @"custom"). userInfo: @"identifier".
 #define SGFontLibraryChangedNotification @"SGFontLibraryChangedNotification"
 
 @interface SGLibraryFont : NSObject

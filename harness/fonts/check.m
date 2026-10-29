@@ -36,8 +36,10 @@ static bool harnessUnregister(CFURLRef url, CTFontManagerScope scope, CFErrorRef
 #define CTFontManagerUnregisterFontsForURL harnessUnregister
 #import "Shared/Fonts/FontLibrary.m"
 #import "Settings/SGModPage.h"
+#import "Shared/LyricsPiP/LyricsPiPStyle.h"
+#import "Shared/LyricsPiP/LyricsPiP.h"
 
-SGAppFont SGAppFontChosen(void) { return SGAppFontSpotify; }
+SGAppFont SGAppFontChosen(void) { return (SGAppFont)[NSUserDefaults.standardUserDefaults integerForKey:SGKeyAppFont]; }
 NSArray<NSString *> *SGAppFontNames(void) { return @[]; }
 NSArray<NSString *> *SGAppFontFamilies(void) { return @[]; }
 
@@ -224,6 +226,105 @@ int main(void) { @autoreleasepool {
     [NSNotificationCenter.defaultCenter removeObserver:pickerToken];
     for (NSString *identifier in @[@"gowundodum", @"dohyeon", @"jua", @"sunflower"]) SGFontLibraryRemove(identifier);
     [NSFileManager.defaultManager removeItemAtURL:libraryFolder() error:nil];
-    puts("PASS: free fonts register off main on a serial queue, publish and refresh rows on main, a removal beats a pending registration, and the Font page and the Free fonts page stay free while Core Text is busy and update when registration lands");
+
+    // The Lyrics PiP style (LyricsPiPStyle.m) with a downloaded family and an imported one, neither registered
+    // yet, and Core Text holding both registrations: building the font choices and resolving the PiP font asks
+    // for them without waiting, so a block queued on main runs while Core Text is still busy; the font system
+    // stands in until they land, and then the choice is listed and the font resolves.
+    install(@"nanumgothic");
+    HARNESS_CHECK([NSFileManager.defaultManager createDirectoryAtURL:importedFolder withIntermediateDirectories:YES attributes:nil error:nil]);
+    HARNESS_CHECK([NSFileManager.defaultManager createFileAtPath:[importedFolder URLByAppendingPathComponent:@"Harness.ttf"].path contents:nil attributes:nil]);
+    [store setObject:@[@"Harness.ttf"] forKey:SGKeyAppFontFiles];
+    [store setObject:@"Courier" forKey:SGKeyAppFontName];   // the family the imported file carries; the library's is Helvetica
+    HARNESS_CHECK(!SGFontLibraryRegisteredFamily(@"nanumgothic") && !SGRegisteredCustomFont());
+    atomic_store(&sg_mainCalls, 0);
+    sg_holdRegistration = dispatch_semaphore_create(0);
+    sg_holdImported = dispatch_semaphore_create(0);
+    sg_registrationEntered = dispatch_semaphore_create(0);
+    NSMutableSet<NSString *> *pipAnnounced = [NSMutableSet set];
+    id pipToken = [NSNotificationCenter.defaultCenter addObserverForName:SGFontLibraryChangedNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note) { [pipAnnounced addObject:note.userInfo[@"identifier"]]; }];
+    // Resolving each PiP font asks for its family: the first starts the library's registration, the second the
+    // imported file's.
+    [store setObject:@"library:nanumgothic" forKey:SGKeyPiPFont];
+    HARNESS_CHECK([SGLyricsPiPReadStyle().font isEqual:@"system"]);
+    [store setObject:@"custom" forKey:SGKeyPiPFont];
+    HARNESS_CHECK([SGLyricsPiPReadStyle().font isEqual:@"system"]);
+    for (int held = 0; held < 2; held++)
+        HARNESS_CHECK(dispatch_semaphore_wait(sg_registrationEntered, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC)) == 0);
+    queuedRan = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ queuedRan = YES; });
+    pumpUntil(^BOOL { return queuedRan; });
+    HARNESS_CHECK(!SGLyricsPiPFontAvailable(@"library:nanumgothic") && !SGLyricsPiPFontAvailable(@"custom"));
+    HARNESS_CHECK([SGLyricsPiPReadStyle().font isEqual:@"system"] && ![SGLyricsPiPFontName(@"custom") isEqual:@"Courier"]);
+    HARNESS_CHECK(atomic_load(&sg_mainCalls) == 0);
+    for (int release = 0; release < 5; release++) dispatch_semaphore_signal(sg_holdRegistration);
+    dispatch_semaphore_signal(sg_holdImported);
+    pumpUntil(^BOOL { return [pipAnnounced containsObject:@"nanumgothic"] && [pipAnnounced containsObject:@"custom"]; });
+    HARNESS_CHECK(SGLyricsPiPFontAvailable(@"library:nanumgothic") && SGLyricsPiPFontAvailable(@"custom"));
+    HARNESS_CHECK([SGLyricsPiPReadStyle().font isEqual:@"Courier"] && [SGLyricsPiPFontName(@"custom") isEqual:@"Courier"]);
+    [store setObject:@"library:nanumgothic" forKey:SGKeyPiPFont];
+    HARNESS_CHECK([SGLyricsPiPReadStyle().font isEqual:@"Helvetica"]);
+    // The imported files are registered: asking again, as the Font page does at every visit, registers nothing.
+    int registered = atomic_load(&sg_workerCalls);
+    for (int ask = 0; ask < 3; ask++) SGRegisterCustomFontAsync();
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.3]];
+    HARNESS_CHECK(atomic_load(&sg_workerCalls) == registered && atomic_load(&sg_mainCalls) == 0);
+    sg_holdRegistration = sg_holdImported = nil;
+    [NSNotificationCenter.defaultCenter removeObserver:pipToken];
+
+    // The Lyrics PiP font page (LyricsPiPSettings.m), opened while Core Text holds both registrations: its rows
+    // for the two families are not there, and they come in without reopening once the registrations land.
+    SGFontLibraryRemove(@"nanumgothic");
+    install(@"nanumgothic");
+    [store setObject:@"Menlo" forKey:SGKeyAppFontName];   // another family name, so the one cached above no longer counts
+    HARNESS_CHECK(!SGRegisteredCustomFont() && !SGFontLibraryRegisteredFamily(@"nanumgothic"));
+    atomic_store(&sg_mainCalls, 0);
+    sg_holdRegistration = dispatch_semaphore_create(0);
+    sg_holdImported = dispatch_semaphore_create(0);
+    sg_registrationEntered = dispatch_semaphore_create(0);
+    SGModPage *pip = (SGModPage *)SGLyricsPiPRow().page();
+    SGModPage *fontPage = (SGModPage *)pip.sections[2].rows[1].page();   // opening it asks for the families
+    [fontPage loadViewIfNeeded];
+    fontPage.tableView.frame = CGRectMake(0, 0, 390, 2400);
+    [fontPage viewWillAppear:NO];
+    for (int held = 0; held < 2; held++)
+        HARNESS_CHECK(dispatch_semaphore_wait(sg_registrationEntered, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC)) == 0);
+    queuedRan = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ queuedRan = YES; });
+    pumpUntil(^BOOL { return queuedRan; });
+    NSArray<NSString *> * (^fontRows)(void) = ^NSArray<NSString *> * {
+        NSMutableArray<NSString *> *titles = [NSMutableArray array];
+        for (NSInteger row = 0; row < [fontPage tableView:fontPage.tableView numberOfRowsInSection:0]; row++) {
+            UITableViewCell *cell = [fontPage tableView:fontPage.tableView cellForRowAtIndexPath:[NSIndexPath indexPathForRow:row inSection:0]];
+            [titles addObject:((UIListContentConfiguration *)cell.contentConfiguration).text];
+        }
+        return titles;
+    };
+    HARNESS_CHECK([fontRows() containsObject:@"San Francisco"] && ![fontRows() containsObject:@"Nanum Gothic"] && ![fontRows() containsObject:@"Menlo"]);
+    HARNESS_CHECK(atomic_load(&sg_mainCalls) == 0);
+    for (int release = 0; release < 5; release++) dispatch_semaphore_signal(sg_holdRegistration);
+    dispatch_semaphore_signal(sg_holdImported);
+    pumpUntil(^BOOL { return [fontRows() containsObject:@"Nanum Gothic"] && [fontRows() containsObject:@"Menlo"]; });
+    HARNESS_CHECK(atomic_load(&sg_mainCalls) == 0);
+    [fontPage viewDidDisappear:NO];
+    sg_holdRegistration = sg_holdImported = nil;
+    // The app font Fonts.x registered at launch resolves at once, with no notification to wait for.
+    SGFontLibraryRemove(@"nanumgothic");
+    install(@"lato");
+    HARNESS_CHECK([SGFontLibraryRegister(@"lato") isEqual:@"Helvetica"]);   // the launch path
+    [store setObject:@"app" forKey:SGKeyPiPFont];
+    SGSetInt(SGKeyAppFont, SGAppFontLibrary);
+    [store setObject:@"lato" forKey:SGKeyAppFontLibrary];
+    HARNESS_CHECK([SGLyricsPiPReadStyle().font isEqual:@"Helvetica"]);
+    [store removeObjectForKey:SGKeyPiPFont];
+    [store removeObjectForKey:SGKeyAppFont];
+    [store removeObjectForKey:SGKeyAppFontLibrary];
+    [store removeObjectForKey:SGKeyAppFontFiles];
+    [store removeObjectForKey:SGKeyAppFontName];
+    [NSFileManager.defaultManager removeItemAtURL:importedFolder error:nil];
+    SGFontLibraryRemove(@"lato");
+    [NSFileManager.defaultManager removeItemAtURL:libraryFolder() error:nil];
+    puts("PASS: free fonts register off main on a serial queue, publish and refresh rows on main, a removal beats a pending registration, the Font page, the Free fonts page and the Lyrics PiP font choices stay free while Core Text is busy and update when registration lands");
     return 0;
 } }

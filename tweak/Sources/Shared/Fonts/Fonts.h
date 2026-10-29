@@ -32,8 +32,17 @@ NSArray<NSString *> *SGAppFontFamilies(void);   // More fonts: the families this
 NSArray *SGFontSelectionSnapshot(void);
 BOOL SGFontSelectionUnchanged(NSArray *snapshot);
 // Registers the imported files with Core Text for this process and answers the family name, or nil when no
-// file is left or Core Text will not take them.
+// file is left or Core Text will not take them, and publishes it for SGRegisteredCustomFont. It waits for Core
+// Text, so it is for the main thread's launch path (Fonts.x) and an import's own commit; anything that is
+// drawn while the person waits uses SGRegisterCustomFontAsync.
 NSString *SGRegisterCustomFont(void);
+// What SGRegisterCustomFont answered, or SGRegisterCustomFontAsync once it has landed, for the family now
+// imported; nil until then and when the import is gone. Main thread. Reads no file and registers nothing.
+NSString *SGRegisteredCustomFont(void);
+// SGRegisterCustomFont on a queue of its own (one registration at a time). Returns at once, and does nothing
+// when SGRegisteredCustomFont has the family already; else on the main thread it publishes the name and, when it
+// is new, posts SGFontLibraryChangedNotification (FontLibrary.h) for @"custom".
+void SGRegisterCustomFontAsync(void);
 // The family name the faces share, or nil when they differ, one has none, or there are none.
 NSString *SGFontSingleFamily(NSArray<NSString *> *names);
 

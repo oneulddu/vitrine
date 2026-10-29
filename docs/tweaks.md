@@ -196,7 +196,14 @@ Shared:
                   fitting live in LyricsPiPFrame.m, with the shared CPU background renderer. LyricsPiPStyle.m
                   supplies square (640×640, default), landscape (800×450) and portrait (480×720) layouts,
                   cover/metadata visibility, alignment and independent PiP font selection from existing
-                  system, imported and library families. Original, pronunciation and translation each
+                  system, imported and library families (the font page asks for the downloaded and
+                  imported families when it opens, and each one's row shows, without scrolling the
+                  page, once it is registered; a PiP font whose family is not registered yet starts
+                  the registration off main and draws in the system font until
+                  SGFontLibraryChangedNotification lands,
+                  and the app font Fonts.x registered at launch resolves at once; nothing in
+                  LyricsPiPStyle.m registers with Core Text on main, checked by harness/fonts/).
+                  Original, pronunciation and translation each
                   have size/weight controls; defaults are 40/semibold and 26/regular for both supplements.
                   Text wraps and shrinks within its own box, with visible ellipsis when it still cannot fit.
                   The native Layout/Text/Background settings page previews the production renderer.
@@ -1426,7 +1433,8 @@ and registered again at each launch, each weight taken as the family's nearest f
 the files are gone. Swiping the row deletes the family. An import from before families (one file under
 spotifyglass.font.file) moves to spotifyglass.font.files and the family name on first use. Free fonts, between More fonts and Your fonts, lists
 the free families on this iPhone, each drawn in itself once FontLibrary.m has registered it off main and announced it, as is the imported family once its
-files are registered (opening the page or finishing a download never waits for Core Text; the launch registers them synchronously
+files are registered (opening the page or finishing a download never waits for Core Text; SGRegisteredCustomFont and
+SGFontLibraryRegisteredFamily give the names the Lyrics PiP font choices use; the launch registers them synchronously
 in Fonts.x, as the global font hook needs them first), and opens the free fonts page (Shared/Fonts/FontLibraryPage.m, also in Libraries & presets): sixteen SIL Open
 Font License families from github.com/google/fonts pinned to one commit, Korean first, each file and its OFL.txt checked against its
 size and SHA-256 (FontLibrary.m) before the family moves from a hidden folder into Application Support/Vitrine/Font Library, one

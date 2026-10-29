@@ -7,10 +7,14 @@
 
 SGAppFont SGAppFontChosen(void) { return [NSUserDefaults.standardUserDefaults integerForKey:SGKeyAppFont]; }
 NSArray *SGAppFontFamilies(void) { return @[@"Georgia", @"Avenir Next"]; }
-NSString *SGRegisterCustomFont(void) { return @"Georgia"; }
+NSString *SGRegisteredCustomFont(void) { return @"Georgia"; }
+int SGTestFontAsks;   // how many times the font page asked for the families, in pairs of library and imported
+void SGRegisterCustomFontAsync(void) { SGTestFontAsks++; }
+void SGFontLibraryRegisterInstalled(void) { SGTestFontAsks++; }
 NSArray *SGFontLibrary(void) { return @[]; }
 BOOL SGFontLibraryInstalled(NSString *identifier) { return NO; }
-NSString *SGFontLibraryRegister(NSString *identifier) { return nil; }
+NSString *SGFontLibraryRegisteredFamily(NSString *identifier) { return nil; }
+void SGFontLibraryRegisterAsync(NSString *identifier, void (^done)(NSString *family)) {}
 SGLibraryFont *SGFontLibraryFont(NSString *identifier) { return nil; }
 
 static NSString *fontName(SGLyricsPiPStyle *s, NSUInteger role) {

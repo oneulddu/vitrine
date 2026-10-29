@@ -6,6 +6,7 @@
 #import "Shared/LyricsBackground/LyricsBackgroundSettings.h"
 #import "LyricsPiPFrame.h"
 #import "Shared/Fonts/FontLibrary.h"
+#import "Shared/Fonts/Fonts.h"
 
 // The newest preview request of one page. A render running off main reads it to drop itself once a newer
 // request exists, so a dragged slider renders only where the finger stopped, not at every step.
@@ -102,7 +103,9 @@ dispatch_queue_t SGLyricsPiPPreviewQueue(void) {
         dispatch_async(dispatch_get_main_queue(), ^{
             self.refreshQueued = NO;
             [self updatePreview];
-            [self refreshVisibility];
+            // A page that is not shown recomputes its rows as it appears. Fonts registering are no switch flipped,
+            // so the rows they bring come in without scrolling the page, on SGModPage's own tick.
+            if (self.onScreen && ![note.name isEqual:SGFontLibraryChangedNotification]) [self refreshVisibility];
         });
     });
 }
@@ -219,11 +222,21 @@ static NSArray *weights(void) {
 }
 static SGModRow *fontRow(void) {
     SGModRow *row = SGPageRow(SGL(@"settings.lyrics.pip.font", @"Font"), ^UIViewController *{
+        // Opening the page asks for the downloaded and imported families off main; each one's row is on the page
+        // from the start but shows (SGModPage's ticker, which runs only while the page does) once it is registered.
+        SGFontLibraryRegisterInstalled();
+        SGRegisterCustomFontAsync();
         NSMutableArray *rows = [NSMutableArray array];
-        for (NSString *identifier in SGLyricsPiPFontChoices()) {
+        for (NSString *identifier in SGLyricsPiPFontCandidates()) {
             SGModRow *choice = SGStatActionRow(SGLyricsPiPFontName(identifier), nil, nil, ^{
                 [NSUserDefaults.standardUserDefaults setObject:identifier forKey:SGKeyPiPFont];
             });
+            __weak SGModRow *weakChoice = choice;
+            choice.visible = ^BOOL {
+                BOOL available = SGLyricsPiPFontAvailable(identifier);
+                if (available) weakChoice.title = SGLyricsPiPFontName(identifier);   // the imported family's own name
+                return available;
+            };
             choice.checked = ^BOOL {
                 return [[NSUserDefaults.standardUserDefaults stringForKey:SGKeyPiPFont] ?: @"app" isEqual:identifier];
             };
