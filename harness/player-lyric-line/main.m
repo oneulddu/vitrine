@@ -280,6 +280,19 @@ int main(void) {
             HARNESS_CHECK(at.wait > 0.02 && at.wait <= 0.5);
         }
 
+        // A line ending in an emoji (two UTF-16 units) keeps it whole, as the last character of a word and as a
+        // word of its own, in one portion and split across several.
+        SGKaraokeLine *emojiLine = makeLine(@[ @"hold", @"me", @"close", @"😀" ], 0, 4000, YES, NO);
+        NSArray<SGRLyricPortion *> *emojiFit = SGRLyricPortions(emojiLine, kWidth * 4, font());
+        HARNESS_CHECK(emojiFit.count == 1 && [emojiFit.firstObject.text isEqualToString:@"hold me close 😀"]);
+        NSArray<SGRLyricPortion *> *emojiSplit = SGRLyricPortions(emojiLine, widthOf(@"hold me", kMinScale) + 1, font());
+        HARNESS_CHECK(emojiSplit.count > 1 && [emojiSplit.lastObject.text hasSuffix:@"😀"]);
+        NSMutableArray<NSString *> *emojiTexts = [NSMutableArray array];
+        for (SGRLyricPortion *portion in emojiSplit) [emojiTexts addObject:portion.text];
+        HARNESS_CHECK([[emojiTexts componentsJoinedByString:@" "] isEqualToString:@"hold me close 😀"]);
+        SGKaraokeLine *emojiWord = makeLine(@[ @"love😀" ], 0, 1000, NO, NO);
+        HARNESS_CHECK([SGRLyricPortions(emojiWord, kWidth, font()).firstObject.text isEqualToString:@"love😀"]);
+
         printf("player lyric line: all checks passed\n");
         return 0;
     }

@@ -169,8 +169,8 @@ static NSArray<SGRLyricUnit *> *unitsOf(SGKaraokeLine *line) {
         NSString *raw = [display substringWithRange:segment];
         NSRange trimmed = [raw rangeOfCharacterFromSet:spaceSet().invertedSet];
         if (trimmed.location == NSNotFound) return;   // a gap between words: shown by the space before the next one
-        NSUInteger length = [raw rangeOfCharacterFromSet:spaceSet().invertedSet options:NSBackwardsSearch].location
-            + 1 - trimmed.location;
+        NSUInteger length = NSMaxRange([raw rangeOfCharacterFromSet:spaceSet().invertedSet options:NSBackwardsSearch])
+            - trimmed.location;
         NSUInteger at = segment.location + trimmed.location;
         SGRLyricUnit *unit = [SGRLyricUnit new];
         unit.text = [display substringWithRange:NSMakeRange(at, length)];

@@ -32,9 +32,11 @@ Every style shares the existing reader count and display link. Detached windows,
 Low Power Mode, serious/critical thermal state and player transitions stop the link and reader.
 Pause/silence eases to rest, then stops the link; while a playing stream is silent, a 4 Hz timer
 checks for newly published sound without drawing. Reduce Motion freezes spatial movement and uses
-the existing slow easing. Hills/Nebula request at most 60 Hz; Bars/Halo may request 120 Hz only on
-a 120 Hz screen, outside lyrics and Reduce Motion (30/15 Hz respectively). These are target ceilings,
-not measured frame-time or compositor-performance claims.
+the existing slow easing. The display link always requests the screen's full rate, so it never drags
+the player's 120 Hz transitions down; the tick skips drawing to its own cadence instead: Hills/Nebula
+draw at 60 Hz, Bars/Halo at 120 Hz on a 120 Hz screen, 30 Hz behind the lyrics and 15 Hz with Reduce
+Motion (harness/player-visualiser checks both). These are target cadences, not measured frame-time
+or compositor-performance claims.
 
 The view itself is laid out in the player harness (`harness/player`, scenario `visualiser`).
 That existing scenario tests Hills only. It does not establish visual equivalence, contrast or device

@@ -1521,7 +1521,7 @@ static CGFloat hillHeight(UIView *view, NSString *ivar) {
         UIView *hills = visualiserView();
         UIVisualEffectView *blur = [hills valueForKey:@"_lyricsBlur"];
         CADisplayLink *link = [hills valueForKey:@"_link"];
-        [self expect:SGRPlayerLyricsOpen() && blur.effect && link.preferredFrameRateRange.maximum == 30 step:@"behind the lyrics"
+        [self expect:SGRPlayerLyricsOpen() && blur.effect && link.preferredFrameRateRange.maximum == UIScreen.mainScreen.maximumFramesPerSecond step:@"behind the lyrics"
               detail:[NSString stringWithFormat:@"lyrics %@, blur %@, link at up to %.0f fps", SGRPlayerLyricsOpen() ? @"up" : @"down",
                       blur.effect ? @"on" : @"off", link.preferredFrameRateRange.maximum]];
         NSLog(@"[harness] visualizer: screenshot the lyrics now");

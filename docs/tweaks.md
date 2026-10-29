@@ -994,8 +994,9 @@ Redesigned:
                   lyrics: the audio effects'
                   render notify on the music's output hands what it plays, mixed to mono, to one reader (SGAudioSetOutputReader), and
                   SGRSpectrum.m cuts it into 24 bands with Accelerate's FFT on the render thread, without allocating or
-                  locking, and publishes them atomically; a display link of at most 60 Hz (30 behind the lyrics, 15
-                  with Reduce Motion, where the bands ease over seconds) draws them while the player is on screen,
+                  locking, and publishes them atomically; a display link at the screen's full rate, drawing at most 60 Hz
+                  (30 behind the lyrics, 15 with Reduce Motion, where the bands ease over seconds) by skipping ticks
+                  rather than lowering its request, draws them while the player is on screen,
                   Spotify is in front, the player is not opening or closing and Low Power Mode is off, and stops once
                   a paused song's hills have settled. The spectrum is checked on the Mac against harness/visualiser/,
                   the view in the simulator against harness/player/ (`visualiser`). The line under the cover (Lyrics Line on the Player

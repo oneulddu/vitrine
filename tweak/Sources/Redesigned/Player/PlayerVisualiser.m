@@ -17,10 +17,10 @@
 //
 // It moves only while it is in a window, Spotify is in front, the player is not opening or closing, Low Power
 // Mode is off and the song plays; a pause lets the hills settle and the link stops, and nothing is read from
-// the sound while it is stopped. At most 60 frames a second, 30 while the lyrics, which have a link of their own,
-// are open and the hills are blurred behind them, and with Reduce Motion 15, with every band easing over
-// seconds. While the player opens or closes the link is down, and comes back only once the animation is over:
-// a link at 60 would hold the transition's 120 Hz down with it.
+// the sound while it is stopped. The link asks for the screen's full rate; the hills draw at most 60 frames a
+// second, 30 while the lyrics, which have a link of their own, are open and the hills are blurred behind them,
+// and with Reduce Motion 15, with every band easing over seconds, the ticks between skipped. While the player
+// opens or closes the link is down, and comes back only once the animation is over.
 //
 // ponytail: the hills follow what the output is handed, which a Bluetooth headset plays a fifth of a second or
 // so later. Music Haptics schedules for the output latency; do the same here if the beat looks early on AirPods.
@@ -118,6 +118,11 @@ static const CGFloat kLyricHills = 0.5, kLyricAnchor = 0.44;
 // A line whose singing ended this long ago, with the next this far off, is an instrumental break: the words
 // go and only the hills show, as the lock screen keeps the cover.
 static const NSInteger kLyricBreakMs = 4000;
+// The line index of a view whose labels no longer show what it last read: the next read reconciles them, even
+// when it names no line (-1), which an ordinary index would take for "already shown".
+static const NSInteger kLineUnread = NSIntegerMin;
+// The hills' draw rate in frames a second behind the player's own lyrics and with Reduce Motion.
+static const float kBehindLyricsRate = 30, kStillRate = 15;
 
 static NSUInteger sg_readers;
 
@@ -587,7 +592,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     _lines = nil;
     _linesTimed = NO;
     _asked = NO;
-    _lineIndex = -1;
+    _lineIndex = kLineUnread;
     [self readLine];
 }
 
@@ -780,16 +785,24 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
             [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
             _last = 0;
         }
-        // Calmer behind the lyrics, whose own link runs at the display's rate, and calmest with Reduce Motion.
-        // Bars and Halo may use ProMotion, a target ceiling rather than a measured throughput claim.
-        float ceiling = (_style == SGRBars || _style == SGRHalo) && self.window.screen.maximumFramesPerSecond >= 120 ? 120 : 60;
-        float most = SGRReduceMotion() ? 15 : _lyricsBlur.effect ? 30 : ceiling;
-        _link.preferredFrameRateRange = CAFrameRateRangeMake(most / 2, most, most);
+        // The link asks for the screen's full rate whatever is drawn: a link below it drags the player's 120 Hz
+        // transitions and the lyrics' own link down. How often the hills draw is tick:'s business.
+        float screenRate = (float)self.window.screen.maximumFramesPerSecond;
+        _link.preferredFrameRateRange = CAFrameRateRangeMake(screenRate / 2, screenRate, screenRate);
     } else if (_link) {
         [_link invalidate];
         _link = nil;
         _last = 0;
     }
+}
+
+// How many times a second the hills draw: calmer behind the lyrics, whose own link runs at the display's rate,
+// and calmest with Reduce Motion. Bars and Halo may use ProMotion, a target ceiling rather than a measured
+// throughput claim.
+- (float)drawRate {
+    if (SGRReduceMotion()) return kStillRate;
+    if (_lyricsBlur.effect) return kBehindLyricsRate;
+    return (_style == SGRBars || _style == SGRHalo) && self.window.screen.maximumFramesPerSecond >= 120 ? 120 : 60;
 }
 
 static float ease(float value, float target, double dt, double up, double down) {
@@ -806,6 +819,9 @@ static float ease(float value, float target, double dt, double up, double down) 
         return;
     }
     CFTimeInterval now = link.timestamp;
+    // The link ticks at the screen's rate; a tick less than a frame short of the wanted interval is skipped, and
+    // the next one that draws takes the time since the last draw.
+    if (_last && now - _last < 1 / [self drawRate] - link.duration / 2) return;
     double dt = _last ? MIN(now - _last, 0.1) : link.duration;
     _last = now;
     float levels[kBands];
