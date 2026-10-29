@@ -146,6 +146,8 @@ HARNESSES = [
      "run": "sh harness/song-audio/build.sh"},
     {"name": "Sing model-free", "dir": "sing",
      "run": "sh harness/sing/build.sh && harness/sing/build/sing spatial"},
+    {"name": "Sing render regressions", "dir": "sing",
+     "run": "OUT=harness/sing/build/render sh harness/sing/render-regressions-build.sh"},
     {"name": "Sleep timer", "dir": "sleep-timer",
      "run": "sh harness/sleep-timer/build.sh && harness/sleep-timer/build/sleep-timer"},
     {"name": "Spicy lyrics", "dir": "spicy-lyrics",

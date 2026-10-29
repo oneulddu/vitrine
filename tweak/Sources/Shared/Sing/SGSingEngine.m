@@ -298,7 +298,7 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
     }
     float directStep = (directTo - engine->directGain) / frames, sendStep = (sendTo - engine->sendGain) / frames;
     float widthStep = (widthTo - engine->width) / frames;
-    bool sending = engine->room && (sendTo > 0 || engine->sendGain > 0 || engine->roomTail > 0);
+    bool sending = false;
     float fade = 1.0f / (kFadeSeconds * kSGSingRate), amountTo = on && mixing ? 1 : 0;
 
     // The voice's angle glides the short way round toward the one set, and lands on it; within the buffer
@@ -352,8 +352,9 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
             // Instruments width: the rest's side (half its left less its right) scaled, its middle kept.
             float side = (engine->width - 1) * ((x - v) - (y - w)) * 0.5f * engine->otherGain;
             float dryGain = (1 - a) * (engine->startGain - 1);
-            left[i] = fmaxf(-1, fminf(x + x * dryGain + a * (voice * placedLeft - v + otherGain * (x - v) + side), 1));
-            right[i] = fmaxf(-1, fminf(y + y * dryGain + a * (voice * placedRight - w + otherGain * (y - w) - side), 1));
+            // Preserve float headroom; only the downstream output control limits the final signal.
+            left[i] = x + x * dryGain + a * (voice * placedLeft - v + otherGain * (x - v) + side);
+            right[i] = y + y * dryGain + a * (voice * placedRight - w + otherGain * (y - w) - side);
             if (a == 1) engine->startGain = 1;
         } else {
             engine->amount = 0;
@@ -361,20 +362,26 @@ OSStatus SGSingEngineRender(SGSingEngine *engine, UInt32 frames, float *left, fl
             right[i] = y * engine->startGain;
             dry += working;
         }
-        if (sending) engine->send[0][i % kSGDSPEffectMaxFrames] = voiceSend;
+        if (engine->room) {
+            engine->send[0][i % kSGDSPEffectMaxFrames] = voiceSend;
+            // Room's setting may stay on while the buffered lead plays dry. Only samples actually
+            // fed to the room renew its tail, including the last samples of the vocal fade.
+            if (voiceSend != 0) engine->roomTail = (uint64_t)(kRoomTailSeconds * kSGSingRate);
+            sending |= engine->roomTail > 0;
+            if (voiceSend == 0 && engine->roomTail > 0) engine->roomTail--;
+        }
         // The room's next stretch, once its input is full or the buffer ends: rung through and added.
         if (sending && ((i + 1) % kSGDSPEffectMaxFrames == 0 || i + 1 == frames)) {
             UInt32 count = i % kSGDSPEffectMaxFrames + 1, first = i + 1 - count;
             memcpy(engine->send[1], engine->send[0], count * sizeof(float));
             SGDSPReverbRun(engine->room, engine->send[0], engine->send[1], count);
             for (UInt32 j = 0; j < count; j++) {
-                left[first + j] = fmaxf(-1, fminf(left[first + j] + engine->send[0][j], 1));
-                right[first + j] = fmaxf(-1, fminf(right[first + j] + engine->send[1][j], 1));
+                left[first + j] += engine->send[0][j];
+                right[first + j] += engine->send[1][j];
             }
+            sending = false;
         }
     }
-    if (sending) engine->roomTail = sendTo > 0 || engine->sendGain > 1e-4f ? (uint64_t)(kRoomTailSeconds * kSGSingRate)
-                                                                          : engine->roomTail > frames ? engine->roomTail - frames : 0;
     engine->directGain = directTo;
     engine->sendGain = sendTo;
     engine->width = widthTo;

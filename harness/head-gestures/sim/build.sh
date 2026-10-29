@@ -26,9 +26,9 @@ SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
 xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-arc -g -O0 \
     -I"$SRC" -I"$SRC/Shared/HeadGestures" -I"$OUT/gen" -isysroot "$SDK" -Wall -Werror -Wno-deprecated-declarations \
     "$(dirname "$0")/main.m" "$(dirname "$0")/player-state-repeat.m" "$(dirname "$0")/../../scene.m" "$OUT/gen/HeadGestures.m" \
-    "$SRC"/Shared/HeadGestures/HeadGesturesSettings.m "$SRC"/Shared/HeadGestures/HeadGesturesTeach.m \
+    "$SRC"/Shared/HeadGestures/HeadGesturesSettings.m "${TEACH_SOURCE:-$SRC/Shared/HeadGestures/HeadGesturesTeach.m}" \
     "$SRC"/Shared/HeadGestures/SGHeadDetector.m \
-    "$SRC"/Settings/SGPage.m "$SRC"/Settings/SGPageStyle.m "$SRC"/Settings/SGModPage.m "$SRC"/Settings/SGSettingsSearch.m "$SRC"/Settings/SGGlowSwitch.m \
+    "$SRC"/Settings/SGPage.m "$SRC"/Settings/SGPageStyle.m "$SRC"/Settings/SGModPage.m "$SRC"/Settings/SGSettingsSearch.m "$SRC"/Settings/SGSettingsIndex.m "$SRC"/Settings/SGGlowSwitch.m \
     "$SRC"/Core/SGLog.m "$SRC"/Core/SGPrefs.m "$SRC"/Core/SGLocalize.m "$SRC"/Core/SGGlass.m "$SRC"/Core/SGViewTree.m "$SRC"/Core/SGFlagForce.m "$SRC"/Core/SGUIMode.m \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework Foundation -framework CoreMotion -framework AudioToolbox -framework AVFoundation \
     -o "$OUT/HeadGesturesSim.app/HeadGesturesSim"

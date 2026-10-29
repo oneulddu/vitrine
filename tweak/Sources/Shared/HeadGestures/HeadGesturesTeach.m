@@ -117,6 +117,7 @@ static BOOL headOffset(double *pitch, double *yaw) {
     CADisplayLink *_link;
     CFTimeInterval _lastFrame;
     CFTimeInterval _ordinaryStarted;
+    NSInteger _ordinaryLitTicks, _ordinarySeconds;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -207,9 +208,17 @@ static BOOL headOffset(double *pitch, double *yaw) {
     _lastFrame = link.timestamp;
     if (_ordinaryStarted) {
         double elapsed = MIN(SGHeadOrdinarySeconds, CACurrentMediaTime() - _ordinaryStarted);
-        for (NSInteger i = 0; i < kTicks; i++) _ticks[i].opacity = i < kTicks * elapsed / SGHeadOrdinarySeconds ? 1 : 0;
-        self.accessibilityValue = [NSString stringWithFormat:SGL(@"settings.headgestures.teach.seconds_format", @"%ld seconds remaining"),
-                                  (long)ceil(SGHeadOrdinarySeconds - elapsed)];
+        NSInteger litTicks = (NSInteger)ceil(kTicks * elapsed / SGHeadOrdinarySeconds);
+        if (litTicks != _ordinaryLitTicks) {
+            for (NSInteger i = 0; i < kTicks; i++) _ticks[i].opacity = i < litTicks ? 1 : 0;
+            _ordinaryLitTicks = litTicks;
+        }
+        NSInteger seconds = (NSInteger)ceil(SGHeadOrdinarySeconds - elapsed);
+        if (seconds != _ordinarySeconds) {
+            self.accessibilityValue = [NSString stringWithFormat:SGL(@"settings.headgestures.teach.seconds_format", @"%ld seconds remaining"),
+                                      (long)seconds];
+            _ordinarySeconds = seconds;
+        }
         return;
     }
 
@@ -245,6 +254,7 @@ static BOOL headOffset(double *pitch, double *yaw) {
 
 - (void)startOrdinary {
     _ordinaryStarted = CACurrentMediaTime();
+    _ordinaryLitTicks = _ordinarySeconds = -1;
     _dot.hidden = YES;
 }
 

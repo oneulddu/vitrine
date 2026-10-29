@@ -26,6 +26,9 @@
 // after a report does not move what is heard, and one let go moves it on. Sing.x asks for a flush when Spotify
 // seeks or skips, which drops the sound held from before it.
 //
+// Render output preserves float headroom, including spatial gain and the room return. Final limiting belongs
+// to the downstream output control, after its gain and fade.
+//
 // Threading: SGSingEngineRender on the render thread only, allocation and lock free; the worker is the
 // engine's own; everything else from any non-render thread.
 #import <Foundation/Foundation.h>

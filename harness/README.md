@@ -102,6 +102,7 @@ their check executable in the workflow.
 | `radio-modes/build.sh` | Foundation Spotify mocks, spoofing off/on. |
 | `settings-bars/build.sh` | Catalyst `SGInsetForBars` over a 6,000-view mock window: walks counted across repeated layouts, inset follows a bar resized, hidden, removed, added, or a table moved to another window. |
 | `settings-search/build.sh` | Mod Settings search: page-at-a-time index on a real run loop, keywords below titles, recent places by setting name across looks and languages. |
+| `sing/render-regressions-build.sh` | Mac build of `SGSingEngine.m` with audio doubles: placed vocals keep float headroom through downstream attenuation, and the room reverb goes idle once Sing stops feeding it. |
 | `sing/build.sh` | `spatial`: model-free lead, spatial and decoder assertions. |
 | `sleep-timer/build.sh` | Fake player and timer/fade assertions. |
 | `song-audio/build.sh` | Per-song speed, pitch, pitch-follow and reverb records in two processes, with the player and the audio setters as doubles. |

@@ -29,6 +29,75 @@ static void check(BOOL ok, NSString *what) {
     NSLog(@"[harness] %@ %@", ok ? @"ok  " : @"FAIL", what);
 }
 
+// Observe the public layer/accessibility mutations, not the ring's cache implementation.
+@interface OrdinaryObserver : NSObject
+@property NSUInteger changes;
+@end
+@implementation OrdinaryObserver
+- (void)observeValueForKeyPath:(NSString *)keyPath ofObject:(id)object change:(NSDictionary *)change context:(void *)context {
+    self.changes++;
+}
+@end
+
+@interface UIView (OrdinaryRingHarness)
+- (void)startOrdinary;
+- (void)frame:(CADisplayLink *)link;
+- (void)start;
+- (void)stop;
+@end
+
+static void checkOrdinaryRing(void) {
+    UIView *ring = [[NSClassFromString(@"SGTeachRing") alloc] initWithFrame:CGRectMake(0, 0, 220, 220)];
+    OrdinaryObserver *ticks = [OrdinaryObserver new], *seconds = [OrdinaryObserver new];
+    NSArray<CAShapeLayer *> *layers = [ring valueForKey:@"ticks"];
+    for (CAShapeLayer *layer in layers) [layer addObserver:ticks forKeyPath:@"opacity" options:0 context:NULL];
+    [ring addObserver:seconds forKeyPath:@"accessibilityValue" options:0 context:NULL];
+    [ring start];
+    CADisplayLink *link = [ring valueForKey:@"link"];
+    check(link.preferredFrameRateRange.minimum == 30 && link.preferredFrameRateRange.maximum == 120
+          && link.preferredFrameRateRange.preferred == 60,
+          @"teaching display link asks 30 to 120 Hz, 60 preferred, never capped below the screen");
+    [ring stop];
+    [ring startOrdinary];
+    [ring setValue:@(CACurrentMediaTime() - 5.1) forKey:@"ordinaryStarted"];
+    [ring frame:nil];
+    NSUInteger lit = 0;
+    for (CAShapeLayer *layer in layers) lit += layer.opacity == 1;
+    check(lit == 16 && [ring.accessibilityValue isEqualToString:@"15 seconds remaining"],
+          @"ordinary progress shows 16 ticks and 15 seconds at 5.1 seconds");
+    ticks.changes = seconds.changes = 0;
+    for (int i = 0; i < 120; i++) {
+        [ring setValue:@(CACurrentMediaTime() - 5.1) forKey:@"ordinaryStarted"];
+        [ring frame:nil];
+    }
+    check(ticks.changes == 0 && seconds.changes == 0,
+          @"unchanged progress emits no layer or accessibility mutations");
+    [ring setValue:@(CACurrentMediaTime() - 5.5) forKey:@"ordinaryStarted"];
+    [ring frame:nil];
+    lit = 0;
+    for (CAShapeLayer *layer in layers) lit += layer.opacity == 1;
+    check(lit == 17 && seconds.changes == 0, @"tick boundary does not rewrite the countdown");
+    [ring setValue:@(CACurrentMediaTime() - 6.1) forKey:@"ordinaryStarted"];
+    [ring frame:nil];
+    check([ring.accessibilityValue isEqualToString:@"14 seconds remaining"],
+          @"whole-second boundary updates the countdown");
+    [ring setValue:@(CACurrentMediaTime() - 21) forKey:@"ordinaryStarted"];
+    [ring frame:nil];
+    lit = 0;
+    for (CAShapeLayer *layer in layers) lit += layer.opacity == 1;
+    check(lit == 60 && [ring.accessibilityValue isEqualToString:@"0 seconds remaining"],
+          @"ordinary completion lights all ticks and stops at zero");
+    [ring startOrdinary];
+    [ring setValue:@(CACurrentMediaTime() - 5.1) forKey:@"ordinaryStarted"];
+    [ring frame:nil];
+    check([ring.accessibilityValue isEqualToString:@"15 seconds remaining"], @"ordinary restart invalidates cached progress");
+    for (CAShapeLayer *layer in layers) [layer removeObserver:ticks forKeyPath:@"opacity"];
+    [ring removeObserver:seconds forKeyPath:@"accessibilityValue"];
+    if (failures) HARNESS_FAIL(@"ordinary ring regressions: %d failures", failures);
+    NSLog(@"[harness] ordinary ring regressions passed");
+    exit(0);
+}
+
 #pragma mark - Spotify stood in for
 
 @interface FakeTrack : NSObject
@@ -823,6 +892,10 @@ static Step waitFor(double seconds) {
 
     NSString *shot = NSProcessInfo.processInfo.arguments.count > 1 ? NSProcessInfo.processInfo.arguments[1] : nil;
     if ([shot isEqualToString:@"fail-exit"]) HARNESS_FAIL(@"deliberate exit-contract failure");
+    if ([shot isEqualToString:@"ordinary"]) {
+        dispatch_async(dispatch_get_main_queue(), ^{ checkOrdinaryRing(); });
+        return YES;
+    }
     self.steps = [@[waitFor(1.5)] arrayByAddingObjectsFromArray:[shot isEqualToString:@"cancel-try"] ? [self cancelTryChecks] : shot ? [self shot:shot] : [self checks]];
     [NSTimer scheduledTimerWithTimeInterval:0.25 target:self selector:@selector(tick) userInfo:nil repeats:YES];
     return YES;
