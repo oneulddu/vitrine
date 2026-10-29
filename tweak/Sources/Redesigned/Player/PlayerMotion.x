@@ -827,9 +827,27 @@ static void setCoverShown(BOOL shown, BOOL animated) {
     fadeCoverMask(covers, mask, 0, animated, nil);
 }
 
+// The Visualizer's Poster or Cut is showing a line, whose type then owns the cover's place (PlayerVisualiser.m).
+static BOOL sg_stageTakesCover;
+
+// The cover shows unless a clip behind the player or a lyric stage's line takes its place.
+static BOOL coverWanted(void) {
+    return sg_motion == nil && !sg_stageTakesCover;
+}
+
+BOOL SGRPlayerCoverHidden(void) {
+    return !coverWanted();
+}
+
+void SGRPlayerLyricStageTakesCover(BOOL takes) {
+    if (takes == sg_stageTakesCover) return;
+    sg_stageTakesCover = takes;
+    setCoverShown(coverWanted(), YES);
+}
+
 void SGRPlayerMotionFieldLaidOut(void) {
     layOut();
-    setCoverShown(sg_motion == nil, NO);
+    setCoverShown(coverWanted(), NO);
 }
 
 static void attachCoverClip(void);
@@ -837,7 +855,7 @@ static void attachCoverClip(void);
 // A clip that came in before the player opened finds no cover to hide at the field's first pass, the covers
 // laying out after it (issue #19: the cover over the clip after a relaunch), so each cover's layout asks too.
 void SGRPlayerMotionCoverLaidOut(void) {
-    setCoverShown(sg_motion == nil, NO);
+    setCoverShown(coverWanted(), NO);
     attachCoverClip();
 }
 
@@ -978,7 +996,7 @@ static void clear(BOOL animated) {
     // The Fluid field under a clip holds still, as it does for a paused song (PlayerField.x): the clip covers it.
     SGRPlayerHoldField();
     animated = animated && seen(old);
-    setCoverShown(YES, animated);
+    setCoverShown(coverWanted(), animated);
     if (animated) [old disappear:^{ [old removeFromSuperview]; }];
     else [old removeFromSuperview];
 }

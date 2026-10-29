@@ -235,6 +235,12 @@ void SGRPlayerMotionCoverLaidOut(void);
 // A clip is playing in place of the cover, which is then hidden: the lyrics' thumbnail and the open's
 // flown cover fade where they are rather than flying to or from it.
 BOOL SGRPlayerMotionShowing(void);
+// The Visualizer's Poster or Cut shows a line (PlayerVisualiser.m): the cover fades away by the clip's own mask so the
+// type owns its place, and fades back when `takes` is NO, unless a clip holds it.
+void SGRPlayerLyricStageTakesCover(BOOL takes);
+// The player's cover card is hidden, by a clip or by a lyric stage's line: the open's and close's flown cover fades
+// out rather than landing on an empty slot (PlayerMorph.x).
+BOOL SGRPlayerCoverHidden(void);
 // A view of its own playing that clip, drawn as the player draws it (its foot, the blur under the controls),
 // for the Player page's showcase. It plays only in a window, like the player's. While the player has no clip
 // it is the playing track's, which the page looks up itself, by the player's sources and Low Data Mode, into

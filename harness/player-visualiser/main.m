@@ -16,7 +16,13 @@
 //     second view, a new one for a new cover, the plain cover with Halftone off; a print that cannot be made is
 //     final for its artwork and never asked again from its own answer; an older print ending after a newer one
 //     reaches its own callers but does not replace the kept newer one;
-//   - Reduce Motion: Poster's new line neither rises nor scales, Cut's word does not jump (nor at Motion 0).
+//   - Reduce Motion: Poster's new line neither rises nor scales, Cut's word does not jump (nor at Motion 0);
+//   - the cover is taken only by the player's own view and only while its stage shows a line: a break, lyrics
+//     nothing times, the player's lyrics, another style and the view leaving the field give it back, and so do
+//     leaving the window or the app leaving the front, until it comes back;
+//   - in the player the type's field is the cover's band down to 12 points over the title block (the player's own
+//     sung line where it has room, else the title), and Cut's whole line goes while the player shows that line,
+//     else sits directly under the word inside the field, a short field's word sized to leave it room.
 // With SHOTS set to a folder, writes poster.png and cut.png of both styles there. Exits 1 on any failure.
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -90,6 +96,13 @@ BOOL SGHidden(NSString *key) { return NO; }
 BOOL SGRPlayerAnimatedVisualiserOn(void) { return NO; }
 void SGRPlayerReconcileFallbackSwitches(void) {}
 BOOL SGRPlayerVisualiserFallbackWanted(void) { return NO; }
+// The player around the view (PlayerArtwork.x, PlayerLyricLine.x, PlayerMotion.x), in the view's coordinates: the
+// cover's band and the player's own line over the title, CGRectNull for none; whether the cover is taken.
+static CGRect gArea, gPlayerLine;
+static BOOL gCoverTaken;
+CGRect SGRPlayerArtworkAreaIn(UIView *host) { return gArea; }
+CGRect SGRPlayerLyricLineIn(UIView *view) { return gPlayerLine; }
+void SGRPlayerLyricStageTakesCover(BOOL takes) { gCoverTaken = takes; }
 
 // A song that is playing, so the Lyrics style keeps its clock.
 @implementation SPTPlayerState
@@ -327,6 +340,7 @@ static NSUInteger drawsOf(UIView *view, NSUInteger ticks) {
 int main(void) {
     @autoreleasepool {
         guardShowCover();
+        gArea = gPlayerLine = CGRectNull;
         [NSUserDefaults.standardUserDefaults setObject:@"builtin:lyrics" forKey:SGRKeyVisualiserStyle];
         gLines = @[ line(@"hold me close", 0, 3000, SGKaraokeTimingLine) ];
         gPositionMs = 1000;
@@ -616,6 +630,102 @@ int main(void) {
             HARNESS_CHECK(near(stageOf(v).alpha, 0));
             HARNESS_CHECK(![[v valueForKey:@"_frontFill"] isHidden]);
         }
+
+        // The cover: a view that is not the player's own (the settings card's) never takes it, the player's takes it
+        // only while its stage shows a line, in a window with the app in front.
+        gWindow = window;
+        keep(@[first, second, third]);
+        readAt(v, 1300);
+        HARNESS_CHECK(near(stageOf(v).alpha, 1) && !gCoverTaken);
+        [v setValue:@YES forKey:@"ownsCover"];
+        HARNESS_CHECK(gCoverTaken);
+        readAt(v, 12000);
+        HARNESS_CHECK(!gCoverTaken);
+        readAt(v, 20000);
+        HARNESS_CHECK(gCoverTaken);
+        [probe setBlurred:YES animated:NO];
+        HARNESS_CHECK(!gCoverTaken);
+        [probe setBlurred:NO animated:NO];
+        HARNESS_CHECK(gCoverTaken);
+        SGKaraokeLine *untimed = wordsLine(@[@[@"we", @0], @[@"run", @0]], 0);
+        untimed.timing = SGKaraokeTimingNone;
+        keep(@[untimed]);
+        readAt(v, 1300);
+        HARNESS_CHECK(!gCoverTaken);
+        keep(@[first, second, third]);
+        readAt(v, 1300);
+        HARNESS_CHECK(gCoverTaken);
+        SGRSetVisualiserStyle(@"builtin:lyrics");
+        HARNESS_CHECK(!gCoverTaken);
+        SGRSetVisualiserStyle(cut);
+        readAt(v, 1300);
+        HARNESS_CHECK(gCoverTaken);
+        // Off its window (the player closed mid-line) the cover comes back, and a report read there does not take it
+        // again; back on the window it is taken again. The same for the app leaving the front and coming back.
+        gWindow = nil;
+        [v didMoveToWindow];
+        HARNESS_CHECK(!gCoverTaken);
+        readAt(v, 1300);
+        HARNESS_CHECK(!gCoverTaken);
+        gWindow = window;
+        [v didMoveToWindow];
+        HARNESS_CHECK(gCoverTaken);
+        [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
+        HARNESS_CHECK(!gCoverTaken);
+        readAt(v, 1300);
+        HARNESS_CHECK(!gCoverTaken);
+        [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
+        HARNESS_CHECK(gCoverTaken);
+        [v setValue:@NO forKey:@"ownsCover"];
+        HARNESS_CHECK(!gCoverTaken);
+        gWindow = nil;
+
+        // The field in the player (390 by 844): the cover's band from 110 down to the title row at 576.5, the player's
+        // own line at 474 to 518 over it.
+        gArea = CGRectMake(0, 110, 390, 466.5);
+        gPlayerLine = CGRectMake(24, 474, 342, 44);
+        [v setNeedsLayout];
+        [v layoutIfNeeded];
+        readAt(v, 2000);
+        CGRect (^fieldOf)(void) = ^CGRect { return [[stageOf(v) valueForKey:@"field"] CGRectValue]; };
+        UILabel *bigWord = [stageOf(v) valueForKey:@"_wordLabel"];
+        UILabel *caption = [stageOf(v) valueForKey:@"_lineLabel"];
+        HARNESS_CHECK(near(CGRectGetMinY(fieldOf()), 110) && near(CGRectGetMaxY(fieldOf()), 462));
+        HARNESS_CHECK([bigWord.text isEqualToString:@"under"]);
+        HARNESS_CHECK(CGRectGetMinY(bigWord.frame) >= 110 && CGRectGetMaxY(bigWord.frame) <= 462);
+        HARNESS_CHECK(caption.hidden);
+        // Without the player's line: down to 12 points over the title, the whole line directly under the word.
+        gPlayerLine = CGRectNull;
+        [v setNeedsLayout];
+        [v layoutIfNeeded];
+        HARNESS_CHECK(near(CGRectGetMaxY(fieldOf()), 564.5));
+        HARNESS_CHECK(!caption.hidden && [caption.text isEqualToString:@"we run tonight under the neon light"]);
+        CGFloat under = CGRectGetMinY(caption.frame) - CGRectGetMaxY(bigWord.frame);
+        HARNESS_CHECK(under >= 0 && under <= 8);
+        HARNESS_CHECK(CGRectGetMaxY(caption.frame) <= 564.5);
+        // The player's line coming back with a new line hides the whole line again.
+        gPlayerLine = CGRectMake(24, 474, 342, 44);
+        readAt(v, 3400);
+        HARNESS_CHECK(caption.hidden && near(CGRectGetMaxY(fieldOf()), 462));
+        // Poster sets in the same field.
+        SGRSetVisualiserStyle(poster);
+        readAt(v, 1300);
+        UILabel *posterFront = [stageOf(v) valueForKey:@"_front"];
+        HARNESS_CHECK(near(CGRectGetMaxY(fieldOf()), 462));
+        HARNESS_CHECK(CGRectGetMinY(posterFront.frame) >= 110 && CGRectGetMaxY(posterFront.frame) <= 462);
+        // A short field (60 to 208, as in landscape): Cut's short word and the whole line under it both stay inside.
+        gArea = CGRectMake(0, 60, 390, 160);
+        gPlayerLine = CGRectNull;
+        [v setNeedsLayout];
+        [v layoutIfNeeded];
+        SGRSetVisualiserStyle(cut);
+        readAt(v, 2300);
+        bigWord = [stageOf(v) valueForKey:@"_wordLabel"];
+        caption = [stageOf(v) valueForKey:@"_lineLabel"];
+        HARNESS_CHECK([bigWord.text isEqualToString:@"the"] && near(CGRectGetMaxY(fieldOf()), 208));
+        HARNESS_CHECK(!caption.hidden && CGRectGetMinY(caption.frame) >= CGRectGetMaxY(bigWord.frame));
+        HARNESS_CHECK(CGRectGetMinY(bigWord.frame) >= 60 && CGRectGetMaxY(caption.frame) <= 208);
+        gArea = gPlayerLine = CGRectNull;
         [defaults removeObjectForKey:SGRKeyVisualiserParams];
         [defaults removeObjectForKey:SGRKeyVisualiserStyle];
 

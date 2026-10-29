@@ -10,9 +10,12 @@
 @interface SGRLyricStage : UIView
 // The stage for a style id, nil for a style without one.
 + (SGRLyricStage *)stageForStyle:(NSString *)identifier;
+// Whether a line shows: in the player the cover gives the field up to the type meanwhile (PlayerVisualiser.m).
+@property (nonatomic, readonly) BOOL showing;
 // Where the type sets, in the stage's coordinates: the visible field within the player's margins, and the
-// height its type is centered on.
-- (void)setField:(CGRect)field centre:(CGFloat)centre;
+// height its type is centered on; `elsewhere` when the player shows the sung line itself, which the type then
+// does not repeat.
+- (void)setField:(CGRect)field centre:(CGFloat)centre lineElsewhere:(BOOL)elsewhere;
 // The playing track's own cover and its identity (SGRNowPlayingArtwork), both nil while it has none.
 - (void)setCover:(UIImage *)cover identity:(NSString *)identity;
 // The cover's five flow colors (SGRPalette), as the view's hills read them.

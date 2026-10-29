@@ -366,6 +366,13 @@ static void placeLine(void) {
     }
 }
 
+CGRect SGRPlayerLyricLineIn(UIView *view) {
+    UIView *host = sg_host;
+    SGRLyricLineView *line = host ? objc_getAssociatedObject(host, &kLineKey) : nil;
+    if (!view || !line.fits || !line.window) return CGRectNull;
+    return [view convertRect:line.bounds fromView:line];
+}
+
 // The cover's own layout (PlayerArtwork.x sizes it there): the line follows where the cover now is. Only the
 // player's covers, not the now playing bar's.
 %hook _TtC35CreativeWorkCommons_CoverArtTiltKit16CoverArtTiltView

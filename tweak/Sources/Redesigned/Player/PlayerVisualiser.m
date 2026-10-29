@@ -39,7 +39,11 @@
 // hand the line to a stage of their own over them (PlayerLyricStages.m): the line set word by word as a type
 // poster over a halftone print of the cover, or one word at a time over the cover, cut to the singing. Where
 // Lyrics shows no words, they show nothing over the hills either. Their words move as soon as a word's start
-// passes, so the link reads their line on every tick, not only on the ticks the hills draw.
+// passes, so the link reads their line on every tick, not only on the ticks the hills draw. In the player, while a
+// stage shows a line, the cover fades away the way a clip takes it (SGRPlayerLyricStageTakesCover, PlayerMotion.x)
+// and the type sets in the band the cover sat in, kTitleClearance over the title block (the player's own sung line
+// where it has room, else the title), measured from the player on each layout and each new line. The cover comes
+// back as the stage shows no line, and when the view leaves the field.
 //
 // Threading: main thread only, but for the reader, which runs on the render thread.
 // Hills retains the drawing below. Bars, Nebula, Halo and Lyrics share its envelopes and lifecycle, using
@@ -53,6 +57,7 @@
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
+#import "PlayerLyricLine.h"
 #import "PlayerLyricStages.h"
 #import "SGRSpectrum.h"
 
@@ -147,6 +152,8 @@ static const NSTimeInterval kTransitionSlack = 0.05;
 // level the hills are drawn at. Under it the hills are drawn at kLyricHills of their height.
 static const CGFloat kLyricSize = 44, kLyricMargin = 26, kLyricAlpha = 0.35f, kLyricRise = 14;
 static const CGFloat kLyricHills = 0.5, kLyricAnchor = 0.44;
+// Poster's and Cut's type in the player keeps this many points over the title block.
+static const CGFloat kTitleClearance = 12;
 // A line whose singing ended this long ago, with the next this far off, is an instrumental break: the words
 // go and only the hills show, as the lock screen keeps the cover.
 static const NSInteger kLyricBreakMs = 4000;
@@ -189,6 +196,9 @@ static NSDictionary *noActions(void) {
 // The settings card's preview: nothing plays there, so the Lyrics style reads LyricsLook's sample lines on a
 // clock of its own instead of the player's.
 @property (nonatomic) BOOL sample;
+// The player's own view, on its field: its Poster or Cut takes the cover's place while it shows a line. Set NO as
+// it leaves, which gives the cover back.
+@property (nonatomic) BOOL ownsCover;
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated;
 - (void)appear:(BOOL)animated;
 - (void)disappear:(void (^)(void))done;
@@ -431,10 +441,9 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     }
     [_stage removeFromSuperview];
     _stage = [SGRLyricStage stageForStyle:SGRVisualiserStyleIDs()[next]];
-    if (_stage) {
-        [_words addSubview:_stage];
-        [self layOutStage];
-    }
+    if (_stage) [_words addSubview:_stage];
+    [self layOutStage];
+    [self tellCover];
     if (!readsLyrics(next)) {
         _lines = nil; _linesTimed = NO; _linesTrack = nil; _asked = NO;
     } else {
@@ -584,7 +593,13 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     NSInteger ms = [self lyricPositionMs];
     NSInteger index = [self lineAt:ms lines:lines];
     if (_stage) {
+        // A new line measures the player again, whose own line may have come or gone with it.
+        if (index != _lineIndex) {
+            _lineIndex = index;
+            [self layOutStage];
+        }
         [_stage showLine:index of:lines at:ms];
+        [self tellCover];
         return;
     }
     if (index == _lineIndex) return;
@@ -637,13 +652,40 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     }
 }
 
-// Poster's or Cut's stage over the whole view; its type within the margins Lyrics keeps, above the baseline, on
-// the line Lyrics centers its words on.
+// Poster's or Cut's stage over the whole view, its type within the margins Lyrics keeps. In the player it sets in
+// the band the cover sits in, which the cover gives up while a line shows, down to kTitleClearance over the title
+// block: the player's own sung line where that has room (and the type's whole line then goes, which would repeat
+// it), else the title. In the settings card, which has no player, it sets above the baseline, centered on the line
+// Lyrics centers its words on.
 - (void)layOutStage {
+    if (!_stage) return;
     CGRect bounds = self.bounds;
-    CGFloat baseline = _baseline > 0 ? _baseline : bounds.size.height;
     _stage.frame = bounds;
-    [_stage setField:CGRectMake(kLyricMargin, 0, MAX(0, bounds.size.width - 2 * kLyricMargin), baseline) centre:baseline * kLyricAnchor];
+    CGFloat width = MAX(0, bounds.size.width - 2 * kLyricMargin);
+    CGRect area = _sample ? CGRectNull : SGRPlayerArtworkAreaIn(self);
+    if (CGRectIsNull(area)) {
+        CGFloat baseline = _baseline > 0 ? _baseline : bounds.size.height;
+        [_stage setField:CGRectMake(kLyricMargin, 0, width, baseline) centre:baseline * kLyricAnchor lineElsewhere:NO];
+        return;
+    }
+    CGRect line = SGRPlayerLyricLineIn(self);
+    CGFloat title = CGRectIsNull(line) ? CGRectGetMaxY(area) : MIN(CGRectGetMaxY(area), CGRectGetMinY(line));
+    CGRect field = CGRectMake(kLyricMargin, CGRectGetMinY(area), width, title - kTitleClearance - CGRectGetMinY(area));
+    [_stage setField:field centre:CGRectGetMidY(field) lineElsewhere:!CGRectIsNull(line)];
+}
+
+// The player's view tells PlayerMotion.x whether its stage's line takes the cover's place: only while it is in a
+// window with Spotify in front, so a closed player or one in the background gives the cover back.
+- (void)tellCover {
+    if (!_ownsCover) return;
+    BOOL front = self.window && !_inactive && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+    SGRPlayerLyricStageTakesCover(front && _stage.showing);
+}
+
+- (void)setOwnsCover:(BOOL)ownsCover {
+    _ownsCover = ownsCover;
+    if (ownsCover) [self tellCover];
+    else SGRPlayerLyricStageTakesCover(NO);
 }
 
 - (void)lyricsKept:(NSNotification *)note {
@@ -675,7 +717,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     _frontShape.frame = bounds;
     _crestFade.frame = bounds;
     if (_style == SGRLyricsStyle) [self layoutLyrics];
-    if (_stage) [self layOutStage];
+    [self layOutStage];
     [self draw];
 }
 
@@ -736,6 +778,8 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [super didMoveToWindow];
     // Back on a window, the line the reports read while it was off is read once more.
     if (self.window && readsLyrics(_style)) [self readLine];
+    // Off a window the cover is given back; back on one the line just read takes it again.
+    [self tellCover];
     [self updateMotion];
 }
 
@@ -755,11 +799,14 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 - (void)resignActive {
     // WillResignActive can arrive before UIApplication's state changes.
     _inactive = YES;
+    [self tellCover];
     [self updateMotion];
 }
 
 - (void)becomeActive {
     _inactive = NO;
+    // The stage's line read again, which takes the cover again while one shows.
+    if (_stage) [self readLine];
     [self updateMotion];
 }
 
@@ -1219,6 +1266,7 @@ void SGRPlayerVisualiserUpdate(void) {
         SGRVisualiserView *old = sg_view;
         if (!old) return;
         sg_view = nil;
+        old.ownsCover = NO;
         if (old.window) [old disappear:^{ [old removeFromSuperview]; }];
         else [old removeFromSuperview];
         // The hills were what held the field still (PlayerField.x).
@@ -1228,7 +1276,10 @@ void SGRPlayerVisualiserUpdate(void) {
     BOOL made = !sg_view;
     if (made) sg_view = [[SGRVisualiserView alloc] initWithFrame:CGRectZero];
     layOut(field);
+    // The player's title block may have moved without the hills' frame changing.
+    [sg_view layOutStage];
     if (made) {
+        sg_view.ownsCover = YES;
         [sg_view setBlurred:SGRPlayerLyricsOpen() animated:NO];
         [sg_view appear:field.window != nil];
         SGRPlayerHoldField();

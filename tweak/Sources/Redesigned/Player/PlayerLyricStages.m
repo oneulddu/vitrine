@@ -9,7 +9,8 @@
 // Cut shows the line one word at a time, as large as one line of the field's width allows, over the cover
 // darkened by Background and a few flat blocks of the cover's flow colors, placed and sized from the line and
 // word, never at random. Each new word jumps the word and the blocks a little, by Motion, and settles; Reduce
-// Motion keeps them still. Whole line puts the line itself, small, under the word.
+// Motion keeps them still. Whole line puts the line itself, small, directly under the word, unless the player
+// shows the same line itself over its title.
 //
 // Cost: no Metal, layers and labels only. The halftone is made once per artwork off the main queue and kept for
 // that artwork; text is built and measured only when the line or the word changes. On the frame clock a stage
@@ -225,6 +226,7 @@ static NSString *trimmed(NSString *text) {
 @interface SGRLyricStage ()
 @property (nonatomic, readonly) CGRect field;
 @property (nonatomic, readonly) CGFloat centre;
+@property (nonatomic, readonly) BOOL lineElsewhere;
 @property (nonatomic, readonly) SGKaraokeLine *line;   // nil while none shows
 @property (nonatomic, readonly) NSInteger word;        // the last started word of the line, -1 before the first
 @end
@@ -235,9 +237,7 @@ static NSString *trimmed(NSString *text) {
 @interface SGRCutStage : SGRLyricStage
 @end
 
-@implementation SGRLyricStage {
-    BOOL _shown;
-}
+@implementation SGRLyricStage
 
 + (SGRLyricStage *)stageForStyle:(NSString *)identifier {
     if ([identifier isEqualToString:SGRVisualiserPosterID]) return [[SGRPosterStage alloc] initWithFrame:CGRectZero];
@@ -260,10 +260,11 @@ static NSString *trimmed(NSString *text) {
     [NSNotificationCenter.defaultCenter removeObserver:self];
 }
 
-- (void)setField:(CGRect)field centre:(CGFloat)centre {
-    if (CGRectEqualToRect(field, _field) && centre == _centre) return;
+- (void)setField:(CGRect)field centre:(CGFloat)centre lineElsewhere:(BOOL)elsewhere {
+    if (CGRectEqualToRect(field, _field) && centre == _centre && elsewhere == _lineElsewhere) return;
     _field = field;
     _centre = centre;
+    _lineElsewhere = elsewhere;
     [self layOutType];
 }
 
@@ -276,9 +277,9 @@ static NSString *trimmed(NSString *text) {
     _word = word;
     if (line && newLine) [self takeLine];
     else if (line) [self takeWord];
-    if (_shown == (line != nil)) return;
-    _shown = line != nil;
-    CGFloat alpha = _shown ? 1 : 0;
+    if (_showing == (line != nil)) return;
+    _showing = line != nil;
+    CGFloat alpha = _showing ? 1 : 0;
     SGRAnimate(SGRMotionFade, ^{ self.alpha = alpha; }, nil);
 }
 
@@ -289,7 +290,8 @@ static NSString *trimmed(NSString *text) {
 - (void)setColours:(NSArray<UIColor *> *)colours {}
 - (void)takeLine {}
 - (void)takeWord {}
-// The field moved: the line shown is laid out again where it is, without motion.
+// The field moved, or the player began or stopped showing the line itself: the line shown is laid out again where
+// it is, without motion.
 - (void)layOutType {}
 
 @end
@@ -476,10 +478,10 @@ static UIFont *posterFont(CGFloat size) {
 #pragma mark - Cut
 
 // The word: heavy, as large as one line of the field's width allows, kCutLargest points at the most. The whole
-// line: kCutLineSize points, its centre kCutLineAt of the field's height down. The blocks: kCutBlocks at
-// kCutBlockOpacity, each kCutBlockWidth of the width plus up to as much again, kCutBlockHeight of the field's
-// height plus up to kCutBlockGrow, scattered over kCutBlockSpread of its height around the word.
-static const CGFloat kCutLargest = 132, kCutLineSize = 17, kCutLineAt = 0.66, kCutLineAlpha = 0.8;
+// line: kCutLineSize points, kCutLineGap points under the word. The blocks: kCutBlocks at kCutBlockOpacity, each
+// kCutBlockWidth of the width plus up to as much again, kCutBlockHeight of the field's height plus up to
+// kCutBlockGrow, scattered over kCutBlockSpread of its height around the word.
+static const CGFloat kCutLargest = 132, kCutLineSize = 17, kCutLineGap = 6, kCutLineAlpha = 0.8;
 enum { kCutBlocks = 3 };
 static const CGFloat kCutBlockOpacity = 0.9, kCutBlockWidth = 0.3, kCutBlockHeight = 0.06, kCutBlockGrow = 0.18, kCutBlockSpread = 0.6;
 // A cut's jump at Motion 1: kCutJumpScale larger and up to kCutJumpOffset points aside, settling over kCutSettle.
@@ -514,6 +516,7 @@ static CGFloat share(uint32_t seed, uint32_t salt) {
     NSString *_coverID;
     NSArray<UIColor *> *_colours;
     double _motion;
+    BOOL _subtitle;   // Whole line is on
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -566,7 +569,10 @@ static CGFloat share(uint32_t seed, uint32_t salt) {
     UIColor *ink = SGColorRGB(lround(SGRVisualiserParam(SGRVisualiserCutID, SGRVisualiserInk)));
     _wordLabel.textColor = ink;
     _lineLabel.textColor = [ink colorWithAlphaComponent:kCutLineAlpha];
-    _lineLabel.hidden = SGRVisualiserParam(SGRVisualiserCutID, SGRVisualiserSubtitle) == 0;
+    _subtitle = SGRVisualiserParam(SGRVisualiserCutID, SGRVisualiserSubtitle) != 0;
+    [self showCaption];
+    // The word takes the whole line's room, or gives it back.
+    if (self.line) [self layOutWord];
     _motion = SGRVisualiserParam(SGRVisualiserCutID, SGRVisualiserMotion);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
@@ -588,9 +594,13 @@ static CGFloat share(uint32_t seed, uint32_t salt) {
     if (self.line) [self placeBlocks];
 }
 
+// The whole line with Whole line on, unless the player shows it over its title, where it would repeat it.
+- (void)showCaption {
+    _lineLabel.hidden = !_subtitle || self.lineElsewhere;
+}
+
 - (void)takeLine {
     _lineLabel.text = trimmed(SGKaraokeLineText(self.line));
-    [self layOutLine];
     [self takeWord];
 }
 
@@ -603,31 +613,35 @@ static CGFloat share(uint32_t seed, uint32_t salt) {
 }
 
 - (void)layOutType {
+    [self showCaption];
     if (!self.line) return;
-    [self layOutLine];
     [self layOutWord];
     [self placeBlocks];
 }
 
-- (void)layOutLine {
-    CGRect field = self.field;
-    CGFloat height = ceil([_lineLabel sizeThatFits:CGSizeMake(field.size.width, CGFLOAT_MAX)].height);
-    _lineLabel.bounds = CGRectMake(0, 0, field.size.width, height);
-    _lineLabel.center = CGPointMake(CGRectGetMidX(field), CGRectGetMinY(field) + field.size.height * kCutLineAt);
-}
-
+// The word as large as one line of the field's width allows and as tall as the field leaves over the whole line
+// and its gap under it while that shows; the word on the centre line as far as the field lets the two stay inside it.
 - (void)layOutWord {
     NSArray<SGKaraokeWord *> *words = self.line.words;
     NSUInteger index = (NSUInteger)MAX(0, self.word);
     NSString *text = index < words.count ? trimmed(words[index].text ?: @"") : @"";
     CGRect field = self.field;
-    CGFloat wide = [text sizeWithAttributes:@{NSFontAttributeName: cutFont(kCutLargest)}].width;
-    CGFloat size = wide > field.size.width ? floor(kCutLargest * field.size.width / wide) : kCutLargest;
+    BOOL caption = !_lineLabel.hidden;
+    CGFloat lineHeight = caption ? ceil([_lineLabel sizeThatFits:CGSizeMake(field.size.width, CGFLOAT_MAX)].height) : 0;
+    CGFloat under = caption ? kCutLineGap + lineHeight : 0, room = field.size.height - under;
+    UIFont *largest = cutFont(kCutLargest);
+    CGFloat wide = [text sizeWithAttributes:@{NSFontAttributeName: largest}].width;
+    CGFloat share = MIN(room / largest.lineHeight, wide > 0 ? field.size.width / wide : 1);
+    // A font has a size of at least a point; under rounding its line can come out a little taller than its share.
+    CGFloat size = MAX(1, floor(kCutLargest * MIN(1, share)));
+    while (size > 1 && cutFont(size).lineHeight > room) size--;
     _wordLabel.font = cutFont(size);
     _wordLabel.text = text;
     // In the container's coordinates, which are the stage's.
-    CGFloat height = ceil(_wordLabel.font.lineHeight);
-    _wordLabel.frame = CGRectMake(CGRectGetMinX(field), self.centre - height / 2, field.size.width, height);
+    CGFloat height = _wordLabel.font.lineHeight;
+    CGFloat top = MIN(MAX(self.centre - height / 2, CGRectGetMinY(field)), CGRectGetMaxY(field) - height - under);
+    _wordLabel.frame = CGRectMake(CGRectGetMinX(field), top, field.size.width, height);
+    if (caption) _lineLabel.frame = CGRectMake(CGRectGetMinX(field), top + height + kCutLineGap, field.size.width, lineHeight);
 }
 
 // The seed the blocks and the jump are drawn from: the line's start and the word's index.
