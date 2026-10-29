@@ -59,6 +59,9 @@ xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -O0 -g -isysroot "$SDK
     "$HERE/check.m" "${CONTEXT:-$SRC/Redesigned/Kit/SGRAccentContext.m}" "$OUT/SGRAccent.m" "$SRC/Core/SGPrefs.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework Foundation -o "$OUT/Check.app/Contents/MacOS/check"
 codesign -f -s - "$CHECK"
+case "${1:-all}" in
+    stock|animations|reenable) "$CHECK/Contents/MacOS/check" "$1"; exit ;;
+esac
 "$CHECK/Contents/MacOS/check"
 "$CHECK/Contents/MacOS/check" stock
 "${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "${PLAYER_ACCENT:-$SRC/Redesigned/Player/PlayerCoverAccent.x}" > "$OUT/PlayerCoverAccent.m"

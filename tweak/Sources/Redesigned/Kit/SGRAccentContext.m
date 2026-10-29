@@ -109,10 +109,16 @@ static SGRAccentContext *owner(void) {
 @implementation SGRAccentContext
 - (void)apply {
     NSInteger pick = SGInt(SGRKeyAccent, SGRDefaultAccent);
-    BOOL enabled = SGFlag(SGRKeyAccentAuto, NO) || (pick >= 0 && pick <= 0xFFFFFF);
+    BOOL requested = SGFlag(SGRKeyAccentAuto, NO) || (pick >= 0 && pick <= 0xFFFFFF);
+    // The constructor applies preferences before installing paint hooks. Only a stock launch
+    // lacks those hooks; a later switch to stock must not revoke their launch-time availability.
+    static BOOL availableAtLaunch;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ availableAtLaunch = requested; });
+    BOOL enabled = availableAtLaunch && requested;
     BOOL wasEnabled = atomic_exchange(&substituting, enabled);
-    NSInteger rgb = SGRPickedAccentRGB();
-    if (SGFlag(SGRKeyAccentAuto, NO)) {
+    NSInteger rgb = enabled ? SGRPickedAccentRGB() : SGSpotifyGreen;
+    if (enabled && SGFlag(SGRKeyAccentAuto, NO)) {
         NSInteger page = -1;
         // The closest registered ancestor owns the front, not whichever field most recently laid out.
         for (UIView *view = self.front; view; view = view.superview) {
@@ -133,7 +139,7 @@ static SGRAccentContext *owner(void) {
     [self apply];
 }
 - (void)artwork {
-    if (!SGFlag(SGRKeyAccentAuto, NO)) return;
+    if (!SGRAccentSubstitutionEnabled() || !SGFlag(SGRKeyAccentAuto, NO)) return;
     NSString *track = nil;
     UIImage *image = SGRNowPlayingArtwork(&track, NULL);
     NSString *current = SGURIString(SGPlayerState().track.URI);

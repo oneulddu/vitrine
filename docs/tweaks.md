@@ -1380,7 +1380,10 @@ transition ends, a cancelled interactive pop included. The preset and color rows
 temporary color. What is drawn in the accent is a token (SGRAccentToken, Kit/SGRAccent.x) that keeps its alpha, its shade
 and Spotify's own green, so an image, a background or a shape layer is recolored by what it was made from and never by a
 similar hue, a running animation is never replaced (only a newer submission takes the color), and Picked or Spotify's
-green puts the originals back; Follow the cover paints on the same tokens (PlayerCoverAccent.x). Hide explicit badge
+green puts the originals back; Follow the cover paints on the same tokens (PlayerCoverAccent.x). The token hooks are
+installed only when a launch starts with an accent other than Spotify's green; while installed they keep recording
+tokens even when the user switches back to Spotify's green, so the accent can return live. A launch with Spotify's
+green installs nothing, and choosing an accent then takes effect after a relaunch (the page's restart note). Hide explicit badge
 (off) ends either look's list (spotifyglass.hideExplicit native, spotifyglass.redesign.hideExplicit redesigned;
 Native/Appearance/ExplicitBadge.x, Redesigned/Kit/SGRExplicitBadge.x): a transparent mask over Spotify's own badge views,
 Components.UI.ExplicitIcon and the retrieval row's ExplicitBadge class, never an E label found by its text, so the layout,

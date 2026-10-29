@@ -179,6 +179,17 @@ static void runChecks(void) {
         });
     };
     observer.finished=^{
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGRKeyAccentAuto:@NO,SGRKeyPlayerFollowsCover:@(follow),SGRKeyAccent:@(-1)} forName:NSArgumentDomain];
+        SGRAccentPreferencesChanged();
+        UIColor *offGreen=[UIColor colorWithRed:30/255.0 green:215/255.0 blue:96/255.0 alpha:1];
+        UIImageView *offIcon=[[UIImageView alloc] initWithImage:knownIcon(offGreen)];
+        UIImageView *offAlpha=[[UIImageView alloc] initWithImage:knownIcon([offGreen colorWithAlphaComponent:.5])];
+        expectRGB(imageRGB(offIcon.image),0x1ED760,@"icon created while stock renders stock green");
+        expect((pixel(offAlpha.image,4)&255)==128,@"icon derived while stock preserves half opacity");
+        [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGRKeyAccentAuto:@NO,SGRKeyPlayerFollowsCover:@(follow),SGRKeyAccent:@0xFF0000} forName:NSArgumentDomain];
+        SGRAccentPreferencesChanged();
+        expectRGB(imageRGB(offIcon.image),0xFF0000,@"icon created while stock follows the restored accent");
+        expectRGB(imageRGB(offAlpha.image),0x800000,@"icon derived while stock follows the restored accent at half opacity");
         printf("player accent Automatic=%d Follow=%d: %lu checks passed\n",automatic,follow,(unsigned long)checks);
         exit(0);
     };

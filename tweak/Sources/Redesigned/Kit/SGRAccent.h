@@ -11,6 +11,7 @@
 #define SGRDefaultAccent 0x37F200
 
 UIColor *SGRAccentColor(void);   // nil for Picked/Spotify, as before; otherwise a live token
+// A Picked/Spotify launch needs relaunch to enable an accent; accent launches can toggle live.
 BOOL SGRAccentSubstitutionEnabled(void);
 NSInteger SGRAccentRGB(void);    // the color in effect, 0xRRGGBB, Spotify's green included
 NSInteger SGRPickedAccentRGB(void); // saved pick, never the temporary page/cover color
