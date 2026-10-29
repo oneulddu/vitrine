@@ -48,6 +48,8 @@ HARNESSES = [
      "run": "sh harness/settings-search/build.sh"},
     {"name": "Settings bars inset", "dir": "settings-bars",
      "run": "sh harness/settings-bars/build.sh"},
+    {"name": "Now playing bar text", "dir": "now-playing-bar", "theos": True,
+     "run": "bash harness/now-playing-bar/check.sh"},
     {"name": "Meaning translation", "dir": "meaning-translate",
      "run": "sh harness/meaning-translate/build.sh"},
     {"name": "Artist artwork", "dir": "artist-artwork",

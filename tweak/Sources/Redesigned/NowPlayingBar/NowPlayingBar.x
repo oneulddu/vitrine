@@ -25,6 +25,7 @@
 #import "Settings/SGMarquee.h"
 #import "NowPlayingBar.h"
 #import "Redesigned/Navbar/Navbar.h"
+#import "Shared/Player/PlayerState.h"
 
 static const CGFloat kCardRadius = 24;
 // The strip's pane is this much smaller than the strip at each end, so a gap parts it from the card's glass.
@@ -392,6 +393,33 @@ static BOOL inSight(UIView *view, UIView *unit) {
     return YES;
 }
 
+// The title the player knows that the page's first line is: the line is the title alone, or the title, the
+// bullet and the artists, whose first the track names. A title can hold the bullet itself, which the line alone
+// cannot tell from the one that parts it. Every track the player knows is a candidate, since a page of the
+// pager may show a neighbor: a title equal to the line wins, else the longest title the line starts with that
+// the track's artist follows, so a short title ("Rock" by "Roll") never takes the line of a longer one
+// ("Rock • Roll" by "The Band"). Nil when none matches.
+static NSString *knownTitleOf(NSString *line) {
+    SPTPlayerState *state = SGPlayerState();
+    NSMutableArray *tracks = [NSMutableArray array];
+    if (state.track) [tracks addObject:state.track];
+    if ([state.future isKindOfClass:NSArray.class]) [tracks addObjectsFromArray:state.future];
+    if ([state.reverse isKindOfClass:NSArray.class]) [tracks addObjectsFromArray:state.reverse];
+    NSString *best = nil;
+    for (id item in tracks) {
+        if (![item isKindOfClass:NSClassFromString(@"SPTPlayerTrack")]) continue;
+        SPTPlayerTrack *track = item;
+        NSString *title = track.trackTitle, *artist = track.artistName;
+        if (![title isKindOfClass:NSString.class] || !title.length) continue;
+        if ([line isEqualToString:title]) return title;
+        NSString *head = [title stringByAppendingString:kBullet];
+        if (![line hasPrefix:head] || title.length <= best.length) continue;
+        NSString *rest = [line substringFromIndex:head.length];
+        if (rest.length && (![artist isKindOfClass:NSString.class] || !artist.length || [rest hasPrefix:artist])) best = title;
+    }
+    return best;
+}
+
 static void placeText(UIView *page) {
     // The cell lays itself out before its content view places Spotify's text, so the text is placed first.
     [page layoutIfNeeded];
@@ -416,7 +444,11 @@ static void placeText(UIView *page) {
     });
     if (!line.length) return;
     NSString *title = line;
-    if (artists) {
+    NSString *known = knownTitleOf(line);
+    if (known) {
+        title = known;
+        artists = line.length > known.length ? [line substringFromIndex:known.length + kBullet.length] : shown;
+    } else if (artists) {
         title = [line substringToIndex:line.length - artists.length - kBullet.length];
     } else {
         NSRange bullet = [line rangeOfString:kBullet];
