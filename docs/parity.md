@@ -245,10 +245,9 @@ Judged equal, already there, or not taken, from the same round:
 | Lock screen styles and the clock | Not taken: they are interleaved with Plus |
 | Home snapshot replay, and the Library settings button in the header | Unresolved: upstream's behavior was not traced to the end |
 
-Debt from this round:
-
-- Kit preview parts do not mirror right to left.
-- `LibrarySettings.m` repeats the Kit title row's sizes.
+Debt from this round: none left; the follow-up sweep fixed every item (ruby over wrapped compounds, the offline
+store's provider translations and credits, the protobuf field budget, the previews' right to left and the Library
+title row's sizes).
 
 ### Before the fork point, or not needed any more
 

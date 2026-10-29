@@ -9,6 +9,12 @@
 // then drawn at once, that a part a switch brings back below the card's foot is scrolled into sight
 // (<page>-revealed.png), that Home's page color goes with the Top picks colors (home-no-colour.png) and the artist's
 // field with the photo shown, and that the card grows with the text.
+//
+// The `rtl` launch (build.sh's second, the app right to left) runs the same checks, its PNGs named <...>-rtl.png, then
+// the mirror check against the layouts the left to right launch noted (png/mirror-ltr.plist): every view of each card,
+// in the card's coordinates, on the other side of the card, but for the header's controls, which keep their order as
+// the real header does (SGRHeaderInfo.m); each label's text, as drawn, on the other side too; and the back button's
+// chevron the left to right one turned around.
 // Exits nonzero on the first failure (harness-fail.h).
 #import <UIKit/UIKit.h>
 #import "../harness-fail.h"
@@ -27,6 +33,11 @@
 static NSString *outDir;
 static UIWindow *window;
 static UINavigationController *nav;
+static BOOL rtlRun;   // the `rtl` launch
+
+static BOOL readsRightToLeft(UIView *view) {
+    return view.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+}
 
 static void spin(NSTimeInterval seconds) {
     [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:seconds]];
@@ -70,6 +81,7 @@ static SGRPagePreview *show(UIViewController *(^builder)(void)) {
     SGRPagePreview *card = cardIn(tableOf(page).tableHeaderView);
     if (!card) HARNESS_FAIL(@"no preview card on %@", page.title);
     if (card.bounds.size.height < 1) HARNESS_FAIL(@"the card on %@ has no height", page.title);
+    if (readsRightToLeft(card) != rtlRun) HARNESS_FAIL(@"the card on %@ reads %@", page.title, rtlRun ? @"left to right" : @"right to left");
     return card;
 }
 
@@ -80,6 +92,7 @@ static BOOL animating(UIView *view) {
 }
 
 static void writePNG(UIView *view, NSString *name) {
+    if (rtlRun) name = [name stringByAppendingString:@"-rtl"];
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithBounds:view.bounds];
     UIImage *image = [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
         [view drawViewHierarchyInRect:view.bounds afterScreenUpdates:YES];
@@ -254,6 +267,188 @@ static void runCoverChoices(void) {
     printf("PASS four cover combinations and both count sources in row/menu previews\n");
 }
 
+#pragma mark - the mirror check
+
+static NSString *const kControlsID = @"vitrine.preview.header.controls", *const kBackID = @"vitrine.preview.back";
+// Drawn at this scale for the ink and the chevron's pixels.
+static const CGFloat kDrawScale = 3;
+// A label's text drawn right to left sits within this of the left to right one's mirror: the glyphs themselves are
+// not mirrored, so their side bearings swap ends.
+static const CGFloat kInkTolerance = 1.5;
+// Frames are mirrored exactly, give or take rounding.
+static const CGFloat kFrameTolerance = 0.01;
+// Pixels whose brightness differs by more than this count as unlike. The chevron is the bright pixels on its round
+// button: it matches its mirror within the share kChevronMatch of unlike pixels to bright ones, and is unlike itself
+// turned around past kChevronAsymmetry.
+static const uint8_t kAlphaStep = 64, kBright = 192;
+static const double kChevronMatch = 0.05, kChevronAsymmetry = 0.5;
+
+// The brightness of what `draw` draws over black into `size`, `kDrawScale` pixels a point, rows top down.
+static NSData *coverage(CGSize size, size_t *columns, void (^draw)(void)) {
+    size_t w = (size_t)ceil(size.width * kDrawScale), h = (size_t)ceil(size.height * kDrawScale);
+    NSMutableData *data = [NSMutableData dataWithLength:w * h];
+    CGColorSpaceRef gray = CGColorSpaceCreateDeviceGray();
+    CGContextRef context = CGBitmapContextCreate(data.mutableBytes, w, h, 8, w, gray, (CGBitmapInfo)kCGImageAlphaNone);
+    CGColorSpaceRelease(gray);
+    if (!context) HARNESS_FAIL(@"no bitmap of %zux%zu", w, h);
+    CGContextTranslateCTM(context, 0, h);
+    CGContextScaleCTM(context, kDrawScale, -kDrawScale);
+    UIGraphicsPushContext(context);
+    draw();
+    UIGraphicsPopContext();
+    CGContextRelease(context);
+    *columns = w;
+    return data;
+}
+
+static CGRect inkOf(UILabel *label, UIView *card) {
+    CGSize size = label.bounds.size;
+    if (!label.text.length || size.width < 1 || size.height < 1) return CGRectNull;
+    size_t w = 0;
+    NSData *data = coverage(size, &w, ^{ [label drawTextInRect:label.bounds]; });
+    const uint8_t *alpha = data.bytes;
+    size_t h = data.length / w, first = SIZE_MAX, last = 0;
+    for (size_t y = 0; y < h; y++) for (size_t x = 0; x < w; x++) {
+        if (alpha[y * w + x] < kAlphaStep) continue;
+        first = MIN(first, x);
+        last = MAX(last, x);
+    }
+    if (first == SIZE_MAX) return CGRectNull;
+    CGRect ink = CGRectMake(first / kDrawScale, 0, (last + 1 - first) / kDrawScale, size.height);
+    return [label convertRect:ink toView:card];
+}
+
+// The views under `view` top down, as the card lays them out, in the card's coordinates; not into a label's or an
+// image view's insides. Each: its class (kind), frame, whether it is in the header's controls (fixed), a label's
+// text as drawn (ink), and the back button's brightness (pixels, `columns` wide).
+static void collect(UIView *view, UIView *card, BOOL fixed, NSMutableArray<NSDictionary *> *into) {
+    for (UIView *sub in view.subviews) {
+        NSMutableDictionary *placed = [NSMutableDictionary dictionary];
+        placed[@"kind"] = NSStringFromClass(sub.class);
+        placed[@"frame"] = NSStringFromCGRect([sub convertRect:sub.bounds toView:card]);
+        placed[@"fixed"] = @(fixed);
+        CGRect ink = [sub isKindOfClass:UILabel.class] ? inkOf((UILabel *)sub, card) : CGRectNull;
+        if (!CGRectIsNull(ink)) placed[@"ink"] = NSStringFromCGRect(ink);
+        if ([sub.accessibilityIdentifier isEqual:kBackID]) {
+            // Drawn with the round button it sits in, as the screen draws it: the image view turns its image on the
+            // way to the screen, not in a drawing of its own.
+            UIView *button = sub.superview;
+            size_t columns = 0;
+            placed[@"pixels"] = coverage(button.bounds.size, &columns, ^{ [button drawViewHierarchyInRect:button.bounds afterScreenUpdates:YES]; });
+            placed[@"columns"] = @(columns);
+        }
+        [into addObject:placed];
+        if ([sub isKindOfClass:UILabel.class] || [sub isKindOfClass:UIImageView.class]) continue;
+        collect(sub, card, fixed || [sub.accessibilityIdentifier isEqual:kControlsID], into);
+    }
+}
+
+// The pixels unlike between `a` and `b` turned around, as a share of the bright ones in either.
+static double unlike(NSData *a, NSData *b, size_t columns) {
+    if (a.length != b.length || !columns) return INFINITY;
+    const uint8_t *pa = a.bytes, *pb = b.bytes;
+    size_t rows = a.length / columns, count = 0, bright = 0;
+    for (size_t y = 0; y < rows; y++) for (size_t x = 0; x < columns; x++) {
+        int left = pa[y * columns + x], right = pb[y * columns + columns - 1 - x];
+        if (abs(left - right) > kAlphaStep) count++;
+        if (left >= kBright || right >= kBright) bright++;
+    }
+    return bright ? (double)count / (double)bright : INFINITY;
+}
+
+static BOOL near(CGFloat a, CGFloat b, CGFloat tolerance) {
+    return fabs(a - b) <= tolerance;
+}
+
+static NSUInteger chevronsChecked;
+// The left to right launch's layouts by page, written for the right to left one (UIKit takes a label's natural
+// alignment and an image's turn from the app's direction, so a trait override in one launch would not stand in for
+// the other).
+static NSMutableDictionary<NSString *, NSDictionary *> *layouts;
+
+static NSString *layoutsPath(void) {
+    return [outDir stringByAppendingPathComponent:@"mirror-ltr.plist"];
+}
+
+// Right to left, `rtl` against the left to right `ltr` of the card `width` wide.
+static void compareMirrored(NSString *name, NSArray<NSDictionary *> *ltr, NSArray<NSDictionary *> *rtl, CGFloat width) {
+    if (ltr.count != rtl.count) HARNESS_FAIL(@"%@: %lu views left to right, %lu right to left", name, (unsigned long)ltr.count, (unsigned long)rtl.count);
+    NSUInteger labels = 0;
+    for (NSUInteger i = 0; i < ltr.count; i++) {
+        NSDictionary *a = ltr[i], *b = rtl[i];
+        NSString *kind = a[@"kind"];
+        if (![kind isEqual:b[@"kind"]]) HARNESS_FAIL(@"%@: view %lu is a %@ left to right, a %@ right to left", name, (unsigned long)i, kind, b[@"kind"]);
+        CGRect from = CGRectFromString(a[@"frame"]), to = CGRectFromString(b[@"frame"]);
+        BOOL fixed = [a[@"fixed"] boolValue];
+        CGFloat x = fixed ? from.origin.x : width - CGRectGetMaxX(from);
+        if (!near(to.origin.x, x, kFrameTolerance) || !near(to.origin.y, from.origin.y, kFrameTolerance) ||
+            !near(to.size.width, from.size.width, kFrameTolerance) || !near(to.size.height, from.size.height, kFrameTolerance)) {
+            HARNESS_FAIL(@"%@: %@ %lu at %@ right to left, expected x %.2f (%@ left to right%@)", name, kind, (unsigned long)i,
+                         NSStringFromCGRect(to), x, NSStringFromCGRect(from), fixed ? @", kept in place" : @", mirrored");
+        }
+        if ((a[@"ink"] != nil) != (b[@"ink"] != nil)) HARNESS_FAIL(@"%@: label %lu draws text in one direction only", name, (unsigned long)i);
+        if (a[@"ink"]) {
+            labels++;
+            CGRect inkFrom = CGRectFromString(a[@"ink"]), inkTo = CGRectFromString(b[@"ink"]);
+            CGFloat inkX = width - CGRectGetMaxX(inkFrom);
+            if (!near(inkTo.origin.x, inkX, kInkTolerance)) {
+                HARNESS_FAIL(@"%@: label %lu's text starts at x %.1f right to left, expected %.1f (left to right %@ in %@)", name, (unsigned long)i,
+                             inkTo.origin.x, inkX, NSStringFromCGRect(inkFrom), NSStringFromCGRect(from));
+            }
+        }
+        if ((a[@"pixels"] != nil) != (b[@"pixels"] != nil)) HARNESS_FAIL(@"%@: the back chevron is drawn in one direction only", name);
+        if (a[@"pixels"]) {
+            size_t columns = [a[@"columns"] unsignedLongValue];
+            double turned = unlike(b[@"pixels"], a[@"pixels"], columns), asymmetry = unlike(a[@"pixels"], a[@"pixels"], columns);
+            if (asymmetry <= kChevronAsymmetry) HARNESS_FAIL(@"%@: the back chevron looks the same turned around (%.3f), so its turn proves nothing", name, asymmetry);
+            if (turned > kChevronMatch) HARNESS_FAIL(@"%@: the back chevron right to left is not the left to right one turned around (%.3f unlike)", name, turned);
+            printf("PASS %s back chevron turned around (%.3f unlike its mirror, %.3f unlike itself turned)\n", name.UTF8String, turned, asymmetry);
+            chevronsChecked++;
+        }
+    }
+    printf("PASS %s mirrors right to left (%lu views, %lu labels' text)\n", name.UTF8String, (unsigned long)ltr.count, (unsigned long)labels);
+}
+
+// One page, its settings as `setup` leaves them: left to right its layout is noted, right to left compared with it.
+static void runMirror(NSString *name, UIViewController *(^builder)(void), void (^setup)(void)) {
+    reset();
+    if (setup) setup();
+    SGRPagePreview *card = show(builder);
+    NSMutableArray<NSDictionary *> *views = [NSMutableArray array];
+    collect(card, card, NO, views);
+    CGFloat width = card.bounds.size.width;
+    if (!rtlRun) {
+        layouts[name] = @{@"width": @(width), @"views": views};
+        return;
+    }
+    NSDictionary *ltr = layouts[name];
+    if (!ltr) HARNESS_FAIL(@"%@: no left to right layout in %@", name, layoutsPath());
+    if ([ltr[@"width"] doubleValue] != width) HARNESS_FAIL(@"%@: the card is %.1f wide right to left, %.1f left to right", name, width, [ltr[@"width"] doubleValue]);
+    compareMirrored(name, ltr[@"views"], views, width);
+}
+
+static void runMirrors(void) {
+    if (rtlRun) {
+        layouts = [NSMutableDictionary dictionaryWithContentsOfFile:layoutsPath()];
+        if (!layouts) HARNESS_FAIL(@"no left to right layouts at %@: run left to right first", layoutsPath());
+    } else {
+        layouts = [NSMutableDictionary dictionary];
+    }
+    runMirror(@"playlist", ^UIViewController *{ return SGRPlaylistSettingsPage(); }, nil);
+    runMirror(@"search", ^UIViewController *{ return SGRSearchSettingsPage(); }, nil);
+    runMirror(@"home", ^UIViewController *{ return SGRHomeSettingsPage(); }, nil);
+    runMirror(@"home-plain", ^UIViewController *{ return SGRHomeSettingsPage(); }, ^{ SGSetEnabled(SGRKeyHomeLook, NO); });
+    runMirror(@"album", ^UIViewController *{ return SGRAlbumSettingsPage(); }, nil);
+    runMirror(@"album-menu", ^UIViewController *{ return SGRAlbumSettingsPage(); }, ^{ SGSetInt(SGRKeyAlbumPlayCountsPlace, SGRAlbumPlayCountsInMenu); });
+    runMirror(@"artist", ^UIViewController *{ return SGRArtistSettingsPage(); }, nil);
+    if (!rtlRun) {
+        if (![layouts writeToFile:layoutsPath() atomically:YES]) HARNESS_FAIL(@"could not write %@", layoutsPath());
+        printf("noted the left to right layouts for the mirror check\n");
+    } else if (!chevronsChecked) {
+        HARNESS_FAIL(@"no back chevron was found to check");
+    }
+}
+
 static void runChecks(void) {
     runCoverChoices();
     runPage(@"playlist", ^UIViewController *{ return SGRPlaylistSettingsPage(); },
@@ -324,6 +519,7 @@ static void runChecks(void) {
     runLooks(@"home", ^UIViewController *{ return SGRHomeSettingsPage(); });
     runLooks(@"album", ^UIViewController *{ return SGRAlbumSettingsPage(); });
     runLooks(@"artist", ^UIViewController *{ return SGRArtistSettingsPage(); });
+    runMirrors();
 
     [NSUserDefaults.standardUserDefaults removePersistentDomainForName:NSBundle.mainBundle.bundleIdentifier];
     printf("page previews: all checks passed\n");
@@ -367,6 +563,7 @@ static void runChecks(void) {
 int main(int argc, char **argv) {
     @autoreleasepool {
         outDir = [NSString stringWithUTF8String:getenv("PAGE_PREVIEWS_PNG") ?: "png"];
+        rtlRun = [NSProcessInfo.processInfo.arguments containsObject:@"rtl"];
         [NSFileManager.defaultManager createDirectoryAtPath:outDir withIntermediateDirectories:YES attributes:nil error:NULL];
         return UIApplicationMain(argc, argv, nil, NSStringFromClass(HarnessApp.class));
     }

@@ -2,8 +2,9 @@
 # Builds and runs the page previews harness in an iOS simulator of its own, made for the run and deleted after it
 # (Mac Catalyst keeps one text size, and the cards follow the reader's): the redesign's Playlists, Home, Search,
 # Albums and Artists pages as their builders make them, with the preview card (Redesigned/Kit/SGRPagePreview.m), the
-# Settings/ framework and the Kit's tokens and accent. Writes each card in each state to build/png/ and exits nonzero
-# on a failed check. Needs THEOS for logos.pl (the accent's Logos file).
+# Settings/ framework and the Kit's tokens and accent. Runs left to right, then right to left (`rtl`). Writes each
+# card in each state to build/png/ and exits nonzero on a failed check. Needs THEOS for logos.pl (the accent's Logos
+# file).
 #     THEOS=$HOME/theos ./build.sh
 set -eu
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -66,3 +67,7 @@ xcrun simctl install "$UDID" "$APP"
 SIMCTL_CHILD_PAGE_PREVIEWS_PNG="$OUT/png" xcrun simctl launch --console-pty "$UDID" com.vitrine.page-previews-harness \
     -AppleLanguages '(en)' -AppleLocale en_US | tee "$OUT/run.log"
 grep -q "page previews: all checks passed" "$OUT/run.log"
+# Again right to left: the same checks, the PNGs named <...>-rtl.png, and the cards mirrored (main.m, the mirror check).
+SIMCTL_CHILD_PAGE_PREVIEWS_PNG="$OUT/png" xcrun simctl launch --console-pty "$UDID" com.vitrine.page-previews-harness \
+    rtl -AppleLanguages '(en)' -AppleLocale en_US -AppleTextDirection YES -NSForceRightToLeftWritingDirection YES | tee "$OUT/run-rtl.log"
+grep -q "page previews: all checks passed" "$OUT/run-rtl.log"

@@ -192,10 +192,35 @@ NSString *SGRPreviewList(NSArray<NSString *> *names) {
 @property (nonatomic, copy) CGFloat (^stack)(UIView *part, CGFloat width, CGFloat unit);
 @property (nonatomic, copy) CGRect (^over)(UIView *overlay, CGSize page, CGFloat unit);
 @property (nonatomic) BOOL shown;
+@property (nonatomic) BOOL mirrored;   // its views stand where mirrorSubviews put them
 @end
 
 @implementation SGRPreviewPart
 @end
+
+// A row whose views keep their order right to left, as the real header's controls do (SGRHeaderInfo.m): it is
+// mirrored as a whole, and what it holds is left where it was laid out.
+@interface SGRPreviewFixedRow : UIView
+@end
+
+@implementation SGRPreviewFixedRow
+@end
+
+static BOOL rightToLeft(UIView *view) {
+    return view.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+}
+
+// Every view under `root` moved to the other side of the view it sits in, by its center, so a turned one keeps its
+// turn; done twice, the views are back where they were. A label's and an image view's insides are UIKit's, and a
+// fixed row's are left as they are.
+static void mirrorSubviews(UIView *root) {
+    CGFloat axis = 2 * CGRectGetMidX(root.bounds);
+    for (UIView *view in root.subviews) {
+        view.center = CGPointMake(axis - view.center.x, view.center.y);
+        if ([view isKindOfClass:UILabel.class] || [view isKindOfClass:UIImageView.class] || [view isKindOfClass:SGRPreviewFixedRow.class]) continue;
+        mirrorSubviews(view);
+    }
+}
 
 @interface SGRPagePreview ()
 // The page tells the card as it scrolls: a change noted while out of sight is drawn once it is back in sight.
@@ -332,24 +357,38 @@ NSString *SGRPreviewList(NSArray<NSString *> *names) {
     else [self layoutPageRevealing:nil];
 }
 
+// A part or an overlay as its layout left it, mirrored right to left.
+static void orient(SGRPreviewPart *part, BOOL rtl) {
+    if (rtl) mirrorSubviews(part);
+    part.mirrored = rtl;
+}
+
 // The overlays; the parts top down, a hidden one faded where it is with the next taking its place; the page scrolled
 // to `focus` when that is out of sight, and kept within its length, its content ending at the foot (over a tab bar,
-// its clearance); then what VoiceOver reads: the names of the parts and overlays shown.
+// its clearance); then what VoiceOver reads: the names of the parts and overlays shown. Each lays out from the left,
+// from where its last layout left its views (put back first if they were mirrored), and right to left it is mirrored.
 - (void)layoutPageRevealing:(SGRPreviewPart *)focus {
     CGSize size = _page.bounds.size;
     if (size.width <= 0) return;
     CGFloat unit = self.unit, y = 0, end = 0;
+    BOOL rtl = rightToLeft(self);
     NSMutableArray<NSString *> *names = [NSMutableArray array], *overlayNames = [NSMutableArray array];
     for (SGRPreviewPart *overlay in _overlays) {
-        overlay.frame = overlay.over(overlay, size, unit);
+        if (overlay.mirrored) mirrorSubviews(overlay);
+        CGRect frame = overlay.over(overlay, size, unit);
+        if (rtl) frame.origin.x = size.width - CGRectGetMaxX(frame);
+        overlay.frame = frame;
+        orient(overlay, rtl);
         overlay.alpha = overlay.shown ? 1 : 0;
         if (overlay.shown && overlay.accessibilityLabel.length) [overlayNames addObject:overlay.accessibilityLabel];
     }
     CGFloat foot = _tabBar ? CGRectGetMinY(_tabBar.frame) - kTabBarClearance * unit : size.height;
     CGFloat fade = (_tabBar ? kTabBarFade : kFadeHeight) * unit;
     for (SGRPreviewPart *part in _parts) {
+        if (part.mirrored) mirrorSubviews(part);
         CGFloat height = part.stack(part, size.width, unit);
         part.frame = CGRectMake(0, y, size.width, height);
+        orient(part, rtl);
         part.alpha = part.shown ? 1 : 0;
         if (!part.shown) continue;
         end = y + height;
@@ -453,7 +492,7 @@ NSString *SGRPreviewList(NSArray<NSString *> *names) {
 
 // The title row: the large title, on Home's glass pill with its chevron while that look is on, the avatar, and a
 // hairline under the row.
-static const CGFloat kTitleTop = 8, kTitleRow = 34, kTitleFont = 22, kAvatar = 26;
+const CGFloat SGRPreviewTitleTop = 8, SGRPreviewTitleRowHeight = 34, SGRPreviewTitleFontSize = 22, SGRPreviewAvatarSide = 26;
 static const CGFloat kPillPad = 10, kPillHeight = 32, kChevron = 10, kChevronGap = 5;
 
 @interface SGRPreviewTitle ()
@@ -473,9 +512,9 @@ SGRPreviewTitle *SGRPreviewAddTitle(SGRPagePreview *card, NSString *text) {
     UIView *part = [card addPartWithLayout:^CGFloat(UIView *view, CGFloat width, CGFloat unit) {
         SGRPreviewTitle *owner = title;
         BOOL inPill = owner.inPill;
-        CGFloat top = kTitleTop * unit, row = kTitleRow * unit, middle = top + row / 2, side = kAvatar * unit;
+        CGFloat top = SGRPreviewTitleTop * unit, row = SGRPreviewTitleRowHeight * unit, middle = top + row / 2, side = SGRPreviewAvatarSide * unit;
         avatar.frame = CGRectMake(width - SGRPagePreviewMargin - side, middle - side / 2, side, side);
-        label.font = SGRPreviewFont(kTitleFont, UIFontWeightBold, unit);
+        label.font = SGRPreviewFont(SGRPreviewTitleFontSize, UIFontWeightBold, unit);
         CGFloat pad = inPill ? kPillPad * unit : 0, chevronSide = kChevron * unit, gap = kChevronGap * unit;
         CGFloat room = CGRectGetMinX(avatar.frame) - SGRPagePreviewMargin - 2 * pad - chevronSide - 2 * gap;
         CGFloat textWidth = MIN(room, ceil([label sizeThatFits:CGSizeMake(CGFLOAT_MAX, row)].width));
@@ -551,6 +590,9 @@ SGRPreviewHeader *SGRPreviewAddHeader(SGRPagePreview *card, NSUInteger cover, NS
     UIImageView *logo = SGRPreviewSymbol(@"signature", SGRPrimary());
     logo.alpha = 0;
     UIView *shuffle = SGRPreviewGlass(), *trailing = SGRPreviewGlass(), *play = SGRPreviewBar(UIColor.whiteColor);
+    UIView *controls = [SGRPreviewFixedRow new];
+    controls.accessibilityIdentifier = @"vitrine.preview.header.controls";
+    for (UIView *view in @[shuffle, play, trailing]) [controls addSubview:view];
     UIImageView *shuffleGlyph = SGRPreviewAddSymbol(shuffle, @"shuffle", SGRPrimary());
     UIImageView *trailingGlyph = SGRPreviewAddSymbol(trailing, trailingSymbol, SGRPrimary());
     UIImageView *playGlyph = SGRPreviewAddSymbol(play, @"play.fill", UIColor.blackColor);
@@ -574,16 +616,17 @@ SGRPreviewHeader *SGRPreviewAddHeader(SGRPagePreview *card, NSUInteger cover, NS
         y = CGRectGetMaxY(centered(length, width, y, kLengthShare, kLengthBar * unit).frame) + kControlsGap * unit;
         CGFloat side = kControl * unit, playWidth = kPlayWidth * unit, spacing = kControlSpacing * unit;
         CGFloat x = (width - 2 * side - playWidth - 2 * spacing) / 2;
-        shuffle.frame = CGRectMake(x, y, side, side);
-        play.frame = CGRectMake(CGRectGetMaxX(shuffle.frame) + spacing, y, playWidth, side);
-        trailing.frame = CGRectMake(CGRectGetMaxX(play.frame) + spacing, y, side, side);
+        controls.frame = CGRectMake(0, y, width, side);
+        shuffle.frame = CGRectMake(x, 0, side, side);
+        play.frame = CGRectMake(CGRectGetMaxX(shuffle.frame) + spacing, 0, playWidth, side);
+        trailing.frame = CGRectMake(CGRectGetMaxX(play.frame) + spacing, 0, side, side);
         shuffle.layer.cornerRadius = trailing.layer.cornerRadius = side / 2;
         SGRPreviewCenter(shuffleGlyph, shuffle.bounds, kControlGlyph * unit);
         SGRPreviewCenter(playGlyph, play.bounds, kControlGlyph * unit);
         SGRPreviewCenter(trailingGlyph, trailing.bounds, kControlGlyph * unit);
         return y + side;
     }];
-    for (UIView *view in @[artwork, dissolve, badge, title, logo, detail, length, shuffle, play, trailing]) [part addSubview:view];
+    for (UIView *view in @[artwork, dissolve, badge, title, logo, detail, length, controls]) [part addSubview:view];
     header.part = part;
     header.card = card;
     header.artwork = artwork;
@@ -625,7 +668,6 @@ SGRPreviewTracks *SGRPreviewAddTracks(SGRPagePreview *card, NSUInteger count, BO
             lead = number;
         }
         UILabel *word = SGRPreviewLabel(nil, [SGRPrimary() colorWithAlphaComponent:kTrackWordAlpha]);
-        word.textAlignment = NSTextAlignmentRight;
         UIView *line = [UIView new];
         line.backgroundColor = SGRHairline();
         [rows addObject:@[lead, SGRPreviewBar(SGRPrimary()), SGRPreviewBar(SGRSecondary()), word, SGRPreviewSymbol(@"ellipsis", SGRTertiary()), line]];
@@ -649,6 +691,8 @@ SGRPreviewTracks *SGRPreviewAddTracks(SGRPagePreview *card, NSUInteger count, BO
             UILabel *word = (UILabel *)views[3];
             word.text = i < owner.trailing.count ? owner.trailing[i] : word.text;
             word.font = SGRPreviewFont(kTrackWord, UIFontWeightRegular, unit);
+            // Against the ⋯, on its right right to left too once the row is mirrored.
+            word.textAlignment = rightToLeft(view) ? NSTextAlignmentLeft : NSTextAlignmentRight;
             CGFloat wordX = textX + room * kTrackTitleShare + kTrackTextGap * unit;
             word.frame = CGRectMake(wordX, y, CGRectGetMinX(views[4].frame) - kTrackTextGap * unit - wordX, row);
             word.alpha = owner.trailing != nil;
@@ -686,6 +730,9 @@ static const CGFloat kMenuText = 11, kMenuBar = 6, kMenuBarShare = 0.4;
 void SGRPreviewAddTopBar(SGRPagePreview *card) {
     UIView *back = SGRPreviewGlass(), *more = SGRPreviewGlass();
     UIImageView *backGlyph = SGRPreviewAddSymbol(back, @"chevron.left", SGRPrimary());
+    // Pointing back, to the right right to left.
+    backGlyph.image = backGlyph.image.imageFlippedForRightToLeftLayoutDirection;
+    backGlyph.accessibilityIdentifier = @"vitrine.preview.back";
     UIImageView *moreGlyph = SGRPreviewAddSymbol(more, @"ellipsis", SGRPrimary());
     UIView *overlay = [card addOverlayWithLayout:^CGRect(UIView *view, CGSize page, CGFloat unit) {
         CGFloat side = kTopButton * unit, inset = kTopButtonInset * unit;

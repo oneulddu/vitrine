@@ -17,8 +17,15 @@
 // settings is seen too.
 //
 // The mock's text grows with the reader's text size up to a cap, and the card grows with it; everything a part
-// lays out is in multiples of `unit`. VoiceOver reads the card as one element: the label it was made with, then
-// the names (accessibilityLabel) of the parts and overlays shown, in order.
+// lays out is in multiples of `unit`.
+//
+// A part and an overlay lay out from the left. Right to left (the card's effectiveUserInterfaceLayoutDirection) the
+// card mirrors them as the real pages are: every view in them moved to the other side of the view it sits in, the
+// overlay itself to the other side of the page. Text keeps its own reading; a label sized wider than its text reads
+// from the leading edge (natural alignment, or set by the part).
+//
+// VoiceOver reads the card as one element: the label it was made with, then the names (accessibilityLabel) of the
+// parts and overlays shown, in order.
 //
 // SGRPagePreviewPage puts the card at the top of a page as the Lyrics page has its preview: in the table's
 // header, scrolling with the rows, the page's note under it.
@@ -84,18 +91,23 @@ NSString *SGRPreviewList(NSArray<NSString *> *names);
 
 // The parts the pages have in common.
 //
-// A page's large title at the leading edge and the avatar at the trailing one (Home, Search, Library).
+// A page's large title at the leading edge and the avatar at the trailing one (Home, Search).
 @interface SGRPreviewTitle : NSObject
 @property (nonatomic, weak, readonly) UIView *part;   // the card keeps it
 @property (nonatomic) BOOL inPill;     // the title on a glass pill with the filter menu's chevron (Home's look)
 @property (nonatomic) BOOL hardEdge;   // a hairline under the row, the hard edge the page scrolls under
 @end
 SGRPreviewTitle *SGRPreviewAddTitle(SGRPagePreview *card, NSString *title);
+// The title row's sizes in points at the default text size, times `unit` in a layout, for a page that draws a title
+// row of its own (Library's, with its menu's glyph before the avatar): the room above the row, the row's height, the
+// title's font size and the avatar's side.
+extern const CGFloat SGRPreviewTitleTop, SGRPreviewTitleRowHeight, SGRPreviewTitleFontSize, SGRPreviewAvatarSide;
 
 // The header of the playlist, album and artist pages (Kit/SGRHeaderInfo.h): the artwork in `cover`'s color full
 // bleed at the top, dissolving into the page's field (which takes the cover's color), the title and two lines of
-// detail centered under it, and the row of glass controls with the white Play between shuffle and `trailing`. A
-// glass badge of `badge` sits over the artwork's lower leading corner, hidden until its alpha is set.
+// detail centered under it, and the row of glass controls with the white Play between shuffle and `trailing`, in
+// that order right to left too, as the real header keeps it. A glass badge of `badge` sits over the artwork's lower
+// leading corner, hidden until its alpha is set.
 @interface SGRPreviewHeader : NSObject
 @property (nonatomic, weak, readonly) UIView *part;
 @property (nonatomic, readonly) UIView *badge;
