@@ -14,7 +14,7 @@ mkdir -p "$OUT/recorder-home"
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" -fobjc-arc -O2 -Wall -Werror \
     -I"$SRC" -I"$SRC/Shared/ListeningStats" recorder.m "$OUT/ListeningStats.m" \
-    "$SRC/Shared/ListeningStats/SGPlayLog.m" "$SRC/Core/SGLocalize.m" \
+    "$SRC/Shared/ListeningStats/SGPlayLog.m" "$SRC/Core/SGLocalize.m" "$SRC/Core/SGPrefs.m" \
     -framework UIKit -framework Foundation -o "$OUT/recorder"
 CFFIXED_USER_HOME="$OUT/recorder-home" "$OUT/recorder"
 xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" \

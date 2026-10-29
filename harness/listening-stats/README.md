@@ -44,6 +44,14 @@ Initial TSV loading, JSON parsing, folder walking, aggregation and export serial
 The build also runs the production Logos recorder in an isolated Catalyst home. Independent fake
 player reports and a continuous clock cover metadata arriving on report-only updates: an unnamed
 track receives its names and produces one forty-second play at the next track.
+The recorder links the real preference accessors. Recording-off listening cannot
+be rescued by enabling while paused; enabling during playback starts a fresh
+interval immediately, disabling finishes only the enabled interval, and unrelated
+defaults changes leave it intact. A worker-thread off/on pair while main is busy
+checks notification delivery without blocking main or losing the disabled gap.
+An older worker snapshot of recording-on queued behind a synchronous main-thread
+switch-off cannot restart the interval or save the following disabled listening.
+Use `BUILD_DIR=$(mktemp -d /tmp/r1-stats.XXXXXX) ./build.sh` for isolated build output.
 The build also runs `album-plays.m` against the production album counter and log. It checks the
 generation/suffix cursor on append, complete recounts after import and erase, and counting again
 after erase. Already-loaded reads preserve the generation rather than republishing the history.
