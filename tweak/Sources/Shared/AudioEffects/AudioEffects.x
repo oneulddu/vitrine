@@ -29,6 +29,7 @@
 #import <os/lock.h>
 #import <stdatomic.h>
 #import "Core/SGCore.h"
+#import "Core/SGLocalize.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Shared/Player/SGPCMRead.h"
 #import "Shared/Player/SGAudioFormat.h"
@@ -188,7 +189,17 @@ static NSString *effectName(NSString *effect) {
     return names[effect] ?: effect;
 }
 
+static NSString *liveprogRunawayMessage(void) {
+    return SGL(@"settings.audioeffects.liveprog.runaway", @"This script took too long and was turned off.");
+}
+
 static void setError(NSString *effect, NSString *message) {
+    if ([effect isEqualToString:SGKeyDSPLiveprog] &&
+        [message isEqualToString:@"This script took too long to start."]) {
+        message = SGL(@"settings.audioeffects.liveprog.starttimeout", @"This script took too long to start.");
+    }
+    if ([effect isEqualToString:SGKeyDSPLiveprog] &&
+        [message isEqualToString:@"This script took too long and was turned off."]) message = liveprogRunawayMessage();
     os_unfair_lock_lock(&sg_errorLock);
     if (!sg_errors) sg_errors = [NSMutableDictionary dictionary];
     sg_errors[effect] = message;
@@ -201,6 +212,13 @@ NSString *SGDSPError(NSString *switchKey) {
     os_unfair_lock_lock(&sg_errorLock);
     NSString *message = sg_errors[switchKey];
     os_unfair_lock_unlock(&sg_errorLock);
+    // Error readers are off the render thread. The engine only publishes an
+    // atomic trip there; its config timer collects the bypassed VM as usual.
+    // A failed load takes precedence over the previous VM's retained trip.
+    if (!message && [switchKey isEqualToString:SGKeyDSPLiveprog]) {
+        SGDSPEngine *engine = atomic_load_explicit(&sg_engine, memory_order_acquire);
+        if (SGDSPEngineLiveprogError(engine)) return liveprogRunawayMessage();
+    }
     return message;
 }
 
@@ -438,13 +456,20 @@ static BOOL applyMaster(void) {
 static os_unfair_lock sg_pendingLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableOrderedSet<NSString *> *sg_pending;
 static BOOL sg_drainScheduled;
+static BOOL sg_liveprogUserChange;
+static BOOL sg_followingRoute; // main thread: a route preset uses the same setting setters as the page
 
 static void drain(void) {
     os_unfair_lock_lock(&sg_pendingLock);
     NSArray<NSString *> *effects = sg_pending.array;
+    BOOL liveprogUserChange = sg_liveprogUserChange;
+    sg_liveprogUserChange = NO;
     sg_pending = nil;
     sg_drainScheduled = NO;
     os_unfair_lock_unlock(&sg_pendingLock);
+    // Consume explicit intent before a master/rate update can applyAll and return.
+    // Output notifications enqueue only SGKeyDSP and never clear quarantine.
+    if (liveprogUserChange) SGDSPEngineLiveprogUserChange(atomic_load(&sg_engine));
     if ([effects containsObject:SGKeyDSP] && applyMaster()) return;
     SGDSPEngine *engine = atomic_load(&sg_engine);
     // Without an engine nothing is set: it is set up with every effect when it is made.
@@ -459,6 +484,7 @@ void SGDSPApply(NSString *effect) {
     os_unfair_lock_lock(&sg_pendingLock);
     if (!sg_pending) sg_pending = [NSMutableOrderedSet orderedSet];
     [sg_pending addObject:effect];
+    if ([effect isEqualToString:SGKeyDSPLiveprog] && !sg_followingRoute) sg_liveprogUserChange = YES;
     BOOL schedule = !sg_drainScheduled;
     sg_drainScheduled = YES;
     os_unfair_lock_unlock(&sg_pendingLock);
@@ -497,7 +523,11 @@ void SGDSPCompanderResponse(NSArray<NSNumber *> *gains, NSInteger count, double 
 // The output audio goes to now, for the corrections remembered per output (AutoEq.m).
 static void followRoute(void) {
     AVAudioSessionPortDescription *port = AVAudioSession.sharedInstance.currentRoute.outputs.firstObject;
-    if (port) SGAutoEqOutputChanged(port.UID, port.portName);
+    if (port) {
+        sg_followingRoute = YES;
+        SGAutoEqOutputChanged(port.UID, port.portName);
+        sg_followingRoute = NO;
+    }
 }
 
 %ctor {

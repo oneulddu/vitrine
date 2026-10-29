@@ -8,6 +8,7 @@
 #import <stdlib.h>
 #import <string.h>
 #import <unistd.h>
+#import <dispatch/dispatch.h>
 #import "Shared/Player/SGRenderGate.h"
 #import "Shared/Player/SGOutputControl.h"
 #import "SGDSPConvolver.h"
@@ -81,7 +82,18 @@ struct SGDSPEngine {
 
     atomic_uint_fast64_t blocks, dry, faults;
     atomic_uint_fast64_t averageBits, peakNanos;
+    atomic_bool liveprogTripped;
+    unsigned liveprogOverBudget;
+    bool liveprogTailPending;
+    float liveprogTailLeft, liveprogTailRight;
 };
+
+enum { kLiveprogConsecutiveBlocks = 8, kLiveprogStartSeconds = 2 };
+static const char kLiveprogRunError[] = "This script took too long and was turned off.";
+static const char kLiveprogStartError[] = "This script took too long to start.";
+// The host has one selected script. Rebuilding its engine must not retry a
+// quarantined script; only its explicit switch/file action clears this latch.
+static atomic_bool sg_liveprogQuarantined;
 
 static double sg_nanosPerTick;
 static float sg_ramp[kSGDSPEngineBlock];   // a crossfade's, half a cosine from 0 to 1
@@ -207,14 +219,22 @@ void SGDSPEngineReset(SGDSPEngine *engine) {
 
 void SGDSPEngineCollect(SGDSPEngine *engine) {
     void *done[SlotCount] = {0};
+    void *tripped = NULL;
     beginConfig(engine);
     for (int s = 0; s < SlotCount; s++) {
         Effect *effect = &engine->effects[s];
+        if (s == SlotLiveprog && atomic_load_explicit(&engine->liveprogTripped, memory_order_relaxed)) {
+            tripped = effect->state;
+            done[s] = effect->leaving;
+            *effect = (Effect){0};
+            continue;
+        }
         if (effect->fade || !effect->leaving) continue;
         done[s] = effect->leaving;
         effect->leaving = NULL;
     }
     endConfig(engine);
+    if (tripped) SGDSPLiveprogFree(tripped);
     for (int s = 0; s < SlotCount; s++) {
         if (done[s]) kKinds[s].free(done[s]);
     }
@@ -229,17 +249,26 @@ static bool allFinite(const float *left, const float *right) {
     return sum == sum;
 }
 
-static void crossfade(SGDSPEngine *engine, Slot slot, float *left, float *right) {
+static void crossfade(SGDSPEngine *engine, Slot slot, float *left, float *right, bool heldTail) {
     Effect *effect = &engine->effects[slot];
-    memcpy(engine->fromLeft, left, sizeof engine->fromLeft);
-    memcpy(engine->fromRight, right, sizeof engine->fromRight);
-    if (effect->leaving) kKinds[slot].run(effect->leaving, engine->fromLeft, engine->fromRight, kSGDSPEngineBlock);
-    if (effect->state) kKinds[slot].run(effect->state, left, right, kSGDSPEngineBlock);
+    if (heldTail) {
+        // Never execute a runaway VM again, even to fade it out. Continue from
+        // its last finite output sample through the same cosine leaving ramp.
+        for (uint32_t i = 0; i < kSGDSPEngineBlock; i++) {
+            engine->fromLeft[i] = engine->liveprogTailLeft;
+            engine->fromRight[i] = engine->liveprogTailRight;
+        }
+    } else {
+        memcpy(engine->fromLeft, left, sizeof engine->fromLeft);
+        memcpy(engine->fromRight, right, sizeof engine->fromRight);
+        if (effect->leaving) kKinds[slot].run(effect->leaving, engine->fromLeft, engine->fromRight, kSGDSPEngineBlock);
+        if (effect->state) kKinds[slot].run(effect->state, left, right, kSGDSPEngineBlock);
+    }
     for (uint32_t i = 0; i < kSGDSPEngineBlock; i++) {
         left[i] = engine->fromLeft[i] + (left[i] - engine->fromLeft[i]) * sg_ramp[i];
         right[i] = engine->fromRight[i] + (right[i] - engine->fromRight[i]) * sg_ramp[i];
     }
-    effect->fade = false;
+    if (!heldTail) effect->fade = false;
 }
 
 // The gain, moving to a new one over the block, then a limiter with no lookahead: it clamps a peak the
@@ -253,9 +282,33 @@ static bool process(SGDSPEngine *engine, float *left, float *right) {
     bool active = false;
     for (int s = 0; s < SlotCount; s++) {
         Effect *effect = &engine->effects[s];
-        if (effect->fade) crossfade(engine, (Slot)s, left, right);
+        if (s == SlotLiveprog) {
+            if (engine->liveprogTailPending) {
+                crossfade(engine, SlotLiveprog, left, right, true);
+                engine->liveprogTailPending = false;
+                active = true;
+                continue;
+            }
+            if (atomic_load_explicit(&engine->liveprogTripped, memory_order_relaxed)) continue;
+        }
+        uint64_t start = s == SlotLiveprog ? mach_absolute_time() : 0;
+        if (effect->fade) crossfade(engine, (Slot)s, left, right, false);
         else if (effect->state) kKinds[s].run(effect->state, left, right, kSGDSPEngineBlock);
         else continue;
+        if (s == SlotLiveprog) {
+            double nanos = (mach_absolute_time() - start) * sg_nanosPerTick;
+            double durationNanos = kSGDSPEngineBlock / engine->rate * 1e9;
+            engine->liveprogOverBudget = nanos > durationNanos * 0.5 ? engine->liveprogOverBudget + 1 : 0;
+            if (isfinite(left[kSGDSPEngineBlock - 1]) && isfinite(right[kSGDSPEngineBlock - 1])) {
+                engine->liveprogTailLeft = left[kSGDSPEngineBlock - 1];
+                engine->liveprogTailRight = right[kSGDSPEngineBlock - 1];
+            }
+            if (nanos > durationNanos || engine->liveprogOverBudget >= kLiveprogConsecutiveBlocks) {
+                engine->liveprogTailPending = true;
+                atomic_store_explicit(&engine->liveprogTripped, true, memory_order_release);
+                atomic_store_explicit(&sg_liveprogQuarantined, true, memory_order_release);
+            }
+        }
         active = true;
     }
     return active;
@@ -354,10 +407,25 @@ SGDSPEngineStats SGDSPEngineReadStats(SGDSPEngine *engine, bool takePeak) {
 
 // A new state for the slot (NULL: off), crossfaded in over the next block. A fade still to be heard keeps
 // what is heard now as its start, and the state it was going to drops.
-static void install(SGDSPEngine *engine, Slot slot, void *state) {
+static bool install(SGDSPEngine *engine, Slot slot, void *state) {
     Effect *effect = &engine->effects[slot];
     void *dropped;
     beginConfig(engine);
+    if (slot == SlotLiveprog) {
+        // Recheck under admission: the old VM can trip while its replacement
+        // compiles or while a disable waits for the last render to finish.
+        if (atomic_load_explicit(&sg_liveprogQuarantined, memory_order_acquire) ||
+            atomic_load_explicit(&engine->liveprogTripped, memory_order_relaxed)) {
+            Effect retired = *effect;
+            *effect = (Effect){0};
+            endConfig(engine);
+            SGDSPLiveprogFree(retired.state);
+            SGDSPLiveprogFree(retired.leaving);
+            SGDSPLiveprogFree(state);
+            return state == NULL;
+        }
+        engine->liveprogOverBudget = 0;
+    }
     if (effect->fade) {
         dropped = effect->state;
     } else {
@@ -369,6 +437,7 @@ static void install(SGDSPEngine *engine, Slot slot, void *state) {
     endConfig(engine);
     if (dropped) kKinds[slot].free(dropped);
     SGDSPEngineCollect(engine);
+    return true;
 }
 
 // The running state, under the lock, for a setter to change in place; NULL (and the lock released) when off.
@@ -550,10 +619,102 @@ bool SGDSPEngineSetDDC(SGDSPEngine *engine, bool on, const char *text, char *err
     return cascade != NULL;
 }
 
+// A load job owns its script and VM, never the engine. After abandonment only
+// the worker may dispose of it, including when the engine has already gone away.
+typedef enum { LoadWaiting, LoadComplete, LoadAbandoned } LoadPhase;
+typedef struct {
+    atomic_int phase;
+    char *script;
+    double rate;
+    uint64_t started;
+    bool expired;
+    SGDSPLiveprog *result;
+    char error[300];
+} LiveprogLoad;
+static atomic_bool sg_liveprogLoading;
+
+const char *SGDSPEngineLiveprogError(const SGDSPEngine *engine) {
+    return (atomic_load_explicit(&sg_liveprogQuarantined, memory_order_acquire) ||
+            (engine && atomic_load_explicit(&engine->liveprogTripped, memory_order_acquire))) ? kLiveprogRunError : NULL;
+}
+
+void SGDSPEngineLiveprogUserChange(SGDSPEngine *engine) {
+    Effect retired = {0};
+    if (engine) {
+        beginConfig(engine);
+        if (atomic_exchange_explicit(&engine->liveprogTripped, false, memory_order_acq_rel)) {
+            retired = engine->effects[SlotLiveprog];
+            engine->effects[SlotLiveprog] = (Effect){0};
+        }
+        engine->liveprogOverBudget = 0;
+    }
+    atomic_store_explicit(&sg_liveprogQuarantined, false, memory_order_release);
+    if (engine) endConfig(engine);
+    // The cached-tail transition is independent of VM lifetime and quarantine.
+    SGDSPLiveprogFree(retired.state);
+    SGDSPLiveprogFree(retired.leaving);
+}
+
 bool SGDSPEngineSetLiveprog(SGDSPEngine *engine, bool on, const char *script, char *error, size_t errorSize) {
-    SGDSPLiveprog *liveprog = on ? SGDSPLiveprogCreate(script, engine->rate, error, errorSize) : NULL;
-    install(engine, SlotLiveprog, liveprog);
-    return !on || liveprog;
+    if (!on) {
+        install(engine, SlotLiveprog, NULL);
+        return true;
+    }
+    if (SGDSPEngineLiveprogError(engine)) {
+        install(engine, SlotLiveprog, NULL);
+        copyError(error, errorSize, kLiveprogRunError);
+        return false;
+    }
+    if (atomic_exchange_explicit(&sg_liveprogLoading, true, memory_order_acq_rel)) {
+        copyError(error, errorSize, kLiveprogStartError);
+        return false;
+    }
+    LiveprogLoad *job = calloc(1, sizeof *job);
+    if (!job || (script && !(job->script = strdup(script)))) {
+        free(job);
+        atomic_store(&sg_liveprogLoading, false);
+        copyError(error, errorSize, "Not enough memory for the script");
+        return false;
+    }
+    job->rate = engine->rate;
+    job->started = mach_absolute_time();
+    dispatch_semaphore_t finished = dispatch_semaphore_create(0);
+    dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW, kLiveprogStartSeconds * NSEC_PER_SEC);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        job->result = SGDSPLiveprogCreate(job->script, job->rate, job->error, sizeof job->error);
+        free(job->script);
+        // The waiting thread may itself be descheduled at its deadline. A late
+        // worker must not publish its VM just because it won that wake-up race.
+        job->expired = (mach_absolute_time() - job->started) * sg_nanosPerTick > kLiveprogStartSeconds * 1e9;
+        int waiting = LoadWaiting;
+        if (!atomic_compare_exchange_strong_explicit(&job->phase, &waiting, LoadComplete,
+                                                     memory_order_release, memory_order_relaxed)) {
+            SGDSPLiveprogFree(job->result);
+            free(job);
+        }
+        atomic_store_explicit(&sg_liveprogLoading, false, memory_order_release);
+        dispatch_semaphore_signal(finished);
+    });
+    if (dispatch_semaphore_wait(finished, deadline)) {
+        int waiting = LoadWaiting;
+        if (atomic_compare_exchange_strong_explicit(&job->phase, &waiting, LoadAbandoned,
+                                                    memory_order_acq_rel, memory_order_acquire)) {
+            copyError(error, errorSize, kLiveprogStartError);
+            return false;
+        }
+    }
+    SGDSPLiveprog *liveprog = job->result;
+    if (job->expired) {
+        SGDSPLiveprogFree(liveprog);
+        free(job);
+        copyError(error, errorSize, kLiveprogStartError);
+        return false;
+    }
+    if (!liveprog) copyError(error, errorSize, job->error);
+    free(job);
+    bool installed = install(engine, SlotLiveprog, liveprog);
+    if (!installed) copyError(error, errorSize, kLiveprogRunError);
+    return liveprog != NULL && installed;
 }
 
 #pragma mark - curves

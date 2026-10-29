@@ -88,6 +88,8 @@ HARNESSES = [
      "run": "sh harness/haptics/build.sh && harness/haptics/build/track"},
     {"name": "Hangul pronunciation", "dir": "hangul-pronunciation",
      "run": "bash harness/hangul-pronunciation/check.sh && bash harness/hangul-pronunciation/settings.sh"},
+    {"name": "Liveprog guard", "dir": "liveprog-guard",
+     "run": "python3 harness/liveprog-guard/run.py"},
     {"name": "Gesture hold speed", "dir": "gesture-hold",
      "run": "sh harness/gesture-hold/check.sh"},
     {"name": "Head gestures", "dir": "head-gestures",

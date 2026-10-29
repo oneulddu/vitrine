@@ -349,6 +349,8 @@
 "settings.audioeffects.library.scripts.title" = "스크립트";
 "settings.audioeffects.limiterrelease.title" = "리미터 릴리스";
 "settings.audioeffects.limiterthreshold.title" = "리미터 임계값";
+"settings.audioeffects.liveprog.runaway" = "스크립트가 너무 오래 걸려 꺼졌습니다.";
+"settings.audioeffects.liveprog.starttimeout" = "스크립트를 시작하는 데 너무 오래 걸립니다.";
 "settings.audioeffects.liveprog.subtitle" = "EEL 스크립트로 작성된 효과";
 "settings.audioeffects.liveprog.title" = "Liveprog";
 "settings.audioeffects.maximumgain.title" = "최대 게인";

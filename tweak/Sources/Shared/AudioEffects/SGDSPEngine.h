@@ -49,8 +49,16 @@ bool SGDSPEngineSetGraphicEq(SGDSPEngine *engine, bool on, const char *nodes, ch
 bool SGDSPEngineSetConvolver(SGDSPEngine *engine, bool on, const char *path, int mode, char *error, size_t errorSize);
 // A ViPER DDC file's text.
 bool SGDSPEngineSetDDC(SGDSPEngine *engine, bool on, const char *text, char *error, size_t errorSize);
-// A Liveprog script's text; an error names the file's line.
+// A Liveprog script's text; an error names the file's line. Compile/@init runs on a
+// worker, with a two-second deadline. A timeout preserves the previous effect.
+// Automatic reapplication never clears a runaway quarantine, even on a new engine.
 bool SGDSPEngineSetLiveprog(SGDSPEngine *engine, bool on, const char *script, char *error, size_t errorSize);
+// Config side only, on an explicit Liveprog switch/file change, before applying it.
+// NULL is allowed before the host creates its engine. Preserves any pending fade.
+void SGDSPEngineLiveprogUserChange(SGDSPEngine *engine);
+// Any thread: process-lifetime quarantine, including across engine replacement.
+// NULL is allowed. Collect unloads a tripped VM without clearing this error.
+const char *SGDSPEngineLiveprogError(const SGDSPEngine *engine);
 
 #pragma mark - the render thread
 

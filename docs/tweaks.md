@@ -655,7 +655,16 @@ Shared:
                   the master switch, a file name with a path or a leading dot dropped), and it is saved under Yours,
                   not applied, a name taken asking Replace or Keep both. An impulse response, DDC or Liveprog file
                   is named, not carried; the alert lists the ones missing here. Checked on the Mac by
-                  `harness/audio-effects/build.sh presets`.
+                  `harness/audio-effects/build.sh presets`. A Liveprog script is held to half of real time
+                  (SGDSPEngine.m): each block is timed on the render thread with two clock reads, and over 50 % of the
+                  block's duration on 8 blocks in a row, or over 100 % on one, trips an atomic flag; the next block
+                  bypasses the slot through its crossfade, the script is unloaded and quarantined, and the page says
+                  "This script took too long and was turned off." Compiling and @init run on a queue of their own
+                  with a 2 s deadline ("This script took too long to start."); a late VM is abandoned, freed when its
+                  worker returns, and no other load starts meanwhile. Automatic reapplication (NaN recovery, a rate,
+                  route or output preset change, an engine rebuild) keeps the quarantine; turning Liveprog off and on
+                  or picking a script clears it. EEL2's loop cap is unchanged. Checked on the Mac by
+                  `harness/liveprog-guard/run.py`.
                   Tested on the Mac against harness/audio-effects/ and harness/autoeq/, the hook in the simulator
                   against its sim/, the page against harness/audio-effects-page/
     AutoMix/      Spotify's own Automix and Crossfade, which its player core does, set from one page (AutoMix.h lists

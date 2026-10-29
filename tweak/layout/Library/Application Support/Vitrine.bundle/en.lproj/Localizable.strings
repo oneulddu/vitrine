@@ -350,6 +350,8 @@
 "settings.audioeffects.library.scripts.title" = "Scripts";
 "settings.audioeffects.limiterrelease.title" = "Limiter release";
 "settings.audioeffects.limiterthreshold.title" = "Limiter threshold";
+"settings.audioeffects.liveprog.runaway" = "This script took too long and was turned off.";
+"settings.audioeffects.liveprog.starttimeout" = "This script took too long to start.";
 "settings.audioeffects.liveprog.subtitle" = "Effects written as EEL scripts";
 "settings.audioeffects.liveprog.title" = "Liveprog";
 "settings.audioeffects.maximumgain.title" = "Maximum gain";
