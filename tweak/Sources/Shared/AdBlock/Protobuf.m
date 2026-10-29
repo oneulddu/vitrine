@@ -33,6 +33,7 @@ NSMutableArray<SGPBField *> *SGPBParse(NSData *data) {
     NSUInteger length = data.length, at = 0;
     NSMutableArray<SGPBField *> *fields = [NSMutableArray array];
     while (at < length) {
+        if (fields.count == SGPBMaxFields) return nil;
         uint64_t key, value;
         if (!readVarint(bytes, length, &at, &key) || !(key >> 3)) return nil;
         SGPBField *field = [SGPBField new];

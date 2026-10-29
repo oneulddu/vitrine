@@ -20,7 +20,21 @@ int main(void) {
         });
         const uint8_t expected[] = {0x0a,0x02,0x08,0x00, 0x12,0x03,'a','d','s', 0x1d,0x11,0x22,0x33,0x44};
         check([edited isEqual:[NSData dataWithBytes:expected length:sizeof(expected)]], "nested ad-block edit preserves unrelated fields");
-        puts("ad-block protobuf: 5 checks passed");
+        // Every field is an empty two-byte bytes field, so the field count is half the byte count.
+        NSMutableData *atBudget = [NSMutableData data];
+        for (NSUInteger i = 0; i < SGPBMaxFields; i++) {
+            const uint8_t tiny[2] = {0x0a, 0x00};
+            [atBudget appendBytes:tiny length:sizeof(tiny)];
+        }
+        check(SGPBParse(atBudget).count == SGPBMaxFields, "a message at the field budget decodes in full");
+        const uint8_t tiny[2] = {0x0a, 0x00};
+        NSMutableData *overBudget = [atBudget mutableCopy];
+        [overBudget appendBytes:tiny length:sizeof(tiny)];
+        check(SGPBParse(overBudget) == nil, "a message over the field budget fails to decode");
+        NSData *(^keep)(NSData *) = ^NSData *(NSData *inner) { return inner; };
+        check(SGPBEdit(overBudget, @[@1], keep) == nil, "an over-budget message fails the edit");
+        check([SGPBEdit(atBudget, @[@1], keep) isEqual:atBudget], "an edit of a message at the budget rewrites it unchanged");
+        puts("ad-block protobuf: 8 checks passed");
     }
     return 0;
 }

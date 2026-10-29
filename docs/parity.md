@@ -249,7 +249,6 @@ Debt from this round:
 
 - Ruby over a wrapped compound draws over the first line.
 - The offline lyric store drops provider translations and credit links.
-- The shared protobuf decoder (Shared/AdBlock/Protobuf.m) has no field-count budget; AlbumSpotifyCounts.m bounds its own reading.
 - Kit preview parts do not mirror right to left.
 - `LibrarySettings.m` repeats the Kit title row's sizes.
 

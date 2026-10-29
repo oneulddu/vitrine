@@ -10,7 +10,13 @@
 @property (nonatomic, copy) NSData *payload;
 @end
 
-NSMutableArray<SGPBField *> *SGPBParse(NSData *data);   // nil when the bytes are not a message
+// The most fields one message may hold, so a hostile body of tiny fields costs bounded work. Well
+// above the largest real message read through here: Spotify's property-configuration lists (a few
+// thousand entries), a track's lyric lines (hundreds) and an album's reply arrays (about 500).
+// Parsing never recurses; SGPBEdit's depth is the length of its caller's path.
+#define SGPBMaxFields ((NSUInteger)65536)
+
+NSMutableArray<SGPBField *> *SGPBParse(NSData *data);   // nil when the bytes are not a message or hold more than SGPBMaxFields fields
 NSData *SGPBSerialize(NSArray<SGPBField *> *fields);
 SGPBField *SGPBFirst(NSArray<SGPBField *> *fields, uint32_t number);
 SGPBField *SGPBVarint(uint32_t number, uint64_t value);
