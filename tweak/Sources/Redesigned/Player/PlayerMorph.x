@@ -531,7 +531,10 @@ static BOOL musicCloseSupportedOwner(id transition, id<UIViewControllerContextTr
     const char *fields[] = {"overlayView", "npbSnapshotView", "tabBarSnapshotView"};
     for (NSUInteger i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
         Ivar field = class_getInstanceVariable(object_getClass(transition), fields[i]);
-        if (!field || ivar_getTypeEncoding(field)[0] != '@') return NO;
+        // Spotify's Swift classes give their ivars an empty type encoding (9.1.90's three fields here are object
+        // references, by name), Objective-C doubles give '@'; anything else is not the owner traced.
+        const char *type = field ? ivar_getTypeEncoding(field) : NULL;
+        if (!type || (type[0] != '@' && type[0] != '\0')) return NO;
     }
     if (![transition respondsToSelector:@selector(animateTransition:)] ||
         ![transition respondsToSelector:@selector(startInteractiveTransition:)] ||
