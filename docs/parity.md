@@ -249,6 +249,40 @@ Debt from this round: none left; the follow-up sweep fixed every item (ruby over
 store's provider translations and credits, the protobuf field budget, the previews' right to left and the Library
 title row's sizes).
 
+### Upstream 1.0.0-beta.5 (described by behavior)
+
+What beta.5 adds over beta.4, compared with Vitrine's code and built from behavior specs only.
+
+| Item | Where Vitrine stands |
+|---|---|
+| The artist under the title in the minimized mini player | Done (Redesigned/NowPlayingBar/NowPlayingBar.x): `spotifyglass.redesign.inlinePlayer.artist`, off; only when both lines fit with 6 pt to spare; harness/now-playing-bar/ |
+| Clear downloaded covers and artist photos | Done (Shared/AnimatedArtwork/SGMotionStore.m, SGMotionCatalog.m, AnimatedArtworkSettings.m): the store's own clips and the album answers only, leased clips kept, pre-clear work keeps and starts nothing; harness/artwork-clear/ |
+| Podcasts and audiobooks hidden on Home | Done for Home's filter chips (Redesigned/Home/HomeHeader.x): `spotifyglass.redesign.home.hidePodcasts`, shown unless set; harness/home-podcasts/. Search's category cards are deferred: rewriting the two-column grid's layout attributes overlapped on scroll, so they wait for a traced data-source boundary |
+| A full-screen cover when a song has no clip | Done (Redesigned/Player/PlayerMotion.x): `spotifyglass.redesign.player.animatedStill`, off, with a top scrim; harness/player/ `still` |
+| Page headers: covers blur and dim on scroll, the title faded under the top bar, a round artist Play, Play in the accent | Done (Redesigned/Kit/SGRHeroVeil.m, SGRHeaderInfo.m): `spotifyglass.redesign.hero.scrollVeil` and `.artist.roundPlay`, off; `spotifyglass.redesign.playInPageColour`, on; harness/album/veil-check.sh |
+| The Music app's player close | Not built yet: 9.1.90's own close animator is untraced, so it waits for a phone trace of tap, drag and cancel |
+| Ambient sounds | Not taken: the recordings come from upstream's server, and the user chose to leave the feature out |
+
+### Upstream Plus features, Vitrine's own versions (described by behavior)
+
+Vitrine has no paid tier, so where a Plus feature could be built from its behavior alone it now has one of its own,
+with no gate and nothing from upstream's code, server or content.
+
+| Item | Where Vitrine stands |
+|---|---|
+| Visualizer when there's no clip, shuffle styles, ignore heat | Done (Redesigned/Player/PlayerMotion.x, PlayerVisualiser.m): `spotifyglass.redesign.player.animatedVisualizer`, `spotifyglass.visualizer.shuffle`, `.ignoreHeat`, all off; the full-screen cover and the Visualizer fallback exclude each other; harness/player/ `autoviz`, `shuffle`, `heat` |
+| Hold edge speed | Done (Shared/Gestures/GestureHold.m): `spotifyglass.gestures.hold`, on, and `.hold.speed`, 1.5×, 2× or 3×; the speed from before the hold comes back, not 1×; harness/gesture-hold/ |
+| Lock screen lyric styles Messages and Vinyl | Done (Shared/LockScreenLyrics/SGLyricsClip.m): two more Layout choices, kept between 17% and 65% of the screen; harness/lyrics-clip/ |
+| Suggested tags for local files | Done as Find Info (Shared/LocalFiles/LocalInfoLookup.m, LocalInfoReview.m): iTunes Search, reviewed field by field, saved only through Vitrine's overlay; the audio file is never written, unlike upstream's tag rewriting; harness/local-files/ |
+| Effects preset per output, headphone form filter | Done (Shared/AudioEffects/AutoEq.m): a baseline stored before applying and restored only while unchanged, both directions crash-safe; harness/audio-effects/ `route`, harness/autoeq/ |
+| Liveprog CPU budget | Done (Shared/AudioEffects/SGDSPEngine.m): half of real time, a click-free bypass and a quarantine, a 2 s start deadline; harness/liveprog-guard/ |
+| Your Files page, audio import and folders, offline animated covers for local albums | Not built yet: playing a local track from Vitrine's own page needs a traced 9.1.90 command, and moving or deleting files risks the user's data |
+| AutoMix per context and its info line | Not built yet: when Spotify reads the transition preferences must be shown on a phone first; upstream's rewriting of Spotify's remote-config files is not taken |
+| Poster and Cut lyric visualizers | Not built yet: they need a renderer of their own |
+| Lock screen style templates with a clock, lyrics shaders | Not taken: a template language for little gain over iOS's own clock; lyrics shaders exist only as downloads from upstream |
+| DSP suite, AutoEq, AutoMix styles | Already in Vitrine (Shared/AudioEffects, Shared/AutoMix) |
+| Bundled DDC and EEL example files | Not taken: each file's source and license would have to be checked first |
+
 ### Before the fork point, or not needed any more
 
 | # | Item |
@@ -279,6 +313,10 @@ title row's sizes).
   VoiceOver. Each commit body lists what to check.
 - From beta.4, on a phone: the hardware keyboard's keys, holding a lyric line, the player's spacing with shuffle and
   repeat both hidden on a narrow and a wide iPhone, and an album's ⋯ sheet with Play counts In menu.
+- From beta.5 and the Plus round, on a phone: every new switch above (the mini player's artist line, Clear
+  Downloaded Covers, the Home chips, the full-screen cover and its scrim, the page veils and round Play, the Visualizer
+  fallback and shuffle, the hold speeds, Messages and Vinyl on the lock screen, Find Info against the real iTunes
+  Search, a preset following AirPods and the speaker, a runaway Liveprog script).
 - From the second round, on a phone: Keep for This Song across a relaunch, the line under the cover with Spotify's own
   lyric preview on, the album notes' two placements and their sheet, an artist's photo and animated artwork, and the
   rolling digits and star. The Queue and Connect sheets' glass is not checkable until UIKit hands the sheet a
