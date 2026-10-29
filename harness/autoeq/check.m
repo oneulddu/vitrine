@@ -95,8 +95,10 @@ static void checkParsing(void) {
 }
 
 // The form filter on a sample INDEX.md: the folder's text decides, case aside; a folder that says none shows under All only.
+static NSString *sg_sampleIndexPath;   // next to this file, whatever folder the check runs from
+
 static void checkForms(void) {
-    NSString *index = [NSString stringWithContentsOfFile:@"sample-INDEX.md" encoding:NSUTF8StringEncoding error:nil];
+    NSString *index = [NSString stringWithContentsOfFile:sg_sampleIndexPath encoding:NSUTF8StringEncoding error:nil];
     NSArray<SGAutoEqHeadphone *> *all = SGAutoEqParseIndex(index);
     check(all.count == 7, @"the sample index has 7 headphones");
     NSArray<NSString *> *(^names)(SGAutoEqForm) = ^NSArray<NSString *> *(SGAutoEqForm form) {
@@ -303,6 +305,10 @@ static void checkOnline(void) {
 
 int main(int argc, char **argv) {
     @autoreleasepool {
+        // build.sh puts the check in build/, one folder under the sample.
+        NSString *binary = [NSString stringWithUTF8String:argv[0]];
+        sg_sampleIndexPath = [[[binary stringByDeletingLastPathComponent] stringByDeletingLastPathComponent]
+            stringByAppendingPathComponent:@"sample-INDEX.md"];
         applied = [NSCountedSet set];
         checkParsing();
         checkForms();

@@ -47,8 +47,13 @@ static BOOL videoShowing(void) { return NO; }
 static BOOL motionAllowed(void) { return YES; }
 static BOOL seen(UIView *view) { return YES; }
 static void clear(BOOL animated) {}
+// As PlayerMotion.x reads them: what a clip is shown under, and the Visualizer that stands in for a missing clip.
+static BOOL clipWanted(void) {
+    return SGRPlayerBackground() == SGRPlayerBackgroundAnimated && !videoShowing() && motionAllowed();
+}
+static void SGRPlayerVisualiserUpdate(void) {}
 
-static NSString *sg_track, *sg_shown;
+static NSString *sg_track, *sg_shown, *sg_noClip;
 static NSUInteger sg_begun;
 static SGRPlayerMotionView *sg_motion, *sg_coverClip;
 
