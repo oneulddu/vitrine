@@ -49,9 +49,10 @@ NSNumber *SGLyricsPinnedID(NSString *trackID);
 NSUInteger SGLyricsPinGeneration(NSString *trackID);
 // Main queue: a menu source pick or Automatic also invalidates in-flight hook deliveries.
 void SGLyricsInvalidateDelivery(NSString *trackID);
-// Keeps the record's lines and LRCLIB credit now, replacing the walk's kept answer too. NO, changing
-// nothing, for a record with no lines that is not instrumental. Main queue.
-BOOL SGLyricsPin(NSString *trackID, NSDictionary *record);
+// Prepare off main, then keep on main only while this selection and the track's pin generation
+// remain current. A newer pick supersedes this one. done(NO) also covers an unusable/cancelled pick.
+// current and done run on main; current may be nil for a choice without a presenting controller.
+void SGLyricsPickRecord(NSString *trackID, NSDictionary *record, BOOL (^current)(void), void (^done)(BOOL pinned));
 // Drops the pin, the walk's answer and missing mark, and KaraokeSource's lines, requests and losses;
 // announces it and asks for the track again. Main queue.
 void SGLyricsUnpin(NSString *trackID);
@@ -178,6 +179,17 @@ void SGLyricsGetJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> *
                               id (^transform)(id root), void (^done)(id result));
 void SGLyricsPostJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> *headers, id body,
                                id (^transform)(id root), void (^done)(id result));
+// One worker/main boundary for pure provider work, including preparation of a manual choice.
+// Transport workers may execute immediately; callers on main always enqueue the work.
+static inline void SGLyricsTransform(id (^work)(void), void (^done)(id)) {
+    dispatch_block_t run = ^{
+        id result = work();
+        dispatch_async(dispatch_get_main_queue(), ^{ done(result); });
+    };
+    if (NSThread.isMainThread) dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), run);
+    else run();
+}
+void SGLyricsGetTextTransform(NSURL *url, id (^transform)(NSString *), void (^done)(id));
 // QQ's crypt=0 lyric field: base64 UTF-8 or zlib-compressed QRC, then ordinary LRC.
 SGLyricsResult *SGQQMusicResult(id payload);
 // Every source's reply goes through this, so a walk that lost a request to the network or a busy

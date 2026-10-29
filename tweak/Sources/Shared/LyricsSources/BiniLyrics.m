@@ -47,15 +47,19 @@ static void search(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
     }];
     if (query.seconds > 0) search[@"duration"] = @(query.seconds).stringValue;
     if (query.album.length) search[@"album"] = query.album;
-    SGLyricsGetJSON(SGLyricsURL(kAPI, search), nil, ^(id root) {
-        NSDictionary *found = bestOf([root isKindOfClass:NSDictionary.class] ? root[@"results"] : nil, query.seconds);
+    NSInteger seconds = query.seconds;
+    SGLyricsGetJSONTransform(SGLyricsURL(kAPI, search), nil, ^id(id root) {
+        return bestOf([root isKindOfClass:NSDictionary.class] ? root[@"results"] : nil, seconds);
+    }, ^(NSDictionary *found) {
         if (!found) {
             SGLog(@"binilyrics: nothing within %lds of %@ by %@", (long)kLengthSlack, query.title, query.artist);
             done(nil);
             return;
         }
-        SGLyricsGetText([NSURL URLWithString:found[@"lyricsUrl"]], ^(NSString *ttml) {
-            SGLyricsResult *result = SGTTMLResult(ttml, [found[@"timing_type"] isEqual:@"word"]);
+        BOOL wordTimed = [found[@"timing_type"] isEqual:@"word"];
+        SGLyricsGetTextTransform([NSURL URLWithString:found[@"lyricsUrl"]], ^id(NSString *ttml) {
+            return SGTTMLResult(ttml, wordTimed);
+        }, ^(SGLyricsResult *result) {
             if (!result) SGLog(@"binilyrics: %@ gave nothing the page could show", found[@"lyricsUrl"]);
             else SGLog(@"binilyrics: %@ by %@ has %lu %@ lines", query.title, query.artist,
                        (unsigned long)result.karaokeLines.count, result.wordTimed ? @"word timed" : @"line timed");
@@ -65,6 +69,13 @@ static void search(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
 }
 
 SGLyricsAsk SGBiniLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
+    if (!NSThread.isMainThread) { dispatch_async(dispatch_get_main_queue(), ^{ SGBiniLyricsAsk(query, done); }); return; }
+    // ISRC lookup and its search fallback must describe the same recording even if the walk learns
+    // new metadata while either request is outstanding.
+    SGLyricsQuery *captured = [SGLyricsQuery new];
+    captured.trackID = query.trackID; captured.title = query.title; captured.artist = query.artist;
+    captured.album = query.album; captured.seconds = query.seconds;
+    query = captured;
     if (query.trackID.length != 22) {
         search(query, done);
         return;
@@ -75,8 +86,9 @@ SGLyricsAsk SGBiniLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResul
             search(query, done);
             return;
         }
-        SGLyricsGetText([NSURL URLWithString:[NSString stringWithFormat:kByISRC, isrc]], ^(NSString *ttml) {
-            SGLyricsResult *result = SGTTMLResult(ttml, [ttml containsString:@"timing=\"Word\""]);
+        SGLyricsGetTextTransform([NSURL URLWithString:[NSString stringWithFormat:kByISRC, isrc]], ^id(NSString *ttml) {
+            return SGTTMLResult(ttml, [ttml containsString:@"timing=\"Word\""]);
+        }, ^(SGLyricsResult *result) {
             if (!result) {
                 SGLog(@"binilyrics: nothing filed under %@, searched by name", isrc);
                 search(query, done);

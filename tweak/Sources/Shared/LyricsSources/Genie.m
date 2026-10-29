@@ -57,7 +57,7 @@ static NSString *anchor(NSString *row, NSString *kind) {
     return nil;
 }
 
-static NSString *songFor(NSString *html, SGLyricsQuery *query) {
+static NSString *songFor(NSString *html, NSString *title, NSString *artist) {
     if (!html.length || html.length > 1024 * 1024) return nil;
     NSUInteger count = 0;
     for (NSTextCheckingResult *match in matches(@"<tr\\b[^>]*>.*?</tr\\s*>", html)) {
@@ -68,7 +68,7 @@ static NSString *songFor(NSString *html, SGLyricsQuery *query) {
         NSString *classes = capture(@"\\bclass\\s*=\\s*['\"]([^'\"]*)['\"]", opening);
         if (![[classes componentsSeparatedByCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet] containsObject:@"list"]) continue;
         NSString *song = SGLyricsDecimalID(capture(@"\\bsongid\\s*=\\s*['\"]([0-9]+)['\"]", opening));
-        if (song && [SGLyricsMatchKey(anchor(row, @"title")) isEqualToString:SGLyricsMatchKey(query.title)] && SGLyricsSameArtist(anchor(row, @"artist"), query.artist)) return song;
+        if (song && [SGLyricsMatchKey(anchor(row, @"title")) isEqualToString:SGLyricsMatchKey(title)] && SGLyricsSameArtist(anchor(row, @"artist"), artist)) return song;
     }
     return nil;
 }
@@ -96,14 +96,21 @@ SGLyricsAsk SGGenieAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *))
     if (!SGLyricsMatchKey(query.title).length || !SGLyricsMatchKey(query.artist).length) { done(nil); return; }
     NSDictionary *headers = @{@"User-Agent": @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15", @"Referer": @"https://www.genie.co.kr/"};
     NSURL *url = SGLyricsURL(@"https://www.genie.co.kr/search/searchMain", @{@"query": [NSString stringWithFormat:@"%@ %@", query.title, SGLyricsLeadArtist(query.artist)]});
+    NSString *title = query.title, *artist = query.artist;
     SGLyricsSourceRequest(url, headers, nil, ^(NSData *data, NSInteger status) {
-        NSString *html = status == 200 && data.length ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
-        NSString *song = songFor(html, query);
+        SGLyricsTransform(^id {
+            NSString *html = status == 200 && data.length ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
+            return songFor(html, title, artist);
+        }, ^(NSString *song) {
         if (!song) { done(nil); return; }
         SGLyricsSourceRequest(SGLyricsURL(@"https://dn.genie.co.kr/app/purchase/get_msl.asp", @{@"path": @"a", @"songid": song}), headers, nil, ^(NSData *answer, NSInteger code) {
-            SGLyricsResult *result = code == 200 && answer.length ? SGGenieResult([[NSString alloc] initWithData:answer encoding:NSUTF8StringEncoding]) : nil;
+            SGLyricsTransform(^id {
+                return code == 200 && answer.length ? SGGenieResult([[NSString alloc] initWithData:answer encoding:NSUTF8StringEncoding]) : nil;
+            }, ^(SGLyricsResult *result) {
             SGLog(@"genie: %lu lines", (unsigned long)result.karaokeLines.count);
             done(result);
+            });
+        });
         });
     });
 };

@@ -516,16 +516,26 @@ static NSString *lengthText(NSInteger seconds) {
         return;
     }
     if (_state != SGRSearchDone || path.row >= (NSInteger)_records.count) return;
-    if (!SGLyricsPin(_track, _records[path.row])) {
+    NSUInteger asked = ++_asked;
+    __weak SGRLyricsSearchController *weakSelf = self;
+    BOOL (^current)(void) = ^BOOL {
+        SGRLyricsSearchController *me = weakSelf;
+        return me && me->_asked == asked && me.view.window && !me.isBeingDismissed && !me.navigationController.isBeingDismissed;
+    };
+    SGLyricsPickRecord(_track, _records[path.row], current, ^(BOOL pinned) {
+    SGRLyricsSearchController *me = weakSelf;
+    if (!current()) return;
+    if (!pinned) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.lyricstools.search.unusable.title", @"No lines to show")
             message:SGL(@"settings.lyricstools.search.unusable.message", @"These lyrics are empty. Pick another result.") preferredStyle:UIAlertControllerStyleAlert];
         alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
         [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
-        [self presentViewController:alert animated:YES completion:nil];
+        [me presentViewController:alert animated:YES completion:nil];
         return;
     }
     [[UINotificationFeedbackGenerator new] notificationOccurred:UINotificationFeedbackTypeSuccess];
-    [self close];
+    [me close];
+    });
 }
 @end
 

@@ -254,8 +254,12 @@ Shared:
                   Genie requests the desktop site to avoid a mobile redirect),
                   and Deezer.m on the user's own ARL in the Keychain, off until one is set, its JWT kept in memory and
                   renewed once on a refusal; their requests go through SGLyricsSourceRequest, which caps a reply at
-                  2 MiB, follows no redirect and keeps no cookie. A track can be pinned to one LRCLIB record picked by
-                  hand (SGLrcLibSearch, SGLyricsPin), asked by its id before the walk; Automatic (SGLyricsUnpin) drops
+                  2 MiB, follows no redirect and keeps no cookie. LRCLIB, LyricsPlus, Genie and BiniLyrics decode their
+                  replies and build lines on a worker; finished results come back to the main thread for the cache
+                  and the walk. TTML translations keep the language filter they were picked under
+                  (SGKaraokeLine.translationLanguage, nil for Any or unknown). A track can be pinned to one LRCLIB record picked by
+                  hand (SGLrcLibSearch, SGLyricsPickRecord, which prepares the record off the main thread and pins it only if
+                  that pick is still current), asked by its id before the walk; Automatic (SGLyricsUnpin) drops
                   the pin and everything kept for the track. Each source can be held to the lyric types it gives
                   (SGKeyLyricsSourceTypes: any, synced only, word synced only), an answer it should not give being dropped
                   before the merge. How sources are asked (SGKeyLyricsAskMode) offers In order (0), stopping at

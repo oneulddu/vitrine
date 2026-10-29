@@ -8,6 +8,7 @@
 #import <UIKit/UIKit.h>
 #import <zlib.h>
 #import "Shared/LyricsSources/LyricsSources.h"
+#import "Core/SGPrefs.h"
 #import <Security/Security.h>
 
 // Real provider behavior, with no access to the user's Keychain.
@@ -99,22 +100,48 @@ void SGLyricsSourceRequest(NSURL *url, NSDictionary *headers, NSData *body, void
     done(data, status);
 }
 
+// Service main-queue completions until the callback stops the run loop. The deadline only reports
+// a missing callback; neither a sleep nor a fixed delay decides when a reply is ready.
+static id awaitReply(void (^ask)(void (^done)(id)), BOOL *answeredAtOnce) {
+    __block id answer;
+    __block BOOL answered = NO, waiting = NO;
+    ask(^(id value) {
+        CHECK(NSThread.isMainThread && !answered);
+        answer = value;
+        answered = YES;
+        if (waiting) CFRunLoopStop(CFRunLoopGetMain());
+    });
+    if (answeredAtOnce) *answeredAtOnce = answered;
+    waiting = YES;
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
+    while (!answered && deadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:deadline];
+    waiting = NO;
+    CHECK(answered);
+    return answer;
+}
+
+static NSArray<NSDictionary *> *searchAnswer(NSString *title, NSString *artist, NSInteger seconds) {
+    return awaitReply(^(void (^done)(id)) { SGLrcLibSearch(title, artist, seconds, done); }, nil);
+}
+
 static void checkReadingAndSearch(void) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     id prior = [defaults objectForKey:SGKeyLyricsJapaneseKana];
-    [defaults setBool:NO forKey:SGKeyLyricsJapaneseKana];
+    SGSetEnabled(SGKeyLyricsJapaneseKana, NO);
     CHECK([SGLyricsRomanised(@"君の名前を呼んでいた", NO) isEqualToString:@"kimi no namae wo yon de i ta"]);
     NSString *romaji = SGLyricsRomanised(@"君の名前を呼ぶ", YES);
-    [defaults setBool:YES forKey:SGKeyLyricsJapaneseKana];
+    SGSetEnabled(SGKeyLyricsJapaneseKana, YES);
     NSString *hiragana = SGLyricsRomanised(@"君の名前を呼ぶ", YES);
     printf("Japanese reading: %s -> %s\n", romaji.UTF8String, hiragana.UTF8String);
     CHECK([hiragana isEqualToString:@"きみのなまえをよぶ"]);
     CHECK(!SGLyricsRomanised(@"きみのなまえをよぶ、カナを！", YES));
     CHECK([SGLyricsRomanised(@"東京 Café を 名前!", YES) isEqualToString:@"とうきょう Café を なまえ!"]);
-    [defaults setBool:NO forKey:SGKeyLyricsJapaneseKana];
+    SGSetEnabled(SGKeyLyricsJapaneseKana, NO);
     CHECK([SGLyricsRomanised(@"君の名前を呼ぶ", YES) isEqualToString:romaji]);
     if (prior) [defaults setObject:prior forKey:SGKeyLyricsJapaneseKana];
     else [defaults removeObjectForKey:SGKeyLyricsJapaneseKana];
+    SGPrefsChanged();
 
     NSDictionary *plain = @{@"id": @1, @"duration": @200, @"plainLyrics": @"a line"};
     NSDictionary *near = @{@"id": @2, @"trackName": @"Song", @"artistName": @"Singer", @"albumName": NSNull.null,
@@ -125,8 +152,7 @@ static void checkReadingAndSearch(void) {
         CHECK([url.host isEqualToString:@"lrclib.net"] && [url.path isEqualToString:@"/api/search"]);
         return reply;
     };
-    __block NSArray<NSDictionary *> *found;
-    SGLrcLibSearch(@"Song", @"Singer", 200, ^(NSArray *records) { CHECK(NSThread.isMainThread); found = records; });
+    NSArray<NSDictionary *> *found = searchAnswer(@"Song", @"Singer", 200);
     CHECK(found.count == 3 && [found[0][@"id"] isEqual:@2] && [found[1][@"id"] isEqual:@3] && [found[2][@"id"] isEqual:@1]);
     CHECK([found[0][@"title"] isEqual:@"Song"] && [found[0][@"artist"] isEqual:@"Singer"] && [found[0][@"album"] isEqual:@""]);
     CHECK([found[0][@"synced"] boolValue] && ![found[0][@"instrumental"] boolValue] && [found[0][@"seconds"] isEqual:@200.2]);
@@ -137,25 +163,25 @@ static void checkReadingAndSearch(void) {
                               @"syncedLyrics": @"[00:01.00]a line"};
     id sizedReply = reply;
     reply = @[unsized, near];
-    SGLrcLibSearch(@"Song", @"Singer", 200, ^(NSArray *records) { found = records; });
+    found = searchAnswer(@"Song", @"Singer", 200);
     CHECK(found.count == 2 && [found[1][@"id"] isEqual:@20] && [found[1][@"seconds"] isEqual:@0]);
     CHECK(SGLrcLibRecordResult(unsized).karaokeLines.count == 1);
     reply = sizedReply;
     CHECK([SGLrcLibRecordResult(near).provider isEqual:@"LRCLIB"] && SGLrcLibRecordResult(plain).karaokeLines.count == 1);
     CHECK(!SGLrcLibRecordResult(@{@"plainLyrics": @"  ", @"instrumental": NSNull.null}));
     CHECK(SGLrcLibRecordResult(@{@"instrumental": @YES}).instrumental);
-    SGLrcLibSearch(@"Song", @"Singer", 0, ^(NSArray *records) { found = records; });
+    found = searchAnswer(@"Song", @"Singer", 0);
     CHECK([found[0][@"id"] isEqual:@3] && [found[1][@"id"] isEqual:@2]);
     NSMutableArray *many = [NSMutableArray array];
     for (NSUInteger i = 1; i <= 25; i++) [many addObject:@{@"id": @(i), @"duration": @(i), @"syncedLyrics": @"[00:01]line"}];
     reply = many;
-    SGLrcLibSearch(@"Song", @"", 25, ^(NSArray *records) { found = records; });
+    found = searchAnswer(@"Song", @"", 25);
     CHECK(found.count == 20 && [found[0][@"id"] isEqual:@25] && [found.lastObject[@"id"] isEqual:@6]);
     // Only the first 100 wire records count, even when they are malformed.
     NSMutableArray *over100 = [NSMutableArray array];
     for (NSUInteger i = 0; i < 100; i++) [over100 addObject:NSNull.null];
     [over100 addObject:near]; reply = over100;
-    SGLrcLibSearch(@"Song", @"Singer", 200, ^(NSArray *records) { found = records; });
+    found = searchAnswer(@"Song", @"Singer", 200);
     CHECK(!found.count);
     NSString *tooManyBytes = [@"é" stringByPaddingToLength:131073 withString:@"é" startingAtIndex:0];
     NSString *atByteLimit = [@"a" stringByPaddingToLength:256 * 1024 withString:@"a" startingAtIndex:0];
@@ -170,68 +196,39 @@ static void checkReadingAndSearch(void) {
             NSDictionary *bad = @{@"id": @99, field: oversize, @"instrumental": @YES};
             CHECK(!SGLrcLibRecordResult(bad));
             reply = @[bad, near];
-            SGLrcLibSearch(@"Song", @"Singer", 200, ^(NSArray *records) { found = records; });
+            found = searchAnswer(@"Song", @"Singer", 200);
             CHECK(found.count == 1 && [found[0][@"id"] isEqual:@2]);
             sg_answer = ^id(NSURL *url, id body) { CHECK([url.path isEqualToString:@"/api/get/99"]); return bad; };
-            __block SGLyricsResult *oversizedPin;
-            SGLrcLibGetID(@99, ^(SGLyricsResult *result) { oversizedPin = result; });
+            SGLyricsResult *oversizedPin = awaitReply(^(void (^done)(id)) { SGLrcLibGetID(@99, done); }, nil);
             CHECK(!oversizedPin);
             sg_answer = ^id(NSURL *url, id body) { return reply; };
         }
     }
     reply = nil;
-    SGLrcLibSearch(@"Song", @"Singer", 200, ^(NSArray *records) { found = records; });
+    found = searchAnswer(@"Song", @"Singer", 200);
     CHECK(found && !found.count);
-    SGLrcLibSearch(@"", @"", 200, ^(NSArray *records) { found = records; });
+    found = searchAnswer(@"", @"", 200);
     CHECK(found && !found.count);
-    __block BOOL returnedOnMain = NO;
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        SGLrcLibSearch(@"Song", @"Singer", 200, ^(NSArray *records) {
-            CHECK(NSThread.isMainThread && records && !records.count);
-            returnedOnMain = YES;
+    found = awaitReply(^(void (^done)(id)) {
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            SGLrcLibSearch(@"Song", @"Singer", 200, done);
         });
-    });
-    NSDate *limit = [NSDate dateWithTimeIntervalSinceNow:3];
-    while (!returnedOnMain && limit.timeIntervalSinceNow > 0) [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.005]];
-    CHECK(returnedOnMain);
+    }, nil);
+    CHECK(found && !found.count);
     sg_answer = ^id(NSURL *url, id body) { CHECK([url.path isEqualToString:@"/api/get/2"]); return near; };
-    __block SGLyricsResult *got;
-    SGLrcLibGetID(@2, ^(SGLyricsResult *result) { got = result; });
+    SGLyricsResult *got = awaitReply(^(void (^done)(id)) { SGLrcLibGetID(@2, done); }, nil);
     CHECK(got.karaokeLines.count == 1 && [got.provider isEqualToString:@"LRCLIB"]);
     printf("LRCLIB: bounded transport, 100-record input/20-result output, 256 KiB/4000-line caps, ranking and pinned lookup passed\n");
 }
 
-// LRCLIB reads a Lyricsfile off the main queue and answers back on it, so this runs the main queue
+// LRCLIB decodes and builds every result off main and answers back on it, so this runs the main queue
 // until the answer comes. answeredAtOnce says whether it came before the ask returned.
 static SGLyricsResult *lrclibAnswer(SGLyricsQuery *query, BOOL *answeredAtOnce) {
-    __block SGLyricsResult *got = nil;
-    __block BOOL answered = NO;
-    SGLrcLibAsk(query, ^(SGLyricsResult *result) {
-        CHECK(NSThread.isMainThread);
-        got = result;
-        answered = YES;
-    });
-    if (answeredAtOnce) *answeredAtOnce = answered;
-    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
-    while (!answered && deadline.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
-    CHECK(answered);
-    return got;
+    return awaitReply(^(void (^done)(id)) { SGLrcLibAsk(query, done); }, answeredAtOnce);
 }
 
 static SGLyricsResult *sourceAnswer(SGLyricsAsk ask, SGLyricsQuery *query) {
-    __block SGLyricsResult *got;
-    __block BOOL answered = NO;
-    ask(query, ^(SGLyricsResult *result) {
-        CHECK(NSThread.isMainThread);
-        CHECK(!answered);
-        got = result;
-        answered = YES;
-    });
-    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
-    while (!answered && deadline.timeIntervalSinceNow > 0)
-        [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.01]];
-    CHECK(answered);
-    return got;
+    return awaitReply(^(void (^done)(id)) { ask(query, done); }, nil);
 }
 
 static NSString *qqPayload(NSString *text, BOOL zipped) {
@@ -520,9 +517,8 @@ static void checkNewSources(void) {
         CHECK([param(url, @"songid") isEqualToString:@"3"] && [headers[@"Referer"] isEqualToString:@"https://www.genie.co.kr/"]);
         return @"null({\"8700\":\"Made up\"})";
     };
-    calls = 0;
-    SGGenieAsk(query, ^(SGLyricsResult *r) { got = r; calls++; });
-    CHECK(calls == 1 && genieRequests == 2 && got.synced && got.karaokeLines.firstObject.start == 8700);
+    got = sourceAnswer(SGGenieAsk, query);
+    CHECK(genieRequests == 2 && got.synced && got.karaokeLines.firstObject.start == 8700);
     __block NSUInteger plusRequests = 0;
     sg_sourceAnswer = ^id(NSURL *url, NSDictionary *headers, NSData *body, NSInteger *status) {
         CHECK([param(url, @"duration") isEqualToString:@"200.000"]);
@@ -530,15 +526,14 @@ static void checkNewSources(void) {
         if ([url.host isEqualToString:@"lyricsplus.prjktla.my.id"]) { *status = 503; return nil; }
         CHECK([url.host isEqualToString:@"lyricsplus.binimum.org"]); return plus;
     };
-    calls = 0;
-    SGLyricsPlusAsk(query, ^(SGLyricsResult *r) { got = r; calls++; });
-    CHECK(calls == 1 && plusRequests == 2 && got.wordTimed);
-    plusRequests = calls = 0;
+    got = sourceAnswer(SGLyricsPlusAsk, query);
+    CHECK(plusRequests == 2 && got.wordTimed);
+    plusRequests = 0;
     sg_sourceAnswer = ^id(NSURL *url, NSDictionary *headers, NSData *body, NSInteger *status) {
         plusRequests++; CHECK([url.host isEqualToString:@"lyricsplus.prjktla.my.id"]); return plus;
     };
-    SGLyricsPlusAsk(query, ^(SGLyricsResult *r) { got = r; calls++; });
-    CHECK(calls == 1 && plusRequests == 1 && got.wordTimed);
+    got = sourceAnswer(SGLyricsPlusAsk, query);
+    CHECK(plusRequests == 1 && got.wordTimed);
 
     __block NSUInteger logins = 0, lyricsRequests = 0;
     __block BOOL refuse = YES;
@@ -1036,7 +1031,7 @@ int main(int argc, char **argv) {
         query.title = @"a";
         query.artist = @"b";
         query.seconds = 200;
-        // A Lyricsfile is read off the main queue, so its answer comes later; one without words at once.
+        // JSON and all result construction run off main, with or without a Lyricsfile.
         BOOL atOnce = YES;
         got = lrclibAnswer(query, &atOnce);
         CHECK(got.wordTimed && got.synced && got.karaokeLines.count == 1 && got.texts.count && !atOnce);
@@ -1045,11 +1040,11 @@ int main(int argc, char **argv) {
         CHECK(!got.wordTimed && got.synced && got.karaokeLines.count == 2);
         record = @{@"id": @1, @"duration": @200, @"hasWordSync": @NO, @"syncedLyrics": twoLines, @"lyricsfile": wordFile};
         got = lrclibAnswer(query, &atOnce);
-        CHECK(!got.wordTimed && got.synced && got.karaokeLines.count == 2 && atOnce);
+        CHECK(!got.wordTimed && got.synced && got.karaokeLines.count == 2 && !atOnce);
         // An instrumental is answered as one, its Lyricsfile not read.
         record = @{@"id": @1, @"duration": @200, @"instrumental": @YES, @"hasWordSync": @YES, @"lyricsfile": wordFile};
         got = lrclibAnswer(query, &atOnce);
-        CHECK(got.instrumental && atOnce);
+        CHECK(got.instrumental && !atOnce);
         record = nil;
         found = @[@{@"id": @2, @"trackName": @"a", @"artistName": @"b", @"duration": @200, @"syncedLyrics": twoLines},
                   @{@"id": @3, @"trackName": @"a", @"artistName": @"b", @"duration": @202, @"hasWordSync": @YES, @"syncedLyrics": twoLines, @"lyricsfile": wordFile}];

@@ -104,9 +104,10 @@ void SGLyricsGetJSON(NSURL *url, NSDictionary<NSString *, NSString *> *headers, 
 void SGLyricsGetJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> *headers,
                               id (^transform)(id), void (^done)(id)) {
     send(requestFor(url, headers), ^(NSData *body) {
-        id root = jsonIn(body);
-        id result = transform ? transform(root) : root;
-        dispatch_async(dispatch_get_main_queue(), ^{ done(result); });
+        SGLyricsTransform(^id {
+            id root = jsonIn(body);
+            return transform ? transform(root) : root;
+        }, done);
     });
 }
 
@@ -118,9 +119,15 @@ void SGLyricsGetJSONReply(NSURL *url, NSDictionary<NSString *, NSString *> *head
 }
 
 void SGLyricsGetText(NSURL *url, void (^done)(NSString *text)) {
+    SGLyricsGetTextTransform(url, nil, done);
+}
+
+void SGLyricsGetTextTransform(NSURL *url, id (^transform)(NSString *), void (^done)(id)) {
     send(requestFor(url, nil), ^(NSData *body) {
-        NSString *text = body.length ? [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding] : nil;
-        dispatch_async(dispatch_get_main_queue(), ^{ done(text); });
+        SGLyricsTransform(^id {
+            NSString *text = body.length ? [[NSString alloc] initWithData:body encoding:NSUTF8StringEncoding] : nil;
+            return transform ? transform(text) : text;
+        }, done);
     });
 }
 
@@ -137,9 +144,10 @@ void SGLyricsPostJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> 
     request.HTTPBody = written;
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     send(request, ^(NSData *answer) {
-        id root = jsonIn(answer);
-        id result = transform ? transform(root) : root;
-        dispatch_async(dispatch_get_main_queue(), ^{ done(result); });
+        SGLyricsTransform(^id {
+            id root = jsonIn(answer);
+            return transform ? transform(root) : root;
+        }, done);
     });
 }
 
@@ -170,7 +178,8 @@ void SGLyricsPostJSONTransform(NSURL *url, NSDictionary<NSString *, NSString *> 
     NSData *data = error ? nil : [self.data copy];
     void (^done)(NSData *, NSInteger) = self.done;
     self.done = nil;
-    if (done) done(data, self.status);
+    NSInteger status = self.status;
+    if (done) dispatch_async(dispatch_get_main_queue(), ^{ done(data, status); });
     [session finishTasksAndInvalidate];
 }
 @end
@@ -192,7 +201,7 @@ void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *hea
     SGLyricsSourceTransfer *transfer = [SGLyricsSourceTransfer new];
     transfer.data = [NSMutableData data];
     transfer.done = done;
-    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:transfer delegateQueue:NSOperationQueue.mainQueue];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:config delegate:transfer delegateQueue:nil];
     [[session dataTaskWithRequest:request] resume];
 }
 
@@ -289,7 +298,7 @@ static NSArray<NSString *> *defaultOrder(void) {
 NSArray<NSString *> *SGLyricsOrder(void) {
     id stored = [NSUserDefaults.standardUserDefaults arrayForKey:SGKeyLyricsProviders];
     // A reset leaves sources off until the user saves an order, including an explicitly empty one.
-    if (!stored && [NSUserDefaults.standardUserDefaults boolForKey:SGKeyStock]) return @[];
+    if (!stored && SGHidden(SGKeyStock)) return @[];
     NSArray *legacy = fromLegacyKeys();
     NSArray *keys = [stored isKindOfClass:NSArray.class] ? stored : legacy.count ? legacy : defaultOrder();
     NSMutableArray<NSString *> *order = [NSMutableArray array];
@@ -360,6 +369,8 @@ static NSMutableSet<NSString *> *sg_missing;
 static NSMutableDictionary<NSString *, NSNumber *> *sg_pins;
 // Guarded by sg_pins; generations survive unpinning and source picks to reject old hook deliveries.
 static NSMutableDictionary<NSString *, NSNumber *> *sg_pinGenerations;
+// Main-owned, only outstanding preparations. Tokens distinguish overlapping choices for one track.
+static NSMutableDictionary<NSString *, NSObject *> *sg_pinSelections;
 NSNotificationName const SGLyricsPinDidChangeNotification = @"spotifyglass.lyrics.pinDidChange";
 NSNotificationName const SGLyricsDidReloadNotification = @"spotifyglass.lyrics.didReload";
 static NSMutableDictionary<NSString *, NSString *> *sg_credits;
@@ -396,6 +407,7 @@ static void setUp(void) {
         sg_spotifyHas = [NSMutableDictionary dictionary];
         sg_pins = [NSMutableDictionary dictionary];
         sg_pinGenerations = [NSMutableDictionary dictionary];
+        sg_pinSelections = [NSMutableDictionary dictionary];
         id stored = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsPins];
         if ([stored isKindOfClass:NSDictionary.class]) {
             for (id track in stored) {
@@ -428,13 +440,12 @@ void SGLyricsInvalidateDelivery(NSString *trackID) {
 
 static void whenNamed(NSString *trackID, NSTimeInterval waited, NSMutableArray *waiting);
 
-BOOL SGLyricsPin(NSString *trackID, NSDictionary *record) {
+static BOOL pinResult(NSString *trackID, NSDictionary *record, SGLyricsResult *result) {
     if (!trackID.length || ![record isKindOfClass:NSDictionary.class]) return NO;
     // The menu may hand back its shaped entry or the raw record it carries.
     if ([record[@"record"] isKindOfClass:NSDictionary.class]) record = record[@"record"];
     id identifier = record[@"id"];
     if (![identifier isKindOfClass:NSNumber.class] || !SGLyricsDecimalID(identifier).length || [identifier longLongValue] <= 0) return NO;
-    SGLyricsResult *result = SGLrcLibRecordResult(record);
     if (!result.instrumental && !result.karaokeLines.count) return NO;
     setUp();
     SGLyricsDropChoice(trackID, SGLyricsChosenSource(trackID));
@@ -458,6 +469,23 @@ BOOL SGLyricsPin(NSString *trackID, NSDictionary *record) {
     [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsPinDidChangeNotification object:trackID];
     for (void (^done)(SGLyricsResult *) in waiting) done(result);
     return YES;
+}
+
+void SGLyricsPickRecord(NSString *trackID, NSDictionary *record, BOOL (^current)(void), void (^done)(BOOL)) {
+    if (!trackID.length || ![record isKindOfClass:NSDictionary.class]) { done(NO); return; }
+    setUp();
+    trackID = [trackID copy];
+    record = [record[@"record"] isKindOfClass:NSDictionary.class] ? record[@"record"] : record;
+    record = [record copy];
+    NSObject *selection = [NSObject new];
+    sg_pinSelections[trackID] = selection;
+    NSUInteger generation = SGLyricsPinGeneration(trackID);
+    SGLyricsTransform(^id { return SGLrcLibRecordResult(record); }, ^(SGLyricsResult *result) {
+        BOOL latest = sg_pinSelections[trackID] == selection;
+        if (latest) [sg_pinSelections removeObjectForKey:trackID];
+        BOOL valid = latest && generation == SGLyricsPinGeneration(trackID) && (!current || current());
+        done(valid && pinResult(trackID, record, result));
+    });
 }
 
 static void reloadTrack(NSString *trackID, BOOL unpin) {

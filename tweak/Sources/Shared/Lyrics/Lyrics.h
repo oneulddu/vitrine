@@ -138,6 +138,9 @@ static const NSInteger SGKaraokeMaxTimeMs = 86400000;
 @property (nonatomic, strong) SGKaraokeLine *pronunciation;
 // The line in another language, the backing's words with it; nil where the source has none.
 @property (nonatomic, copy) NSString *translation;
+// The provider translation's language filter when it was selected, not the current preference.
+// nil means the language was unknown or the filter was Any.
+@property (nonatomic, copy) NSString *translationLanguage;
 // A short explanation of a cultural reference, nil for nearly every line.
 @property (nonatomic, copy) NSString *note;
 // The translation came from a translator of the lyrics' menu (LyricsTranslation), not from the lyrics' source.

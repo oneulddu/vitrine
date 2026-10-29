@@ -2,9 +2,9 @@
 # Run the keeper and walk on the Mac, omitting only the Logos hooks that need Spotify.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC=$(cd "$HERE/../../tweak/Sources" && pwd)
-OUT=${OUT:-"$HERE/build"}
-mkdir -p "$OUT"
+SRC=${LYRICS_SOURCE_ROOT:-$(cd "$HERE/../../tweak/Sources" && pwd)}
+OUT=$(mktemp -d "/tmp/vitrine-lyrics-state-build.XXXXXX")
+trap 'rm -rf "$OUT"' EXIT HUP INT TERM
 sed '/^%hook SPTEsperantoPlayer/,$d' "$SRC/Shared/Lyrics/KaraokeSource.x" > "$OUT/karaoke.inc"
 sed -n '/^SPTPlayerTrack \*SGPlayerUpNextIn/,/^}/p' "$SRC/Shared/Player/PlayerState.x" > "$OUT/player-up-next.inc"
 sed -n '/^static const NSTimeInterval kLyricsGrace =/p; /^#pragma mark - the track changing under them/,/^%ctor {/ { /^%ctor {/!p; }' \

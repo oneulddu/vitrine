@@ -268,8 +268,7 @@ typedef NS_ENUM(NSInteger, SGTTMLPart) {
 
 // The translation the Lyrics page asks for: the one in that language, whichever the region ("en"
 // takes "en-US"), and none in any other; with no language asked for, the first the document has.
-static NSString *translationLanguage(NSArray<NSString *> *languages) {
-    NSString *wanted = SGLyricsTranslationLanguage();
+static NSString *translationLanguage(NSArray<NSString *> *languages, NSString *wanted) {
     if (!wanted.length) return languages.firstObject;
     NSString *base = [wanted componentsSeparatedByString:@"-"].firstObject.lowercaseString;
     for (NSString *language in languages) {
@@ -307,7 +306,10 @@ SGKaraokeLine *SGLyricsPronunciation(NSArray<SGKaraokeWord *> *words, NSString *
 }
 
 static void addHead(SGTTMLReader *reader) {
-    NSString *translated = translationLanguage(reader.translationLanguages);
+    // SGPrefs is thread-safe. Read once so filtering and provenance use the same preference even
+    // if the user changes it while this worker attaches the document's translations.
+    NSString *wanted = SGLyricsTranslationLanguage();
+    NSString *translated = translationLanguage(reader.translationLanguages, wanted);
     NSString *spelt = pronunciationLanguage(reader.pronunciationLanguages);
     NSDictionary<NSString *, SGTTMLText *> *translations = translated ? reader.translations[translated] : nil;
     NSDictionary<NSString *, SGTTMLText *> *pronunciations = spelt ? reader.pronunciations[spelt] : nil;
@@ -318,7 +320,10 @@ static void addHead(SGTTMLReader *reader) {
         NSString *translation = translations[key].plain;
         NSString *said = SGKaraokeLineText(line);
         if (line.backing) said = [said stringByAppendingFormat:@" %@", SGKaraokeLineText(line.backing)];
-        if (translation.length && ![SGLyricsBareText(translation) isEqualToString:SGLyricsBareText(said)]) line.translation = translation;
+        if (translation.length && ![SGLyricsBareText(translation) isEqualToString:SGLyricsBareText(said)]) {
+            line.translation = translation;
+            line.translationLanguage = wanted;
+        }
         SGTTMLText *pronunciation = pronunciations[key];
         if (!pronunciation) return;
         line.pronunciation = SGLyricsPronunciation(pronunciation.words, pronunciation.plain, line);

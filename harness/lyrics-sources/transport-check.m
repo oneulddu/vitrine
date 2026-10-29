@@ -2,11 +2,26 @@
 #import "Core/SGCore.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import <stdatomic.h>
+#import <objc/runtime.h>
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #c); exit(1); } } while (0)
 static NSData *(^reply)(NSURLRequest *);
 static NSInteger replyStatus = 200;
 static NSError *replyError;
-static NSUInteger decoded;
+static _Atomic NSUInteger decoded;
+static IMP originalJSON, originalLineStart, originalXML, originalMatches;
+static BOOL watchModels;
+static void checkedLineStart(id line, SEL selector, NSInteger start) {
+    if (watchModels) CHECK(!NSThread.isMainThread);
+    ((void (*)(id, SEL, NSInteger))originalLineStart)(line, selector, start);
+}
+static BOOL checkedXML(id object, SEL selector) {
+    CHECK(!NSThread.isMainThread);
+    return ((BOOL (*)(id, SEL))originalXML)(object, selector);
+}
+static id checkedMatches(NSRegularExpression *regex, SEL selector, NSString *text, NSMatchingOptions options, NSRange range) {
+    if ([regex.pattern hasPrefix:@"<tr"]) CHECK(!NSThread.isMainThread);
+    return ((id (*)(id, SEL, NSString *, NSMatchingOptions, NSRange))originalMatches)(regex, selector, text, options, range);
+}
 
 @interface TransportTask : NSObject
 @property (nonatomic, copy) dispatch_block_t work;
@@ -16,12 +31,44 @@ static NSUInteger decoded;
 - (void)resume { dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), self.work); }
 @end
 @interface TransportSession : NSObject
+@property (nonatomic, strong) id<NSURLSessionDataDelegate> delegate;
+@property (nonatomic, strong) NSOperationQueue *queue;
 + (instancetype)sharedSession;
++ (instancetype)sessionWithConfiguration:(NSURLSessionConfiguration *)configuration delegate:(id)delegate delegateQueue:(NSOperationQueue *)queue;
+- (TransportTask *)dataTaskWithRequest:(NSURLRequest *)request;
+- (void)finishTasksAndInvalidate;
 - (TransportTask *)dataTaskWithRequest:(NSURLRequest *)request
                     completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))done;
 @end
 @implementation TransportSession
 + (instancetype)sharedSession { return [self new]; }
++ (instancetype)sessionWithConfiguration:(NSURLSessionConfiguration *)configuration delegate:(id)delegate delegateQueue:(NSOperationQueue *)queue {
+    CHECK(configuration.HTTPCookieStorage == nil && configuration.URLCache == nil);
+    TransportSession *session = [self new];
+    session.delegate = delegate;
+    session.queue = queue ?: [NSOperationQueue new];
+    session.queue.maxConcurrentOperationCount = 1;
+    return session;
+}
+- (void)finishTasksAndInvalidate { self.delegate = nil; }
+- (TransportTask *)dataTaskWithRequest:(NSURLRequest *)request {
+    TransportTask *task = [TransportTask new];
+    __weak TransportTask *weakTask = task;
+    task.work = ^{
+        TransportTask *activeTask = weakTask;
+        NSData *data = reply(request);
+        NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:request.URL statusCode:replyStatus HTTPVersion:@"HTTP/1.1" headerFields:nil];
+        [self.queue addOperationWithBlock:^{
+            CHECK(!NSThread.isMainThread);
+            [self.delegate URLSession:(id)self dataTask:(id)activeTask didReceiveResponse:response completionHandler:^(NSURLSessionResponseDisposition disposition) {
+                CHECK(disposition == NSURLSessionResponseAllow);
+                if (data) [self.delegate URLSession:(id)self dataTask:(id)activeTask didReceiveData:data];
+                [self.delegate URLSession:(id)self task:(id)activeTask didCompleteWithError:replyError];
+            }];
+        }];
+    };
+    return task;
+}
 - (TransportTask *)dataTaskWithRequest:(NSURLRequest *)request
                     completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))done {
     TransportTask *task = [TransportTask new];
@@ -41,8 +88,8 @@ static NSUInteger decoded;
 @implementation TransportJSON
 + (id)JSONObjectWithData:(NSData *)data options:(NSJSONReadingOptions)options error:(NSError **)error {
     CHECK(!NSThread.isMainThread);
-    decoded++;
-    return [NSJSONSerialization JSONObjectWithData:data options:options error:error];
+    atomic_fetch_add(&decoded, 1);
+    return ((id (*)(id, SEL, NSData *, NSJSONReadingOptions, NSError **))originalJSON)(NSJSONSerialization.class, _cmd, data, options, error);
 }
 + (BOOL)isValidJSONObject:(id)value { return [NSJSONSerialization isValidJSONObject:value]; }
 + (NSData *)dataWithJSONObject:(id)value options:(NSJSONWritingOptions)options error:(NSError **)error {
@@ -51,9 +98,7 @@ static NSUInteger decoded;
 @end
 static const NSTimeInterval kTimeout = 6;
 #define NSURLSession TransportSession
-#define NSJSONSerialization TransportJSON
 #import "transport.inc"
-#undef NSJSONSerialization
 // NetEase has its own 3-second request policy.
 #define kTimeout kNetEaseTimeout
 #import "Shared/LyricsSources/NetEase.m"
@@ -68,9 +113,9 @@ void SGLyricsPageLines(NSArray *lines, NSArray **starts, NSArray **texts) {
     for (SGKaraokeLine *line in lines) { [at addObject:@(line.start)]; [words addObject:SGKaraokeLineText(line)]; }
     *starts = at; *texts = words;
 }
-void SGLyricsSourceRequest(NSURL *url, NSDictionary *headers, NSData *body, void (^done)(NSData *, NSInteger)) {
-    CHECK(NO); // These cases never use LRCLIB's bounded source request.
-}
+static NSString *fixtureISRC;
+void SGSpotifyISRC(NSString *uri, NSUInteger tries, void (^done)(NSString *)) { done(fixtureISRC); }
+NSString *SGLyricsTranslationLanguage(void) { return nil; }
 static void waitFor(BOOL *finished) {
     NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5];
     while (!*finished && deadline.timeIntervalSinceNow > 0)
@@ -80,6 +125,11 @@ static void waitFor(BOOL *finished) {
 static NSData *json(id value) { return [NSJSONSerialization dataWithJSONObject:value options:0 error:nil]; }
 int main(void) {
     @autoreleasepool {
+        Method jsonMethod = class_getClassMethod(NSJSONSerialization.class, @selector(JSONObjectWithData:options:error:));
+        originalJSON = method_setImplementation(jsonMethod, class_getMethodImplementation(object_getClass(TransportJSON.class), @selector(JSONObjectWithData:options:error:)));
+        originalLineStart = method_setImplementation(class_getInstanceMethod(SGKaraokeLine.class, @selector(setStart:)), (IMP)checkedLineStart);
+        originalXML = method_setImplementation(class_getInstanceMethod(NSXMLParser.class, @selector(parse)), (IMP)checkedXML);
+        originalMatches = method_setImplementation(class_getInstanceMethod(NSRegularExpression.class, @selector(matchesInString:options:range:)), (IMP)checkedMatches);
         NSURL *url = [NSURL URLWithString:@"https://fixture.invalid/lyrics"];
         NSString *large = [@"a" stringByPaddingToLength:500000 withString:@"a" startingAtIndex:0];
         reply = ^NSData *(NSURLRequest *request) { return json(@{@"text": large, @"candidate": @17}); };
@@ -90,7 +140,7 @@ int main(void) {
             return root[@"candidate"];
         }, ^(id value) { CHECK(NSThread.isMainThread && [value isEqual:@17]); finished = YES; });
         waitFor(&finished);
-        CHECK(decoded == 1);
+        CHECK(atomic_load(&decoded) == 1);
         finished = NO;
         SGLyricsPostJSON(url, nil, @{@"ask": @YES}, ^(id root) {
             CHECK(NSThread.isMainThread && [root[@"candidate"] isEqual:@17]); finished = YES;
@@ -136,7 +186,47 @@ int main(void) {
             finished = YES;
         });
         waitFor(&finished);
-        puts("Shared transport: worker decode/transform, main delivery and NetEase title checks passed");
+        watchModels = YES;
+        // Each real adapter sees the same captured query even if the source walk learns new names.
+        for (NSUInteger provider = 0; provider < 6; provider++) {
+            query.title = @"Fixture"; query.artist = @"Singer"; query.seconds = 200;
+            query.trackID = provider == 5 ? @"1234567890123456789012" : @"fixture";
+            fixtureISRC = provider == 5 ? @"ISRC123" : nil;
+            reply = ^NSData *(NSURLRequest *request) {
+                NSString *host = request.URL.host, *path = request.URL.path;
+                if ([host isEqual:@"lrclib.net"]) {
+                    NSDictionary *record = @{@"id": @7, @"trackName": @"Fixture", @"artistName": @"Singer", @"duration": @200, @"syncedLyrics": @"[00:01]Hello\n[00:02]"};
+                    return json(provider == 1 ? @[record] : record);
+                }
+                if ([host hasPrefix:@"lyricsplus."]) return json(@{@"type": @"Word", @"lyrics": @[
+                    @{@"text": @"Hello", @"time": @1000, @"duration": @1000, @"syllabus": @[
+                        @{@"text": @"Hello", @"time": @1000, @"duration": @1000}]}]});
+                if ([host isEqual:@"www.genie.co.kr"]) return [@"<tr class='list' songid='7'><a class='title' title='Fixture'>Fixture</a><a class='artist'>Singer</a></tr>" dataUsingEncoding:NSUTF8StringEncoding];
+                if ([host isEqual:@"dn.genie.co.kr"]) return [@"callback({\"1000\":\"Hello\",\"2000\":\"\"})" dataUsingEncoding:NSUTF8StringEncoding];
+                if ([host isEqual:@"lyrics-api.binimum.org"]) return json(@{@"results": @[
+                    @{@"lyricsUrl": @"https://fixture.invalid/lyrics.ttml", @"timing_type": @"word", @"duration": @200}]});
+                CHECK([path hasSuffix:@".ttml"]);
+                return [@"<tt timing=\"Word\"><body><div><p begin=\"1s\" end=\"2s\"><span begin=\"1s\" end=\"2s\">Hello</span></p></div></body></tt>" dataUsingEncoding:NSUTF8StringEncoding];
+            };
+            finished = NO;
+            void (^receive)(SGLyricsResult *) = ^(SGLyricsResult *result) {
+                CHECK(NSThread.isMainThread && result.karaokeLines.count == 1);
+                CHECK(result.karaokeLines.firstObject.start == 1000);
+                CHECK([SGKaraokeLineText(result.karaokeLines.firstObject) isEqual:@"Hello"]);
+                if (provider == 2 || provider >= 4) CHECK(result.wordTimed);
+                finished = YES;
+            };
+            if (provider == 0) SGLrcLibAsk(query, receive);
+            else if (provider == 1) {
+                query.seconds = 0;
+                SGLrcLibAsk(query, receive);
+            } else if (provider == 2) SGLyricsPlusAsk(query, receive);
+            else if (provider == 3) SGGenieAsk(query, receive);
+            else SGBiniLyricsAsk(query, receive);
+            query.title = @"Changed"; query.artist = @"Other"; query.seconds = 900;
+            waitFor(&finished);
+        }
+        puts("Shared transport: worker decoding/models, main delivery, LRCLIB/LyricsPlus/Genie/BiniLyrics and NetEase passed");
     }
     return 0;
 }
