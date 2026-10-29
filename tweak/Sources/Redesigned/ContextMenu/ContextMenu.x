@@ -1291,7 +1291,8 @@ static void openWhenUp(SGRMenuSession *session, UIViewController *sheet, int tri
     UIWindow *in = self.viewIfLoaded.window;
     // The sheet the player's menu asked Spotify for: into the mod's window, unseen.
     SGRMenuSession *requesting = sg_requesting;
-    if (requesting && in != sg_host && CACurrentMediaTime() - sg_requestedAt <= kRequestWindow && ![presented isKindOfClass:UIAlertController.class]) {
+    if (requesting && in != sg_host && CACurrentMediaTime() - sg_requestedAt <= kRequestWindow
+        && (sheetIn(presented) || [presented isKindOfClass:NSClassFromString(@"NavigationUI_SheetImpl.ContainerViewController")])) {
         sg_requesting = nil;
         [requesting adoptSheet:presented from:self completion:completion];
         return;

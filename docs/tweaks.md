@@ -951,7 +951,14 @@ Redesigned:
                   info) are fired on the hidden sheet once the menu is gone, through the row's own control (scrolled
                   to when it is below the fold); a row that pushes a page shows the sheet on that page, one that
                   presents a sheet of its own (Sleep timer) leaves that sheet as Spotify's and the card goes unseen,
-                  and a close with no pick dismisses the hidden sheet. Checked in the simulator against
+                  and a close with no pick dismisses the hidden sheet. A pending player request accepts only
+                  Spotify's context sheet or its known lazy wrapper, never a mod panel, with no presenter-ancestry
+                  restriction. The pending request keeps the session alive after a pick or close: a Spotify pick
+                  fires when the sheet arrives; a mod pick or cancellation discards the next Spotify sheet within
+                  the three-second request window. This is not request correlation: newer requests replace the
+                  single pending slot, so overlapping A/B deliveries and page ⋯ gestures within the recency window
+                  remain documented ambiguities. A sheet arriving after the window is not adopted or suppressed
+                  by that request. Checked in the simulator against
                   harness/system-menu/
     Player/       the redesigned full screen player (Player.h lists its files); its more button opens the system
                   menu (ContextMenu/), Spotify's rows and then Speed, Pitch & Reverb, which opens the sliders, Pitch

@@ -5,7 +5,7 @@ set -e
 SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)
 OUT=${HARNESS_BUILD_DIR:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/SystemMenuHarness.app"
-# A source copy can remove the request owner for the delayed-presentation mutation check.
+# A source copy can mutate request ownership or sheet recognition for delayed-presentation checks.
 "$THEOS/bin/logos.pl" -c generator=internal "${CONTEXT_MENU_SOURCE:-$SRC/Redesigned/ContextMenu/ContextMenu.x}" > "$OUT/gen/ContextMenu.m"
 
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)

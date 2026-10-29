@@ -114,9 +114,22 @@ void SGRAnimate(NSInteger motion, void (^animations)(void), void (^completion)(B
 UIAction *SGRLyricsSearchAction(NSString *trackID) { return nil; }
 NSString *SGLyricsPiPMenuTitle(void) { return @"Open lyrics Picture in Picture"; }
 void SGLyricsPiPToggle(UIView *from) { NSLog(@"[harness] lyrics PiP"); }
-// LyricsStyle.m and PlayerQueue.m: the lyrics style submenu and Playing Next are logged, not built.
+// LyricsStyle.m and PlayerQueue.m are not built. Playing Next presents a real navigation panel, after the
+// menu's transition, so the production menu handler exercises ContextMenu.x's presentation interception.
 UIMenu *SGRLyricsStyleMenu(NSString *title) { return [UIMenu menuWithTitle:title children:@[]]; }
-void SGRPlayerShowQueue(UIView *from) { NSLog(@"[harness] playing next"); }
+static __weak UIViewController *sg_modPanel;
+void SGRPlayerShowQueue(UIView *from) {
+    UIViewController *root = from.window.rootViewController;
+    waitFor(^BOOL { return !root.presentedViewController && !root.transitionCoordinator; }, 1, ^{
+        check(root != nil && !root.presentedViewController && !root.transitionCoordinator, @"the mod panel can present after the menu");
+        UIViewController *content = [UIViewController new];
+        content.view.backgroundColor = UIColor.systemBlueColor;
+        UINavigationController *panel = [[UINavigationController alloc] initWithRootViewController:content];
+        panel.modalPresentationStyle = UIModalPresentationPageSheet;
+        sg_modPanel = panel;
+        [root presentViewController:panel animated:NO completion:nil];
+    });
+}
 
 // Every action and submenu the menu makes, by its title, so the harness can pick or open one.
 static NSMutableDictionary<NSString *, UIMenuElement *> *sg_elements;
@@ -150,6 +163,7 @@ static NSUInteger sg_spotifyTaps;
 static NSUInteger sg_selectionCount;
 // Hold the presentation itself, not just its rows, until the menu has released its session.
 static BOOL sg_sheetHeld;
+static CFTimeInterval sg_sheetAskedAt;
 // The sheet waits for the harness to give it its rows (sg_rowsAfter seconds after it loads, or never).
 static BOOL sg_rowsHeld, sg_rowsNever;
 static NSTimeInterval sg_rowsAfter;
@@ -297,6 +311,7 @@ static SGHarnessPlayer *sg_player;
 
 // A controller of Spotify's own presented in place of the sheet's navigation controller, which it puts the sheet
 // into only as it appears (`wrapped`), as NavigationUI_SheetImpl.ContainerViewController does on the phone.
+__attribute__((objc_runtime_name("NavigationUI_SheetImpl.ContainerViewController")))
 @interface SGHarnessWrapper : UIViewController
 @property (nonatomic, strong) UINavigationController *inner;
 @end
@@ -315,6 +330,8 @@ static SGHarnessPlayer *sg_player;
 #pragma mark - the player
 
 static UIView *menuView(UIView *root) {
+    // UIKit can keep the dismissed menu in its window at alpha zero; it is no longer an open menu.
+    if (root.hidden || root.alpha == 0) return nil;
     if ([NSStringFromClass(root.class) isEqualToString:@"_UIContextMenuView"]) return root;
     for (UIView *child in root.subviews) {
         UIView *found = menuView(child);
@@ -436,6 +453,7 @@ static void pick(NSString *title) {
 // What Spotify's ⋯ does: build its sheet and present it, animated.
 - (void)moreTapped {
     sg_spotifyTaps++;
+    sg_sheetAskedAt = CACurrentMediaTime();
     NSLog(@"[harness] Spotify's ⋯ action ran");
     if (!sg_sheetHeld) [self presentMenuSheet];
 }
@@ -527,6 +545,7 @@ static NSArray<NSString *> *quickTitles(void) {
     if ([run hasPrefix:@"delayed-"] || [run hasPrefix:@"request-timeout-"] || is(@"request-superseded")) {
         sg_sheetHeld = YES;
         BOOL selection = [run hasSuffix:@"pick"];
+        BOOL modPanel = [run hasSuffix:@"mod-panel"];
         BOOL timeout = [run hasPrefix:@"request-timeout-"];
         [self tap:^(CFTimeInterval took) {
             check(took >= 0, @"the menu opened before Spotify presents");
@@ -535,13 +554,34 @@ static NSArray<NSString *> *quickTitles(void) {
             waitFor(^BOOL { return sg_spotifyTaps == 1; }, 1, ^{
                 check(sg_spotifyTaps == 1 && !self.sheet, @"Spotify was asked once but has not presented");
                 if (selection) pick(@"Add to Queue");
+                else if (modPanel) pick(@"Playing Next");
                 else [self.front.contextMenuInteraction dismissMenu];
                 waitFor(^BOOL { return [self.front valueForKey:@"session"] == nil; }, 1, ^{
                     check([self.front valueForKey:@"session"] == nil, @"the ended menu released its session");
                     // Let menuEnded's queued block finish: neither the harness nor an anchor owns the request.
                     after(0.15, ^{
-                        check(session != nil, @"an outstanding request survives the menu ending");
+                        if (!modPanel) check(session != nil, @"an outstanding request survives the menu ending");
                         check(sg_selectionCount == 0, @"no action runs before the sheet arrives");
+                        if (modPanel) {
+                            waitFor(^BOOL { return sg_modPanel.viewIfLoaded.window == self.view.window; }, 1, ^{
+                                UIViewController *panel = sg_modPanel;
+                                check(panel != nil && panel.viewIfLoaded.window == self.view.window,
+                                      @"the picked mod panel is visible in the app window");
+                                check(self.presentedViewController == panel && panel.presentationController.containerView.alpha == 1,
+                                      @"the mod panel is not hidden or dismissed");
+                                check(CACurrentMediaTime() - sg_sheetAskedAt < 3, @"the late Spotify sheet is released within the request window");
+                                [self presentMenuSheet];
+                                after(4.3, ^{
+                                    check(self.sheetGone && sg_selectionCount == 0, @"only the late Spotify sheet is discarded without firing a row");
+                                    check(self.presentedViewController == panel && panel.viewIfLoaded.window == self.view.window
+                                          && panel.presentationController.containerView.alpha == 1 && !panel.isBeingDismissed,
+                                          @"the mod panel stays visible after the late Spotify sheet");
+                                    check(session == nil, @"the adopted request releases its session after the late sheet goes");
+                                    finish();
+                                });
+                            });
+                            return;
+                        }
                         if (timeout) {
                             after(3.2, ^{
                                 check(session == nil, @"a timed-out request releases its session");

@@ -4,7 +4,8 @@
 Spotify's player ⋯ and its context menu sheet (`ContextMenu_InternalImpl.ContextMenuViewController` under its
 class name, inside a navigation controller): 15 rows, each an Encore-style ListRow control whose identifier is
 Spotify's item number and which acts on touch up inside, no `didSelect`, Sleep timer last and below the sheet's
-fold, as on the phone. Speed, pitch, reverb and Animated artwork are stubs that log.
+fold, as on the phone. Speed, pitch, reverb and Animated artwork are stubs that log. Playing Next presents
+a UIKit navigation panel from the real player-menu handler.
 
     THEOS=$HOME/theos ./build.sh
     xcrun simctl install <udid> build/SystemMenuHarness.app
@@ -21,11 +22,13 @@ or `FAIL` lines, then `done`. A pick, or opening a submenu, goes through the men
 selection (`_UIContextMenuView`'s `_handleSelectionForElement:`), the harness's only private call; the mod's own
 lines (`SGLog`) go to the unified log.
 
-Every scenario but `timing` first checks the top level: the menu is on screen (within 1 s, the simulator's
+The ordinary sheet scenarios first check the top level: the menu is on screen (within 1 s, the simulator's
 first menu of a launch being slow), the mod's ⋯ takes touches, the quick row (Share, Add to Playlist, Add to
 Queue), Speed, Pitch & Reverb, Show Animated Artwork and More are in it and none of Spotify's other rows are;
 then that Spotify's ⋯ action ran once, from code, after the menu was up, that Speed and pitch was told the
 sheet is the player's, and that the sheet is in the mod's window under the app's, unseen, with the menu still up.
+The delayed and timeout scenarios instead hold the Spotify presentation while checking the real menu's
+selection or dismissal, then deliver or withhold Spotify's sheet.
 
 - `arrow`: the mod's ⋯ sits exactly over Spotify's in the window, above its glass circle and glyph, with the ⋯'s
   label for VoiceOver; a finger on the down arrow runs Spotify's arrow action, reaches nothing of the mod's and
@@ -57,18 +60,34 @@ sheet is the player's, and that the sheet is in the mod's window under the app's
 - `wrapped`: Spotify presents a controller of its own that puts the sheet in only as it appears
   (NavigationUI_SheetImpl.ContainerViewController on the phone); More and a pick work the same.
 - `delayed-pick`, `delayed-close`: hold Spotify's presentation until after a selection or dismissal has
-  ended the menu and released its anchor's session. The request stays alive, the selected Add to Queue
-  action runs exactly once, or the dismissed menu drops the late sheet without firing anything. Weak
-  references verify session deallocation after the sheet goes, beyond both timeout callbacks.
+  ended the menu and released its anchor's session. The pending request keeps the session alive.
+  Add to Queue runs exactly once on arrival after a selection; after dismissal the late sheet is
+  discarded without firing anything. Weak references verify session deallocation after the sheet
+  goes, beyond both timeout callbacks.
 - `delayed-wrapped-pick`, `delayed-wrapped-close`: the same delayed presentation with a wrapper that
-  adds the sheet only in `viewWillAppear:`; sheet recognition is unchanged.
+  adds the sheet only in `viewWillAppear:`, using Spotify's wrapper class identity.
+- `delayed-mod-panel`, `delayed-wrapped-mod-panel`: pick Playing Next through the real menu while
+  Spotify's sheet is held. The panel is presented normally and stays visible in the app window:
+  it cannot satisfy the pending request. Releasing Spotify's late sheet discards that sheet,
+  then releases the session.
 - `request-timeout-pick`, `request-timeout-close`: no sheet ever arrives; after an early selection or
-  dismissal, the request stays alive until its timeout, then deallocates without firing an action.
+  dismissal, the request keeps the session alive until timeout, then releases it without firing an action.
 - `request-superseded`: dismiss a menu whose request is pending, then start and end a newer real
   session directly before timeout. This isolates request supersession from UIKit's liquid menu
-  animation (reopening during its dismissal traps inside UIKit on iOS 26.5). The old session
-  deallocates immediately; the newer cancelled session drops its late sheet, releases that session,
-  and fires neither request's actions.
+  animation (reopening during its dismissal traps inside UIKit on iOS 26.5). The newer request replaces
+  the single pending slot and releases the old session. The newer cancelled session survives until
+  its late sheet is discarded, then is released; neither request fires an action.
+
+Only Spotify's context sheet or its known lazy wrapper can satisfy the pending request; a mod panel cannot.
+There is deliberately no presenter-ancestry restriction: Spotify 9.1.90 can present its lazy wrapper from
+NowPlayingOverlayContainer, outside the requesting controller's ancestor chain.
+
+Known limitation: cancellation still discards the **next Spotify sheet** within the pending request's
+three-second window, not a request-identified sheet. A newer request replaces that single slot. Overlapping
+A/B deliveries (including same-presenter A-before-B delivery) and a page ⋯ gesture within the recency
+window remain ambiguous; an unrelated Spotify context sheet can satisfy the slot. A sheet arriving after
+the request window is not adopted or suppressed by that request. These are documented debt, not guarantees
+of request correlation.
 
 Use a unique temporary output directory for checks:
 
@@ -78,8 +97,10 @@ Use a unique temporary output directory for checks:
     xcrun simctl install <udid> "$HARNESS_BUILD_DIR/SystemMenuHarness.app"
     xcrun simctl launch --console-pty <udid> com.vitrine.systemmenuharness delayed-pick
 
-For the mutation check, make a temporary copy of `ContextMenu.x`, change only
+For the ownership mutation check, make a temporary copy of `ContextMenu.x`, change only
 `static SGRMenuSession *sg_requesting;` back to `static __weak SGRMenuSession *sg_requesting;`,
 and pass its absolute path as `CONTEXT_MENU_SOURCE` to `build.sh` with a separate temporary output
 directory. `delayed-pick` must fail because the outstanding request no longer survives menu ending.
+For presentation recognition, restore the any-non-alert predicate: `delayed-mod-panel` must fail its panel
+visibility check. Mutate only a temporary source copy, never the working source.
 Remove only those temporary build/source directories after the runs.
