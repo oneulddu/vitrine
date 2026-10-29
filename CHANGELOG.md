@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.0.0-beta.25](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.24...v1.0.0-beta.25) (2026-10-29)
+
+
+### Features
+
+* 번역을 켜면 Spotify 가사 미리보기 자리에 번역 줄 표시 ([8c2f405](https://github.com/oneulddu/vitrine/commit/8c2f405726fc0ddd44816329f57978182d144c14))
+* 커버 아래 가사 줄에 번역 붙이기 ([fd7a149](https://github.com/oneulddu/vitrine/commit/fd7a149ece51cb9da1dad9a5d101000c334384c8))
+
+
+### Fixes
+
+* AI 번역이 일부 줄만 채우고 비던 문제 ([d1ceaa9](https://github.com/oneulddu/vitrine/commit/d1ceaa90334f9f5cd518b99cf4c05feea79f825b))
+* 가사창을 연 채 곡을 넘기면 가사가 옆으로 밀리던 문제 ([e52c771](https://github.com/oneulddu/vitrine/commit/e52c771d636516cfd3b1fa299560f99d79ec339a))
+* 잠금 화면 가사 폭·반짝임 고치고 앨범아트 위 배치 추가 ([4f74191](https://github.com/oneulddu/vitrine/commit/4f74191f6d387ebbc05c4824c0f4eea2c20c4d08))
+
 ## [1.0.0-beta.24](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.23...v1.0.0-beta.24) (2026-10-29)
 
 
