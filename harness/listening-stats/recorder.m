@@ -264,5 +264,29 @@ int main(void) { @autoreleasepool {
     CHECK(plays.count == base + 2 && plays[base].ms == 40000 && plays[base + 1].ms == 50000);
     CHECK([plays[base].uri isEqual:@"spotify:track:reordered"] && [plays[base + 1].uri isEqual:@"spotify:track:reordered"]);
     puts("recorder: a late report of the finished playbackId neither splits the play nor loses its time");
+
+    // A deliberate restart exits without UIApplicationWillTerminateNotification: the step before its exit(0)
+    // must write the 40 s play in progress, which a log opened afresh then holds exactly once.
+    setElapsed(1300);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:restarting", @"a1a1a1a1")];
+    NSUInteger beforeRestart = recordedPlays().count;
+    setElapsed(1340);
+    SGRestartPrepareExit();
+    NSString *support = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSUserDomainMask, YES).firstObject;
+    SGPlayLog *reopened = [[SGPlayLog alloc] initWithPath:[support stringByAppendingPathComponent:@"Vitrine/Listening.tsv"]];
+    __block BOOL loaded = NO;
+    [reopened loadWithCompletion:^{ loaded = YES; }];
+    NSDate *loadDeadline = [NSDate dateWithTimeIntervalSinceNow:10];
+    while (!loaded && loadDeadline.timeIntervalSinceNow > 0)
+        [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.001]];
+    CHECK(loaded && !reopened.loadError);
+    NSUInteger restarted = 0;
+    for (SGPlay *reopenedPlay in reopened.plays)
+        if ([reopenedPlay.uri isEqual:@"spotify:track:restarting"]) {
+            restarted++;
+            CHECK(reopenedPlay.ms == 40000);
+        }
+    CHECK(restarted == 1 && reopened.plays.count == beforeRestart + 1);
+    puts("recorder: a restart's pre-exit step writes the 40 s play in progress, once");
     return 0;
 } }

@@ -40,6 +40,12 @@ void SGSetFlagOverride(NSString *key, id value);
 // switch someone already flipped is still the one they get.
 void SGMigrateKey(NSString *from, NSString *to);
 
+// Posted on main by SGRestartSpotify just before it exits, which skips UIApplicationWillTerminateNotification.
+// Whatever a feature holds in memory that termination would save goes to disk synchronously in its observer.
+extern NSNotificationName const SGWillRestartNotification;
+// SGRestartSpotify's last step before exit(0): posts SGWillRestartNotification on the calling thread.
+// Declared so a harness can run it without the process exiting.
+void SGRestartPrepareExit(void);
 // Quits Spotify so the hooks read the switches afresh on the next launch; the writes reach cfprefsd first.
 void SGRestartSpotify(void);
 // Set immediately when a restart is requested, until process exit. Safe to read on any thread.

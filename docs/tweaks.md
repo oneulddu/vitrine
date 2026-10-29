@@ -823,7 +823,9 @@ Shared:
     ListeningStats/ listening stats kept on the phone (ListeningStats.h lists its files): each music track timed while
                   it plays through PlayerState's observer and written to a text log in Application Support once it ran 30 s
                   or half the track (ListeningStats.x; a track repeated on repeat one or queued twice in a row keeps its
-                  URI but gets a new playbackId, which starts a new play, so each lap counts and a seek does not split one),
+                  URI but gets a new playbackId, which starts a new play, so each lap counts and a seek does not split one;
+                  a play in progress is also written down when Spotify terminates or a setting's Restart now quits it, via
+                  SGWillRestartNotification, while one cut off by Spotify being killed is lost),
                   Spotify's data export read in, either shape, loose, zipped or from a
                   selected folder, and Vitrine's own versioned JSON history imported or exported without an account. Plays
                   already there are skipped (SGPlayLog.m); input is bounded to 64 MiB per JSON, 256 MiB total and one million

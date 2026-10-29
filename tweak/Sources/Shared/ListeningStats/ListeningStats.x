@@ -4,6 +4,7 @@
 // or queued twice in a row, keeps its URI but gets a new playbackId, which changes no flag the observer
 // announces, so that boundary is taken from the reports. A seek keeps the playbackId and splits nothing.
 //
+// A play in progress is also written down when the app terminates or the mod restarts it (SGWillRestartNotification).
 // ponytail: a play cut off by Spotify being killed is lost; position polling would catch it.
 #import "Core/SGCore.h"
 #import "Shared/Player/PlayerState.h"
@@ -176,4 +177,6 @@ static BOOL isMusic(NSString *uri) {
             else dispatch_async(dispatch_get_main_queue(), apply);
         }];
     [NSNotificationCenter.defaultCenter addObserver:recorder selector:@selector(terminate) name:UIApplicationWillTerminateNotification object:nil];
+    // A deliberate restart exits without that notification, so it posts its own.
+    [NSNotificationCenter.defaultCenter addObserver:recorder selector:@selector(terminate) name:SGWillRestartNotification object:nil];
 }

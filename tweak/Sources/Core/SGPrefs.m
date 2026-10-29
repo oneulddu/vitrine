@@ -108,8 +108,17 @@ BOOL SGRestartPending(void) {
     return atomic_load(&restartPending);
 }
 
+NSNotificationName const SGWillRestartNotification = @"spotifyglass.willRestart";
+
+void SGRestartPrepareExit(void) {
+    [NSNotificationCenter.defaultCenter postNotificationName:SGWillRestartNotification object:nil];
+}
+
 void SGRestartSpotify(void) {
     atomic_store(&restartPending, YES);
     [NSUserDefaults.standardUserDefaults synchronize];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ exit(0); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        SGRestartPrepareExit();
+        exit(0);
+    });
 }

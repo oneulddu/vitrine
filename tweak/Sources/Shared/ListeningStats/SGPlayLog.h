@@ -70,7 +70,7 @@ SGHistoryImport *SGReadHistoryURLs(NSArray<NSURL *> *urls);
 // Main-queue acknowledgement of all earlier recorder writes/erases, independent of imports.
 // Snapshots publish only durable plays. Loading/folding also wait off main for earlier writes.
 - (void)finishPendingWritesWithCompletion:(void (^)(NSError *error))completion;
-// UIApplicationWillTerminate only: waits at most one second for the recorder, never bulk work/main callbacks.
+// UIApplicationWillTerminate and the mod's own restart (SGWillRestartNotification) only: waits at most one second for the recorder, never bulk work/main callbacks.
 - (BOOL)drainForTermination;
 // Adds the plays the log does not have yet, and answers how many that was. Spotify rows match the same
 // track and artist within 90 s, covering basic-export minute precision and clock drift. Vitrine rows
