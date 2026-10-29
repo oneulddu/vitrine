@@ -1,9 +1,10 @@
 // ListeningStats.h says what Listening stats is. This is the recording: PlayerState's observer is told
 // when the track or playing changes, never the position, so a play's length is the continuous time it
-// spent playing, and it is written down when the next track takes over.
+// spent playing, and it is written down when the next track takes over. The same track again, on repeat one
+// or queued twice in a row, keeps its URI but gets a new playbackId, which changes no flag the observer
+// announces, so that boundary is taken from the reports. A seek keeps the playbackId and splits nothing.
 //
-// ponytail: a track on repeat one never changes the state's track, so its replays are not counted, and a
-// play cut off by Spotify being killed is lost; position polling would catch both.
+// ponytail: a play cut off by Spotify being killed is lost; position polling would catch it.
 #import "Core/SGCore.h"
 #import "Shared/Player/PlayerState.h"
 #import "ListeningStats.h"
@@ -31,6 +32,14 @@ static NSString *stringIn(id value) {
     return [value isKindOfClass:NSString.class] ? value : nil;
 }
 
+// The playback instance of a state, nil when this Spotify does not give one.
+static NSString *playbackIDOf(SPTPlayerState *state) {
+    SEL selector = NSSelectorFromString(@"playbackId");
+    if (![state respondsToSelector:selector]) return nil;
+    NSString *playbackID = stringIn([(NSObject *)state valueForKey:@"playbackId"]);
+    return playbackID.length ? playbackID : nil;
+}
+
 @interface SGPlayRecorder : NSObject <SGPlayerStateObserver>
 @end
 
@@ -38,6 +47,8 @@ static NSString *stringIn(id value) {
     SGPlay *_play;
     double _duration;
     SGPlayClock *_clock;
+    NSString *_playbackID; // the playing one's, nil until a state gives it
+    NSString *_finishedPlaybackID; // the one finished last: a late report of it is stale, not a replay
     SPTPlayerState *_state;
     BOOL _recordingEnabled;
 }
@@ -70,11 +81,27 @@ static BOOL isMusic(NSString *uri) {
     }
     _play = nil;
     _clock = nil;
+    _finishedPlaybackID = _playbackID;
+    _playbackID = nil;
+}
+
+// The playing track began again: same URI, a different playback instance. Reports from other threads can
+// arrive late, so the id of the play just finished never starts one.
+- (BOOL)replayedIn:(SPTPlayerState *)state {
+    NSString *playbackID = playbackIDOf(state);
+    return _playbackID && playbackID && ![playbackID isEqualToString:_playbackID] &&
+        ![playbackID isEqualToString:_finishedPlaybackID];
 }
 
 - (void)playerStateDidReport:(SPTPlayerState *)state {
     _state = state;
-    if ([SGURIString(state.track.URI) isEqualToString:_play.uri]) [self fill:state];
+    if (![SGURIString(state.track.URI) isEqualToString:_play.uri]) return;
+    if ([self replayedIn:state]) {
+        [self updateState:state elapsed:continuousSeconds() at:NSDate.date.timeIntervalSince1970];
+        return;
+    }
+    if (!_playbackID) _playbackID = playbackIDOf(state);
+    [self fill:state];
 }
 
 - (void)updateState:(SPTPlayerState *)state elapsed:(NSTimeInterval)elapsed at:(NSTimeInterval)now {
@@ -82,7 +109,7 @@ static BOOL isMusic(NSString *uri) {
     if (!_recordingEnabled) return;
     [_clock setPlaying:NO elapsed:elapsed at:now];
     NSString *uri = SGURIString(state.track.URI);
-    if (![uri isEqualToString:_play.uri]) {
+    if (![uri isEqualToString:_play.uri] || [self replayedIn:state]) {
         [self finish];
         if (isMusic(uri)) {
             _play = [SGPlay new];
@@ -92,6 +119,7 @@ static BOOL isMusic(NSString *uri) {
         }
     }
     if (!_play) return;
+    if (!_playbackID) _playbackID = playbackIDOf(state);
     [self fill:state];
     BOOL loading = [state respondsToSelector:@selector(isLoading)] && state.isLoading;
     [_clock setPlaying:state.isPlaying && !state.isPaused && !loading elapsed:elapsed at:now];

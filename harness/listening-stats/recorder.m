@@ -20,6 +20,7 @@ NSString *SGURIString(id uri) { return [uri isKindOfClass:NSString.class] ? uri 
 @implementation RecorderTrack @end
 @interface RecorderState : NSObject
 @property(nonatomic, strong) RecorderTrack *track;
+@property(nonatomic, copy) NSString *playbackId;
 @property(nonatomic) BOOL isPlaying, isPaused, isLoading;
 @property(nonatomic) double duration;
 @end
@@ -32,6 +33,11 @@ static SPTPlayerState *state(NSString *uri, NSString *title, NSString *artist) {
     RecorderState *state = [RecorderState new];
     state.track = track; state.isPlaying = YES; state.duration = 200;
     return (SPTPlayerState *)state;
+}
+static SPTPlayerState *stateWithID(NSString *uri, NSString *playbackID) {
+    RecorderState *result = (RecorderState *)state(uri, uri, @"Artist");
+    result.playbackId = playbackID;
+    return (SPTPlayerState *)result;
 }
 static void setElapsed(uint64_t seconds) {
     mach_timebase_info_data_t timebase;
@@ -69,6 +75,8 @@ static void drainMain(void) {
 
 int main(void) { @autoreleasepool {
     CHECK(observer && [observer respondsToSelector:@selector(playerStateDidReport:)]);
+    // The switch persists in this process's defaults and the last run leaves it off.
+    recording(YES);
     setElapsed(100);
     [observer playerStateDidChange:state(@"spotify:track:first", nil, nil)];
     setElapsed(120);
@@ -164,5 +172,97 @@ int main(void) { @autoreleasepool {
     [observer playerStateDidChange:state(@"spotify:track:still-off", @"Still off", @"Artist")];
     CHECK(recordedPlays().count == 5);
     puts("recorder: an older queued YES cannot override a synchronous NO or save disabled listening");
+
+    // The same URI again is told apart by the state's playbackId, which no announced flag follows, so these
+    // arrive as reports only. Time moves only through setElapsed, from a recording start with no play.
+    setElapsed(600);
+    recording(YES);
+    NSUInteger base = recordedPlays().count;
+    NSString *repeated = @"spotify:track:repeated";
+    [observer playerStateDidChange:stateWithID(repeated, @"a0301e2f")];
+    setElapsed(640);
+    [observer playerStateDidReport:stateWithID(repeated, @"3f073725")]; // first wrap
+    setElapsed(690);
+    [observer playerStateDidReport:stateWithID(repeated, @"9df725c3")]; // second wrap
+    setElapsed(725);
+    [observer playerStateDidReport:stateWithID(repeated, @"16c4b020")]; // third wrap
+    setElapsed(735); // the fourth lap is stopped after 10 s, too short to count
+    [observer playerStateDidChange:stateWithID(@"spotify:track:after-repeat", @"5a5a5a5a")];
+    plays = recordedPlays();
+    CHECK(plays.count == base + 3);
+    CHECK(plays[base].ms == 40000 && plays[base + 1].ms == 50000 && plays[base + 2].ms == 35000);
+    for (NSUInteger i = base; i < base + 3; i++) CHECK([plays[i].uri isEqual:repeated]);
+    puts("recorder: three repeat-one wraps of one URI record three plays with their own durations");
+
+    // A seek to 0 is a report with the same playbackId: one play of 20 s + 20 s.
+    setElapsed(800);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:after-repeat", @"5a5a5a5a")];
+    [observer playerStateDidChange:stateWithID(@"spotify:track:seeked", @"7b7b7b7b")];
+    setElapsed(820);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:seeked", @"7b7b7b7b")];
+    setElapsed(840);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:after-seek", @"8c8c8c8c")];
+    plays = recordedPlays();
+    CHECK(plays.count == base + 5 && plays.lastObject.ms == 40000 && [plays.lastObject.uri isEqual:@"spotify:track:seeked"]);
+    puts("recorder: a seek to 0 keeps the playbackId and the play whole");
+
+    // Without a playbackId the URI alone decides, as before.
+    setElapsed(900);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:no-id", nil)];
+    setElapsed(920);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:no-id", nil)];
+    setElapsed(940);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:no-id", @"")];
+    setElapsed(960);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:after-no-id", nil)];
+    plays = recordedPlays();
+    CHECK(plays.count == base + 7 && plays.lastObject.ms == 60000 && [plays.lastObject.uri isEqual:@"spotify:track:no-id"]);
+    puts("recorder: a missing or empty playbackId leaves one play per URI");
+
+    // The same track queued twice: the second item's report carries a new playbackId, then the flags may follow.
+    setElapsed(1000);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:twice", @"d1d1d1d1")];
+    setElapsed(1040);
+    SPTPlayerState *second = stateWithID(@"spotify:track:twice", @"d2d2d2d2");
+    [observer playerStateDidReport:second];
+    [observer playerStateDidChange:second];
+    setElapsed(1075);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:after-twice", @"d3d3d3d3")];
+    plays = recordedPlays();
+    CHECK(plays.count == base + 10);
+    CHECK(plays[base + 8].ms == 40000 && plays[base + 9].ms == 35000);
+    CHECK([plays[base + 8].uri isEqual:@"spotify:track:twice"] && [plays[base + 9].uri isEqual:@"spotify:track:twice"]);
+    puts("recorder: the same track queued twice in a row records two plays");
+
+    // The playbackId first appears in a report, with no change callback after it: later wraps still split.
+    setElapsed(1100);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:late-id", nil)];
+    base = recordedPlays().count;
+    setElapsed(1120);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:late-id", @"e1e1e1e1")];
+    setElapsed(1140);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:late-id", @"e2e2e2e2")]; // wrap
+    setElapsed(1175);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:after-late-id", @"e3e3e3e3")];
+    plays = recordedPlays();
+    CHECK(plays.count == base + 2 && plays[base].ms == 40000 && plays[base + 1].ms == 35000);
+    puts("recorder: a playbackId first seen in a report is adopted, so the next wrap records a second play");
+
+    // Reports can arrive out of order: B, then an older A, then B again is one wrap, not three.
+    setElapsed(1200);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:reordered", @"f1f1f1f1")];
+    base = recordedPlays().count;
+    setElapsed(1240);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:reordered", @"f2f2f2f2")]; // B
+    setElapsed(1250);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:reordered", @"f1f1f1f1")]; // late A
+    setElapsed(1260);
+    [observer playerStateDidReport:stateWithID(@"spotify:track:reordered", @"f2f2f2f2")]; // B
+    setElapsed(1290);
+    [observer playerStateDidChange:stateWithID(@"spotify:track:after-reordered", @"f3f3f3f3")];
+    plays = recordedPlays();
+    CHECK(plays.count == base + 2 && plays[base].ms == 40000 && plays[base + 1].ms == 50000);
+    CHECK([plays[base].uri isEqual:@"spotify:track:reordered"] && [plays[base + 1].uri isEqual:@"spotify:track:reordered"]);
+    puts("recorder: a late report of the finished playbackId neither splits the play nor loses its time");
     return 0;
 } }
