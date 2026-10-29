@@ -31,8 +31,15 @@ SGLyricsProvider *SGLyricsProviderFor(NSString *key) {
     provider.key = key;
     return provider;
 }
+// Holds the parse of the lyrics whose first line is "Slow A" until the check releases it.
+static atomic_bool sg_holdSlow;
+static dispatch_semaphore_t sg_slowEntered, sg_slowRelease;
 void SGLyricsPageLines(NSArray<SGKaraokeLine *> *lines, NSArray<NSNumber *> **starts, NSArray<NSString *> **texts) {
     if (atomic_load(&sg_requireWorker)) CHECK(!NSThread.isMainThread);
+    if (lines.count && [SGKaraokeLineText(lines.firstObject) isEqual:@"Slow A"] && atomic_exchange(&sg_holdSlow, false)) {
+        dispatch_semaphore_signal(sg_slowEntered);
+        CHECK(dispatch_semaphore_wait(sg_slowRelease, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) == 0);
+    }
     NSMutableArray *at = [NSMutableArray array], *said = [NSMutableArray array];
     for (SGKaraokeLine *line in lines) {
         [at addObject:@(line.start)];
@@ -425,12 +432,51 @@ static void validatorCheck(void) {
     CHECK(([SGImportedLRCFor(pasteUri, nil, nil).texts isEqual:(@[@"Pasted one", @"Pasted two"])]));
     CHECK(deleteLRC(pasted));
     // A paste is kept under what it turned out to hold, like a file: an LRC paste as .lrc, not .txt.
+    // A timed paste reaches SGLyricsPageLines while it is parsed, which must happen off main.
+    atomic_store(&sg_requireWorker, true);
     pasteLyrics(@"[ti:Pasted]\n[00:01]Pasted line", nil, ^(NSString *name, NSError *reason) {
         pasted = name; pasteError = reason;
     });
     waitForStore();
+    atomic_store(&sg_requireWorker, false);
     CHECK([pasted isEqual:@"Pasted lyrics.lrc"] && !pasteError);
     CHECK(deleteLRC(pasted));
+    // A slow paste followed by a fast one for the same track: the stores happen in the order they were
+    // made, so the later paste owns the link and the first one is the file it replaced.
+    sg_slowEntered = dispatch_semaphore_create(0);
+    sg_slowRelease = dispatch_semaphore_create(0);
+    atomic_store(&sg_holdSlow, true);
+    NSMutableArray<NSString *> *completed = [NSMutableArray array];
+    pasteLyrics(@"[00:01]Slow A", pasteUri, ^(NSString *name, NSError *reason) { CHECK(name && !reason); [completed addObject:@"A"]; pasted = name; });
+    CHECK(dispatch_semaphore_wait(sg_slowEntered, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
+    __block NSString *fastName = nil;
+    pasteLyrics(@"[00:01]Fast B", pasteUri, ^(NSString *name, NSError *reason) { CHECK(name && !reason); [completed addObject:@"B"]; fastName = name; });
+    // Where pastes could overtake each other, B is stored and answered while A is still held.
+    NSDate *overtaking = [NSDate dateWithTimeIntervalSinceNow:1];
+    while (!fastName && overtaking.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.005]];
+    dispatch_semaphore_signal(sg_slowRelease);
+    waitForStore();
+    CHECK(([completed isEqual:(@[@"A", @"B"])]));
+    CHECK([SGImportedLRCLinkedTo(pasteUri) isEqual:fastName] && ![fastName isEqual:pasted]);
+    CHECK([SGImportedLRCFor(pasteUri, nil, nil).texts.firstObject isEqual:@"Fast B"]);
+    CHECK(deleteLRC(pasted));
+    CHECK(deleteLRC(fastName));
+    // The same through a file import: it and a later paste share one order, so the paste still wins.
+    atomic_store(&sg_holdSlow, true);
+    [completed removeAllObjects];
+    importLyrics(lrc(@"slow-import.lrc", @"[00:01]Slow A"), pasteUri, ^(NSString *name, NSError *reason) { CHECK(name && !reason); [completed addObject:@"A"]; pasted = name; });
+    CHECK(dispatch_semaphore_wait(sg_slowEntered, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) == 0);
+    fastName = nil;
+    pasteLyrics(@"[00:01]Fast B", pasteUri, ^(NSString *name, NSError *reason) { CHECK(name && !reason); [completed addObject:@"B"]; fastName = name; });
+    overtaking = [NSDate dateWithTimeIntervalSinceNow:1];
+    while (!fastName && overtaking.timeIntervalSinceNow > 0) [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.005]];
+    dispatch_semaphore_signal(sg_slowRelease);
+    waitForStore();
+    CHECK(([completed isEqual:(@[@"A", @"B"])]));
+    CHECK([SGImportedLRCLinkedTo(pasteUri) isEqual:fastName] && ![fastName isEqual:pasted]);
+    CHECK([SGImportedLRCFor(pasteUri, nil, nil).texts.firstObject isEqual:@"Fast B"]);
+    CHECK(deleteLRC(pasted));
+    CHECK(deleteLRC(fastName));
     pasteLyrics(@"   \n\n", nil, ^(NSString *name, NSError *reason) {
         CHECK(!name && reason.code == SGLyricsImportErrorNothing);
     });

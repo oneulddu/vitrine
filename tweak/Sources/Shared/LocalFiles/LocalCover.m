@@ -1,7 +1,7 @@
 // A local file's own cover for where Spotify's player shows its placeholder (LocalFiles.h). The lock
 // screen and the queue show the cover of such a file, so it is there to find: first in the image fields
 // of the track's metadata, read as a picture or a readable file, then in the system's now playing info,
-// taken only while its title and artist agree with the track's.
+// taken only while its title and artist agree with the track's, and read again when its artwork changes.
 //
 // Cache and publication are main-thread only. Metadata files are thumbnailed on a worker once per
 // path/playing track, including failures. Only system now-playing misses are retried after a second.
@@ -20,6 +20,7 @@ NSNotificationName const SGLocalFileFallbackCoverDidChangeNotification = @"SGLoc
 @property(nonatomic, copy) NSString *uri;
 @property(nonatomic) NSUInteger generation;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, id> *paths;
+@property(nonatomic, strong) MPMediaItemArtwork *systemArtwork;
 @property(nonatomic, strong) UIImage *systemCover;
 @property(nonatomic, strong) NSDate *systemMiss;
 @end
@@ -31,6 +32,7 @@ NSNotificationName const SGLocalFileFallbackCoverDidChangeNotification = @"SGLoc
     _uri = [uri copy];
     _generation++;
     _paths = [NSMutableDictionary dictionary];
+    _systemArtwork = nil;
     _systemCover = nil;
     _systemMiss = nil;
 }
@@ -101,12 +103,28 @@ static BOOL agrees(id mine, id theirs) {
     return [mine compare:theirs options:NSCaseInsensitiveSearch | NSDiacriticInsensitiveSearch | NSWidthInsensitiveSearch] == NSOrderedSame;
 }
 
-static UIImage *fromNowPlaying(SPTPlayerTrack *track) {
+// System artwork is provisional: the previous local track's artwork can still be in the now playing info
+// when the new track agrees by title and artist, so it is read again whenever the info holds another
+// MPMediaItemArtwork, and dropped once the info no longer agrees with the track.
+static UIImage *fromNowPlaying(SPTPlayerTrack *track, SGLocalCoverCache *kept) {
     NSDictionary *info = MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo;
     MPMediaItemArtwork *artwork = info[MPMediaItemPropertyArtwork];
-    if (![artwork isKindOfClass:MPMediaItemArtwork.class]) return nil;
-    if (!agrees(track.trackTitle, info[MPMediaItemPropertyTitle]) || !agrees(track.artistName, info[MPMediaItemPropertyArtist])) return nil;
-    return [artwork imageWithSize:CGSizeMake(kSide, kSide)];
+    if (![artwork isKindOfClass:MPMediaItemArtwork.class] ||
+        !agrees(track.trackTitle, info[MPMediaItemPropertyTitle]) || !agrees(track.artistName, info[MPMediaItemPropertyArtist])) {
+        kept.systemArtwork = nil;
+        kept.systemCover = nil;
+        return nil;
+    }
+    if (artwork == kept.systemArtwork && kept.systemCover) return kept.systemCover;
+    UIImage *image = [artwork imageWithSize:CGSizeMake(kSide, kSide)];
+    if (!image.CGImage && !image.CIImage) {
+        kept.systemArtwork = nil;
+        kept.systemCover = nil;
+        return nil;
+    }
+    kept.systemArtwork = artwork;
+    kept.systemCover = image;
+    return image;
 }
 
 UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track, BOOL *isMetadata) {
@@ -122,15 +140,10 @@ UIImage *SGLocalFileFallbackCover(SPTPlayerTrack *track, BOOL *isMetadata) {
         if (isMetadata) *isMetadata = YES;
         return image;
     }
-    if (kept.systemCover) return kept.systemCover;
+    // A held cover is checked against the info on every call; only a miss waits out the retry interval.
     NSDate *missed = kept.systemMiss;
-    if (missed && -missed.timeIntervalSinceNow < kRetry) return nil;
-    image = fromNowPlaying(track);
-    if (!image.CGImage && !image.CIImage) {
-        kept.systemMiss = NSDate.date;
-        return nil;
-    }
-    kept.systemCover = image;
-    kept.systemMiss = nil;
+    if (!kept.systemCover && missed && -missed.timeIntervalSinceNow < kRetry) return nil;
+    image = fromNowPlaying(track, kept);
+    kept.systemMiss = image ? nil : NSDate.date;
     return image;
 }

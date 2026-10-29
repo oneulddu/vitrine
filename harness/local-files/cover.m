@@ -221,6 +221,24 @@ int main(void) { @autoreleasepool {
         CGColorSpaceRelease(rgb);
         CHECK(pixel[0] == 0 && pixel[1] == 0 && pixel[2] == 255 && pixel[3] == 255);
         CHECK(spotify.image == blue);
+        // System artwork is provisional: the previous track's artwork agrees by title and artist and is
+        // taken, then replaced when the now playing info holds the new track's own artwork. Info that
+        // stops agreeing with the track gives nothing.
+        MPMediaItemArtwork *previousArtwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:image.size
+            requestHandler:^UIImage *(CGSize size) { return image; }];
+        MPMediaItemArtwork *nextArtwork = [[MPMediaItemArtwork alloc] initWithBoundsSize:blue.size
+            requestHandler:^UIImage *(CGSize size) { return blue; }];
+        SGTestLocalTrack *albumOne = track(@{}), *albumTwo = track(@{});
+        center.nowPlayingInfo = @{MPMediaItemPropertyTitle: albumOne.trackTitle,
+            MPMediaItemPropertyArtist: albumOne.artistName, MPMediaItemPropertyArtwork: previousArtwork};
+        CHECK(resolve(albumOne) == image);
+        CHECK(resolve(albumTwo) == image);
+        center.nowPlayingInfo = @{MPMediaItemPropertyTitle: albumTwo.trackTitle,
+            MPMediaItemPropertyArtist: albumTwo.artistName, MPMediaItemPropertyArtwork: nextArtwork};
+        CHECK(resolve(albumTwo) == blue);
+        center.nowPlayingInfo = @{MPMediaItemPropertyTitle: @"Another song",
+            MPMediaItemPropertyArtist: albumTwo.artistName, MPMediaItemPropertyArtwork: nextArtwork};
+        CHECK(!resolve(albumTwo));
         center.nowPlayingInfo = nil;
         SGTestLocalTrack *edited = track(@{@"image_url": @"cover.jpg"});
         SGLocalFileSaveEdit(edited.URI.absoluteString, @{}, image, YES);

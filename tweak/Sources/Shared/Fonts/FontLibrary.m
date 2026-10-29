@@ -179,6 +179,20 @@ BOOL SGFontLibraryInstalled(NSString *identifier) {
     return YES;
 }
 
+// Core Text registration is owned by one serial queue: the paths registered and the family name each
+// registered family carries are read and written only on it, so a registration, a removal and a second
+// request for the same family never run beside each other. SGFontLibraryRegister and SGFontLibraryRemove
+// wait for it; SGFontLibraryRegisterInstalled does not.
+static dispatch_queue_t registrationQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("spotifyglass.fontLibrary.registration", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
+
+// Registration queue.
 static NSMutableSet<NSString *> *registered(void) {
     static NSMutableSet<NSString *> *paths;
     static dispatch_once_t once;
@@ -186,8 +200,16 @@ static NSMutableSet<NSString *> *registered(void) {
     return paths;
 }
 
-// The family name each registered family's files carry, so the pages can ask on every row without reading a
-// font file again. Main thread.
+// Registration queue.
+static NSMutableDictionary<NSString *, NSString *> *registeredFamilies(void) {
+    static NSMutableDictionary<NSString *, NSString *> *names;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ names = [NSMutableDictionary dictionary]; });
+    return names;
+}
+
+// The family name each registered family's files carry as the pages see it, so they can ask on every row
+// without reading a font file again. Main thread; filled from the registration queue's answers.
 static NSMutableDictionary<NSString *, NSString *> *families(void) {
     static NSMutableDictionary<NSString *, NSString *> *names;
     static dispatch_once_t once;
@@ -204,10 +226,10 @@ static NSArray<NSURL *> *fontFiles(SGLibraryFont *font) {
     return urls;
 }
 
-NSString *SGFontLibraryRegister(NSString *identifier) {
-    SGLibraryFont *font = SGFontLibraryFont(identifier);
-    if (!font) return nil;
-    NSString *known = families()[identifier];
+// Registration queue.
+static NSString *registerOnQueue(SGLibraryFont *font) {
+    NSString *identifier = font.identifier;
+    NSString *known = registeredFamilies()[identifier];
     if (known) return known;
     if (!SGFontLibraryInstalled(identifier)) return nil;
     NSString *family = nil;
@@ -229,7 +251,7 @@ NSString *SGFontLibraryRegister(NSString *identifier) {
         }
     }
     if (!family.length || ![UIFont fontNamesForFamilyName:family].count) return nil;
-    families()[identifier] = family;
+    registeredFamilies()[identifier] = family;
     return family;
 }
 
@@ -237,16 +259,55 @@ static void changed(NSString *identifier) {
     [NSNotificationCenter.defaultCenter postNotificationName:SGFontLibraryChangedNotification object:nil userInfo:identifier ? @{@"identifier": identifier} : nil];
 }
 
+// Main thread. Whether the family was new to the pages.
+static BOOL publish(NSString *identifier, NSString *family) {
+    if ([families()[identifier] isEqualToString:family]) return NO;
+    families()[identifier] = family;
+    return YES;
+}
+
+NSString *SGFontLibraryRegister(NSString *identifier) {
+    SGLibraryFont *font = SGFontLibraryFont(identifier);
+    if (!font) return nil;
+    NSString *known = families()[identifier];
+    if (known) return known;
+    __block NSString *family;
+    dispatch_sync(registrationQueue(), ^{ family = registerOnQueue(font); });
+    if (family) publish(identifier, family);
+    return family;
+}
+
+NSString *SGFontLibraryRegisteredFamily(NSString *identifier) {
+    return families()[identifier];
+}
+
+void SGFontLibraryRegisterInstalled(void) {
+    for (SGLibraryFont *font in SGFontLibrary()) {
+        dispatch_async(registrationQueue(), ^{
+            NSString *family = registerOnQueue(font);
+            if (!family) return;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                // A removal that ran after the registration has taken the files and the family away.
+                if (!SGFontLibraryInstalled(font.identifier) || !publish(font.identifier, family)) return;
+                changed(font.identifier);
+            });
+        });
+    }
+}
+
 void SGFontLibraryRemove(NSString *identifier) {
     SGLibraryFont *font = SGFontLibraryFont(identifier);
     if (!font) return;
-    for (NSURL *url in fontFiles(font)) {
-        if ([registered() containsObject:url.path]) {
-            CTFontManagerUnregisterFontsForURL((__bridge CFURLRef)url, kCTFontManagerScopeProcess, NULL);
-            [registered() removeObject:url.path];
+    dispatch_sync(registrationQueue(), ^{
+        for (NSURL *url in fontFiles(font)) {
+            if ([registered() containsObject:url.path]) {
+                CTFontManagerUnregisterFontsForURL((__bridge CFURLRef)url, kCTFontManagerScopeProcess, NULL);
+                [registered() removeObject:url.path];
+            }
         }
-    }
-    [NSFileManager.defaultManager removeItemAtURL:familyFolder(identifier) error:nil];
+        [NSFileManager.defaultManager removeItemAtURL:familyFolder(identifier) error:nil];
+        [registeredFamilies() removeObjectForKey:identifier];
+    });
     [families() removeObjectForKey:identifier];
     NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
     if (SGAppFontChosen() == SGAppFontLibrary && [[store stringForKey:SGKeyAppFontLibrary] isEqualToString:identifier]) {

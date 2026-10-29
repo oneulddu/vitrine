@@ -28,6 +28,13 @@ BOOL SGFontLibraryInstalled(NSString *identifier);
 // Registers the installed family's files with Core Text for this process and answers the family name the files
 // carry, or nil when the family is not installed or Core Text takes none of it. Calling it again is harmless.
 NSString *SGFontLibraryRegister(NSString *identifier);
+// What SGFontLibraryRegister answered, published on the main thread by it or by SGFontLibraryRegisterInstalled;
+// nil until then. Reads nothing from disk and registers nothing, so a page can ask on every row.
+NSString *SGFontLibraryRegisteredFamily(NSString *identifier);
+// Registers every installed family on a queue of its own (the same one SGFontLibraryRegister and
+// SGFontLibraryRemove run on), then publishes each family name and posts the change notification for it on
+// the main thread. Returns at once.
+void SGFontLibraryRegisterInstalled(void);
 
 // One family downloads at a time. While it does, SGFontLibraryDownloading names it and SGFontLibraryProgress
 // reads 0...1; the notification above is posted as it moves on (at most every tenth of a second) and once

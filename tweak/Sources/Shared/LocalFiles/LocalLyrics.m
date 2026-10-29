@@ -55,6 +55,18 @@ static dispatch_queue_t storeQueue(void) {
     return queue;
 }
 
+// Reading and parsing what an import or a paste holds runs on this one serial queue, off main, before the
+// store is touched. Imports and pastes therefore reach the store in the order they were asked for, so a slow
+// one cannot be overtaken by, and then overwrite the link of, a later one for the same track.
+static dispatch_queue_t importQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("app.vitrine.imported-lyrics-parse", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0));
+    });
+    return queue;
+}
+
 NSArray<NSString *> *SGImportedLRCFiles(void) {
     NSMutableArray<NSString *> *names = [NSMutableArray array];
     for (NSString *name in [NSFileManager.defaultManager contentsOfDirectoryAtPath:directory() error:nil]) {
@@ -561,7 +573,7 @@ static NSString *storeLyrics(SGImportedLyrics *lyrics, NSString *given, NSString
 
 void SGImportLRC(NSURL *url, NSString *uri, void (^completion)(NSString *, NSError *)) {
     // The file's bytes and its lines are read before the store is touched, off the store queue.
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    dispatch_async(importQueue(), ^{
         BOOL scoped = [url startAccessingSecurityScopedResource];
         NSError *readError;
         NSFileHandle *handle = [NSFileHandle fileHandleForReadingFromURL:url error:&readError];
@@ -587,16 +599,21 @@ void SGImportLRC(NSURL *url, NSString *uri, void (^completion)(NSString *, NSErr
 }
 
 void SGImportPastedLyrics(NSString *text, NSString *uri, void (^completion)(NSString *, NSError *)) {
-    // Through the data path, so a paste is held to the same size and content rules as a file.
-    NSData *data = text.length ? [text dataUsingEncoding:NSUTF8StringEncoding] : [NSData data];
-    NSError *parseError = nil;
-    SGImportedLyrics *lyrics = data ? SGImportedLyricsFromData(data, &parseError) : nil;
-    dispatch_async(storeQueue(), ^{
-        @autoreleasepool {
-            NSError *error = parseError;
-            NSString *name = error ? nil : storeLyrics(lyrics, SGL(@"settings.locallyrics.paste.name", @"Pasted lyrics"), uri, &error);
-            dispatch_async(dispatch_get_main_queue(), ^{ completion(name, error); });
-        }
+    // The text, the URI and the name are captured here on main; the document is encoded and parsed on a
+    // worker queue shared with file imports, and only then handed to the store queue.
+    NSString *pasted = [text copy], *linkedURI = [uri copy], *given = SGL(@"settings.locallyrics.paste.name", @"Pasted lyrics");
+    dispatch_async(importQueue(), ^{
+        // Through the data path, so a paste is held to the same size and content rules as a file.
+        NSData *data = pasted.length ? [pasted dataUsingEncoding:NSUTF8StringEncoding] : [NSData data];
+        NSError *parseError = nil;
+        SGImportedLyrics *lyrics = data ? SGImportedLyricsFromData(data, &parseError) : nil;
+        dispatch_async(storeQueue(), ^{
+            @autoreleasepool {
+                NSError *error = parseError;
+                NSString *name = error ? nil : storeLyrics(lyrics, given, linkedURI, &error);
+                dispatch_async(dispatch_get_main_queue(), ^{ completion(name, error); });
+            }
+        });
     });
 }
 

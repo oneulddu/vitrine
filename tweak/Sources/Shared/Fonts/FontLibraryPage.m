@@ -42,8 +42,6 @@ static void choose(SGLibraryFont *font) {
     NSArray<SGLibraryFont *> *all = SGFontLibrary();
     _sections = @[[all filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"korean == YES"]],
                   [all filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"korean == NO"]]];
-    // So a family already here can be drawn in itself, whichever font the app uses.
-    for (SGLibraryFont *font in all) SGFontLibraryRegister(font.identifier);
     return self;
 }
 
@@ -62,6 +60,9 @@ static void choose(SGLibraryFont *font) {
     _observer = [NSNotificationCenter.defaultCenter addObserverForName:SGFontLibraryChangedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         [page refreshFamily:note.userInfo[@"identifier"]];
     }];
+    // So a family already here can be drawn in itself, whichever font the app uses: registered off main,
+    // and each row is refreshed by the notification above once its family is known.
+    SGFontLibraryRegisterInstalled();
 }
 
 - (void)viewWillLayoutSubviews {
@@ -142,8 +143,9 @@ static void choose(SGLibraryFont *font) {
         subtitle = [NSString stringWithFormat:SGL(@"settings.font.library.downloaded.format", @"Downloaded · %@"), details];
     }
     SGFillCell(cell, font.name, subtitle, nil, nil);
-    // A family that is here is drawn in its regular face; Core Text knows it once FontLibrary.m has registered it.
-    NSString *family = here ? SGFontLibraryRegister(font.identifier) : nil;
+    // A family that is here is drawn in its regular face once FontLibrary.m has registered it and published
+    // its name; until then the row keeps the list's font.
+    NSString *family = here ? SGFontLibraryRegisteredFamily(font.identifier) : nil;
     UIFont *face = family ? [UIFont fontWithDescriptor:[UIFontDescriptor fontDescriptorWithFontAttributes:@{
         UIFontDescriptorFamilyAttribute: family,
         UIFontDescriptorTraitsAttribute: @{UIFontWeightTrait: @(UIFontWeightRegular), UIFontSlantTrait: @0},
