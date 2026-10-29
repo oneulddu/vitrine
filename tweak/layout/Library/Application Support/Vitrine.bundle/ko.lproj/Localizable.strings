@@ -126,6 +126,11 @@
 "settings.album.play_counts.your_count" = "내 재생 횟수: %@";
 "settings.album.play_counts.your_plays" = "내 재생 횟수";
 "settings.album.preview.a11y" = "앨범 미리보기";
+"settings.album.queue.add" = "대기열에 추가";
+"settings.album.queue.added" = "대기열에 추가됨";
+"settings.album.queue.notice.hint" = "닫으려면 이중 탭하십시오.";
+"settings.album.queue.one_song" = "노래 1곡";
+"settings.album.queue.songs_format" = "노래 %lu곡";
 "settings.album.title" = "앨범";
 "settings.album.tracks.header" = "트랙";
 
@@ -434,11 +439,33 @@
 
 "settings.common.new" = "신규";
 
+"settings.context_menu.options_not_loaded" = "Spotify 옵션을 불러오지 못했습니다";
+"settings.context_menu.quick.add_to_playlist" = "플레이리스트에 추가";
+
 "settings.cover_layout.card" = "카드";
 "settings.cover_layout.full_screen" = "전체 화면";
 
 "settings.cover_viewer.close" = "닫기";
 "settings.cover_viewer.share" = "공유";
+
+"settings.edit_info.cover.change" = "변경";
+"settings.edit_info.cover.change_a11y" = "커버 변경";
+"settings.edit_info.cover.choose_files" = "파일에서 선택";
+"settings.edit_info.cover.choose_photos" = "사진에서 선택";
+"settings.edit_info.cover.file_own" = "파일 원본";
+"settings.edit_info.cover.new_picture" = "새 사진";
+"settings.edit_info.cover.remove" = "커버 제거";
+"settings.edit_info.cover.your_picture" = "사용자 사진";
+"settings.edit_info.discard_changes" = "변경 사항 삭제";
+"settings.edit_info.field.album" = "앨범";
+"settings.edit_info.field.artist" = "아티스트";
+"settings.edit_info.field.title" = "제목";
+"settings.edit_info.footer" = "이 파일의 정보를 Vitrine에 보관합니다. 파일 자체는 변경되지 않습니다.";
+"settings.edit_info.keep_editing" = "계속 편집";
+"settings.edit_info.not_an_image.message" = "JPEG, PNG 또는 HEIC 파일을 선택하세요.";
+"settings.edit_info.not_an_image.title" = "이미지 파일이 아님";
+"settings.edit_info.restore.title" = "파일 정보 복원";
+"settings.edit_info.title" = "정보 편집";
 
 "settings.environment.app_changes.message" = "Vitrine의 일부 기능은 IPA 빌드 과정에서만 적용할 수 있는 앱 수정 사항이 필요합니다. 이러한 수정이 없으면 %@. .deb 파일을 주입하는 대신 Vitrine을 포함하여 IPA를 직접 빌드하십시오.";
 "settings.environment.app_changes.title" = "Vitrine의 앱 수정 사항 없이 설치됨";
@@ -675,6 +702,7 @@
 "settings.home.look.subtitle" = "추천 항목, 색상이 적용된 바로가기 버튼 및 제목의 글래스 버튼. 끄면 재설계 초기 홈으로 표시됩니다";
 "settings.home.look.title" = "홈 화면 모양";
 "settings.home.on_home.header" = "홈 화면 표시 항목";
+"settings.home.pill.devices" = "기기";
 "settings.home.playlists.row.title" = "플레이리스트";
 "settings.home.preview.a11y" = "홈 미리보기";
 "settings.home.previews.subtitle" = "홈 화면을 스크롤할 때 재생되는 카드";
@@ -988,6 +1016,9 @@
 "settings.locallyrics.paste.name" = "붙여넣은 가사";
 "settings.locallyrics.paste.title" = "붙여넣기";
 "settings.locallyrics.title" = "가져온 가사 파일";
+"settings.locallyrics.viewer.empty" = "이 가사 파일에는 표시할 줄이 없습니다.";
+"settings.locallyrics.viewer.loading" = "가사 로드 중…";
+"settings.locallyrics.viewer.none" = "이 트랙에 가져온 가사가 없습니다.";
 
 "settings.lockscreen.artwork.choice.every_song" = "모든 노래";
 "settings.lockscreen.artwork.choice.lyrics" = "가사";
@@ -1816,6 +1847,7 @@
 "settings.player.lyric_line.hint" = "가사를 엽니다.";
 "settings.player.lyric_line.subtitle" = "커버 아래에 지금 부르는 가사를 보여 줍니다. 탭하면 가사가 열립니다.";
 "settings.player.lyric_line.title" = "가사 한 줄";
+"settings.player.lyrics.thumb_a11y" = "플레이어 표시";
 "settings.player.lyrics_line.choice.original" = "원문";
 "settings.player.lyrics_line.choice.translation" = "번역";
 "settings.player.lyrics_line.subtitle" = "번역이 없는 줄은 원문으로 표시합니다";
@@ -2039,6 +2071,12 @@
 "settings.signing.mismatch.title" = "잠금 화면에서 Spotify를 열 수 없음";
 "settings.signing.signed_until.subtitle" = "%@에 만료. 무료 Apple ID는 7일 동안 서명됩니다.";
 "settings.signing.signed_until.title" = "서명 만료일";
+
+"settings.sing.button.hint" = "보컬 음량을 줄입니다";
+"settings.sing.button.lasterror_format" = "\n\n이전 시도 실패: %@";
+"settings.sing.button.nomodel_format" = "노래방 기능은 이 iPhone에서 실행되는 음성 모델로 보컬을 줄입니다. 지금 다운로드하시겠습니까(%@)? Wi-Fi 환경을 권장합니다.%@";
+"settings.sing.button.stop_download" = "다운로드 중단";
+"settings.sing.button.turn_off" = "노래방 끄기";
 
 "settings.sleep_timer.fade.10s" = "10초";
 "settings.sleep_timer.fade.1m" = "1분";

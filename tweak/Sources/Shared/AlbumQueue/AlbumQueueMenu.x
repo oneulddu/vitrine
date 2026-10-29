@@ -137,7 +137,7 @@ static __weak SGAlbumQueueNotice *sg_notice;
 
     self.isAccessibilityElement = YES;
     self.accessibilityLabel = detail ? [NSString stringWithFormat:@"%@, %@", title, detail] : title;
-    self.accessibilityHint = @"Double-tap to dismiss.";
+    self.accessibilityHint = SGL(@"settings.album.queue.notice.hint", @"Double-tap to dismiss.");
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped)]];
     [self addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(dragged:)]];
     [window addSubview:self];
@@ -205,7 +205,7 @@ static __weak SGAlbumQueueNotice *sg_notice;
     if (!(self = [super initWithFrame:frame])) return nil;
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     _title = [UILabel new];
-    _title.text = @"Add to Queue";
+    _title.text = SGL(@"settings.album.queue.add", @"Add to Queue");
     _title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
     _title.adjustsFontForContentSizeCategory = YES;
     _title.textColor = UIColor.whiteColor;
@@ -214,7 +214,7 @@ static __weak SGAlbumQueueNotice *sg_notice;
     _icon.contentMode = UIViewContentModeScaleAspectFit;
     for (UIView *v in @[_title, _icon]) { v.userInteractionEnabled = NO; [self addSubview:v]; }
     self.isAccessibilityElement = YES;
-    self.accessibilityLabel = @"Add to Queue";
+    self.accessibilityLabel = SGL(@"settings.album.queue.add", @"Add to Queue");
     self.accessibilityIdentifier = @"spotifyglass.albumQueue";
     self.accessibilityTraits = UIAccessibilityTraitButton;
     [self addTarget:self action:@selector(addAlbum) forControlEvents:UIControlEventTouchUpInside];
@@ -245,8 +245,8 @@ static __weak SGAlbumQueueNotice *sg_notice;
         if (error) {
             [SGAlbumQueueNotice showIn:window title:error detail:nil symbol:@"exclamationmark.circle"];
         } else {
-            NSString *songs = count == 1 ? @"1 song" : [NSString stringWithFormat:@"%lu songs", (unsigned long)count];
-            [SGAlbumQueueNotice showIn:window title:@"Added to Queue" detail:songs symbol:@"text.line.last.and.arrowtriangle.forward"];
+            NSString *songs = count == 1 ? SGL(@"settings.album.queue.one_song", @"1 song") : [NSString stringWithFormat:SGL(@"settings.album.queue.songs_format", @"%lu songs"), (unsigned long)count];
+            [SGAlbumQueueNotice showIn:window title:SGL(@"settings.album.queue.added", @"Added to Queue") detail:songs symbol:@"text.line.last.and.arrowtriangle.forward"];
         }
     });
 }

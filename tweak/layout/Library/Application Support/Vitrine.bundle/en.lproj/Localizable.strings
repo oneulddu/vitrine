@@ -126,6 +126,11 @@
 "settings.album.play_counts.your_count" = "Your plays: %@";
 "settings.album.play_counts.your_plays" = "Your plays";
 "settings.album.preview.a11y" = "Preview of an album";
+"settings.album.queue.add" = "Add to Queue";
+"settings.album.queue.added" = "Added to Queue";
+"settings.album.queue.notice.hint" = "Double-tap to dismiss.";
+"settings.album.queue.one_song" = "1 song";
+"settings.album.queue.songs_format" = "%lu songs";
 "settings.album.title" = "Albums";
 "settings.album.tracks.header" = "Tracks";
 
@@ -434,11 +439,33 @@
 
 "settings.common.new" = "New";
 
+"settings.context_menu.options_not_loaded" = "Spotify's options did not load";
+"settings.context_menu.quick.add_to_playlist" = "Add to Playlist";
+
 "settings.cover_layout.card" = "Card";
 "settings.cover_layout.full_screen" = "Full screen";
 
 "settings.cover_viewer.close" = "Close";
 "settings.cover_viewer.share" = "Share";
+
+"settings.edit_info.cover.change" = "Change";
+"settings.edit_info.cover.change_a11y" = "Change cover";
+"settings.edit_info.cover.choose_files" = "Choose from Files";
+"settings.edit_info.cover.choose_photos" = "Choose from Photos";
+"settings.edit_info.cover.file_own" = "The file's own";
+"settings.edit_info.cover.new_picture" = "New picture";
+"settings.edit_info.cover.remove" = "Remove cover";
+"settings.edit_info.cover.your_picture" = "Your picture";
+"settings.edit_info.discard_changes" = "Discard changes";
+"settings.edit_info.field.album" = "Album";
+"settings.edit_info.field.artist" = "Artist";
+"settings.edit_info.field.title" = "Title";
+"settings.edit_info.footer" = "Kept by Vitrine for this file. The file itself is not changed.";
+"settings.edit_info.keep_editing" = "Keep editing";
+"settings.edit_info.not_an_image.message" = "Pick a JPEG, PNG or HEIC file.";
+"settings.edit_info.not_an_image.title" = "Not an image";
+"settings.edit_info.restore.title" = "Restore file's info";
+"settings.edit_info.title" = "Edit info";
 
 "settings.environment.app_changes.message" = "Some of what Vitrine does needs changes to the app that only its IPA build makes. Without them, %@. Build the IPA with Vitrine instead of injecting its .deb.";
 "settings.environment.app_changes.title" = "Installed without Vitrine's app changes";
@@ -675,6 +702,7 @@
 "settings.home.look.subtitle" = "Top picks, the tinted shortcut pills and the title's glass pill; off, Home as the redesign had it";
 "settings.home.look.title" = "Home look";
 "settings.home.on_home.header" = "On Home";
+"settings.home.pill.devices" = "Devices";
 "settings.home.playlists.row.title" = "Playlists";
 "settings.home.preview.a11y" = "Preview of Home";
 "settings.home.previews.subtitle" = "The cards that play as Home scrolls";
@@ -988,6 +1016,9 @@
 "settings.locallyrics.paste.name" = "Pasted lyrics";
 "settings.locallyrics.paste.title" = "Paste";
 "settings.locallyrics.title" = "Imported lyrics files";
+"settings.locallyrics.viewer.empty" = "This lyrics file has no lines to show.";
+"settings.locallyrics.viewer.loading" = "Loading lyrics…";
+"settings.locallyrics.viewer.none" = "No imported lyrics for this track.";
 
 "settings.lockscreen.artwork.choice.every_song" = "Every song";
 "settings.lockscreen.artwork.choice.lyrics" = "Lyrics";
@@ -1252,6 +1283,7 @@
 "settings.lyricssources.spicy.alert.instructions" = "Sign up at Spicy Lyrics for Developers, create an application, turn on client access with No origin header allowed, and paste its publishable key (sl_pk_). The key stays on this iPhone.";
 "settings.lyricssources.spicy.alert.invalid_key" = "That is not a publishable key.";
 "settings.lyricssources.spicy.alert.secret_key" = "That is a secret key, which belongs on a server, not in an app.";
+"settings.lyricssources.spicy.alert.storage" = "The Keychain could not save this change. Please try again.";
 "settings.lyricssources.spicy.alert.title" = "Spicy Lyrics Key";
 "settings.lyricssources.spicy.row.subtitle" = "Community word syncs, with your own key";
 "settings.lyricssources.spicy.row.title" = "Spicy Lyrics key";
@@ -1421,6 +1453,8 @@
 "settings.mod.keychain.action.clear" = "Clear Keychain";
 "settings.mod.keychain.alert.message" = "The Gemini, Claude, OpenAI-compatible and DeepL API keys, the Spicy Lyrics key and the Deezer ARL are removed from this iPhone. Settings stay as they are.";
 "settings.mod.keychain.alert.title" = "Clear Keychain?";
+"settings.mod.keychain.failed.message" = "The Keychain could not remove every key, so some are still stored on this iPhone. Please try again.";
+"settings.mod.keychain.failed.title" = "Keychain not cleared";
 "settings.mod.keychain.title" = "Clear Keychain";
 "settings.mod.licenses.autoeq.subtitle" = "Headphone corrections · MIT License";
 "settings.mod.licenses.bs2b.subtitle" = "Crossfeed · MIT License";
@@ -1816,6 +1850,7 @@
 "settings.player.lyric_line.hint" = "Opens the lyrics.";
 "settings.player.lyric_line.subtitle" = "The line being sung, under the cover. Tap it to open the lyrics.";
 "settings.player.lyric_line.title" = "Lyrics Line";
+"settings.player.lyrics.thumb_a11y" = "Show the player";
 "settings.player.lyrics_line.choice.original" = "Original";
 "settings.player.lyrics_line.choice.translation" = "Translation";
 "settings.player.lyrics_line.subtitle" = "A line without a translation shows the original";
@@ -2039,6 +2074,12 @@
 "settings.signing.mismatch.title" = "The lock screen cannot open Spotify";
 "settings.signing.signed_until.subtitle" = "At %@. A free Apple ID signs for 7 days.";
 "settings.signing.signed_until.title" = "Signed until";
+
+"settings.sing.button.hint" = "Turns the vocals down";
+"settings.sing.button.lasterror_format" = "\n\nThe last try failed: %@";
+"settings.sing.button.nomodel_format" = "Karaoke turns the vocals down with a voice model that runs on this iPhone. Download it now (%@)? It is best over Wi-Fi.%@";
+"settings.sing.button.stop_download" = "Stop the download";
+"settings.sing.button.turn_off" = "Turn Karaoke off";
 
 "settings.sleep_timer.fade.10s" = "10 s";
 "settings.sleep_timer.fade.1m" = "1 minute";
@@ -2283,6 +2324,7 @@
 "settings.translation.error.badrequest" = "Gemini did not take the request (400).";
 "settings.translation.error.badrequestformat" = "Gemini did not take the request: %@";
 "settings.translation.error.busy" = "Gemini is busy right now. Try again in a minute.";
+"settings.translation.error.keychanged" = "The API key changed while this was translating. Try again.";
 "settings.translation.error.keyinvalid" = "Gemini turned the key down. Check it on the Lyrics page.";
 "settings.translation.error.linecount" = "Gemini answered %lu lines for the song's %lu. Try again.";
 "settings.translation.error.nokey" = "Add a Gemini API key on the Lyrics page first.";
@@ -2310,6 +2352,10 @@
 "settings.translation.google.title" = "Google Translate";
 "settings.translation.intelligence.subtitle" = "Apple Intelligence in the lyrics' translate menu and automatic translation";
 "settings.translation.intelligence.title" = "Apple Intelligence";
+"settings.translation.key.remove_failed.message" = "The Keychain could not remove this key, so it is still stored on this iPhone. Please try again.";
+"settings.translation.key.remove_failed.title" = "Key not removed";
+"settings.translation.key.save_failed.message" = "The Keychain could not save this key. Please try again.";
+"settings.translation.key.save_failed.title" = "Key not saved";
 "settings.translation.models.current" = "Selected: %@";
 "settings.translation.models.empty" = "The service lists no models";
 "settings.translation.models.error.ats" = "This iPhone blocks plain HTTP to that address. Use an HTTPS address, or a host allowed by the app's transport security.";
@@ -2388,9 +2434,9 @@
 "settings.translation.savedtranslations.title" = "Saved translations";
 "settings.translation.savedtranslations.value.format" = "%lu · %@";
 "settings.translation.savedtranslations.value.none" = "None";
-"settings.translation.text.noservice" = "Set up a translation service on the Lyrics page first.";
-"settings.translation.text.error.unreadable" = "The translation's answer could not be read. Try again.";
 "settings.translation.text.error.toolong" = "This explanation is too long to translate with this service.";
+"settings.translation.text.error.unreadable" = "The translation's answer could not be read. Try again.";
+"settings.translation.text.noservice" = "Set up a translation service on the Lyrics page first.";
 "settings.translation.thinking.high" = "High";
 "settings.translation.thinking.low" = "Low";
 "settings.translation.thinking.medium" = "Medium";
@@ -2451,11 +2497,3 @@
 "settings.workshop.title" = "Libraries & presets";
 "settings.workshop.type.header" = "Type";
 "settings.workshop.visualizers.title" = "Visualizers";
-"settings.translation.key.remove_failed.title" = "Key not removed";
-"settings.translation.key.remove_failed.message" = "The Keychain could not remove this key, so it is still stored on this iPhone. Please try again.";
-"settings.mod.keychain.failed.title" = "Keychain not cleared";
-"settings.mod.keychain.failed.message" = "The Keychain could not remove every key, so some are still stored on this iPhone. Please try again.";
-"settings.lyricssources.spicy.alert.storage" = "The Keychain could not save this change. Please try again.";
-"settings.translation.key.save_failed.title" = "Key not saved";
-"settings.translation.key.save_failed.message" = "The Keychain could not save this key. Please try again.";
-"settings.translation.error.keychanged" = "The API key changed while this was translating. Try again.";

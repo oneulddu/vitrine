@@ -7,8 +7,8 @@
 Checks: every SGL(@"key", @"English") key is well formed and stands for one English text; en.lproj holds exactly
 those keys and texts; every other .lproj has the same keys, and each translation reads the same format specifiers
 (kind and number, in argument order; %2$@ may reorder them); the bundle's Info.plist and tables lint; and the
-settings files pass no new untranslated text to a row, section, alert or label (scripts/strings-allow.txt lists the
-deliberate exceptions, such as brand names)."""
+source files pass no new untranslated text to a row, section, alert, label or title list (scripts/strings-allow.txt
+lists the deliberate exceptions, such as brand names)."""
 import os, re, subprocess, sys, shutil
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -166,6 +166,8 @@ UI_BEFORE = re.compile(
     r'accessibilityValue|prompt)\s*=)\s*$')
 LIST_BEFORE = re.compile(r'(?:@\[|,)\s*$')
 LIST_LINE = re.compile(r'Row\(|choiceNotes|\.menu\s*=|SGNotedSection')
+ARRAY_TITLES = re.compile(r'\b(?:quickItems|fieldLabels|buttonTitles|tabTitles|itemTitles)\b')
+NESTED_ROW_TITLE = re.compile(r'(?:@\[\s*@\[|\]\s*,\s*@\[)\s*$')
 PIXIE_UI_BEFORE = re.compile(
     r'(?:\bSAPSettingsCell\([^,\n]+,|\bSAP(?:Download)?Message\(|\bslotMessage:|'
     r'\b(?:title|subtitle|message)\s*=)\s*$')
@@ -199,14 +201,20 @@ def scan_sources():
                 used.setdefault(key, (english, rel))
                 continue
             if LOCALIZE_CALL.search(before): continue   # the key itself
-            if not settings: continue
             line_start = text.rfind('\n', 0, s) + 1
             line = text[line_start:text.find('\n', s) if text.find('\n', s) >= 0 else len(text)]
             if re.search(r'SGLog\(|NSLog\(', line): continue
-            if UI_BEFORE.search(before) or (LIST_BEFORE.search(before) and LIST_LINE.search(line)) or \
-               (re.search(r'\)\s*,\s*$', before) and 'Row(' in line) or \
-               (pixie and (PIXIE_UI_BEFORE.search(before) or
-                           (LIST_BEFORE.search(before) and PIXIE_LIST_LINE.search(line)))):
+            is_ui = UI_BEFORE.search(before) or (LIST_BEFORE.search(before) and LIST_LINE.search(line)) or \
+                    (re.search(r'\)\s*,\s*$', before) and 'Row(' in line) or \
+                    (pixie and (PIXIE_UI_BEFORE.search(before) or
+                                (LIST_BEFORE.search(before) and PIXIE_LIST_LINE.search(line))))
+            if not is_ui:
+                if NESTED_ROW_TITLE.search(before) and ARRAY_TITLES.search(text[max(0, s - 250):s]):
+                    is_ui = True
+                elif LIST_BEFORE.search(before) and not re.search(r'@\[\s*@\[', before) and \
+                     re.search(r'\b(?:fieldLabels|buttonTitles|tabTitles|itemTitles)\b', text[max(0, s - 250):s]):
+                    is_ui = True
+            if is_ui:
                 text_ = unescape(raw)
                 # Words, not identifiers: a space, or a capital first. Flag keys and symbol names have neither.
                 if len(re.findall(r'[A-Za-z]', text_)) >= 2 and (' ' in text_.strip() or text_[:1].isupper()):

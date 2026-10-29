@@ -52,8 +52,8 @@ static char kButtonGlassKey, kPanelGlassKey;
     // VoiceOver has the mic itself as one adjustable button: the slider shows only for a held finger and
     // goes again on a timer, which a swipe up or down never holds open.
     self.isAccessibilityElement = YES;
-    self.accessibilityLabel = @"Karaoke";
-    self.accessibilityHint = @"Turns the vocals down";
+    self.accessibilityLabel = SGL(@"settings.karaoke.title", @"Karaoke");
+    self.accessibilityHint = SGL(@"settings.sing.button.hint", @"Turns the vocals down");
     self.accessibilityTraits = UIAccessibilityTraitButton | UIAccessibilityTraitAdjustable;
 
     _ring = [CAShapeLayer layer];
@@ -218,11 +218,11 @@ static char kButtonGlassKey, kPanelGlassKey;
 #pragma mark - the tap
 
 static void tell(NSString *message, NSString *action, void (^then)(void)) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Karaoke" message:message preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.karaoke.title", @"Karaoke") message:message preferredStyle:UIAlertControllerStyleAlert];
     // Over the player, which is dark whatever the system's appearance.
     alert.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     if (action) [alert addAction:[UIAlertAction actionWithTitle:action style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) { then(); }]];
-    [alert addAction:[UIAlertAction actionWithTitle:action ? @"Cancel" : @"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:action ? SGL(@"common.cancel", @"Cancel") : SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
@@ -232,19 +232,19 @@ static void tell(NSString *message, NSString *action, void (^then)(void)) {
             tell(SGSingMissing(), nil, nil);
             return;
         case SGSingStateNoModel:
-            tell([NSString stringWithFormat:@"Karaoke turns the vocals down with a voice model that runs on this iPhone. Download it now (%@)? It is best over Wi-Fi.%@",
-                  SGSingModelSizeText(), SGSingModelError() ? [NSString stringWithFormat:@"\n\nThe last try failed: %@", SGSingModelError()] : @""],
-                 @"Download", ^{
+            tell([NSString stringWithFormat:SGL(@"settings.sing.button.nomodel_format", @"Karaoke turns the vocals down with a voice model that runs on this iPhone. Download it now (%@)? It is best over Wi-Fi.%@"),
+                  SGSingModelSizeText(), SGSingModelError() ? [NSString stringWithFormat:SGL(@"settings.sing.button.lasterror_format", @"\n\nThe last try failed: %@"), SGSingModelError()] : @""],
+                 SGL(@"settings.karaoke.model.action.download", @"Download"), ^{
                      SGSingDownloadModel();
                      // Downloaded for the mic, so the mic is on once it is in.
                      SGSetSingOn(YES);
                  });
             return;
         case SGSingStateDownloading:
-            tell(SGSingStatusDetail(), @"Stop the download", ^{ SGSingCancelModelDownload(); });
+            tell(SGSingStatusDetail(), SGL(@"settings.sing.button.stop_download", @"Stop the download"), ^{ SGSingCancelModelDownload(); });
             return;
         case SGSingStateFailed:
-            tell(SGSingStatusDetail(), @"Turn Karaoke off", ^{ SGSetSingOn(NO); });
+            tell(SGSingStatusDetail(), SGL(@"settings.sing.button.turn_off", @"Turn Karaoke off"), ^{ SGSetSingOn(NO); });
             return;
         default:
             SGSetSingOn(!SGSingOn());
@@ -267,7 +267,7 @@ static void tell(NSString *message, NSString *action, void (^then)(void)) {
         _slider.minimumValue = 0;
         _slider.maximumValue = 2;
         _slider.transform = CGAffineTransformMakeRotation(-M_PI_2);
-        _slider.accessibilityLabel = @"Vocals";
+        _slider.accessibilityLabel = SGL(@"settings.karaoke.card.vocals.a11y", @"Vocals");
         [_slider addTarget:self action:@selector(slid) forControlEvents:UIControlEventValueChanged];
         [_slider addTarget:self action:@selector(holdPanel) forControlEvents:UIControlEventTouchDown];
         [_slider addTarget:self action:@selector(letPanelGo) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel];

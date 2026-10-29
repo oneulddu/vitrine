@@ -63,7 +63,7 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, CGFloat size, 
     [_close setImage:[UIImage systemImageNamed:@"xmark" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:17 weight:UIImageSymbolWeightSemibold]]
             forState:UIControlStateNormal];
     _close.tintColor = UIColor.whiteColor;
-    _close.accessibilityLabel = @"Close";
+    _close.accessibilityLabel = SGL(@"settings.cover_viewer.close", @"Close");
     _close.translatesAutoresizingMaskIntoConstraints = NO;
     [_close addTarget:self action:@selector(dismiss) forControlEvents:UIControlEventTouchUpInside];
 
@@ -157,7 +157,7 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, CGFloat size, 
     NSString *title = state.track.trackTitle, *artist = state.track.artistName;
     _title.text = title;
     _artist.text = artist;
-    _status.text = @"Loading lyrics…";
+    _status.text = SGL(@"settings.locallyrics.viewer.loading", @"Loading lyrics…");
     _status.hidden = NO;
     // The file is read off the main thread the first time; after that it is kept.
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -174,7 +174,7 @@ static UILabel *label(UIFontTextStyle style, UIFontWeight weight, CGFloat size, 
     _timed = SGKaraokeLinesTiming(_lines) != SGKaraokeTimingNone;
     if (!_lines.count) {
         _status.hidden = NO;
-        _status.text = SGImportedLRCLinkedTo(_uri) ? @"This lyrics file has no lines to show." : @"No imported lyrics for this track.";
+        _status.text = SGImportedLRCLinkedTo(_uri) ? SGL(@"settings.locallyrics.viewer.empty", @"This lyrics file has no lines to show.") : SGL(@"settings.locallyrics.viewer.none", @"No imported lyrics for this track.");
         return;
     }
     _status.hidden = YES;

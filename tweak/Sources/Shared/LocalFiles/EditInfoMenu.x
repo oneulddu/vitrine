@@ -35,7 +35,9 @@ static NSArray<NSString *> *fieldKeys(void) {
 }
 
 static NSArray<NSString *> *fieldLabels(void) {
-    return @[@"Title", @"Artist", @"Album"];
+    return @[SGL(@"settings.edit_info.field.title", @"Title"),
+             SGL(@"settings.edit_info.field.artist", @"Artist"),
+             SGL(@"settings.edit_info.field.album", @"Album")];
 }
 
 static NSString *trimmed(NSString *text) {
@@ -104,7 +106,7 @@ static NSString *trimmed(NSString *text) {
     _stacks = stacks;
     _labelWidths = widths;
 
-    self.title = @"Edit info";
+    self.title = SGL(@"settings.edit_info.title", @"Edit info");
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemCancel target:self action:@selector(cancel)];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemSave target:self action:@selector(save)];
     return self;
@@ -115,10 +117,10 @@ static NSString *trimmed(NSString *text) {
     _coverCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     _coverCell.selectionStyle = UITableViewCellSelectionStyleNone;
     UIButtonConfiguration *change = [UIButtonConfiguration plainButtonConfiguration];
-    change.title = @"Change";
+    change.title = SGL(@"settings.edit_info.cover.change", @"Change");
     _coverButton = [UIButton buttonWithConfiguration:change primaryAction:nil];
     _coverButton.showsMenuAsPrimaryAction = YES;
-    _coverButton.accessibilityLabel = @"Change cover";
+    _coverButton.accessibilityLabel = SGL(@"settings.edit_info.cover.change_a11y", @"Change cover");
     _coverCell.accessoryView = _coverButton;
     _restoreCell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
     [self fitLabels];
@@ -198,7 +200,7 @@ static NSString *trimmed(NSString *text) {
     self.modalInPresentation = dirty || _coverLoading;
     BOOL restorable = self.differsFromFile;
     UIListContentConfiguration *content = [UIListContentConfiguration cellConfiguration];
-    content.text = @"Restore file's info";
+    content.text = SGL(@"settings.edit_info.restore.title", @"Restore file's info");
     content.textProperties.color = restorable ? UIColor.systemRedColor : UIColor.tertiaryLabelColor;
     _restoreCell.contentConfiguration = content;
     _restoreCell.userInteractionEnabled = restorable;
@@ -207,8 +209,8 @@ static NSString *trimmed(NSString *text) {
 
 - (void)showCover {
     UIListContentConfiguration *content = [UIListContentConfiguration subtitleCellConfiguration];
-    content.text = @"Cover";
-    content.secondaryText = !_cover ? @"The file's own" : _coverChange == SGCoverPicked ? @"New picture" : @"Your picture";
+    content.text = SGL(@"settings.album.cover.header", @"Cover");
+    content.secondaryText = !_cover ? SGL(@"settings.edit_info.cover.file_own", @"The file's own") : _coverChange == SGCoverPicked ? SGL(@"settings.edit_info.cover.new_picture", @"New picture") : SGL(@"settings.edit_info.cover.your_picture", @"Your picture");
     content.secondaryTextProperties.color = UIColor.secondaryLabelColor;
     content.image = _cover ?: [UIImage systemImageNamed:@"music.note"];
     content.imageProperties.preferredSymbolConfiguration = [UIImageSymbolConfiguration configurationWithTextStyle:UIFontTextStyleTitle2];
@@ -221,15 +223,15 @@ static NSString *trimmed(NSString *text) {
 
     __weak typeof(self) weakSelf = self;
     NSMutableArray<UIMenuElement *> *items = [NSMutableArray arrayWithArray:@[
-        [UIAction actionWithTitle:@"Choose from Photos" image:[UIImage systemImageNamed:@"photo.on.rectangle"] identifier:nil handler:^(UIAction *action) {
+        [UIAction actionWithTitle:SGL(@"settings.edit_info.cover.choose_photos", @"Choose from Photos") image:[UIImage systemImageNamed:@"photo.on.rectangle"] identifier:nil handler:^(UIAction *action) {
             [weakSelf pickCoverFromFiles:NO];
         }],
-        [UIAction actionWithTitle:@"Choose from Files" image:[UIImage systemImageNamed:@"folder"] identifier:nil handler:^(UIAction *action) {
+        [UIAction actionWithTitle:SGL(@"settings.edit_info.cover.choose_files", @"Choose from Files") image:[UIImage systemImageNamed:@"folder"] identifier:nil handler:^(UIAction *action) {
             [weakSelf pickCoverFromFiles:YES];
         }],
     ]];
     if (_cover) {
-        UIAction *remove = [UIAction actionWithTitle:@"Remove cover" image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
+        UIAction *remove = [UIAction actionWithTitle:SGL(@"settings.edit_info.cover.remove", @"Remove cover") image:[UIImage systemImageNamed:@"trash"] identifier:nil handler:^(UIAction *action) {
             [weakSelf useCover:nil];
         }];
         remove.attributes = UIMenuElementAttributesDestructive;
@@ -275,11 +277,11 @@ static NSString *trimmed(NSString *text) {
 
 - (void)confirmDiscard {
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:nil message:nil preferredStyle:UIAlertControllerStyleActionSheet];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Discard changes" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+    [sheet addAction:[UIAlertAction actionWithTitle:SGL(@"settings.edit_info.discard_changes", @"Discard changes") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
         self->_coverRequest++;
         [self dismissViewControllerAnimated:YES completion:nil];
     }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Keep editing" style:UIAlertActionStyleCancel handler:nil]];
+    [sheet addAction:[UIAlertAction actionWithTitle:SGL(@"settings.edit_info.keep_editing", @"Keep editing") style:UIAlertActionStyleCancel handler:nil]];
     sheet.popoverPresentationController.barButtonItem = self.navigationItem.leftBarButtonItem;
     [self presentViewController:sheet animated:YES completion:nil];
 }
@@ -337,9 +339,9 @@ static NSString *trimmed(NSString *text) {
             }
             [editor changed];
             SGLog(@"local files: %@ is not an image", url.lastPathComponent);
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Not an image" message:@"Pick a JPEG, PNG or HEIC file."
+            UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.edit_info.not_an_image.title", @"Not an image") message:SGL(@"settings.edit_info.not_an_image.message", @"Pick a JPEG, PNG or HEIC file.")
                                                                     preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+            [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleDefault handler:nil]];
             [editor presentViewController:alert animated:YES completion:nil];
         });
     });
@@ -363,7 +365,7 @@ static NSString *trimmed(NSString *text) {
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    return section == 0 ? @"Kept by Vitrine for this file. The file itself is not changed." : nil;
+    return section == 0 ? SGL(@"settings.edit_info.footer", @"Kept by Vitrine for this file. The file itself is not changed.") : nil;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
@@ -435,14 +437,14 @@ void SGLocalFilePresentEditor(UIViewController *presenter, NSString *uri) {
     _title = [UILabel new];
     _title.font = SGCategoryCappedFont(UIFontTextStyleBody, UIFontWeightRegular, UIContentSizeCategoryExtraLarge);
     _title.textColor = UIColor.whiteColor;
-    _title.text = @"Edit info";
+    _title.text = SGL(@"settings.edit_info.title", @"Edit info");
     for (UIView *view in @[_icon, _title]) {
         view.userInteractionEnabled = NO;
         [self addSubview:view];
     }
     self.isAccessibilityElement = YES;
     self.accessibilityTraits = UIAccessibilityTraitButton;
-    self.accessibilityLabel = @"Edit info";
+    self.accessibilityLabel = SGL(@"settings.edit_info.title", @"Edit info");
     [self addTarget:self action:@selector(open) forControlEvents:UIControlEventTouchUpInside];
     [self addTarget:self action:@selector(highlight) forControlEvents:UIControlEventTouchDown | UIControlEventTouchDragEnter];
     [self addTarget:self action:@selector(unhighlight) forControlEvents:UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel | UIControlEventTouchDragExit];
