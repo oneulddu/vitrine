@@ -1548,9 +1548,18 @@ from its middle and is dimmed by its brightness as the Animated clip is, more wi
 applies at the player's next layout, no restart; while Visualizer is chosen, its local style menu offers Hills (the default),
 mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The selection is stored under the existing
 `spotifyglass.visualizer.shader` key, with invalid or absent values falling back to Hills, and the preview and player update at
-once. Visualizer motion pauses while hidden, backgrounded, in Low Power Mode, under serious heat or during player transitions,
-and is restrained by Reduce Motion. Artwork sources, Full-screen cover without a clip and Download in Low Data Mode
-appear while Animated is chosen (the second, `spotifyglass.redesign.player.animatedStill`, off: a track with no clip
+once. Shuffle styles (`spotifyglass.visualizer.shuffle`, off) picks another style at random, never the current one, once
+for each new track while the Visualizer is on screen with the app in front and not stood down; the user's own pick is
+kept under `spotifyglass.visualizer.shuffle.home` and comes back when shuffle is switched off. Visualizer motion pauses
+while hidden, backgrounded, in Low Power Mode, under serious heat (unless Ignore heat warnings,
+`spotifyglass.visualizer.ignoreHeat`, off) or during player transitions,
+and is restrained by Reduce Motion (harness/player/ `shuffle`, `heat`). Artwork sources, Full-screen cover without a
+clip, Visualizer when there's no clip and Download in Low Data Mode appear while Animated is chosen (Visualizer when
+there's no clip, `spotifyglass.redesign.player.animatedVisualizer`, off: once the track's clip lookup has answered
+none, the Visualizer stands where the clip would be, taken down by a later clip or a new track, the ordinary cover
+under Low Power Mode, Reduce Motion or the heat stand-down; it and the full-screen cover turn each other off, the
+full-screen cover kept when both are found on; harness/player/ `autoviz`. The full-screen cover,
+`spotifyglass.redesign.player.animatedStill`, off: a track with no clip
 shows the cover Spotify already drew, 300 px wide or more, where the clip would be, cropped to 4:3 at most, dimmed and
 blurred behind the lyrics as a clip is, under a black scrim of 45 % at the top fading out 76 pt below the safe area;
 a later clip replaces it, Black and Your Photo win, and Low Power Mode and Reduce Motion keep the ordinary cover;

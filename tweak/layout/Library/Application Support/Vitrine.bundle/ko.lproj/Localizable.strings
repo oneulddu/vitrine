@@ -1824,6 +1824,8 @@
 "settings.player.artwork_background.title" = "아트워크 배경";
 "settings.player.animated_still.subtitle" = "클립이 없는 노래는 커버 아트를 표시합니다. 이 설정을 켜면 클립처럼 커버가 화면을 가득 채웁니다. 저전력 모드와 동작 줄이기에서는 커버 아트를 유지합니다.";
 "settings.player.animated_still.title" = "클립이 없을 때 전체 화면 커버";
+"settings.player.animated_visualizer.subtitle" = "클립이 없는 노래는 비주얼라이저를 표시합니다. 저전력 모드와 동작 줄이기에서는 커버 아트를 유지합니다.";
+"settings.player.animated_visualizer.title" = "클립이 없을 때 비주얼라이저";
 "settings.player.background.a11y" = "배경";
 "settings.player.background.animated" = "움직임";
 "settings.player.background.colors" = "색상";
@@ -1930,6 +1932,10 @@
 "settings.player.star_add.subtitle" = "별 모양 추가 버튼으로, 곡이 저장되면 강조 색상으로 채워집니다. 플레이어에서는 단순 체크표시를 대신합니다.";
 "settings.player.star_add.title" = "별 모양 추가 버튼";
 "settings.player.title" = "플레이어";
+"settings.player.visualizer_heat.subtitle" = "iPhone이 뜨거울 때도 비주얼라이저를 계속 움직입니다. 배터리를 더 사용합니다.";
+"settings.player.visualizer_heat.title" = "열 경고 무시";
+"settings.player.visualizer_shuffle.subtitle" = "노래마다 다른 스타일";
+"settings.player.visualizer_shuffle.title" = "스타일 섞기";
 "settings.player.visualizer_style.title" = "비주얼라이저 스타일";
 "settings.player.visualizers.footer" = "기존 플레이어 및 미리보기 비주얼라이저에 스타일이 즉시 적용됩니다. 스타일을 표시하려면 플레이어 > 배경에서 비주얼라이저를 선택하십시오. 이 페이지에서는 배경 선택이 변경되지 않습니다. 모션은 일시 정지나 무음 상태일 때 정지하며, 백그라운드 환경, 플레이어 전환 중, 저전력 모드 또는 기기가 뜨거울 때 중단됩니다.";
 "settings.player.visualizers.intro" = "재설계 플레이어의 비주얼라이저 배경을 위한 로컬 스타일입니다.";

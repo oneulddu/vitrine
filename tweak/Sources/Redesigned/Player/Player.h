@@ -210,7 +210,21 @@ void SGRPlayerLandscapeLinesChanged(void);
 // once (SGRPlayerStillChanged, from the Player page).
 #define SGRKeyPlayerAnimatedStill @"spotifyglass.redesign.player.animatedStill"
 BOOL SGRPlayerStillOn(void);
+// The Player page switched the full-screen cover on or off: the open player follows at once. Switching it on
+// switches the Visualizer without a clip off.
 void SGRPlayerStillChanged(void);
+// Animated's Visualizer for a track with no clip (PlayerMotion.x, PlayerVisualiser.m): off until switched on. Switching
+// it on switches the full-screen cover off (the last one switched on wins); the open player follows at once.
+#define SGRKeyPlayerAnimatedVisualiser @"spotifyglass.redesign.player.animatedVisualizer"
+BOOL SGRPlayerAnimatedVisualiserOn(void);
+void SGRPlayerAnimatedVisualiserChanged(void);
+// With both switches saved on, the full-screen cover stays and the Visualizer switch goes off. Called at start and on
+// every pass of SGRPlayerVisualiserUpdate; the fallback is never wanted while the cover is on.
+void SGRPlayerReconcileFallbackSwitches(void);
+// The Visualizer is wanted in place of the cover: the switch is on, the playing track's lookup finished with no clip,
+// and a clip would be wanted (Animated, Spotify's video not showing, Reduce Motion and Low Power Mode off). NO while
+// the lookup is out.
+BOOL SGRPlayerVisualiserFallbackWanted(void);
 // The animated artwork follows the lyrics: blurred behind them (PlayerMotion.x).
 void SGRPlayerMotionLyricsChanged(void);
 // The field was laid out (PlayerField.x): the clip goes onto it, and the cover is hidden or shown again.
@@ -245,12 +259,27 @@ NSArray<NSString *> *SGRVisualiserStyleIDs(void);
 // Invalid or missing storage reads as builtin:hills without rewriting the original value.
 NSString *SGRVisualiserStyle(void);
 void SGRSetVisualiserStyle(NSString *identifier);
+// The user's own pick: the style, and the one shuffle goes back to when it is turned off.
+void SGRPickVisualiserStyle(NSString *identifier);
+// Shuffle styles: with each new song, while the Visualizer is on screen, a style other than the current one is
+// picked at random and made the current style. Off until switched on. Switching it on remembers the current
+// style as the user's own; switching it off restores that one.
+#define SGRKeyVisualiserShuffle @"spotifyglass.visualizer.shuffle"
+#define SGRKeyVisualiserShuffleHome @"spotifyglass.visualizer.shuffle.home"
+void SGRVisualiserShuffleChanged(void);
+// Ignore heat warnings: the Visualizer keeps moving at a serious or critical thermal state (Low Power Mode and
+// Reduce Motion still stop it). Off until switched on. Whether `state` stands the Visualizer down.
+#define SGRKeyVisualiserIgnoreHeat @"spotifyglass.visualizer.ignoreHeat"
+BOOL SGRVisualiserStandsDownFor(NSProcessInfoThermalState state);
+// The switch changed: the Visualizer on screen takes it up now rather than at its next check.
+void SGRVisualiserIgnoreHeatChanged(void);
 @class SGModRow;
 SGModRow *SGRVisualiserStyleRow(void);
 // Local styles only; never changes the player's background kind or creates a player visualizer.
 UIViewController *SGRVisualiserSettingsPage(void);
 
-// The background is the Visualizer.
+// The background is the Visualizer, or it stands in for a track's missing clip (SGRPlayerVisualiserFallbackWanted)
+// and the thermal state does not stand it down.
 BOOL SGRPlayerVisualiserShowing(void);
 // Puts the hills on the field or takes them off as the background says, lays them out, and blurs them while the
 // lyrics are open. Called on every layout pass of the field (PlayerField.x), when the lyrics come or go

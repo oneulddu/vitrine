@@ -390,15 +390,23 @@ SGModRow *SGRVisualiserStyleRow(void) {
         return SGRVisualiserStyleNames()[[SGRVisualiserStyleIDs() indexOfObject:SGRVisualiserStyle()]];
     }, ^(NSInteger index) {
         NSArray<NSString *> *identifiers = SGRVisualiserStyleIDs();
-        if (index >= 0 && (NSUInteger)index < identifiers.count) SGRSetVisualiserStyle(identifiers[(NSUInteger)index]);
+        if (index >= 0 && (NSUInteger)index < identifiers.count) SGRPickVisualiserStyle(identifiers[(NSUInteger)index]);
     });
 }
 
 UIViewController *SGRVisualiserSettingsPage(void) {
+    SGModRow *shuffle = SGOptionRow(SGL(@"settings.player.visualizer_shuffle.title", @"Shuffle styles"),
+                                    SGL(@"settings.player.visualizer_shuffle.subtitle", @"A different style with each song"), SGRKeyVisualiserShuffle);
+    shuffle.changed = ^(BOOL on) { SGRVisualiserShuffleChanged(); };
+    SGModRow *heat = SGOptionRow(SGL(@"settings.player.visualizer_heat.title", @"Ignore heat warnings"),
+                                 SGL(@"settings.player.visualizer_heat.subtitle", @"Keeps the Visualizer moving while the iPhone is hot. Uses more battery."),
+                                 SGRKeyVisualiserIgnoreHeat);
+    heat.changed = ^(BOOL on) { SGRVisualiserIgnoreHeatChanged(); };
     return [[SGModPage alloc] initWithTitle:SGL(@"settings.player.visualizers.title", @"Visualizers") intro:SGL(@"settings.player.visualizers.intro", @"Local styles for the redesigned player's Visualizer background.")
-        sections:@[SGNotedSection(nil, @[SGRVisualiserStyleRow()],
+        sections:@[SGNotedSection(nil, @[SGRVisualiserStyleRow(), shuffle],
             SGL(@"settings.player.visualizers.note", @"Hills: soft spectrum hills. Bars: a mirrored spectrum with the actual audio waveform. "
-             @"Nebula: slow clouds in the cover's colors. Halo: a dim turning cover with a spectrum ring."))]
+             @"Nebula: slow clouds in the cover's colors. Halo: a dim turning cover with a spectrum ring.")),
+                   SGSection(nil, @[heat])]
         footer:SGL(@"settings.player.visualizers.footer", @"The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer "
                 @"under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence "
                 @"and stops in the background, during player transitions, in Low Power Mode or when the device is hot.")];
@@ -428,6 +436,12 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
                                             SGRKeyPlayerAnimatedStill), @"playerAnimatedStill");
     still.visible = lowData.visible;
     still.changed = ^(BOOL on) { SGRPlayerStillChanged(); };
+    SGModRow *fallback = SGWithNew(SGOptionRow(SGL(@"settings.player.animated_visualizer.title", @"Visualizer when there's no clip"),
+                                               SGL(@"settings.player.animated_visualizer.subtitle", @"A song with no clip shows the Visualizer. Low Power Mode and "
+                                                   @"Reduce Motion keep the cover art."),
+                                               SGRKeyPlayerAnimatedVisualiser), @"playerAnimatedVisualizer");
+    fallback.visible = lowData.visible;
+    fallback.changed = ^(BOOL on) { SGRPlayerAnimatedVisualiserChanged(); };
     SGModRow *visualiserStyle = SGRVisualiserStyleRow();
     visualiserStyle.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundVisualiser; };
 
@@ -498,7 +512,7 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
         SGSection(nil, @[behind, choosePhoto]),
-        SGSection(nil, @[sources, still, lowData]),
+        SGSection(nil, @[sources, still, fallback, lowData]),
         SGSection(nil, @[visualiserStyle]),
         SGNotedSection(nil, fluid, SGL(@"settings.player.fluid.footer", @"Smooth lets the cover flow and carries the next song's cover in through it, "
                                    @"using a little more battery. Brightness above 100% can make white text harder to read. A paused song holds the "

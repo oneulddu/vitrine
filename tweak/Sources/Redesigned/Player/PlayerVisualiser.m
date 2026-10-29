@@ -71,6 +71,26 @@ void SGRSetVisualiserStyle(NSString *identifier) {
     else dispatch_async(dispatch_get_main_queue(), apply);
 }
 
+// The style by hand: remembered as the one shuffle returns to when it is switched off.
+void SGRPickVisualiserStyle(NSString *identifier) {
+    if (![identifier isKindOfClass:NSString.class] || ![SGRVisualiserStyleIDs() containsObject:identifier]) return;
+    [NSUserDefaults.standardUserDefaults setObject:[identifier copy] forKey:SGRKeyVisualiserShuffleHome];
+    SGRSetVisualiserStyle(identifier);
+}
+
+void SGRVisualiserShuffleChanged(void) {
+    if (SGHidden(SGRKeyVisualiserShuffle)) {
+        [NSUserDefaults.standardUserDefaults setObject:SGRVisualiserStyle() forKey:SGRKeyVisualiserShuffleHome];
+        return;
+    }
+    id home = [NSUserDefaults.standardUserDefaults objectForKey:SGRKeyVisualiserShuffleHome];
+    if ([home isKindOfClass:NSString.class]) SGRSetVisualiserStyle(home);
+}
+
+BOOL SGRVisualiserStandsDownFor(NSProcessInfoThermalState state) {
+    return state >= NSProcessInfoThermalStateSerious && !SGHidden(SGRKeyVisualiserIgnoreHeat);
+}
+
 typedef NS_ENUM(NSUInteger, SGRVisualiserStyleKind) { SGRHills, SGRBars, SGRNebula, SGRHalo, SGRLyricsStyle };
 
 // The two bands under 80 Hz stay out of the picture: sub-bass is quieter than the kick above it in most mixes,
@@ -718,7 +738,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(updateMotion) object:nil];
     BOOL front = !_inactive && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
     BOOL may = self.window && !self.hidden && front && !NSProcessInfo.processInfo.lowPowerModeEnabled
-        && NSProcessInfo.processInfo.thermalState < NSProcessInfoThermalStateSerious;
+        && !SGRVisualiserStandsDownFor(NSProcessInfo.processInfo.thermalState);
     NSTimeInterval wait = SGPlayerTransitionEnds() - CACurrentMediaTime();
     if (may && (wait > 0 || SGRPlayerIsTransitioning())) {
         may = NO;
@@ -813,7 +833,7 @@ static float ease(float value, float target, double dt, double up, double down) 
 - (void)tick:(CADisplayLink *)link {
     // Notifications normally stop us first; this also covers a power/thermal change queued behind this tick.
     if (!self.window || self.hidden || _inactive || UIApplication.sharedApplication.applicationState != UIApplicationStateActive
-        || NSProcessInfo.processInfo.lowPowerModeEnabled || NSProcessInfo.processInfo.thermalState >= NSProcessInfoThermalStateSerious
+        || NSProcessInfo.processInfo.lowPowerModeEnabled || SGRVisualiserStandsDownFor(NSProcessInfo.processInfo.thermalState)
         || SGRPlayerIsTransitioning() || SGPlayerTransitionEnds() > CACurrentMediaTime()) {
         [self updateMotion];
         return;
@@ -1028,8 +1048,90 @@ static void shape(CAShapeLayer *layer, const float *bands, CGFloat width, CGFloa
 static SGRVisualiserView *sg_view;
 
 BOOL SGRPlayerVisualiserShowing(void) {
-    return SGRPlayerBackground() == SGRPlayerBackgroundVisualiser;
+    return SGRPlayerBackground() == SGRPlayerBackgroundVisualiser
+        || (SGRPlayerVisualiserFallbackWanted() && !SGRVisualiserStandsDownFor(NSProcessInfo.processInfo.thermalState));
 }
+
+#pragma mark - shuffle
+
+// The hills are on screen: in a window, shown, Spotify in front.
+static BOOL onScreen(void) {
+    return SGRPlayerVisualiserShowing() && sg_view.window && !sg_view.hidden
+        && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+}
+
+// The hills as a missing clip's stand-in could be seen if the lookup finds none: the player is in a window, Spotify in
+// front, neither heat nor Low Power Mode keeping them away.
+static BOOL fallbackSeeable(void) {
+    return SGRPlayerField().window && UIApplication.sharedApplication.applicationState == UIApplicationStateActive
+        && !NSProcessInfo.processInfo.lowPowerModeEnabled && !SGRVisualiserStandsDownFor(NSProcessInfo.processInfo.thermalState);
+}
+
+// Picks a style for each new song while the hills are on screen, one pick a song. Held by sg_shuffle, since player
+// state observers are held weakly.
+@interface SGRVisualiserShuffle : NSObject <SGPlayerStateObserver>
+// The hills came onto the field.
+- (void)viewMade;
+// The background is no longer Animated, so no lookup is waited on.
+- (void)stopWaiting;
+@end
+
+static SGRVisualiserShuffle *sg_shuffle;
+
+@implementation SGRVisualiserShuffle {
+    NSString *_track;     // the song playing, so the same song told again is not a new one
+    NSString *_awaiting;  // the song whose clip lookup is out: the hills pick for it if they come in as its fallback
+}
+
+- (instancetype)init {
+    if (!(self = [super init])) return nil;
+    _track = SGURIString(SGPlayerState().track.URI);
+    SGAddPlayerStateObserver(self);
+    // A song that changed while the hills could not be seen is not picked for when they come back: the wait ends as
+    // the app leaves the front, and when heat or Low Power Mode keeps them away.
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    for (NSNotificationName name in @[UIApplicationWillResignActiveNotification, UIApplicationDidEnterBackgroundNotification]) {
+        [center addObserver:self selector:@selector(stopWaiting) name:name object:nil];
+    }
+    for (NSNotificationName name in @[NSProcessInfoThermalStateDidChangeNotification, NSProcessInfoPowerStateDidChangeNotification]) {
+        [center addObserver:self selector:@selector(powerChanged) name:name object:nil];
+    }
+    return self;
+}
+
+- (void)pick {
+    NSMutableArray<NSString *> *others = [SGRVisualiserStyleIDs() mutableCopy];
+    [others removeObject:SGRVisualiserStyle()];
+    SGRSetVisualiserStyle(others[arc4random_uniform((uint32_t)others.count)]);
+}
+
+- (void)playerStateDidChange:(SPTPlayerState *)state {
+    NSString *uri = SGURIString(state.track.URI);
+    if (!uri.length || [uri isEqualToString:_track]) return;
+    _track = [uri copy];
+    _awaiting = nil;
+    if (!SGHidden(SGRKeyVisualiserShuffle)) return;
+    if (onScreen()) [self pick];
+    // Animated with the Visualizer for a missing clip: it comes in once the lookup finds none, if it could be seen now.
+    else if (SGRPlayerBackground() == SGRPlayerBackgroundAnimated && SGRPlayerAnimatedVisualiserOn() && fallbackSeeable()) _awaiting = _track;
+}
+
+// The power state is reported off the main thread.
+- (void)powerChanged {
+    dispatch_async(dispatch_get_main_queue(), ^{ if (!fallbackSeeable()) [self stopWaiting]; });
+}
+
+- (void)viewMade {
+    NSString *waited = _awaiting;
+    _awaiting = nil;
+    if (waited && [waited isEqualToString:_track] && SGHidden(SGRKeyVisualiserShuffle) && onScreen()) [self pick];
+}
+
+- (void)stopWaiting {
+    _awaiting = nil;
+}
+
+@end
 
 // The card's own hills, kept between taps on the background choices: a view taken off the card and shown again
 // is the same one, with its link and the palette read it started let alone, where a new one a tap raced the old
@@ -1064,15 +1166,21 @@ static void layOut(SGRArtworkField *field) {
 }
 
 void SGRPlayerVisualiserUpdate(void) {
+    SGRPlayerReconcileFallbackSwitches();
     SGRArtworkField *field = SGRPlayerField();
+    if (!sg_shuffle) sg_shuffle = [SGRVisualiserShuffle new];
+    if (SGRPlayerBackground() != SGRPlayerBackgroundAnimated) [sg_shuffle stopWaiting];
     // Not over an Animated artwork clip still playing: the Player page can change the choice under it, which the
     // player takes up when it next starts.
     BOOL wanted = SGRPlayerVisualiserShowing() && field && !SGRPlayerMotionShowing();
     if (!wanted) {
         SGRVisualiserView *old = sg_view;
+        if (!old) return;
         sg_view = nil;
         if (old.window) [old disappear:^{ [old removeFromSuperview]; }];
         else [old removeFromSuperview];
+        // The hills were what held the field still (PlayerField.x).
+        SGRPlayerHoldField();
         return;
     }
     BOOL made = !sg_view;
@@ -1081,11 +1189,19 @@ void SGRPlayerVisualiserUpdate(void) {
     if (made) {
         [sg_view setBlurred:SGRPlayerLyricsOpen() animated:NO];
         [sg_view appear:field.window != nil];
+        SGRPlayerHoldField();
         SGLog(@"redesign player: visualizer on the field");
+        [sg_shuffle viewMade];
     } else {
         BOOL open = SGRPlayerLyricsOpen();
         if (open != sg_view.blurred) [sg_view setBlurred:open animated:sg_view.window != nil];
     }
+}
+
+void SGRVisualiserIgnoreHeatChanged(void) {
+    SGRPlayerVisualiserUpdate();
+    [sg_view updateMotion];
+    [sg_preview updateMotion];
 }
 
 #pragma mark - the ⋯ menu's switch

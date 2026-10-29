@@ -1826,6 +1826,8 @@
 
 "settings.player.animated_still.subtitle" = "A song with no clip shows its cover art. With this on, the cover fills the screen the way a clip does. Low Power Mode and Reduce Motion keep the cover art.";
 "settings.player.animated_still.title" = "Full-screen cover without a clip";
+"settings.player.animated_visualizer.subtitle" = "A song with no clip shows the Visualizer. Low Power Mode and Reduce Motion keep the cover art.";
+"settings.player.animated_visualizer.title" = "Visualizer when there's no clip";
 "settings.player.artwork.header" = "Artwork";
 "settings.player.artwork_background.title" = "Artwork background";
 "settings.player.background.a11y" = "Background";
@@ -1934,6 +1936,10 @@
 "settings.player.star_add.subtitle" = "The add button as a star, filled in the accent once the song is saved. In the player it takes the place of Plain checkmark.";
 "settings.player.star_add.title" = "Star add button";
 "settings.player.title" = "Player";
+"settings.player.visualizer_heat.subtitle" = "Keeps the Visualizer moving while the iPhone is hot. Uses more battery.";
+"settings.player.visualizer_heat.title" = "Ignore heat warnings";
+"settings.player.visualizer_shuffle.subtitle" = "A different style with each song";
+"settings.player.visualizer_shuffle.title" = "Shuffle styles";
 "settings.player.visualizer_style.title" = "Visualizer style";
 "settings.player.visualizers.footer" = "The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence and stops in the background, during player transitions, in Low Power Mode or when the device is hot.";
 "settings.player.visualizers.intro" = "Local styles for the redesigned player's Visualizer background.";

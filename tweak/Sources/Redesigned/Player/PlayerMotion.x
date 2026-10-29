@@ -56,6 +56,11 @@
 // least kStillLeastPixels wide: a smaller one (the now playing bar's) leaves the ordinary cover until a larger one is
 // published, which then comes in. It is held off where a clip would be (not Animated, Spotify's video, Reduce Motion,
 // Low Power Mode), a clip found later replaces it, and a skip lets it go as it does a clip.
+//
+// With the Visualizer without a clip on (SGRKeyPlayerAnimatedVisualiser, off until switched on, and off while the
+// full-screen cover is on), the same walk's finding no clip puts the Visualizer on the field in the cover's place
+// (SGRPlayerVisualiserFallbackWanted, taken up by PlayerVisualiser.m). Nothing shows while the lookup is out, and a
+// clip found later or a skip takes it down.
 #import <AVFoundation/AVFoundation.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
@@ -1066,8 +1071,33 @@ static BOOL showStill(void) {
 }
 
 void SGRPlayerStillChanged(void) {
-    if (SGRPlayerStillOn()) showStill();
-    else if (sg_stillOf) clear(YES);
+    if (SGRPlayerStillOn()) {
+        if (SGRPlayerAnimatedVisualiserOn()) SGSetEnabled(SGRKeyPlayerAnimatedVisualiser, NO);
+        showStill();
+    } else if (sg_stillOf) clear(YES);
+    SGRPlayerVisualiserUpdate();
+}
+
+BOOL SGRPlayerAnimatedVisualiserOn(void) {
+    return SGHidden(SGRKeyPlayerAnimatedVisualiser);
+}
+
+// The still goes first, so the Visualizer finds the cover back and the field uncovered.
+void SGRPlayerAnimatedVisualiserChanged(void) {
+    if (SGRPlayerAnimatedVisualiserOn() && SGRPlayerStillOn()) {
+        SGSetEnabled(SGRKeyPlayerAnimatedStill, NO);
+        SGRPlayerStillChanged();
+    }
+    SGRPlayerVisualiserUpdate();
+}
+
+// Both switches saved on (an older build, or set from two places at once): the full-screen cover stays.
+void SGRPlayerReconcileFallbackSwitches(void) {
+    if (SGRPlayerStillOn() && SGRPlayerAnimatedVisualiserOn()) SGSetEnabled(SGRKeyPlayerAnimatedVisualiser, NO);
+}
+
+BOOL SGRPlayerVisualiserFallbackWanted(void) {
+    return SGRPlayerAnimatedVisualiserOn() && !SGRPlayerStillOn() && sg_track && [sg_noClip isEqualToString:sg_track] && clipWanted();
 }
 
 void SGRPlayerMotionLyricsChanged(void) {
@@ -1095,6 +1125,8 @@ static BOOL beginTrack(NSString *track) {
     sg_begun++;
     // Until this walk says there is no clip; a still showing for the same track stays as a clip would.
     sg_noClip = nil;
+    // The Visualizer standing in for the last track's missing clip goes with the lookup this walk starts.
+    SGRPlayerVisualiserUpdate();
     BOOL wanted = clipWanted();
     if (wanted && [track isEqualToString:sg_shown]) return YES;
     // The clip on screen is another track's: it waits kHandOver for the next one to cross over it, but its
@@ -1179,6 +1211,7 @@ void SGPlayerMenuSetAnimatedArtwork(BOOL on) {
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    SGRPlayerReconcileFallbackSwitches();
     // The artwork's own choice under black or a photo, so going back to Animated finds the follower ready.
     SGRPlayerBackgroundKind background = SGRPlayerArtworkBackground();
     if (background < SGRPlayerBackgroundFluid) return;
@@ -1197,6 +1230,9 @@ void SGPlayerMenuSetAnimatedArtwork(BOOL on) {
             });
         }];
     }
+    // The Visualizer standing in for a missing clip goes when the iPhone gets hot, and comes back when it cools.
+    [NSNotificationCenter.defaultCenter addObserverForName:NSProcessInfoThermalStateDidChangeNotification object:nil queue:nil
+                                                usingBlock:^(NSNotification *note) { dispatch_async(dispatch_get_main_queue(), ^{ SGRPlayerVisualiserUpdate(); }); }];
     sg_follower = [[SGMotionFollower alloc] initWithBegin:^BOOL(NSString *uri, SPTPlayerState *state) {
         return beginTrack(uri);
     } found:^(NSString *uri, NSURL *file) {
@@ -1206,6 +1242,7 @@ void SGPlayerMenuSetAnimatedArtwork(BOOL on) {
         }
         sg_noClip = uri;
         if (!showStill()) clear(YES);
+        SGRPlayerVisualiserUpdate();
     }];
     // A larger cover, or the track's own after the last one's, can make the still: the Kit posts on main.
     [NSNotificationCenter.defaultCenter addObserverForName:SGRNowPlayingArtworkDidChangeNotification object:nil queue:nil

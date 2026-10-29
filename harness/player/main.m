@@ -36,6 +36,16 @@
 //              the hills moving, blurred behind the lyrics, settling and stopping on a pause, back on play,
 //              and the ⋯ menu's switch to Fluid and back; the log ends with visualizer checks n of m right
 //              -- PASS or FAIL
+//     autoviz  Animated with "Visualizer when there's no clip": nothing while a lookup is out, the Visualizer
+//              once it found no clip, down for a track change, a late clip, Low Power Mode, the full-screen cover
+//              switch (each switches the other off), Fluid and black, and off again; needs HARNESS_CANVAS_FILE (an
+//              mp4 taller than wide) for the late clip; the log ends with autoviz checks n of m right -- PASS or FAIL
+//     shuffle  Shuffle styles: one pick per new track while the Visualizer is on screen (as the background, then as
+//              the stand-in for a missing clip), none while hidden or for the same track, the user's own style back
+//              when it is switched off; the log ends with shuffle checks n of m right -- PASS or FAIL
+//     heat     Ignore heat warnings: the stand-down for each thermal state with and without it, the hills stopping and
+//              moving on the switch, Low Power Mode still stopping them, and the stand-in for a missing clip; the log
+//              ends with heat checks n of m right -- PASS or FAIL
 //     options  the Player page's Header glass and Music app icons switched off and on with the player open, in it and
 //              the AI DJ's, then Fluid's Grain at 0, 100 and 200% on Smooth and on Light; the log ends with options
 //              checks n of m right -- PASS or FAIL
@@ -65,6 +75,8 @@
 
 void SGRHarnessPlayFrom(NSInteger ms);
 void SGRHarnessSetTrack(NSString *uri, NSString *imageURI, BOOL paused);
+// stubs.m: every clip lookup answers this many seconds late (0, the default, at once).
+void SGRHarnessSetLookupDelay(NSTimeInterval seconds);
 // ../tabbar/touch.m: a finger's touches, through UIKit's own recognizers.
 extern void SGHarnessHold(UIWindow *window, CGPoint point, NSTimeInterval seconds);
 
@@ -719,6 +731,9 @@ static void loadLyrics(void) {
     else if ([scenario() isEqualToString:@"preview"]) [self runPreviewChecks];
     else if ([scenario() isEqualToString:@"seek"]) [self runSeekChecks];
     else if ([scenario() isEqualToString:@"visualiser"]) [self runVisualiserChecks];
+    else if ([scenario() isEqualToString:@"autoviz"]) [self runAutoVisualiserChecks];
+    else if ([scenario() isEqualToString:@"shuffle"]) [self runShuffleChecks];
+    else if ([scenario() isEqualToString:@"heat"]) [self runHeatChecks];
     else if ([scenario() isEqualToString:@"header"]) [self runHeaderChecks];
     else if ([scenario() isEqualToString:@"options"]) [self runOptionsChecks];
     else if ([scenario() isEqualToString:@"renderer"]) [self runRendererChecks];
@@ -1776,6 +1791,385 @@ static CGFloat hillHeight(UIView *view, NSString *ivar) {
     });
 }
 
+#pragma mark - the Visualizer without a clip, shuffled styles, heat
+
+// What NSProcessInfo reports as the thermal state and Low Power Mode, which the simulator has neither of.
+static NSInteger sg_thermal;
+static BOOL sg_lowPower;
+
+static void reportPower(void) {
+    Class info = object_getClass(NSProcessInfo.processInfo);
+    for (NSString *name in @[@"isLowPowerModeEnabled", @"lowPowerModeEnabled"]) {
+        Method method = class_getInstanceMethod(info, NSSelectorFromString(name));
+        if (method) method_setImplementation(method, imp_implementationWithBlock(^BOOL(id process) { return sg_lowPower; }));
+    }
+    Method thermal = class_getInstanceMethod(info, @selector(thermalState));
+    method_setImplementation(thermal, imp_implementationWithBlock(^NSInteger(id process) { return sg_thermal; }));
+}
+
+static void setThermal(NSProcessInfoThermalState state) {
+    sg_thermal = state;
+    [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoThermalStateDidChangeNotification object:nil];
+}
+
+static NSString *finishChecks(NSUInteger checks, NSUInteger failures, NSString *name) {
+    return [NSString stringWithFormat:@"%@ checks: %lu of %lu right -- %@", name, (unsigned long)(checks - failures), (unsigned long)checks, failures ? @"FAIL" : @"PASS"];
+}
+
+// Animated with "Visualizer when there's no clip" (SGRKeyPlayerAnimatedVisualiser). Every track's lookup takes 1.5 s
+// (stubs.m), so the player can be looked at while it is out.
+- (void)runAutoVisualiserChecks {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    void (^setFallback)(BOOL) = ^(BOOL on) {
+        [store setBool:on forKey:SGRKeyPlayerAnimatedVisualiser];
+        SGRPlayerAnimatedVisualiserChanged();
+    };
+    void (^setStill)(BOOL) = ^(BOOL on) {
+        [store setBool:on forKey:SGRKeyPlayerAnimatedStill];
+        SGRPlayerStillChanged();
+    };
+    void (^background)(SGRPlayerBackgroundKind) = ^(SGRPlayerBackgroundKind kind) {
+        SGRSetPlayerBackground(kind);
+        SGRPlayerBackgroundDidChange();
+        [self layOut];
+    };
+    // The ordinary cover: no clip, no still, no hills (faded out and gone), the reader off.
+    BOOL (^ordinary)(void) = ^BOOL { return !SGRPlayerMotionShowing() && !self->_covers.layer.mask && !visualiserView() && !SGRHarnessReading(); };
+    // The hills as the background, over the ordinary cover and the field held still, the reader on.
+    BOOL (^hills)(void) = ^BOOL {
+        return visualiserView() && SGRPlayerVisualiserShowing() && !SGRPlayerMotionShowing() && !self->_covers.layer.mask
+            && SGRPlayerField().motionHeld && SGRHarnessReading();
+    };
+    NSString *(^state)(void) = ^NSString *{
+        return [NSString stringWithFormat:@"hills %@, clip or still %@, cover %@, reader %@", visualiserView() ? @"on" : @"off",
+                SGRPlayerMotionShowing() ? @"on" : @"off", self->_covers.layer.mask ? @"hidden" : @"shown", SGRHarnessReading() ? @"on" : @"off"];
+    };
+    serve(imageURI(@"bbbb"), solidPixels(UIColor.greenColor, 600), 0.1, NO);
+    serve(imageURI(@"cccc"), solidPixels(UIColor.blueColor, 600), 0.1, NO);
+    runScript(@[
+        @[@0.6, ^{
+            [self expect:ordinary() && !SGRPlayerAnimatedVisualiserOn() step:@"switch off, lookup out" detail:state()];
+            setFallback(YES);
+            [self expect:ordinary() && !SGRPlayerVisualiserShowing() step:@"switched on while the lookup is out: no flash" detail:state()];
+        }],
+        @[@2.5, ^{
+            [self expect:hills() step:@"the lookup found no clip: the Visualizer" detail:state()];
+            NSLog(@"[harness] autoviz: screenshot the Visualizer now");
+            [self playTrack:@"spotify:track:harnessB" image:imageURI(@"bbbb")];
+        }],
+        @[@0.9, ^{ [self expect:ordinary() step:@"a track change takes it down until the lookup ends" detail:state()]; }],
+        @[@2, ^{
+            [self expect:hills() step:@"the new track's lookup found no clip" detail:state()];
+            // Its Canvas turns up late.
+            setenv("HARNESS_CANVAS", [NSString stringWithFormat:@"https://canvas.harness/auto-%d.mp4", getpid()].UTF8String, 1);
+            SGRHarnessSetTrack(@"spotify:track:harnessB", imageURI(@"bbbb"), NO);
+        }],
+        @[@0.9, ^{ [self expect:ordinary() step:@"a clip on its way: the lookup is out again" detail:state()]; }],
+        @[@2.2, ^{
+            [self expect:SGRPlayerMotionShowing() && !visualiserView() && !SGRHarnessReading() step:@"a late clip takes the Visualizer down" detail:state()];
+            unsetenv("HARNESS_CANVAS");
+            [self playTrack:@"spotify:track:harnessC" image:imageURI(@"cccc")];
+        }],
+        @[@3.2, ^{
+            [self expect:hills() step:@"a track without a clip after a clip" detail:state()];
+            reportPower();
+            // Low Power Mode, with no notification and no new walk (as Reduce Motion is switched): the Visualizer is asked again.
+            sg_lowPower = YES;
+            SGRPlayerVisualiserUpdate();
+        }],
+        @[@1, ^{
+            [self expect:ordinary() step:@"no clip wanted any more (Low Power Mode, no new walk): the Visualizer goes" detail:state()];
+            sg_lowPower = NO;
+            SGRPlayerVisualiserUpdate();
+        }],
+        @[@1, ^{
+            [self expect:hills() step:@"a clip wanted again: the Visualizer is back" detail:state()];
+            sg_lowPower = YES;
+            [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+        }],
+        // Reduce Motion takes the same path as Low Power Mode (motionAllowed); the process can be made to report the latter.
+        @[@1.8, ^{
+            [self expect:ordinary() step:@"Low Power Mode: the ordinary cover, not the still" detail:state()];
+            [NSNotificationCenter.defaultCenter postNotificationName:SGRNowPlayingArtworkDidChangeNotification object:nil];
+            [self expect:ordinary() step:@"a cover in under Low Power Mode" detail:state()];
+            sg_lowPower = NO;
+            [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+        }],
+        @[@0.5, ^{ [self expect:ordinary() step:@"Low Power Mode off, lookup out" detail:state()]; }],
+        @[@2.5, ^{
+            [self expect:hills() step:@"Low Power Mode off, lookup ended" detail:state()];
+            setStill(YES);
+        }],
+        @[@0.9, ^{
+            [self expect:!SGRPlayerAnimatedVisualiserOn() && SGRPlayerStillOn() && SGRPlayerMotionShowing() && !visualiserView() && !SGRHarnessReading()
+                    step:@"the still switched on: the Visualizer switch off, the still in"
+                  detail:[NSString stringWithFormat:@"switch %d, still %d, %@", SGRPlayerAnimatedVisualiserOn(), SGRPlayerStillOn(), state()]];
+            setFallback(YES);
+        }],
+        @[@0.9, ^{
+            [self expect:SGRPlayerAnimatedVisualiserOn() && !SGRPlayerStillOn() && hills()
+                    step:@"the Visualizer switched on: the still switch off, the hills in"
+                  detail:[NSString stringWithFormat:@"switch %d, still %d, %@", SGRPlayerAnimatedVisualiserOn(), SGRPlayerStillOn(), state()]];
+            setFallback(NO);
+        }],
+        @[@0.9, ^{
+            [self expect:ordinary() && !SGRPlayerStillOn() step:@"both off" detail:state()];
+            setFallback(YES);
+            background(SGRPlayerBackgroundFluid);
+        }],
+        @[@1, ^{ [self expect:ordinary() && !SGRPlayerVisualiserShowing() step:@"Fluid chosen: no Visualizer" detail:state()]; background(SGRPlayerBackgroundBlack); }],
+        @[@1.5, ^{
+            [self expect:!visualiserView() && !SGRPlayerVisualiserShowing() && !SGRHarnessReading() step:@"black chosen: no Visualizer" detail:state()];
+            background(SGRPlayerBackgroundAnimated);
+        }],
+        @[@3, ^{ [self expect:hills() step:@"Animated again" detail:state()]; setFallback(NO); }],
+        @[@0.9, ^{
+            [self expect:ordinary() step:@"switched off again: today's behavior" detail:state()];
+            // Both saved on (an older build): the track has no clip, and the cover is the one wanted.
+            [store setBool:YES forKey:SGRKeyPlayerAnimatedStill];
+            [store setBool:YES forKey:SGRKeyPlayerAnimatedVisualiser];
+            [self expect:!SGRPlayerVisualiserFallbackWanted() step:@"both saved on: the Visualizer is not wanted" detail:state()];
+            SGRPlayerVisualiserUpdate();
+            [self expect:SGRPlayerStillOn() && !SGRPlayerAnimatedVisualiserOn() && ![store boolForKey:SGRKeyPlayerAnimatedVisualiser]
+                    step:@"both saved on: the cover stays, the Visualizer switch is off"
+                  detail:[NSString stringWithFormat:@"still %d, switch %d", SGRPlayerStillOn(), [store boolForKey:SGRKeyPlayerAnimatedVisualiser]]];
+        }],
+        @[@0.9, ^{
+            [self expect:!visualiserView() && !SGRPlayerVisualiserShowing() step:@"both saved on: no Visualizer after the cover" detail:state()];
+            // The row's order: the switch written, then the callback.
+            SGSetEnabled(SGRKeyPlayerAnimatedVisualiser, YES);
+            SGRPlayerAnimatedVisualiserChanged();
+        }],
+        @[@0.9, ^{
+            [self expect:SGRPlayerAnimatedVisualiserOn() && !SGRPlayerStillOn() && hills() step:@"the row switching the Visualizer on with the cover on: the Visualizer wins"
+                  detail:state()];
+            setFallback(NO);
+            NSLog(@"[harness] %@", finishChecks(self->_checks, self->_failures, @"autoviz"));
+            exit(self->_failures ? 1 : 0);
+        }],
+    ], 0);
+}
+
+// Shuffle styles, with the Visualizer as the background first, then standing in for a missing clip.
+- (void)runShuffleChecks {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    __block NSUInteger changes = 0, picksBefore = 0;
+    [NSNotificationCenter.defaultCenter addObserverForName:SGRVisualiserStyleDidChangeNotification object:nil queue:nil
+                                                usingBlock:^(NSNotification *note) { changes++; }];
+    NSArray<NSString *> *all = @[@"builtin:hills", @"builtin:bars", @"builtin:nebula", @"builtin:halo", @"builtin:lyrics"];
+    void (^background)(SGRPlayerBackgroundKind) = ^(SGRPlayerBackgroundKind kind) {
+        SGRSetPlayerBackground(kind);
+        SGRPlayerBackgroundDidChange();
+        [self layOut];
+    };
+    runScript(@[
+        @[@3, ^{
+            [self expect:changes == 0 && [SGRVisualiserStyle() isEqualToString:@"builtin:hills"] step:@"off: no pick" detail:SGRVisualiserStyle()];
+            SGRHarnessSetTrack(@"spotify:track:shuffleOff", imageURI(@"aaaa"), NO);
+            [self expect:changes == 0 && [SGRVisualiserStyle() isEqualToString:@"builtin:hills"] step:@"off: a track change picks nothing" detail:SGRVisualiserStyle()];
+            [store setBool:YES forKey:SGRKeyVisualiserShuffle];
+            SGRVisualiserShuffleChanged();
+            [self expect:changes == 0 && [[store stringForKey:SGRKeyVisualiserShuffleHome] isEqualToString:@"builtin:hills"]
+                    step:@"switched on: the user's style remembered, nothing picked"
+                  detail:[NSString stringWithFormat:@"home %@, %lu changes", [store stringForKey:SGRKeyVisualiserShuffleHome], (unsigned long)changes]];
+            SGRHarnessSetTrack(@"spotify:track:shuffleA", imageURI(@"aaaa"), NO);
+            [self expect:changes == 1 && ![SGRVisualiserStyle() isEqualToString:@"builtin:hills"] && [all containsObject:SGRVisualiserStyle()]
+                    step:@"a track change on screen: one pick, not the current style"
+                  detail:[NSString stringWithFormat:@"%lu changes, style %@", (unsigned long)changes, SGRVisualiserStyle()]];
+            // The same song seen again: a pause and a play, then the same song reported once more.
+            SGRHarnessSetTrack(@"spotify:track:shuffleA", imageURI(@"aaaa"), YES);
+            SGRHarnessSetTrack(@"spotify:track:shuffleA", imageURI(@"aaaa"), NO);
+            [self expect:changes == 1 step:@"the same track (pause, play): no pick" detail:[NSString stringWithFormat:@"%lu changes", (unsigned long)changes]];
+        }],
+        @[@0.5, ^{
+            BOOL moved = YES;
+            NSMutableSet *seen = [NSMutableSet set];
+            for (int i = 0; i < 80; i++) {
+                NSString *before = SGRVisualiserStyle();
+                NSUInteger count = changes;
+                SGRHarnessSetTrack([NSString stringWithFormat:@"spotify:track:shuffleMany%d", i], imageURI(@"aaaa"), NO);
+                moved = moved && changes == count + 1 && ![SGRVisualiserStyle() isEqualToString:before];
+                [seen addObject:SGRVisualiserStyle()];
+            }
+            [self expect:moved && seen.count == all.count step:@"80 track changes: each one pick, never the current style, every style turns up"
+                  detail:[NSString stringWithFormat:@"%@, %lu styles seen", moved ? @"each moved" : @"a pick missed or repeated", (unsigned long)seen.count]];
+            // Hidden: another background.
+            background(SGRPlayerBackgroundFluid);
+        }],
+        @[@1, ^{
+            NSUInteger count = changes;
+            for (int i = 0; i < 5; i++) SGRHarnessSetTrack([NSString stringWithFormat:@"spotify:track:shuffleHidden%d", i], imageURI(@"aaaa"), NO);
+            [self expect:changes == count step:@"hidden: track changes pick nothing" detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - count)]];
+            background(SGRPlayerBackgroundVisualiser);
+        }],
+        @[@1.2, ^{
+            NSUInteger count = changes;
+            [self expect:visualiserView() step:@"the Visualizer back" detail:@""];
+            SGRHarnessSetTrack(@"spotify:track:shuffleHidden4", imageURI(@"aaaa"), NO);
+            [self expect:changes == count step:@"back on screen, the same track: no pick" detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - count)]];
+            SGRHarnessSetTrack(@"spotify:track:shuffleNext", imageURI(@"aaaa"), NO);
+            [self expect:changes == count + 1 step:@"the next track: a pick" detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - count)]];
+            // A style by hand becomes the one shuffle goes back to.
+            SGRPickVisualiserStyle(@"builtin:bars");
+            [self expect:[[store stringForKey:SGRKeyVisualiserShuffleHome] isEqualToString:@"builtin:bars"] step:@"a style by hand is remembered"
+                  detail:[store stringForKey:SGRKeyVisualiserShuffleHome]];
+            SGRHarnessSetTrack(@"spotify:track:shuffleAfterHand", imageURI(@"aaaa"), NO);
+            [store setBool:NO forKey:SGRKeyVisualiserShuffle];
+            SGRVisualiserShuffleChanged();
+            [self expect:[SGRVisualiserStyle() isEqualToString:@"builtin:bars"] step:@"switched off: the user's own style is back" detail:SGRVisualiserStyle()];
+            count = changes;
+            SGRHarnessSetTrack(@"spotify:track:shuffleOffAgain", imageURI(@"aaaa"), NO);
+            [self expect:changes == count step:@"off again: no pick" detail:SGRVisualiserStyle()];
+            // The Visualizer for a missing clip: shuffle picks once the hills come in, not while the lookup is out.
+            [store setBool:YES forKey:SGRKeyVisualiserShuffle];
+            SGRVisualiserShuffleChanged();
+            [store setBool:YES forKey:SGRKeyPlayerAnimatedVisualiser];
+            SGRHarnessSetLookupDelay(1);
+            background(SGRPlayerBackgroundAnimated);
+        }],
+        @[@2.5, ^{
+            [self expect:visualiserView() && SGRPlayerVisualiserShowing() step:@"Animated: the Visualizer for the current track's missing clip" detail:@""];
+            picksBefore = changes;
+            SGRHarnessSetTrack(@"spotify:track:shuffleFallback", imageURI(@"aaaa"), NO);
+        }],
+        @[@2, ^{
+            [self expect:changes == picksBefore + 1 && visualiserView() && SGRPlayerVisualiserShowing() step:@"Animated: the next track's Visualizer, one pick"
+                  detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - picksBefore)]];
+        }],
+        @[@0.1, ^{
+            NSUInteger count = changes;
+            SGRHarnessSetTrack(@"spotify:track:shuffleFallback", imageURI(@"aaaa"), YES);
+            SGRHarnessSetTrack(@"spotify:track:shuffleFallback", imageURI(@"aaaa"), NO);
+            [self expect:changes == count step:@"Animated: the same track again, no pick" detail:@""];
+            // A song that changes while the iPhone is hot is not picked for when it cools.
+            reportPower();
+            setThermal(NSProcessInfoThermalStateSerious);
+            SGRPlayerVisualiserUpdate();
+        }],
+        @[@0.4, ^{
+            picksBefore = changes;
+            SGRHarnessSetTrack(@"spotify:track:shuffleHot", imageURI(@"aaaa"), NO);
+        }],
+        @[@2.5, ^{
+            [self expect:!visualiserView() && changes == picksBefore step:@"hot: the track's lookup ended, no Visualizer, no pick"
+                  detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - picksBefore)]];
+            setThermal(NSProcessInfoThermalStateNominal);
+            SGRPlayerVisualiserUpdate();
+        }],
+        @[@0.5, ^{
+            [self expect:visualiserView() && changes == picksBefore step:@"cooled: the Visualizer is back for the track that changed while hot, no pick"
+                  detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - picksBefore)]];
+            // Hot during the lookup of a track that changed while the hills could be seen.
+            SGRHarnessSetTrack(@"spotify:track:shuffleDuringFirst", imageURI(@"aaaa"), NO);
+        }],
+        @[@0.3, ^{
+            // The hills are down for the first song's lookup, so the second is waited on.
+            SGRHarnessSetTrack(@"spotify:track:shuffleDuring", imageURI(@"aaaa"), NO);
+            picksBefore = changes;
+        }],
+        @[@0.3, ^{
+            setThermal(NSProcessInfoThermalStateSerious);
+            SGRPlayerVisualiserUpdate();
+        }],
+        @[@2.5, ^{
+            [self expect:!visualiserView() && changes == picksBefore step:@"hot during the lookup: no Visualizer, no pick"
+                  detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - picksBefore)]];
+            setThermal(NSProcessInfoThermalStateNominal);
+            SGRPlayerVisualiserUpdate();
+        }],
+        @[@0.5, ^{
+            [self expect:visualiserView() && changes == picksBefore step:@"cooled: the Visualizer is back for the track that was waited on while hot, no pick"
+                  detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - picksBefore)]];
+            SGRHarnessSetTrack(@"spotify:track:shuffleCool", imageURI(@"aaaa"), NO);
+        }],
+        @[@2.5, ^{
+            [self expect:visualiserView() && changes == picksBefore + 1 step:@"cooled: the next track while shown, one pick"
+                  detail:[NSString stringWithFormat:@"%lu picks", (unsigned long)(changes - picksBefore)]];
+            NSLog(@"[harness] %@", finishChecks(self->_checks, self->_failures, @"shuffle"));
+            exit(self->_failures ? 1 : 0);
+        }],
+    ], 0);
+}
+
+// Ignore heat warnings.
+- (void)runHeatChecks {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    reportPower();
+    void (^background)(SGRPlayerBackgroundKind) = ^(SGRPlayerBackgroundKind kind) {
+        SGRSetPlayerBackground(kind);
+        SGRPlayerBackgroundDidChange();
+        [self layOut];
+    };
+    CADisplayLink * (^link)(void) = ^CADisplayLink *{ return [visualiserView() valueForKey:@"_link"]; };
+    runScript(@[
+        @[@3, ^{
+            NSString *off = @"", *on = @"";
+            BOOL right = YES;
+            for (NSInteger level = NSProcessInfoThermalStateNominal; level <= NSProcessInfoThermalStateCritical; level++) {
+                BOOL want = level >= NSProcessInfoThermalStateSerious;
+                right = right && SGRVisualiserStandsDownFor(level) == want;
+                off = [off stringByAppendingString:SGRVisualiserStandsDownFor(level) ? @"Y" : @"n"];
+            }
+            [self expect:right step:@"ignore off: serious and critical stand down, nominal and fair do not" detail:off];
+            [store setBool:YES forKey:SGRKeyVisualiserIgnoreHeat];
+            right = YES;
+            for (NSInteger level = NSProcessInfoThermalStateNominal; level <= NSProcessInfoThermalStateCritical; level++) {
+                right = right && !SGRVisualiserStandsDownFor(level);
+                on = [on stringByAppendingString:SGRVisualiserStandsDownFor(level) ? @"Y" : @"n"];
+            }
+            [self expect:right step:@"ignore on: nothing stands down" detail:on];
+            [store setBool:NO forKey:SGRKeyVisualiserIgnoreHeat];
+            [self expect:link() && SGRHarnessReading() step:@"playing, cool" detail:@""];
+            setThermal(NSProcessInfoThermalStateSerious);
+        }],
+        @[@0.6, ^{
+            [self expect:visualiserView() && !link() && !SGRHarnessReading() step:@"hot: the hills stand down (still on the field)" detail:@""];
+            [store setBool:YES forKey:SGRKeyVisualiserIgnoreHeat];
+            SGRVisualiserIgnoreHeatChanged();
+        }],
+        @[@0.3, ^{
+            [self expect:link() && SGRHarnessReading() step:@"hot, ignore switched on: moving at once" detail:@""];
+            sg_lowPower = YES;
+            [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+        }],
+        @[@0.6, ^{
+            [self expect:!link() && !SGRHarnessReading() step:@"hot, ignoring: Low Power Mode still stands it down" detail:@""];
+            sg_lowPower = NO;
+            [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+        }],
+        @[@0.6, ^{
+            [self expect:link() && SGRHarnessReading() step:@"Low Power Mode off, still hot and ignoring" detail:@""];
+            [store setBool:NO forKey:SGRKeyVisualiserIgnoreHeat];
+            SGRVisualiserIgnoreHeatChanged();
+        }],
+        @[@0.3, ^{
+            [self expect:!link() && !SGRHarnessReading() step:@"ignore switched off while hot: stands down at once" detail:@""];
+            setThermal(NSProcessInfoThermalStateNominal);
+        }],
+        @[@0.6, ^{
+            [self expect:link() && SGRHarnessReading() step:@"cooled: moving again" detail:@""];
+            // The Visualizer for a missing clip, which a hot iPhone gives back to the cover.
+            [store setBool:YES forKey:SGRKeyPlayerAnimatedVisualiser];
+            background(SGRPlayerBackgroundAnimated);
+        }],
+        @[@1.5, ^{
+            [self expect:visualiserView() && SGRPlayerVisualiserShowing() step:@"Animated, no clip: the Visualizer" detail:@""];
+            setThermal(NSProcessInfoThermalStateCritical);
+        }],
+        @[@1, ^{
+            [self expect:!visualiserView() && !SGRPlayerVisualiserShowing() && !SGRPlayerMotionShowing() && !SGRHarnessReading()
+                    step:@"hot: the ordinary cover" detail:@""];
+            [store setBool:YES forKey:SGRKeyVisualiserIgnoreHeat];
+            SGRVisualiserIgnoreHeatChanged();
+        }],
+        @[@0.3, ^{
+            [self expect:visualiserView() && SGRPlayerVisualiserShowing() && SGRHarnessReading() step:@"hot, ignoring: the Visualizer stays" detail:@""];
+            NSLog(@"[harness] %@", finishChecks(self->_checks, self->_failures, @"heat"));
+            exit(self->_failures ? 1 : 0);
+        }],
+    ], 0);
+}
+
 - (void)runControlsChecks {
     static char ordinaryKey, djKey;
     UIView *owner = [UIView new];
@@ -2619,6 +3013,21 @@ __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
         [NSUserDefaults.standardUserDefaults setInteger:SGRPlayerBackgroundAnimated forKey:SGRKeyPlayerArtworkBackground];
         [NSUserDefaults.standardUserDefaults removeObjectForKey:SGRKeyPlayerAnimatedStill];
         unsetenv("HARNESS_CANVAS");
+        [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
+    }
+    // autoviz: Animated with the Visualizer-without-a-clip switch off, no Canvas until the scenario names one, every
+    // lookup 1.5 s late. shuffle and heat: the Visualizer as the background (shuffle moves to Animated at the end),
+    // their switches off, the style at its default.
+    if ([scenario() isEqualToString:@"autoviz"] || [scenario() isEqualToString:@"shuffle"] || [scenario() isEqualToString:@"heat"]) {
+        NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+        BOOL animated = [scenario() isEqualToString:@"autoviz"];
+        SGRPlayerBackgroundKind kind = animated ? SGRPlayerBackgroundAnimated : SGRPlayerBackgroundVisualiser;
+        [store setInteger:kind forKey:@"spotifyglass.redesign.player.background"];
+        [store setInteger:kind forKey:SGRKeyPlayerArtworkBackground];
+        for (NSString *key in @[SGRKeyPlayerAnimatedStill, SGRKeyPlayerAnimatedVisualiser, SGRKeyVisualiserShuffle, SGRKeyVisualiserShuffleHome,
+                                SGRKeyVisualiserIgnoreHeat, SGRKeyVisualiserStyle]) [store removeObjectForKey:key];
+        unsetenv("HARNESS_CANVAS");
+        if (animated) SGRHarnessSetLookupDelay(1.5);
         [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
     }
     if ([scenario() isEqualToString:@"motion"] || [scenario() isEqualToString:@"settings"]) {

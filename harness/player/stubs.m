@@ -345,8 +345,20 @@ NSURL *SGMotionCanvasIn(NSDictionary *metadata) {
     id address = metadata[@"canvas.url"] ?: metadata[SGMotionHiddenCanvas @"canvas.url"];
     return [type hasPrefix:@"VIDEO"] && [address isKindOfClass:NSString.class] ? [NSURL URLWithString:address] : nil;
 }
+// A walk asked for while this is set answers that many seconds late, so a check can look at the player while the
+// lookup is out.
+static NSTimeInterval sg_lookupDelay;
+void SGRHarnessSetLookupDelay(NSTimeInterval seconds) { sg_lookupDelay = seconds; }
+
 void SGMotionClipFor(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
                      void (^done)(NSURL *file, NSString *source)) {
+    if (sg_lookupDelay > 0) {
+        void (^answer)(NSURL *, NSString *) = [done copy];
+        NSTimeInterval delay = sg_lookupDelay;
+        done = ^(NSURL *file, NSString *source) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ answer(file, source); });
+        };
+    }
     void (^apple)(void) = ^{ SGMotionAlbumCover(artist, album, pixels, ^(NSURL *file) { done(file, file ? @"applemusic" : nil); }); };
     if (!canvas) { apple(); return; }
     SGMotionFile(canvas, ^(NSURL *file) { if (file) done(file, @"canvas"); else apple(); });
