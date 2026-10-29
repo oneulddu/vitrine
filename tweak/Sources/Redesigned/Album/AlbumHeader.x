@@ -28,6 +28,7 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRCoverViewer.h"
+#import "Redesigned/Kit/SGRHeroVeil.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Shared/AnimatedArtwork/SGMotionClip.h"
 #import "Album.h"
@@ -116,6 +117,8 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
 // The square's shadow, copied off whichever layer under Spotify's concealed cover casts one (its ShadowContainer),
 // so the album's square has the shadow the playlist's -- Spotify's own square -- does. Once found, a no-op.
 - (void)takeShadowFrom:(UIView *)cover;
+// The scroll veil over the picture (Kit/SGRHeroVeil.h); nil while it is off.
+@property (nonatomic, readonly) SGRHeroVeil *veil;
 @end
 
 @implementation SGRAlbumHero {
@@ -170,6 +173,10 @@ static void *kReadyContext = &kReadyContext;
     _dissolve = [CAGradientLayer layer];
     _dissolve.zPosition = 2;
     [self.layer addSublayer:_dissolve];
+    if (SGRHeroScrollVeilOn()) {
+        _veil = [[SGRHeroVeil alloc] initWithHero:self];
+        [self sgr_fitVeil];
+    }
     self.fieldColor = SGRNeutralField();
     // The color is read off the main thread, so it can land after the last layout pass of the page.
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
@@ -189,6 +196,15 @@ static void *kReadyContext = &kReadyContext;
 
 - (void)sgr_fieldColorDidChange {
     if (self.superview) self.fieldColor = SGRAlbumFieldColor(self);
+}
+
+// A square stays where the page puts it, as the playlist's does (Spotify places that one), with its picture alone
+// blurred and dimmed; a picture across the hero, full screen or a clip over the square, is the hero's, moved and all.
+- (void)sgr_fitVeil {
+    BOOL square = !SGRPageFullCover(SGRKeyAlbumFullCover) && _motion.opacity != 1;
+    CALayer *picture = (_extension ?: _picture).layer;
+    _veil.art = square ? @[] : _motion ? @[picture, _motion] : @[picture];
+    _veil.surface = square ? _picture : nil;
 }
 
 // The part of the picture over no text: the title and the artist start SGRHeaderInfoTitleRise above its bottom.
@@ -229,6 +245,7 @@ static void *kReadyContext = &kReadyContext;
                          (id)color.CGColor];
     _dissolve.locations = @[@0, @0.62, @1];
     [CATransaction commit];
+    _veil.color = color;
 }
 
 - (void)setSquare:(CGRect)square {
@@ -248,6 +265,7 @@ static void *kReadyContext = &kReadyContext;
     CGRect bounds = self.bounds;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    [_veil artWillLayOut];
     if (SGRPageFullCover(SGRKeyAlbumFullCover)) {
         if (_extension) {
             _extension.frame = bounds;
@@ -271,6 +289,8 @@ static void *kReadyContext = &kReadyContext;
     _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
     CGFloat fade = round(bounds.size.height * kDissolve);
     _dissolve.frame = CGRectMake(0, bounds.size.height - fade, bounds.size.width, fade);
+    [self sgr_fitVeil];
+    [_veil artDidLayOut];
     [CATransaction commit];
 }
 
@@ -307,6 +327,7 @@ static void *kReadyContext = &kReadyContext;
     _motion.frame = self.bounds;
     _motion.opacity = 0;
     [self.layer addSublayer:_motion];
+    [self sgr_fitVeil];
     [_motion addObserver:self forKeyPath:@"readyForDisplay" options:NSKeyValueObservingOptionInitial context:kReadyContext];
     [self sgr_updateMotion];
     SGLog(@"redesign album: animated cover %@", file.lastPathComponent);
@@ -316,6 +337,7 @@ static void *kReadyContext = &kReadyContext;
     [_motion removeObserver:self forKeyPath:@"readyForDisplay" context:kReadyContext];
     [_motion removeFromSuperlayer];
     _motion = nil;
+    [self sgr_fitVeil];
     // A square cover's gradients and shadow follow whether a clip covers it.
     if (!SGRPageFullCover(SGRKeyAlbumFullCover)) [self setNeedsLayout];
 }
@@ -336,6 +358,7 @@ static void *kReadyContext = &kReadyContext;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     layer.opacity = 1;
+    [self sgr_fitVeil];
     // A square cover's hero has no gradients until the clip fills it; they come in with it.
     NSArray<CALayer *> *fading = SGRPageFullCover(SGRKeyAlbumFullCover) ? @[layer] : @[layer, _scrim, _dissolve];
     _scrim.hidden = NO;
@@ -655,6 +678,13 @@ static void applyHeader(UIView *header, UIView *page) {
     UIView *cover = SGRFindByIdentifier(header, @"CreativeWorkPlatform.Components.UI.ArtWorkElement.WithCoverArt", &kCoverKey);
     if (cover) applyHero(header, cover, bottom);
     SGRAlbumHero *hero = objc_getAssociatedObject(header, &kHeroKey);
+    // The header scrolls with the page's scroll view, the hero and the info with it.
+    SGRHeroVeil *veil = hero.veil;
+    if (veil) {
+        veil.info = info;
+        [veil followScroll:SGRHeroVeilScrollAbove(header)];
+        [veil update];
+    }
     [hero playMotionForArtist:artist album:album];
     SGRAlbumNotesUpdate(header, page, artist, album);
 }

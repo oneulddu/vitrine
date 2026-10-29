@@ -21,6 +21,8 @@
 @property (nonatomic, copy) UIColor *fillColor;
 // The glyph's and the word's color; nil is the accent.
 @property (nonatomic, copy) UIColor *contentColor;
+// A circle as wide as it is tall with the glyph alone in its middle; the word is then only its accessibility label.
+@property (nonatomic) BOOL round;
 // Takes the glyph, the word and the language from `source`, and follows the glyph as Spotify swaps it
 // (play becoming pause) without the header laying out again. Cheap to call again on every pass.
 - (void)feedFrom:(UIView *)source;

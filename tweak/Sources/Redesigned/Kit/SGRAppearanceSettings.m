@@ -2,6 +2,8 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "SGRAccent.h"
+#import "SGRHeaderInfo.h"
+#import "SGRHeroVeil.h"
 
 // The preset is read off the color stored, so the hooks keep the one key they read and a color set before
 // presets existed stays in effect: Apple Music's red reads as Apple Music, Spotify's own (-1) as Spotify, and
@@ -61,5 +63,15 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) {
         SGWithSymbol(colour, @"eyedropper"),
         SGWithSymbol(SGOptionRow(SGL(@"settings.appearance.plain_checkmark.title", @"Plain checkmark"), SGL(@"settings.appearance.plain_checkmark.subtitle", @"A saved song's tick without its circle, in the accent"), SGRKeyPlainCheck), @"checkmark"),
         SGWithSymbol(explicit, @"e.square"),
+        // The album, playlist and artist headers (Kit/SGRHeroVeil.h, Kit/SGRHeaderInfo.h), read at launch.
+        SGWithSymbol(SGOptionRow(SGL(@"settings.appearance.scroll_veil.title", @"Blur covers on scroll"),
+            SGL(@"settings.appearance.scroll_veil.subtitle", @"Album, playlist and artist pictures blur and dim into the page's color as you scroll, and the title is cut off under the top bar"),
+            SGRKeyHeroScrollVeil), @"drop.halffull"),
+        SGWithSymbol(SGSwitchRow(SGL(@"settings.appearance.play_page_color.title", @"Play in the page's color"),
+            SGL(@"settings.appearance.play_page_color.subtitle", @"The Play button's symbol and word take the page's color. Off, they take the accent color"),
+            SGRKeyPlayInPageColour), @"play.fill"),
+        SGWithSymbol(SGOptionRow(SGL(@"settings.appearance.round_artist_play.title", @"Round artist Play"),
+            SGL(@"settings.appearance.round_artist_play.subtitle", @"On artist pages, Play is a round button with its symbol alone"),
+            SGRKeyArtistRoundPlay), @"play.circle.fill"),
     ];
 }

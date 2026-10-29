@@ -27,6 +27,11 @@ extern const CGFloat SGRHeaderInfoTitleRise;  // 56, of the content over the pic
 #define SGRKeyAlbumFullCover @"spotifyglass.redesign.album.fullCover"
 #define SGRKeyPlaylistFullCover @"spotifyglass.redesign.playlist.fullCover"
 BOOL SGRPageFullCover(NSString *key);
+// Read at launch. Play's glyph and word in the color the page hands over (on unless switched off), else the accent;
+// the capsule stays white either way.
+#define SGRKeyPlayInPageColour @"spotifyglass.redesign.playInPageColour"
+// The artist page's Play round, its glyph alone (off unless switched on): Artist/ArtistHeader.x sets roundPlay.
+#define SGRKeyArtistRoundPlay @"spotifyglass.redesign.artist.roundPlay"
 
 @interface SGRHeaderInfo : UIView
 // YES when anything shown changed. nil or empty hides that line.
@@ -49,7 +54,8 @@ BOOL SGRPageFullCover(NSString *key);
 - (void)trailingStateChanged;
 // Spotify's controls, each drawn from and fired; nil hides that button. Play stays in the middle of the
 // page whether the other two are there or not. `trailingFallback` is drawn when Spotify's trailing control
-// has no image to copy. `playColor` is the color of the capsule's glyph and word.
+// has no image to copy. `playColor` is the color of the capsule's glyph and word, taken while
+// SGRKeyPlayInPageColour is on; off, they are the accent.
 - (void)showShuffle:(UIView *)shuffle play:(UIView *)play trailing:(UIView *)trailing
    trailingFallback:(UIImage *)trailingFallback playColor:(UIColor *)playColor;
 // A picture drawn in the title's place, such as an artist's logo; the title stays its spoken name. nil
@@ -60,6 +66,15 @@ BOOL SGRPageFullCover(NSString *key);
 // Where the content starts, from the top; 0 keeps it on the bottom edge. Content that would then run past the
 // bottom goes back on the bottom edge.
 @property (nonatomic) CGFloat pinnedTop;
+// Play a circle 64pt across with its glyph alone, its word only what VoiceOver reads, in a 64pt row, and the buttons
+// either side 44pt across, 20pt off it (the artist's, SGRKeyArtistRoundPlay). NO is the capsule in its 48pt row.
+// Set before the first -showShuffle:....
+@property (nonatomic) BOOL roundPlay;
+// With the scroll veil (SGRHeroVeil.h), on every step of the scroll: what of the content has gone under the pinned
+// top bar -- the window's top safe area and 44pt under it -- is clipped there, once it is half a point past it,
+// fading in over the 14pt under the line rather than cut at it; the clip goes when nothing is under the bar. From the first call the info clips again after each of its own
+// passes. The mask is the info's own; one someone else set is left alone.
+- (void)clipUnderTopBar;
 // Kept for the page, which reads them back to tell whether a pass has anything new to hand over: the play color
 // it last handed over, and whether it has found Spotify's buttons' row. The info itself never reads them.
 @property (nonatomic, strong) UIColor *handedPlayColor;

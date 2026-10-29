@@ -18,5 +18,12 @@ not arrive as well, hands the header a logo at 2.5 s and takes it away at 4.5 s,
 says, before, as each arrives or leaves and a second later, where the logo and the name are and whether they are
 fading and moving: the two cross over, the logo grows out of the name's place, and gone, the logo is hidden.
 
+`veil` / `veil-off` check the scroll veil as on the album (`../album/README.md`, `../album/hero-veil-check.h`).
+`verify-play` checks the row's Play: unset, the white capsule 48pt tall in the page's color with 48pt buttons 16pt
+off it; with `-spotifyglass.redesign.artist.roundPlay YES` a 64pt white circle centered on the page with its glyph
+alone and "Play" as its VoiceOver name, 44pt buttons 20pt off and level with it; with
+`-spotifyglass.redesign.playInPageColour NO` the glyph in the accent (Spotify's green here) instead. It logs a PASS
+line and a SHOT for a screenshot, or a FAIL and exits 1.
+
 What it does not cover: the repaint hook (so the mock's cells are left unpainted), the real z-order of the
 pinned header bar against the list, and the element framework's own sizing.

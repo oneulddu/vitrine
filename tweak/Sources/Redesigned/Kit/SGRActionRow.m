@@ -111,14 +111,18 @@ static void takeEnabled(UIControl *mirror, UIView *source, NSArray<UIView *> *dr
     } else {
         SGRGlassCapsuleInside(self, &kCapsuleGlassKey, bounds.size, YES);
     }
-    // Given more room than the word asks for, the glyph and the word stay together in the middle.
-    CGFloat lead = kCapsuleLead + MAX(0, round((bounds.size.width - [self sgr_width]) / 2));
+    // Given more room than the word asks for, the glyph and the word stay together in the middle; round, the glyph
+    // is alone there.
+    CGFloat lead = self.round ? round((bounds.size.width - kGlyphSide) / 2)
+                              : kCapsuleLead + MAX(0, round((bounds.size.width - [self sgr_width]) / 2));
     _glyph.frame = CGRectMake(lead, round((bounds.size.height - kGlyphSide) / 2), kGlyphSide, kGlyphSide);
     // Spotify's glyph comes on a 48pt canvas and is scaled down into the frame; one drawn tight is shown at
     // its own size instead of blown up to fill it.
     CGSize image = _glyph.image.size;
     UIViewContentMode mode = image.width <= kGlyphSide && image.height <= kGlyphSide ? UIViewContentModeCenter : UIViewContentModeScaleAspectFit;
     if (_glyph.contentMode != mode) _glyph.contentMode = mode;
+    if (_title.hidden != self.round) _title.hidden = self.round;
+    if (self.round) return;
     [_title sizeToFit];
     CGSize text = _title.bounds.size;
     _title.frame = CGRectMake(CGRectGetMaxX(_glyph.frame), round((bounds.size.height - text.height) / 2),

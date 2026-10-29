@@ -30,6 +30,7 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRHeroVeil.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Redesigned/Album/Album.h"
 #import "Artist.h"
@@ -95,7 +96,16 @@ static UIView *containerOf(UIView *header) {
 // The same view again only re-reads it.
 - (void)followArtwork:(UIImageView *)source;
 - (void)updateAppleArtwork:(UIView *)header name:(NSString *)name;
+// The scroll veil over the photo (Kit/SGRHeroVeil.h); nil while it is off.
+@property (nonatomic, readonly) SGRHeroVeil *veil;
 @end
+
+static BOOL roundPlay(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGFlag(SGRKeyArtistRoundPlay, NO); });
+    return on;
+}
 #endif
 
 @implementation SGRArtistHero
@@ -133,6 +143,10 @@ static UIView *containerOf(UIView *header) {
     _dissolve = [CAGradientLayer layer];
     _dissolve.zPosition = 2;
     [self.layer addSublayer:_dissolve];
+    if (SGRHeroScrollVeilOn()) {
+        _veil = [[SGRHeroVeil alloc] initWithHero:self];
+        _veil.art = @[_picture.layer, _motion.layer];
+    }
     self.fieldColor = SGRNeutralField();
     // The color is read off the main thread, so it can land after the last layout pass of the page.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sgr_fieldColorDidChange)
@@ -159,6 +173,7 @@ static UIView *containerOf(UIView *header) {
                          (id)color.CGColor];
     _dissolve.locations = @[@0, @0.62, @1];
     [CATransaction commit];
+    _veil.color = color;
 }
 
 - (void)layoutSubviews {
@@ -166,9 +181,17 @@ static UIView *containerOf(UIView *header) {
     CGRect bounds = self.bounds;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    // The photo and the clip are resized with the hero, which happened with the veil's placement on them: laid out
+    // again without.
+    [_veil artWillLayOut];
+    if (_veil) {
+        _picture.frame = bounds;
+        _motion.frame = bounds;
+    }
     _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
     CGFloat fade = round(bounds.size.height * kDissolve);
     _dissolve.frame = CGRectMake(0, bounds.size.height - fade, bounds.size.width, fade);
+    [_veil artDidLayOut];
     [CATransaction commit];
 }
 
@@ -330,6 +353,7 @@ static void applyHeader(UIView *header, BOOL full) {
         };
         info.trailingOffSymbol = @"person.badge.plus";
         info.trailingOnSymbol = @"person.fill.checkmark";
+        info.roundPlay = roundPlay();
         objc_setAssociatedObject(container, &kInfoKey, info, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     if (info.superview != container) [container addSubview:info];
@@ -361,7 +385,15 @@ static void applyHeader(UIView *header, BOOL full) {
     objc_setAssociatedObject(container, &kContainerHeightKey, @(rest), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     CGFloat bottom = rest - SGRHeaderInfoBottom - [info contentHeightForWidth:container.bounds.size.width] + SGRHeaderInfoTitleRise;
     applyHero(container, artwork, bottom, fieldColor);
-    [(SGRArtistHero *)objc_getAssociatedObject(container, &kHeroKey) updateAppleArtwork:header name:name];
+    SGRArtistHero *hero = objc_getAssociatedObject(container, &kHeroKey);
+    // The container scrolls with the page's scroll view, the hero and the info with it.
+    SGRHeroVeil *veil = hero.veil;
+    if (veil) {
+        veil.info = info;
+        [veil followScroll:SGRHeroVeilScrollAbove(container)];
+        [veil update];
+    }
+    [hero updateAppleArtwork:header name:name];
 }
 
 // What the header shows besides its text: the logo, the buttons, More, and the watch on the buttons' row.

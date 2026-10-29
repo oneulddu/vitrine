@@ -79,5 +79,14 @@ download on its right, the 88x44 capsule the left-to-right one mirrored ("pinned
 ltr"). `freeze` pauses the veil's fade and holds the main thread 4 s on the first frame under the veil, for a
 screenshot of what a page opening shows.
 
+`veil` on the launch line, with `-spotifyglass.redesign.hero.scrollVeil YES`, checks the page headers' scroll veil
+(`Redesigned/Kit/SGRHeroVeil.h`, `hero-veil-check.h`): the blur's radius and the dim's alpha at the spec's distances,
+the picture's parallax and pull zoom, the dim in the page's color and the header fading in over the 14pt under the top
+bar; `veil-card`, with `-spotifyglass.redesign.album.fullCover NO -spotifyglass.redesign.album.motion NO` as well,
+checks the same blur and dim on the square's picture alone, the square left where it is; `veil-off`, without the
+setting, checks that none of it is drawn. Each holds d = 0, 190 and 400 (with the veil on, "mid" too: the title half
+under the bar) for screenshots first, then exits 0 or logs a FAIL and exits 1. `veil-check.sh <UDID> [OUT]` builds this, the playlist and the artist harness and runs all of
+it, the artist's Play checks too (`../artist/README.md`), with the screenshots in OUT.
+
 `stubs.m` also stands in for `SGRegisterCustomFont`, which `Shared/Fonts/Fonts.x` calls and which lives in a file
 that pulls in the settings rows.

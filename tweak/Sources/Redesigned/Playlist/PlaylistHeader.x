@@ -31,6 +31,7 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Kit/SGRCoverViewer.h"
+#import "Redesigned/Kit/SGRHeroVeil.h"
 #import "Playlist.h"
 #import <objc/message.h>
 
@@ -47,7 +48,7 @@ static BOOL sg_coverViewer;
 static char kCoverKey, kMetaKey, kPlayKey, kLayoutKey, kToolbarKey, kScrimKey, kBarScrimKey;
 static char kShuffleKey, kAddKey, kDownloadKey, kPlainDownloadKey, kInfoKey, kBlockHeightKey, kBlockWatchedKey;
 static char kHeroKey, kHeroHeightKey, kRestPlaneKey, kRowKey, kRowWatchedKey, kMoreKey, kCreatorKey, kPinnedMoreKey, kPinnedDownloadKey, kSortKey, kTitleKey;
-static char kIndependentActionsKey;
+static char kIndependentActionsKey, kListKey;
 
 #pragma mark - finding things
 
@@ -101,6 +102,10 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
 // again is a no-op; nothing while the switch is off.
 - (void)openFrom:(UIView *)layout;
 @property (nonatomic) BOOL squareOnly;
+// The scroll veil over the picture (Kit/SGRHeroVeil.h); nil while it is off. The plane already stretches the hero
+// with a pull, so the veil adds no zoom. Over Spotify's own square (squareOnly) it blurs and dims that square's
+// picture, and moves nothing: the square is placed by Spotify, which sets its frames itself.
+@property (nonatomic, readonly) SGRHeroVeil *veil;
 @end
 
 @implementation SGRPlaylistHero {
@@ -133,12 +138,25 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
     _dissolve.colors = @[(id)UIColor.blackColor.CGColor, (id)UIColor.blackColor.CGColor,
                          (id)[UIColor colorWithWhite:0 alpha:0.28].CGColor, (id)UIColor.clearColor.CGColor];
     self.layer.mask = _dissolve;
+    if (SGRHeroScrollVeilOn()) {
+        _veil = [[SGRHeroVeil alloc] initWithHero:self];
+        _veil.art = @[_picture.layer];
+        _veil.stretchesItself = YES;
+        // The page's color is read off the main thread, so it can land after the last layout pass of the page.
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sgr_fieldColorDidChange)
+                                                   name:SGRFieldColorDidChangeNotification object:nil];
+    }
     return self;
 }
 
 - (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
     // The layout outlives the hero it was given; its tap must not call one that is gone.
     [_tap.view removeGestureRecognizer:_tap];
+}
+
+- (void)sgr_fieldColorDidChange {
+    if (self.superview) _veil.color = SGRPlaylistFieldColor(self);
 }
 
 - (void)openFrom:(UIView *)layout {
@@ -162,6 +180,8 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
     // Keep the invisible hero accessible and its layout's cover tap alive over Spotify's square.
     _picture.hidden = squareOnly;
     _scrim.hidden = squareOnly;
+    _veil.art = squareOnly ? @[] : @[_picture.layer];
+    _veil.surface = squareOnly ? _cover : nil;
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
@@ -196,10 +216,14 @@ static UIView *firstOfClass(UIView *root, Class wanted) {
     CGRect bounds = self.bounds;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    // The picture is resized with the hero, which happened with the veil's placement on it: laid out again without.
+    [_veil artWillLayOut];
+    if (_veil) _picture.frame = bounds;
     _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
     CGFloat height = MAX(1, bounds.size.height), fade = round(height * kDissolve);
     _dissolve.frame = bounds;
     _dissolve.locations = @[@0, @((height - fade) / height), @((height - fade * 0.38) / height), @1];
+    [_veil artDidLayOut];
     [CATransaction commit];
 }
 
@@ -268,6 +292,7 @@ static void applyHero(UIView *layout, UIView *cover, UIView *plane, UIView *bloc
 
     [hero followCover:SGRHeaderArtworkIn(cover)];
     [hero openFrom:layout];
+    hero.veil.color = SGRPlaylistFieldColor(layout);
     // Full bleed covers off: Spotify's own square stays above the block, shrinking as the header collapses, and the
     // hero only reads the picture for the field. A mix's picture is full bleed in Spotify's own layout, so it stays.
     hero.squareOnly = !SGRPageFullCover(SGRKeyPlaylistFullCover) && [cover.accessibilityIdentifier isEqualToString:@"Components.Header.UI.ArtworkImage"];
@@ -618,6 +643,15 @@ static void applyHeader(UIView *layout) {
     if (cover) applyHero(layout, cover, plane, block, reach, stretch);
     // Liked Songs has no cover at all, so there is nothing for its page to wait for once it has its title.
     else if (info.window && modelString(viewModelOf(headerVC), @"playlistName")) SGRPlaylistShowPage(layout);
+
+    // The header sits over the page's list, which is what scrolls; it moves and collapses as the list does.
+    SGRHeroVeil *veil = ((SGRPlaylistHero *)objc_getAssociatedObject(plane, &kHeroKey)).veil;
+    if (veil) {
+        veil.info = info;
+        UIView *list = SGRFindByIdentifier(SGRPlaylistPageOf(layout), SGRPlaylistListIdentifier, &kListKey);
+        [veil followScroll:[list isKindOfClass:UIScrollView.class] ? (UIScrollView *)list : nil];
+        [veil update];
+    }
 }
 
 // The content layout of the page `root` belongs to, kept weakly on it: the header lays out on every step of

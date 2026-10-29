@@ -7,6 +7,7 @@
 #import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Redesigned/Kit/SGRActionRow.h"
 #import "../harness-fail.h"
+#import "hero-veil-check.h"
 
 // Download and ⋯ as one glass capsule: adjacent, level, one 88x44 shape (radius 22) under both, carried by
 // download, ⋯ drawing none, its trailing edge 16pt in from the page's.
@@ -949,6 +950,14 @@ static NSString *trailingLabel(UIView *root) {
     });
     if([NSProcessInfo.processInfo.arguments containsObject:@"verify-actions"])
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{verifyAlbumActions(root.view);});
+    // `veil` / `veil-card` / `veil-off` (hero-veil-check.h): the page scrolled by its own scroll view, the header in it.
+    // Square, the veil is drawn on the picture in the hero's square, its first subview, and moves nothing.
+    NSString *veil = veilMode();
+    BOOL square = [veil isEqualToString:@"veil-card"];
+    if (veil)
+        veilRun(root.view, @"album", veil, YES, !square, 2.5,
+                square ? ^UIView *(UIView *hero) { return veilFind(hero.subviews.firstObject, @"UIImageView"); } : nil,
+                ^(CGFloat d) { scroll.contentOffset = CGPointMake(0, d); });
     return YES;
 }
 

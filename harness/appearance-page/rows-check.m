@@ -19,6 +19,9 @@ SGModRow *SGMenuRow(NSString *title, NSArray *choices, NSString *(^value)(void),
 SGModRow *SGStatActionRow(NSString *title, NSString *subtitle, NSString *(^value)(void), void (^action)(void)) {
     SGModRow *row = [SGModRow new]; row.title = title; row.value = value; row.action = action; return row;
 }
+SGModRow *SGSwitchRow(NSString *title, NSString *subtitle, NSString *key) {
+    SGModRow *row = [SGModRow new]; row.title = title; row.subtitle = subtitle; row.key = key; row.defaultOn = YES; return row;
+}
 SGModRow *SGOptionRow(NSString *title, NSString *subtitle, NSString *key) {
     SGModRow *row = [SGModRow new]; row.title = title; row.subtitle = subtitle; row.key = key; return row;
 }

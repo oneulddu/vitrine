@@ -6,6 +6,7 @@
 #import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Redesigned/Kit/SGRActionRow.h"
 #import "../harness-fail.h"
+#import "../album/hero-veil-check.h"
 
 // A button's glass is first in its subviews; its glyph is first when it has never made one.
 static UIView *glassOf(UIView *button) {
@@ -1057,6 +1058,29 @@ static void buildLikedSongs(UIViewController *page, CGFloat W) {
             [(id)headerVC update];
         });
         at(6.7, ^{ NSLog(@"[harness] saved: saved, download disabled, Play's right shows \"%@\"", trailingLabel(page.view)); });
+        return YES;
+    }
+    // `veil` / `veil-off` (../album/hero-veil-check.h), instead of the scripted states: the list scrolls and the header
+    // goes up with it, as at the start of a scroll on the phone; at rest the list is at its adjusted top inset.
+    // `veil-card`: the veil is drawn on the picture in Spotify's own square, which only Spotify moves.
+    NSString *veil = veilMode();
+    if (veil) {
+        CGRect rest = header.frame;
+        BOOL card = [veil isEqualToString:@"veil-card"];
+        UIView *root = page.view;
+        veilRun(root, @"playlist", veil, NO, !card, 2.5, card ? ^UIView *(UIView *hero) {
+            NSMutableArray<UIView *> *queue = [NSMutableArray arrayWithObject:root];
+            while (queue.count) {
+                UIView *v = queue.firstObject;
+                [queue removeObjectAtIndex:0];
+                if ([v.accessibilityIdentifier isEqualToString:@"Components.Header.UI.ArtworkImage"]) return veilFind(v, @"UIImageView");
+                [queue addObjectsFromArray:v.subviews];
+            }
+            return nil;
+        } : nil, ^(CGFloat d) {
+            header.frame = CGRectOffset(rest, 0, -MAX(0, d));
+            list.contentOffset = CGPointMake(0, d - list.adjustedContentInset.top);
+        });
         return YES;
     }
     for (NSUInteger i = 0; i < 3; i++) {

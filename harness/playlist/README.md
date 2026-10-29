@@ -26,6 +26,12 @@ Back at rest the hero must be the height it had at 4 s: a hero that kept its pul
 
 What it does not cover: the real element framework's autolayout, and the flags `PlaylistField.x` forces.
 
+`veil` / `veil-off` check the scroll veil as on the album (`../album/README.md`, `../album/hero-veil-check.h`) instead
+of the scripted states: the list scrolls from its adjusted top inset and the header goes up with it. The playlist's
+hero already stretches with its plane on a pull, so the veil adds no zoom there. `veil-card`, with
+`-spotifyglass.redesign.playlist.fullCover NO`, checks the blur and the dim on the picture in Spotify's own square,
+which the veil does not move.
+
 `other` on the launch line makes it someone else's playlist (save on Play's right instead of download, and a
 description with an HTML entity); the header controller's view model is mocked from the device's values (2026-09-18).
 

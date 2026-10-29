@@ -148,6 +148,12 @@
 "settings.appearance.hide_explicit.subtitle" = "콘텐츠 제한이나 VoiceOver를 변경하지 않고 E 표시를 숨깁니다";
 "settings.appearance.hide_explicit.title" = "E 표시 숨기기";
 "settings.appearance.plain_checkmark.subtitle" = "원 없이 강조 색상으로 표시되는 저장된 노래의 체크표시";
+"settings.appearance.play_page_color.subtitle" = "재생 버튼의 기호와 글자가 페이지 색상을 따릅니다. 끄면 강조 색상을 따릅니다";
+"settings.appearance.play_page_color.title" = "페이지 색상의 재생 버튼";
+"settings.appearance.round_artist_play.subtitle" = "아티스트 페이지에서 재생 버튼이 기호만 있는 원형 버튼으로 표시됩니다";
+"settings.appearance.round_artist_play.title" = "둥근 아티스트 재생 버튼";
+"settings.appearance.scroll_veil.subtitle" = "앨범, 플레이리스트, 아티스트 사진이 스크롤할수록 흐려지며 페이지 색상으로 어두워지고, 제목은 상단 막대 아래에서 잘립니다";
+"settings.appearance.scroll_veil.title" = "스크롤할 때 커버 흐리게";
 "settings.appearance.plain_checkmark.title" = "단순 체크표시";
 "settings.appearance.title" = "화면 모양";
 

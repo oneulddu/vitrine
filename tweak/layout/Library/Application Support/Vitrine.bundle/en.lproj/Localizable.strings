@@ -149,6 +149,12 @@
 "settings.appearance.hide_explicit.title" = "Hide explicit badge";
 "settings.appearance.plain_checkmark.subtitle" = "A saved song's tick without its circle, in the accent";
 "settings.appearance.plain_checkmark.title" = "Plain checkmark";
+"settings.appearance.play_page_color.subtitle" = "The Play button's symbol and word take the page's color. Off, they take the accent color";
+"settings.appearance.play_page_color.title" = "Play in the page's color";
+"settings.appearance.round_artist_play.subtitle" = "On artist pages, Play is a round button with its symbol alone";
+"settings.appearance.round_artist_play.title" = "Round artist Play";
+"settings.appearance.scroll_veil.subtitle" = "Album, playlist and artist pictures blur and dim into the page's color as you scroll, and the title is cut off under the top bar";
+"settings.appearance.scroll_veil.title" = "Blur covers on scroll";
 "settings.appearance.title" = "Appearance";
 
 "settings.appicon.choice.default" = "Default";

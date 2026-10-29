@@ -8,6 +8,7 @@
 // names: `none` at once, or in `late` a second in; Following, as saved, after the tap made at 2.5 s.
 #import <UIKit/UIKit.h>
 #import "../harness-fail.h"
+#import "../album/hero-veil-check.h"
 
 #pragma mark - Spotify's classes, by name
 
@@ -243,6 +244,69 @@ static NSArray<NSArray *> *musicList(void) {
     return cell;
 }
 @end
+
+#pragma mark - the row's Play
+
+static BOOL sameColor(UIColor *a, UIColor *b) {
+    CGFloat ar, ag, ab, aa, br, bg, bb, ba;
+    if (![a getRed:&ar green:&ag blue:&ab alpha:&aa] || ![b getRed:&br green:&bg blue:&bb alpha:&ba]) return NO;
+    return fabs(ar - br) < 0.002 && fabs(ag - bg) < 0.002 && fabs(ab - bb) < 0.002 && fabs(aa - ba) < 0.002;
+}
+
+// `verify-play`: the row's Play as the two settings have it. -spotifyglass.redesign.artist.roundPlay YES: a 64pt circle
+// centered on the page with its glyph alone in its middle and its word what VoiceOver reads, shuffle and Follow 44pt
+// either side of it, 20pt off and level with its middle. Unset: the capsule, 48pt tall and at least 148 wide, the
+// buttons 48pt and 16pt off. White either way; the glyph and the word in the page's color, or with
+// -spotifyglass.redesign.playInPageColour NO in the accent -- Spotify's green #1ED760 here, the harness having no
+// accent of its own -- three colors none of which is another.
+static void verifyPlay(UIView *root) {
+    // A pass of the header after the photo's color has landed, as the phone has once the page lays out again.
+    UIView *header = veilFind(root, @"_TtC35CreativeWorkPlatform_ImageHeaderKit15ImageHeaderView");
+    [header setNeedsLayout];
+    [header layoutIfNeeded];
+    UIView *info = veilFind(root, @"SGRHeaderInfo"), *hero = veilFind(root, @"SGRArtistHero");
+    [info layoutIfNeeded];
+    UIControl *play = [info valueForKey:@"play"];
+    UIView *shuffle = [info valueForKey:@"shuffle"], *follow = [info valueForKey:@"trailing"];
+    UILabel *word = nil;
+    UIImageView *glyph = nil;
+    for (UIView *v in play.subviews) {
+        if ([v isKindOfClass:UILabel.class]) word = (UILabel *)v;
+        if ([v isKindOfClass:UIImageView.class]) glyph = (UIImageView *)v;
+    }
+    HARNESS_CHECK(play && shuffle && follow && word && glyph && glyph.image);
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    BOOL round = [defaults boolForKey:@"spotifyglass.redesign.artist.roundPlay"];
+    BOOL pageColor = ![defaults objectForKey:@"spotifyglass.redesign.playInPageColour"] || [defaults boolForKey:@"spotifyglass.redesign.playInPageColour"];
+    CGFloat width = info.bounds.size.width, side = round ? 44 : 48, gap = round ? 20 : 16;
+    HARNESS_CHECK(fabs(CGRectGetMidX(play.frame) - width / 2) < 0.5);
+    HARNESS_CHECK(CGSizeEqualToSize(shuffle.bounds.size, CGSizeMake(side, side)) && CGSizeEqualToSize(follow.bounds.size, CGSizeMake(side, side)));
+    HARNESS_CHECK(fabs(CGRectGetMinX(play.frame) - CGRectGetMaxX(shuffle.frame) - gap) < 0.5);
+    HARNESS_CHECK(fabs(CGRectGetMinX(follow.frame) - CGRectGetMaxX(play.frame) - gap) < 0.5);
+    HARNESS_CHECK(fabs(CGRectGetMidY(shuffle.frame) - CGRectGetMidY(play.frame)) < 0.5);
+    HARNESS_CHECK(fabs(CGRectGetMidY(follow.frame) - CGRectGetMidY(play.frame)) < 0.5);
+    if (round) {
+        HARNESS_CHECK(CGSizeEqualToSize(play.bounds.size, CGSizeMake(64, 64)) && fabs(play.layer.cornerRadius - 32) < 0.5);
+        HARNESS_CHECK(word.hidden && !glyph.hidden);
+        HARNESS_CHECK(fabs(CGRectGetMidX(glyph.frame) - 32) < 0.5 && fabs(CGRectGetMidY(glyph.frame) - 32) < 0.5);
+    } else {
+        HARNESS_CHECK(play.bounds.size.height == 48 && play.bounds.size.width >= 148 && !word.hidden);
+    }
+    // One accessibility element, a button named with Spotify's word.
+    HARNESS_CHECK(play.isAccessibilityElement && (play.accessibilityTraits & UIAccessibilityTraitButton));
+    HARNESS_CHECK([play.accessibilityLabel isEqualToString:@"Play"]);
+    UIColor *white = UIColor.whiteColor, *accent = [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
+    UIColor *page = [hero valueForKey:@"fieldColor"];
+    HARNESS_CHECK(page && !sameColor(page, white) && !sameColor(page, accent) && !sameColor(white, accent));
+    HARNESS_CHECK(sameColor(play.backgroundColor, white));
+    UIColor *content = pageColor ? page : accent;
+    if (!sameColor(glyph.tintColor, content) || (!round && !sameColor(word.textColor, content)))
+        HARNESS_FAIL(@"Play's glyph %@ and word %@, not %@", glyph.tintColor, word.textColor, content);
+    NSLog(@"[harness] PASS artist play %@ in %@: %@, fill white, glyph %@", round ? @"round" : @"capsule",
+          pageColor ? @"the page's color" : @"the accent", NSStringFromCGRect(play.frame), content);
+    NSLog(@"[harness] SHOT artist-play-%@", round ? @"round-accent" : @"capsule-page");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ exit(0); });
+}
 
 #pragma mark - the page
 
@@ -500,6 +564,13 @@ static NSArray<NSArray *> *musicList(void) {
         NSLog(@"[harness] pinned more: %@ on the page, a=%.2f",
               pinned ? NSStringFromCGRect(pinned.frame) : @"MISSING", pinned.alpha);
     });
+    UIView *rootView = root.view;
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"verify-play"])
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ verifyPlay(rootView); });
+    // `veil` / `veil-off` (../album/hero-veil-check.h): the page scrolled by its own scroll view, the header's container
+    // in it.
+    NSString *veil = veilMode();
+    if (veil) veilRun(rootView, @"artist", veil, YES, YES, 3.5, nil, ^(CGFloat d) { scroll.contentOffset = CGPointMake(0, d); });
     return YES;
 }
 

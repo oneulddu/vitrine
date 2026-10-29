@@ -25,8 +25,20 @@ BOOL SGRPageFullCover(NSString *key) {
     return SGEnabled(key);
 }
 
+static BOOL playInPageColour(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGEnabled(SGRKeyPlayInPageColour); });
+    return on;
+}
+
 // The text kSide in from the edges; Play at least kPlayWidth wide, the Music app's; the gaps between.
 static const CGFloat kSide = 20, kPlayWidth = 148, kRowSpacing = 16, kRowAbove = 16, kAboutAbove = 14;
+// Round Play: the row as tall as the circle, and the round buttons either side this far off it.
+static const CGFloat kRoundRow = 64, kRoundSpacing = 20;
+// The pinned top bar under the top safe area, how far past its line the content goes before it is clipped, and how
+// far under the line the clip fades in, clear at the line and opaque from there.
+static const CGFloat kTopBar = 44, kUnderBar = 0.5, kBarFade = 14;
 
 static UILabel *infoLabel(UIView *parent, UIFont *font, UIColor *color, NSInteger lines, NSTextAlignment alignment) {
     UILabel *label = [UILabel new];
@@ -82,6 +94,10 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     // contentHeightForWidth:'s last answer, for _measuredWidth; a negative width is none. Cleared when the text or
     // the title picture changes, the only things it measures.
     CGFloat _measuredWidth, _measuredHeight;
+    // Where the content starts, as last laid out; and the mask that clips it under the top bar (-clipUnderTopBar).
+    CGFloat _contentTop;
+    CAGradientLayer *_barClip;
+    BOOL _clipsUnderBar;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -256,7 +272,7 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     }
     if (shuffle) [_shuffle feedFrom:shuffle];
     if (play) {
-        if (playColor) _play.contentColor = playColor;
+        if (playColor && playInPageColour()) _play.contentColor = playColor;
         [_play feedFrom:play];
     }
     // Another of Spotify's buttons in the trailing place (save becoming download once the playlist is saved) is
@@ -284,6 +300,49 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     if (_trailing.source) [_trailing feedFrom:_trailing.source];
 }
 
+- (void)setRoundPlay:(BOOL)roundPlay {
+    if (_roundPlay == roundPlay) return;
+    _roundPlay = roundPlay;
+    _play.round = roundPlay;
+    _measuredWidth = -1;
+    [self setNeedsLayout];
+}
+
+- (CGFloat)sgr_rowHeight {
+    return _roundPlay ? kRoundRow : SGRActionHeight;
+}
+
+- (void)clipUnderTopBar {
+    _clipsUnderBar = YES;
+    CALayer *mask = self.layer.mask;
+    if (mask && mask != _barClip) return;
+    UIWindow *window = self.window;
+    CGFloat line = [self convertPoint:CGPointMake(0, window.safeAreaInsets.top + kTopBar) fromView:nil].y;
+    BOOL under = window && line - _contentTop >= kUnderBar;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (!under) {
+        if (mask) self.layer.mask = nil;
+    } else {
+        if (!_barClip) {
+            _barClip = [CAGradientLayer layer];
+            _barClip.colors = @[(id)UIColor.clearColor.CGColor, (id)UIColor.blackColor.CGColor];
+        }
+        // Sized and graded once per header size: as tall as the header, and at least the fade, so it covers all of
+        // the header under any line in it and the fade keeps its length. A scroll only moves its top edge to the line.
+        CGSize size = self.bounds.size;
+        CGRect bounds = CGRectMake(0, 0, size.width, MAX(kBarFade, size.height));
+        if (!CGRectEqualToRect(_barClip.bounds, bounds)) {
+            _barClip.bounds = bounds;
+            _barClip.locations = @[@0, @(kBarFade / bounds.size.height)];
+        }
+        CGPoint position = CGPointMake(CGRectGetMidX(bounds), line + CGRectGetMidY(bounds));
+        if (!CGPointEqualToPoint(_barClip.position, position)) _barClip.position = position;
+        if (!mask) self.layer.mask = _barClip;
+    }
+    [CATransaction commit];
+}
+
 - (CGFloat)contentHeightForWidth:(CGFloat)width {
     if (width == _measuredWidth) return _measuredHeight;
     CGFloat text = MAX(0, width - 2 * kSide), height = 0;
@@ -295,7 +354,7 @@ UIImageView *SGRCreatorPicture(UIView *root) {
         previous = label;
     }
     if (previous) height += kRowAbove;
-    height += SGRActionHeight;
+    height += [self sgr_rowHeight];
     if (!_about.hidden) height += kAboutAbove + ceil([_about sizeThatFits:CGSizeMake(text, CGFLOAT_MAX)].height);
     _measuredWidth = width;
     _measuredHeight = height;
@@ -308,6 +367,7 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     CGFloat content = [self contentHeightForWidth:width];
     CGFloat y = round(self.bounds.size.height - SGRHeaderInfoBottom - content);
     if (self.pinnedTop > 0 && self.pinnedTop + content <= self.bounds.size.height) y = round(self.pinnedTop);
+    _contentTop = y;
     // No name, no picture: it belongs to the line.
     _picture.hidden = !_picture.image || _creator.hidden;
 
@@ -341,19 +401,30 @@ UIImageView *SGRCreatorPicture(UIView *root) {
 
     // Play on the middle of the page, the other two hung off its sides, so it holds its place whether both
     // are there or not.
-    CGFloat side = SGRActionHeight;
-    // As wide as its word, short of pushing the other two off the page.
-    CGFloat playWidth = MIN(MAX(kPlayWidth, [_play sgr_width]), width - 2 * (kSide + side + kRowSpacing));
-    CGRect play = CGRectMake(round((width - playWidth) / 2), y, playWidth, side);
-    _play.frame = play;
-    _shuffle.frame = CGRectMake(CGRectGetMinX(play) - kRowSpacing - side, y, side, side);
-    _trailing.frame = CGRectMake(CGRectGetMaxX(play) + kRowSpacing, y, side, side);
-    y += SGRActionHeight;
+    CGFloat row = [self sgr_rowHeight];
+    if (_roundPlay) {
+        // The circle the row's height; the round buttons level with its middle.
+        CGFloat side = SGRGlassCircleSize, level = y + round((row - side) / 2);
+        CGRect play = CGRectMake(round((width - row) / 2), y, row, row);
+        _play.frame = play;
+        _shuffle.frame = CGRectMake(CGRectGetMinX(play) - kRoundSpacing - side, level, side, side);
+        _trailing.frame = CGRectMake(CGRectGetMaxX(play) + kRoundSpacing, level, side, side);
+    } else {
+        CGFloat side = row;
+        // As wide as its word, short of pushing the other two off the page.
+        CGFloat playWidth = MIN(MAX(kPlayWidth, [_play sgr_width]), width - 2 * (kSide + side + kRowSpacing));
+        CGRect play = CGRectMake(round((width - playWidth) / 2), y, playWidth, side);
+        _play.frame = play;
+        _shuffle.frame = CGRectMake(CGRectGetMinX(play) - kRowSpacing - side, y, side, side);
+        _trailing.frame = CGRectMake(CGRectGetMaxX(play) + kRowSpacing, y, side, side);
+    }
+    y += row;
 
     if (!_about.hidden) {
         y += kAboutAbove;
         _about.frame = CGRectMake(kSide, y, text, ceil([_about sizeThatFits:CGSizeMake(text, CGFLOAT_MAX)].height));
     }
+    if (_clipsUnderBar) [self clipUnderTopBar];
 }
 
 @end

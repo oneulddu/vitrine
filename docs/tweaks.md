@@ -1426,7 +1426,15 @@ but the player's controls, which follow the cover (harness/appearance-accent/). 
 (off) ends either look's list (spotifyglass.hideExplicit native, spotifyglass.redesign.hideExplicit redesigned;
 Native/Appearance/ExplicitBadge.x, Redesigned/Kit/SGRExplicitBadge.x): a transparent mask over Spotify's own badge views,
 Components.UI.ExplicitIcon and the retrieval row's ExplicitBadge class, never an E label found by its text, so the layout,
-VoiceOver and content restrictions are as Spotify has them; a flip applies to the badges on screen. The redesign has no
+VoiceOver and content restrictions are as Spotify has them; a flip applies to the badges on screen. In the redesign the
+list also has Blur covers on scroll (`spotifyglass.redesign.hero.scrollVeil`, off; Redesigned/Kit/SGRHeroVeil.m): the
+album, playlist and artist pictures blur (radius 0 to 24 between 60 and 320 pt of scroll) and dim into the page's color
+(alpha up to 0.45 between 80 and 400 pt) as the page scrolls, with the full-screen art drifting at a quarter of the
+scroll and zooming on a pull, the Card-mode square blurred and dimmed in place, and the header text faded out over
+14 pt under the top bar (SGRHeaderInfo.m's -clipUnderTopBar, a mask sized once per header size and only moved on
+scroll); Round artist Play (`spotifyglass.redesign.artist.roundPlay`, off: a 64 pt white circle with the glyph alone,
+Shuffle and Follow at 44 pt beside it); and Play in the page's color (`spotifyglass.redesign.playInPageColour`, on:
+off, the Play glyph and word take the accent). Checked in the simulator against harness/album/veil-check.sh. The redesign has no
 global Full bleed covers row: the Albums and Playlists pages each have a Cover layout. Last come the Font, under either look and on any
 iOS, below 26 too, a page of its own with each choice drawn in itself: Default (Spotify's), San Francisco, SF
 Rounded, New York and SF Mono; More fonts, the families iOS carries of a fixed few (Avenir Next to American
