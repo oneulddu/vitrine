@@ -9,7 +9,11 @@
 // room between the cover's own frame (not its paused shrink) and Spotify's bottom stack, which starts with the
 // title row. A chip over the title (Switch to video) ends that room where it starts. With less room than the
 // line and a gap either side, a player wider than it is tall, or Spotify's own lyric preview under the cover,
-// it is not shown.
+// it is not shown. While translations are shown (below) and the track has synced lines of the line's own, the line
+// takes the preview's place instead (SGRPlayerLineTakesPreview): the preview is hidden by an empty mask of the
+// line's (again on every pass, as Spotify may set its own), its alpha and touches left to Spotify, the room is
+// measured as if it were not there, and the line shows where it would without it. Translations switched off, or a
+// track with no synced lines, give every preview hidden back as it was, and the line stands down for it again.
 //
 // A line too wide for the room shrinks a little, and then shows in successive portions, each of whole words: the
 // line being sung's portion while it is timed by the word, else its share of the line's time (PlayerLyricFit.h).
@@ -44,7 +48,9 @@ static const CGFloat kTapHeight = 44;
 static char kLineKey, kStackKey;
 static __weak UIView *sg_host;              // SPTNowPlayingView
 static __weak UIViewController *sg_floating; // the chips over the title (FloatingElementsUnit)
-static BOOL previewInFront(void);
+static BOOL lineHasPlace(void);
+static void placeLine(void);
+static CGRect takenPreviewIn(UIView *view);
 
 BOOL SGRPlayerLyricLineOn(void) {
     static BOOL on;
@@ -144,9 +150,11 @@ BOOL SGRPlayerLyricLineOn(void) {
     return ceil(_translationLabel.font.lineHeight);
 }
 
+// The translation switch also hands the place under the cover between the line and Spotify's preview: the room is
+// measured again from the player at once.
 - (void)lyricsTextChanged {
     [self styleTranslation];
-    [self place];
+    placeLine();
     [self setNeedsLayout];
     [self translationsChanged];
 }
@@ -227,7 +235,10 @@ BOOL SGRPlayerLyricLineOn(void) {
 }
 
 // Touches only over the words, a tap's height tall, so a swipe across the rest of the gap still reaches the covers.
+// Over a preview the line has hidden too: a tap there would inspect the cover where nothing shows, and opens the
+// lyrics instead.
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    if (CGRectContainsPoint(takenPreviewIn(self), point)) return YES;
     CGFloat text = [_label sizeThatFits:self.bounds.size].width;
     if (_translationShown) text = MAX(text, [_translationLabel sizeThatFits:self.bounds.size].width);
     CGFloat width = MIN(self.bounds.size.width, text + 2 * SGRSideMargin);
@@ -371,9 +382,9 @@ BOOL SGRPlayerLyricLineOn(void) {
         if (translation != _translation && ![translation isEqualToString:_translation]) [self showTranslation:translation];
     }
     // Spotify's own preview can come up with no pass of a view this file hooks (its cover cell unhidden as the song
-    // changes), so every update looks again: the line stands down by its next portion at the latest. The layout gives
-    // the room back once the preview goes.
-    if (_fits && previewInFront()) _fits = NO;
+    // changes), so every update looks again: while the line takes its place it is hidden again, else the line stands
+    // down by its next portion at the latest. The layout gives the room back once the preview goes.
+    if (!lineHasPlace()) _fits = NO;
     UIView *covers = SGRPlayerCoverList();
     BOOL shown = _fits && _text && !SGRPlayerLyricsOpen() && (!covers || covers.alpha > 0.01);
     if (shown != _shown) {
@@ -457,25 +468,103 @@ static CGRect chipsIn(UIView *host) {
 
 // Spotify's own lyric preview under the cover, beside the tilt view, shown when Spotify's lyrics setting has it:
 // Lyrics_NPVContainerKit.LyricsContainerView, and in 9.1.90 Lyrics_NPVElementsKitImpl.LyricsElementWrapperView.
-static BOOL previewShowing(UIView *tilt, UIView *host) {
+static BOOL isPreview(UIView *view) {
     static Class preview, wrapper;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         preview = NSClassFromString(@"_TtC22Lyrics_NPVContainerKit19LyricsContainerView");
         wrapper = NSClassFromString(@"_TtC25Lyrics_NPVElementsKitImpl24LyricsElementWrapperView");
     });
-    if (!preview && !wrapper) return NO;
+    return (preview && [view isKindOfClass:preview]) || (wrapper && [view isKindOfClass:wrapper]);
+}
+
+static BOOL previewShowing(UIView *tilt, UIView *host) {
     for (UIView *sub in tilt.superview.subviews) {
-        BOOL spotifys = (preview && [sub isKindOfClass:preview]) || (wrapper && [sub isKindOfClass:wrapper]);
-        if (spotifys && sub.bounds.size.height > 1 && showsIn(sub, host)) return YES;
+        if (isPreview(sub) && sub.bounds.size.height > 1 && showsIn(sub, host)) return YES;
     }
     return NO;
 }
 
-// Spotify's preview shows under the cover on screen now.
-static BOOL previewInFront(void) {
+static char kPreviewMaskKey;      // on a preview the line hid: the empty mask that hides it
+static char kPreviewOwnMaskKey;   // and the mask of Spotify's that one replaced, if it had one
+static BOOL sg_takesPreview;      // the line takes the previews' place
+static NSHashTable<UIView *> *sg_hiddenPreviews;   // every preview the line hid, wherever it is now
+
+// Hidden by a mask of the line's own, an empty layer, so Spotify's alpha and touches are never touched, and kept
+// from VoiceOver. Set again on every call: a mask Spotify puts on in the meantime is the one given back.
+static void hidePreview(UIView *preview) {
+    CALayer *mask = objc_getAssociatedObject(preview, &kPreviewMaskKey);
+    if (!mask) {
+        mask = [CALayer layer];
+        objc_setAssociatedObject(preview, &kPreviewMaskKey, mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    CALayer *layer = preview.layer;
+    if (layer.mask != mask) {
+        objc_setAssociatedObject(preview, &kPreviewOwnMaskKey, layer.mask, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        layer.mask = mask;
+    }
+    preview.accessibilityElementsHidden = YES;
+    if (!sg_hiddenPreviews) sg_hiddenPreviews = [NSHashTable weakObjectsHashTable];
+    [sg_hiddenPreviews addObject:preview];
+}
+
+// Only the line's mask comes off, Spotify's own back in its place; one Spotify put on since is left as it is.
+static void showPreview(UIView *preview) {
+    CALayer *mask = objc_getAssociatedObject(preview, &kPreviewMaskKey), *layer = preview.layer;
+    if (mask && layer.mask == mask) layer.mask = objc_getAssociatedObject(preview, &kPreviewOwnMaskKey);
+    objc_setAssociatedObject(preview, &kPreviewMaskKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(preview, &kPreviewOwnMaskKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    preview.accessibilityElementsHidden = NO;
+}
+
+// The playing track has synced lines the line can show.
+static BOOL playingTrackSynced(void) {
+    NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(SGKaraokePlayingTrack());
+    return lines.count && SGKaraokeLinesTiming(lines) != SGKaraokeTimingNone;
+}
+
+// Whether the line has the place under the cover to itself: it takes Spotify's preview's place, which hides every
+// preview in the covers (the next cover's too, so a skip or a swipe never shows one), or the preview does not show.
+// Every preview it hid, under the covers or not, is given back once it no longer takes their place. Asked again on
+// every update, so lines kept for the track, or a new track, are looked at.
+static BOOL settlePreview(UIView *host, UIView *tilt) {
+    BOOL takes = SGRPlayerLineTakesPreview(SGRPlayerLyricLineOn(), SGFlag(SGRKeyLyricsTranslation, NO),
+                                           host.bounds.size.height > host.bounds.size.width, playingTrackSynced());
+    for (UIView *preview in SGRPlayerPreviewsToGiveBack(sg_hiddenPreviews, takes)) showPreview(preview);
+    if (takes) {
+        UIView *covers = SGRPlayerCoverList();
+        SGForEachView(covers && [tilt isDescendantOfView:covers] ? covers : tilt.superview, ^(UIView *view) {
+            if (isPreview(view)) hidePreview(view);
+        });
+    }
+    // A hand-over found by an update rather than a pass (the switch set where no notification says so, lines kept)
+    // measures the room again on the player's next pass.
+    if (takes != sg_takesPreview) {
+        SGLog(@"redesign player: the line under the cover %@ Spotify's lyric preview",
+              takes ? @"takes the place of" : @"gives the place back to");
+        sg_takesPreview = takes;
+        [host setNeedsLayout];
+    }
+    return takes || !previewShowing(tilt, host);
+}
+
+// The previews the line has hidden beside the cover on screen, as one frame in `view`; CGRectNull with none.
+static CGRect takenPreviewIn(UIView *view) {
+    UIView *tilt = SGRPlayerShowingCover().superview;
+    if (!sg_takesPreview || !tilt) return CGRectNull;
+    CGRect frame = CGRectNull;
+    for (UIView *sub in tilt.superview.subviews) {
+        if ([sg_hiddenPreviews containsObject:sub] && sub.bounds.size.height > 1) {
+            frame = CGRectUnion(frame, [view convertRect:sub.bounds fromView:sub]);
+        }
+    }
+    return frame;
+}
+
+// The line has the place under the cover on screen now (settlePreview); YES while no cover is up to have one.
+static BOOL lineHasPlace(void) {
     UIView *host = sg_host, *tilt = SGRPlayerShowingCover().superview;
-    return host && tilt && [tilt isDescendantOfView:host] && previewShowing(tilt, host);
+    return !host || !tilt || ![tilt isDescendantOfView:host] || settlePreview(host, tilt);
 }
 
 static void placeLine(void) {
@@ -492,8 +581,9 @@ static void placeLine(void) {
     UIView *tilt = SGRPlayerShowingCover().superview;
     UIView *stack = SGRFindByIdentifier(host, @"npv.bottomStackView", &kStackKey);
     CGRect room = CGRectNull;
-    if (tilt && stack && [tilt isDescendantOfView:host] && host.bounds.size.height > host.bounds.size.width
-        && !previewShowing(tilt, host)) {
+    // Settled first, in any orientation, so a preview the line hid is given back where the line has no room.
+    BOOL clear = tilt && [tilt isDescendantOfView:host] && settlePreview(host, tilt);
+    if (clear && stack && host.bounds.size.height > host.bounds.size.width) {
         CGRect cover = [host convertRect:tilt.bounds fromView:tilt];
         CGFloat top = CGRectGetMaxY(cover), bottom = CGRectGetMinY([host convertRect:stack.bounds fromView:stack]);
         CGRect chips = chipsIn(host);
@@ -529,8 +619,17 @@ CGRect SGRPlayerLyricLineIn(UIView *view) {
 %end
 
 // Spotify's own lyric preview (9.1.90) gets its height when its lyrics arrive, after the cover's last pass: the line
-// stands down there and then rather than on the player's next layout.
+// stands down there and then rather than on the player's next layout. While the line takes its place, its passes
+// (and the older LyricsContainerView's) are where Spotify sets its alpha back, and where it is hidden again.
 %hook _TtC25Lyrics_NPVElementsKitImpl24LyricsElementWrapperView
+- (void)layoutSubviews {
+    %orig;
+    UIView *host = sg_host;
+    if (host && [(UIView *)self isDescendantOfView:host]) placeLine();
+}
+%end
+
+%hook _TtC22Lyrics_NPVContainerKit19LyricsContainerView
 - (void)layoutSubviews {
     %orig;
     UIView *host = sg_host;

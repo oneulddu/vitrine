@@ -1119,7 +1119,18 @@ Redesigned:
                   never asks a translator. A save (SGLyricsTranslationSavedNotification), a removal or job change
                   (SGRTranslationNotification, SGLyricsTranslationsDidChangeNotification) or the menu's switch
                   (SGRLyricsTextDidChangeNotification) shows at once: the translation fades in or out and the pair
-                  settles with a layout spring, at once under Reduce Motion. Checked on the Mac against harness/player-lyric-line/
+                  settles with a layout spring, at once under Reduce Motion. While translations are shown, in a
+                  player taller than wide, for a track the line has synced lines of its own for, the line takes the
+                  place of Spotify's preview rather than standing down (SGRPlayerLineTakesPreview, PlayerLyricLine.h):
+                  every preview in the covers is hidden by an empty CALayer as its layer.mask (Spotify's own mask, if
+                  any, kept to put back) and kept from VoiceOver, again on each pass of the preview's, the cover's and
+                  the player's and on every update of the line's; Spotify's alpha and touches are never touched. The
+                  room is measured as if no preview were there. Each hidden preview is held in a weak table, so
+                  translations switched off, the player turned wide or a track without synced lines give back every
+                  one (SGRPlayerPreviewsToGiveBack), a cell the covers keep for reuse included: only the line's mask
+                  comes off, if it is still the preview's. The line then stands down for it as before; the switch
+                  and lines arriving hand over at once. While a preview is hidden the line also takes the touches over
+                  its frame (they open the lyrics), since a tap there would otherwise inspect the cover. Checked on the Mac against harness/player-lyric-line/
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
                   which the player shows in itself too, Player/PlayerLyrics.x, where with Hide the controls set to
                   Everything, everything else -- the header row, the thumbnail, the title row and the controls --

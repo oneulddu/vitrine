@@ -2,7 +2,8 @@
 // one that shrinks, one that splits into portions of whole words (word timed and not, syllable spans and CJK spans
 // written without spaces), and the wait to the next transition at different speeds and delays, with both clamps and
 // overlapping lines, and the translation under the line (PlayerLyricLine.h): shown, absent, off, repeating the line,
-// arriving late, and left out where the room does not hold it. The contract's own numbers are asserted, not the
+// arriving late, and left out where the room does not hold it, and when the line takes Spotify's own preview's place
+// (SGRPlayerLineTakesPreview). The contract's own numbers are asserted, not the
 // constants that carry them. Exits 1 on any failure.
 #import <UIKit/UIKit.h>
 #import "Redesigned/Player/PlayerLyricFit.h"
@@ -324,6 +325,28 @@ int main(void) {
         HARNESS_CHECK(cramped.line && !cramped.translation && cramped.height == SGRPlayerLineFitIn(51, 20, 0, 8, 44).height);
         SGRPlayerLineFit cut = SGRPlayerLineFitIn(60, 26, 22, 8, 44);
         HARNESS_CHECK(cut.line && !cut.translation && cut.height == 44);
+
+        // Spotify's own preview under the cover: the line takes its place only while it is on, translations are shown
+        // and the player is taller than wide; every other case leaves the preview as Spotify shows it.
+        HARNESS_CHECK(SGRPlayerLineTakesPreview(YES, YES, YES, YES));
+        HARNESS_CHECK(!SGRPlayerLineTakesPreview(YES, NO, YES, YES));
+        HARNESS_CHECK(!SGRPlayerLineTakesPreview(NO, YES, YES, YES));
+        HARNESS_CHECK(!SGRPlayerLineTakesPreview(YES, YES, NO, YES));
+        // A track the line has no synced lines for keeps Spotify's preview, its only lyrics.
+        HARNESS_CHECK(!SGRPlayerLineTakesPreview(YES, YES, YES, NO));
+        HARNESS_CHECK(!SGRPlayerLineTakesPreview(NO, NO, NO, NO));
+
+        // Giving the previews back: none while the line takes their place; then every one hidden, the one a list
+        // keeps for reuse (out of any view) included, and none twice.
+        NSHashTable<UIView *> *hidden = [NSHashTable weakObjectsHashTable];
+        UIView *cell = [UIView new], *onScreen = [UIView new], *pooled = [UIView new];
+        [cell addSubview:onScreen];
+        [hidden addObject:onScreen];
+        [hidden addObject:pooled];
+        HARNESS_CHECK(SGRPlayerPreviewsToGiveBack(hidden, YES).count == 0);
+        NSArray<UIView *> *given = SGRPlayerPreviewsToGiveBack(hidden, NO);
+        HARNESS_CHECK(given.count == 2 && [given containsObject:onScreen] && [given containsObject:pooled]);
+        HARNESS_CHECK(SGRPlayerPreviewsToGiveBack(hidden, NO).count == 0);
 
         printf("player lyric line: all checks passed\n");
         return 0;
