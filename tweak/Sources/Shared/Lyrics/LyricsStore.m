@@ -289,15 +289,33 @@ void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSStrin
     });
 }
 
-static void filterTranslations(SGKaraokeLine *line, NSString *wanted) {
-    // Any accepts whatever the provider supplied, including an unknown language.
-    if (wanted.length && (!line.translationLanguage.length
-        || [line.translationLanguage caseInsensitiveCompare:wanted] != NSOrderedSame)) {
-        line.translation = nil;
-        line.translationLanguage = nil;
+static SGKaraokeLine *filterTranslations(SGKaraokeLine *line, NSString *wanted) {
+    if (!line) return nil;
+    SGKaraokeLine *backing = filterTranslations(line.backing, wanted);
+    SGKaraokeLine *pronunciation = filterTranslations(line.pronunciation, wanted);
+    BOOL drop = !line.translationMade && (line.translation || line.translationLanguage)
+        && (!line.translationLanguage.length || [line.translationLanguage caseInsensitiveCompare:wanted] != NSOrderedSame);
+    if (!drop && backing == line.backing && pronunciation == line.pronunciation) return line;
+    SGKaraokeLine *copy = [line copy];
+    if (drop) {
+        copy.translation = nil;
+        copy.translationLanguage = nil;
     }
-    if (line.backing) filterTranslations(line.backing, wanted);
-    if (line.pronunciation) filterTranslations(line.pronunciation, wanted);
+    copy.backing = backing;
+    copy.pronunciation = pronunciation;
+    return copy;
+}
+
+NSArray<SGKaraokeLine *> *SGLyricsProviderTranslationsForLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language) {
+    if (!language.length) return lines;
+    NSMutableArray *filtered;
+    for (NSUInteger i = 0; i < lines.count; i++) {
+        SGKaraokeLine *line = filterTranslations(lines[i], language);
+        if (line == lines[i]) continue;
+        if (!filtered) filtered = [lines mutableCopy];
+        filtered[i] = line;
+    }
+    return filtered ? [filtered copy] : lines;
 }
 
 void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *, NSString *, SGLyricsResult *)) {
@@ -320,9 +338,7 @@ void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *,
         if (lines) [NSFileManager.defaultManager setAttributes:@{NSFileModificationDate: NSDate.date} ofItemAtPath:url.path error:nil];
         dispatch_async(dispatch_get_main_queue(), ^{
             // Check at delivery, not on the I/O queue: the selection may change during a read.
-            NSString *wanted = SGLyricsTranslationLanguage();
-            for (SGKaraokeLine *line in lines) filterTranslations(line, wanted);
-            done(lines, credit, metadata);
+            done(SGLyricsProviderTranslationsForLanguage(lines, SGLyricsTranslationLanguage()), credit, metadata);
         });
     });
 }

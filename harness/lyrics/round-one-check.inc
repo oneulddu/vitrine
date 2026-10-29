@@ -193,8 +193,93 @@ static void finalLineChecks(UIWindow *window) {
     [view removeFromSuperview];
 }
 
+static void providerRevisionChecks(UIWindow *window) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults setBool:NO forKey:SGRKeyLyricsAutoTranslation];
+    [defaults setBool:NO forKey:SGRKeyLyricsPronunciation];
+    [defaults setBool:NO forKey:SGKeyLyricsRomanised];
+    [defaults setBool:NO forKey:SGKeyLyricsCulturalNotes];
+    [defaults setBool:YES forKey:SGRKeyLyricsTranslation];
+    [defaults setObject:@"en" forKey:@"translateTo"];
+    [defaults removeObjectForKey:SGKeyLyricsLanguageRules];
+    SGHarnessPlayingTrack = @"provider-translation-revisions";
+    SGHarnessStartClock(500, 0, -1, 0);
+    NSMutableArray<SGKaraokeLine *> *english = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 12; i++) {
+        SGKaraokeLine *line = sungLine(i * 3000, i ? @"Encore une chanson" : @"Bonjour le monde");
+        line.timing = SGKaraokeTimingWords;
+        [english addObject:line];
+    }
+    english.firstObject.translation = @"English provider text";
+    english.firstObject.translationLanguage = @"en";
+    SGKaraokeKeepLines(SGHarnessPlayingTrack, english);
+    UIViewController *root = [UIViewController new]; window.rootViewController = root; [window makeKeyAndVisible];
+    SGRKaraokeView *view = [[SGRKaraokeView alloc] initWithFrame:CGRectMake(0, 0, 520, 300)];
+    [root.view addSubview:view]; autoTick(view);
+    UIView *(^firstRow)(void) = ^UIView * { return [view valueForKey:@"shown"][@0]; };
+    check(extrasWait(^BOOL { return [firstRow().accessibilityValue isEqual:@"English provider text"]; }),
+          @"loaded timed karaoke renders the English provider translation");
+    autoTick(view);
+    UIScrollView *scroll = [view valueForKey:@"scroll"];
+    [scroll.delegate scrollViewWillBeginDragging:scroll];
+    scroll.contentOffset = CGPointMake(0, 24);
+    CGPoint offset = scroll.contentOffset;
+    [defaults setObject:@"ko" forKey:@"translateTo"];
+
+    NSMutableArray<SGKaraokeLine *> *cleared = [NSMutableArray array];
+    for (SGKaraokeLine *line in english) {
+        SGKaraokeLine *copy = [line copy]; copy.translation = nil; copy.translationLanguage = nil;
+        [cleared addObject:copy];
+    }
+    SGKaraokeKeepLines(SGHarnessPlayingTrack, cleared);
+    UIView *oldRow = firstRow();
+    autoTick(view);
+    check(firstRow() == oldRow && CGPointEqualToPoint(offset, scroll.contentOffset),
+          @"provider removal keeps rendered rows and scroll while replacement layout runs");
+    check(extrasWait(^BOOL { return firstRow() && !firstRow().accessibilityValue.length; }) &&
+          CGPointEqualToPoint(offset, scroll.contentOffset),
+          @"provider removal clears English from loaded timed karaoke without moving scroll");
+
+    NSMutableArray<SGKaraokeLine *> *korean = [NSMutableArray array];
+    for (SGKaraokeLine *line in cleared) [korean addObject:[line copy]];
+    korean.firstObject.translation = @"안녕하세요";
+    korean.firstObject.translationLanguage = @"ko";
+    SGKaraokeKeepLines(SGHarnessPlayingTrack, korean);
+    oldRow = firstRow();
+    autoTick(view);
+    check(firstRow() == oldRow && CGPointEqualToPoint(offset, scroll.contentOffset),
+          @"Korean arrival keeps rendered rows and scroll while replacement layout runs");
+    check(extrasWait(^BOOL { return [firstRow().accessibilityValue isEqual:@"안녕하세요"]; }) &&
+          CGPointEqualToPoint(offset, scroll.contentOffset),
+          @"Korean provider revision appears in loaded timed karaoke without moving scroll");
+
+    // A replacement must also be adopted when the current snapshot already has a translation.
+    NSMutableArray<SGKaraokeLine *> *replacement = [NSMutableArray array];
+    for (SGKaraokeLine *line in korean) [replacement addObject:[line copy]];
+    replacement.firstObject.translation = @"다른 번역";
+    SGKaraokeKeepLines(SGHarnessPlayingTrack, replacement);
+    autoTick(view);
+    check(extrasWait(^BOOL { return [firstRow().accessibilityValue isEqual:@"다른 번역"]; }) &&
+          CGPointEqualToPoint(offset, scroll.contentOffset),
+          @"provider replacement updates existing translated karaoke without moving scroll");
+
+    NSMutableArray<SGKaraokeLine *> *unchanged = [NSMutableArray array];
+    for (SGKaraokeLine *line in replacement) [unchanged addObject:[line copy]];
+    // Offscreen rows fill in over several frames. The already-visible first row must survive;
+    // comparing the entire virtualized dictionary would mistake normal additions for a restyle.
+    UIView *unchangedRow = firstRow();
+    SGKaraokeKeepLines(SGHarnessPlayingTrack, unchanged);
+    autoTick(view);
+    pump(); // Let any incorrectly scheduled replacement layout reach the presented rows.
+    check(firstRow() == unchangedRow && CGPointEqualToPoint(offset, scroll.contentOffset),
+          @"unchanged provider translations preserve presented rows without another restyle");
+    [view removeFromSuperview];
+    [defaults removeObjectForKey:@"translateTo"];
+}
+
 static void roundOneChecks(UIWindow *window) {
     unresolvedChecks();
     languageSnapshotChecks(window);
     finalLineChecks(window);
+    providerRevisionChecks(window);
 }

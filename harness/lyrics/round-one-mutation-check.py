@@ -10,6 +10,14 @@ ROOT = Path(__file__).resolve().parents[2]
 VIEW = "Redesigned/Lyrics/SGRKaraokeView.m"
 AUTO = "Redesigned/Lyrics/AutoTranslation.m"
 MUTATIONS = [
+    ("R2-LY-1-view", VIEW,
+     "&& translationsDiffer(_lines, kept)) {",
+     "&& !_hasTranslation && SGLyricsHasTranslations(kept)) {",
+     "FAIL provider removal clears English from loaded timed karaoke without moving scroll"),
+    ("R2-LY-1-unchanged", VIEW,
+     "&& translationsDiffer(_lines, kept)) {",
+     "&& YES) {",
+     "FAIL unchanged provider translations preserve presented rows without another restyle"),
     ("LV-01", VIEW,
      "MAX(MAX(0, lastTop - _focusTop), bottom - visibleBottom)",
      "MAX(0, lastTop - _focusTop)",

@@ -6,6 +6,10 @@
 // The codec preserves each translation's own language provenance, independently of preferences.
 NSDictionary *SGLyricsStoreEncode(NSArray<SGKaraokeLine *> *lines, NSString *credit);
 NSArray<SGKaraokeLine *> *SGLyricsStoreDecode(id record, NSString **credit);
+// Shared live/store acceptance rule. Copies only changed lines (including nested lines);
+// Any keeps all, a specific target drops unknown/mismatched provider translations.
+// Generated translations remain owned by their separate store.
+NSArray<SGKaraokeLine *> *SGLyricsProviderTranslationsForLanguage(NSArray<SGKaraokeLine *> *lines, NSString *language);
 // Save is called on main to snapshot the provider's credit registry along with its lines.
 void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *credit);
 // Loading does not register credits. The caller registers metadata only after accepting the lines.

@@ -206,6 +206,7 @@ void SGSpclientHeaders(void (^use)(NSDictionary<NSString *, NSString *> *headers
 
 static SPTPlayerState *playerState(void);
 static NSString *idOf(SPTPlayerTrack *track);
+static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL fromStore);
 
 // Lines with no translation of their own take Musixmatch's community ones in the Lyrics page's language,
 // whichever source they came from, Spotify's own included, matched by their text. Only the redesign shows
@@ -218,13 +219,14 @@ static void translate(NSString *track) {
     SGMusixmatchTranslations(track, language, ^(NSDictionary<NSString *, NSString *> *byLine) {
         // Whatever is kept by now, which may be Spotify's timed lines in place of the plain ones asked for.
         NSArray<SGKaraokeLine *> *kept = sg_lyrics[track];
-        if (!byLine || SGLyricsHasTranslations(kept)) return;
+        if (!byLine || !kept.count || ![language isEqualToString:SGLyricsTranslationLanguage()]
+            || SGLyricsHasTranslations(kept)) return;
         NSArray<SGKaraokeLine *> *translated = SGMusixmatchTranslatedLines(kept, byLine);
         for (NSUInteger i = 0; i < translated.count; i++) {
             SGKaraokeLine *line = translated[i];
             if (line != kept[i]) line.translationLanguage = language;
         }
-        if (translated) sg_lyrics[track] = translated;
+        if (translated) keep(track, translated, NO);
     });
 }
 
@@ -261,6 +263,9 @@ BOOL SGKaraokeLooking(NSString *trackID) {
 // Main queue only. A full cache is emptied but for the track playing, the one up next and those still
 // being asked for; what goes can be asked for again.
 static void keep(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL fromStore) {
+    // Provider decoding can finish after a target change. Never mutate a source's cached
+    // result or the old snapshot a layout worker is still measuring.
+    lines = SGLyricsProviderTranslationsForLanguage(lines, SGLyricsTranslationLanguage());
     [sg_sourceRetries removeObjectForKey:track];
     if (sg_storeRequests[track]) {
         [sg_storeRequests removeObjectForKey:track];
@@ -814,11 +819,13 @@ static void seen(SPTPlayerState *state) {
 // begins as it starts and its lines are in for the lock screen.
 @interface SGKaraokeTrackWatcher : NSObject <SGPlayerStateObserver>
 @property (nonatomic, copy) NSString *ahead;
+@property (nonatomic, copy) NSString *translationLanguage;
 @end
 
 @implementation SGKaraokeTrackWatcher
 - (instancetype)init {
     if (!(self = [super init])) return nil;
+    self.translationLanguage = SGLyricsTranslationLanguage();
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(becameActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(defaultsChanged:) name:NSUserDefaultsDidChangeNotification object:nil];
     return self;
@@ -847,7 +854,16 @@ static void seen(SPTPlayerState *state) {
     SGLyricsPrefetch(nextID);
 }
 - (void)defaultsChanged:(NSNotification *)note {
-    dispatch_async(dispatch_get_main_queue(), ^{ [self playerUpNextDidChange:SGPlayerState()]; });
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *language = SGLyricsTranslationLanguage();
+        if (self.translationLanguage != language && ![self.translationLanguage isEqualToString:language]) {
+            self.translationLanguage = language;
+            // Republish through the owner: refresh paused consumers, supersede deferred writes,
+            // and let untranslated tracks ask for the newly selected community language.
+            for (NSString *track in sg_lyrics.allKeys) keep(track, sg_lyrics[track], NO);
+        }
+        [self playerUpNextDidChange:SGPlayerState()];
+    });
 }
 - (void)dealloc {
     [NSNotificationCenter.defaultCenter removeObserver:self];

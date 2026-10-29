@@ -1028,6 +1028,15 @@ static NSArray<SGKaraokeLine *> *layoutSnapshots(NSArray<SGKaraokeLine *> *lines
     return copies;
 }
 
+// Keeper revisions can remove or replace provider text as well as add it. Compare the
+// displayed translation strings, not array identity or whether either song has a translation.
+static BOOL translationsDiffer(NSArray<SGKaraokeLine *> *before, NSArray<SGKaraokeLine *> *after) {
+    for (NSUInteger i = 0; i < before.count; i++) {
+        if (![(before[i].translation ?: @"") isEqualToString:(after[i].translation ?: @"")]) return YES;
+    }
+    return NO;
+}
+
 static NSArray<NSNumber *> *topsOf(NSArray<SGKaraokeLine *> *lines, CGFloat width, SGRKaraokeStyle *style, CGFloat gap) {
     NSMutableDictionary *extras = [NSMutableDictionary dictionary];
     for (SGKaraokeLine *line in lines) {
@@ -3550,11 +3559,11 @@ static NSString *breakName(NSInteger line, NSArray<SGKaraokeLine *> *lines) {
     }
     NSArray<SGKaraokeLine *> *kept = _lines && track ? [self linesFor:track] : nil;
     if (kept && kept != _lines && kept != _passedOver) {
-        if (!_hasTranslation && kept.count == _lines.count && SGKaraokeLinesTiming(kept) == SGKaraokeLinesTiming(_lines)
-            && SGLyricsHasTranslations(kept)) {
-            // Musixmatch's translations come in a moment after the lines, as copies of them: the song is
-            // restyled with them where it stands.
-            SGLog(@"karaoke: translations of %@ came in", track);
+        if (kept.count == _lines.count && SGKaraokeLinesTiming(kept) == SGKaraokeLinesTiming(_lines)
+            && translationsDiffer(_lines, kept)) {
+            // The keeper replaces provider translations on a target change. Adopt removals and
+            // replacements through the same in-place restyle as the first community reply.
+            SGLog(@"karaoke: translations of %@ changed", track);
             if (_tops) {
                 _lines = kept;
                 [self timeLines];

@@ -132,7 +132,11 @@ Shared:
                   restored answer is accepted). Each translation line keeps the language it was picked under
                   (SGKaraokeLine.translationLanguage); when a specific Translation language is chosen, restored lines
                   whose language differs or is unknown lose their translation and keep the lyrics, so the source
-                  for the chosen language is still asked. Under Any they are all kept. Generated translations and AI pronunciation stay with their own
+                  for the chosen language is still asked. The live keeper applies the same rule when the target
+                  changes and when a provider's worker result arrives, without changing the source's cached lines.
+                  A community reply for a superseded target is ignored. Community translations, including cached
+                  replies, pass through the keeper so offline saves and paused lock-screen notifications include
+                  them. Under Any they are all kept. Generated translations and AI pronunciation stay with their own
                   stores. File work runs on one
                   utility queue. The store caps at 1000 tracks / 30 MiB, pruning oldest-modified entries to 90%
                   of both caps at most once a minute (hits touch the date; over-budget writes during that minute

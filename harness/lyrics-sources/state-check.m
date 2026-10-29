@@ -105,10 +105,12 @@ static BOOL sg_testTranslations;
 static void (^sg_translationReply)(NSDictionary *);
 static NSArray *sg_translatedLines;
 static NSString *sg_translationRequestedLanguage;
+static NSDictionary *sg_cachedTranslationReply;
 void SGMusixmatchTranslations(NSString *track, NSString *language, void (^done)(NSDictionary *)) {
     if (sg_testTranslations) {
         sg_translationRequestedLanguage = language;
         sg_translationReply = done;
+        if (sg_cachedTranslationReply) done(sg_cachedTranslationReply);
     }
     else done(nil);
 }
@@ -1542,7 +1544,6 @@ static void checkCommunityTranslationProvenance(void) {
     CHECK(sg_translationReply != nil);
     SGKaraokeLine *translated = [lines.firstObject copy]; translated.translation = @"Translated";
     sg_translatedLines = @[translated, lines[1]];
-    SGSetInt(SGKeyLyricsTranslationLanguage, 18);
     sg_translationReply(@{@"Original": @"Translated"});
     NSArray<SGKaraokeLine *> *communityLines = SGKaraokeLinesForTrack(@"community-provenance");
     CHECK([communityLines.firstObject.translationLanguage isEqual:@"en"]);
@@ -1551,7 +1552,153 @@ static void checkCommunityTranslationProvenance(void) {
     SGKaraokeForgetLyrics(@"community-provenance");
     [sg_testDefaults removeObjectForKey:SGKeyLyricsTranslationLanguage];
     SGPrefsChanged();
-    puts("Musixmatch provenance: new copies keep the requested language after a preference change");
+    puts("Musixmatch provenance: new copies keep the requested language without changing originals");
+}
+
+static void checkLiveTranslationTarget(NSString *scenario) {
+    SGSetInt(SGKeyLyricsTranslationLanguage, 7);
+    sg_testTranslations = YES;
+    SGKaraokeTrackWatcher *watcher = [SGKaraokeTrackWatcher new];
+    NSString *track = NSUUID.UUID.UUIDString;
+    NSString *xml = @"<tt><head><metadata><iTunesMetadata><translations>"
+        "<translation xml:lang=\"en\"><text for=\"L1\">Hello</text></translation>"
+        "</translations></iTunesMetadata></metadata></head><body><div>"
+        "<p key=\"L1\" begin=\"1s\" end=\"2s\">Bonjour</p></div></body></tt>";
+    __block BOOL clearedNotification = NO;
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesKeptNotification
+        object:track queue:nil usingBlock:^(NSNotification *note) {
+        CHECK(NSThread.isMainThread);
+        if ([SGLyricsTranslationLanguage() isEqual:@"ko"]
+            && !SGKaraokeLinesForTrack(track).firstObject.translation) clearedNotification = YES;
+    }];
+    if ([scenario isEqual:@"community-stale"]) {
+        NSArray<SGKaraokeLine *> *lines = SGKaraokeStaticLines(@[@"Bonjour"]);
+        SGKaraokeKeepLines(track, lines);
+        void (^englishReply)(NSDictionary *) = sg_translationReply;
+        CHECK(englishReply && [sg_translationRequestedLanguage isEqual:@"en"]);
+        SGKaraokeLine *english = [lines.firstObject copy]; english.translation = @"Hello";
+        sg_translatedLines = @[english];
+        SGSetInt(SGKeyLyricsTranslationLanguage, 18);
+        englishReply(@{@"Bonjour": @"Hello"});
+        CHECK(!SGKaraokeLinesForTrack(track).firstObject.translation); // stale community
+    } else if ([scenario isEqual:@"ttml-stale"]) {
+        __block SGLyricsResult *held;
+        SGLyricsTransform(^id {
+            CHECK(!NSThread.isMainThread);
+            return SGTTMLResult(xml, NO);
+        }, ^(SGLyricsResult *result) { held = result; });
+        pumpUntil(^BOOL { return held != nil; });
+        CHECK([held.karaokeLines.firstObject.translation isEqual:@"Hello"]);
+        SGSetInt(SGKeyLyricsTranslationLanguage, 18);
+        SGKaraokeKeepLines(track, held.karaokeLines);
+        CHECK(!SGKaraokeLinesForTrack(track).firstObject.translation); // stale TTML
+        CHECK([held.karaokeLines.firstObject.translation isEqual:@"Hello"]); // source snapshot unchanged
+    } else {
+        NSArray<SGKaraokeLine *> *lines = SGTTMLLines(xml);
+        SGKaraokeLine *line = lines.firstObject;
+        line.backing = SGKaraokeStaticLines(@[@"Backing"]).firstObject;
+        line.backing.translation = @"Unknown language";
+        line.pronunciation = SGKaraokeStaticLines(@[@"Reading"]).firstObject;
+        line.pronunciation.translation = @"Matching language";
+        line.pronunciation.translationLanguage = @"KO";
+        SGKaraokeKeepLines(track, lines);
+        SGLyricsSetCredit(track, @"Provider credit");
+        // Any retains known and unknown translations, including nested ones.
+        SGSetInt(SGKeyLyricsTranslationLanguage, 0);
+        SGKaraokeKeepLines(track, lines);
+        [NSNotificationCenter.defaultCenter postNotificationName:NSUserDefaultsDidChangeNotification object:sg_testDefaults];
+        drainReplies();
+        CHECK([SGKaraokeLinesForTrack(track).firstObject.translation isEqual:@"Hello"]);
+        CHECK([SGKaraokeLinesForTrack(track).firstObject.backing.translation isEqual:@"Unknown language"]);
+        SGSetInt(SGKeyLyricsTranslationLanguage, 18);
+        // Exercise a notification posted away from main without making its thread wait for main.
+        __block BOOL posted = NO;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
+            [NSNotificationCenter.defaultCenter postNotificationName:NSUserDefaultsDidChangeNotification object:sg_testDefaults];
+            dispatch_async(dispatch_get_main_queue(), ^{ posted = YES; });
+        });
+        pumpUntil(^BOOL { return posted; });
+        CHECK(!SGKaraokeLinesForTrack(track).firstObject.translation); // received English
+        CHECK(!SGKaraokeLinesForTrack(track).firstObject.backing.translation);
+        CHECK([SGKaraokeLinesForTrack(track).firstObject.pronunciation.translation isEqual:@"Matching language"]);
+        CHECK([line.translation isEqual:@"Hello"] && [line.backing.translation isEqual:@"Unknown language"]);
+        CHECK([SGLyricsCreditFor(track) isEqual:@"Provider credit"]);
+        CHECK(SGKaraokeLinesForTrack(track).firstObject.start == 1000 && SGKaraokeLinesForTrack(track).firstObject.end == 2000);
+    }
+    [NSNotificationCenter.defaultCenter postNotificationName:NSUserDefaultsDidChangeNotification object:sg_testDefaults];
+    drainReplies();
+    CHECK(clearedNotification);
+    CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(track).firstObject) isEqual:@"Bonjour"]);
+    CHECK([sg_translationRequestedLanguage isEqual:@"ko"] && sg_translationReply);
+    SGKaraokeLine *korean = [SGKaraokeLinesForTrack(track).firstObject copy]; korean.translation = @"안녕";
+    sg_translatedLines = @[korean];
+    sg_translationReply(@{@"Bonjour": @"안녕"});
+    CHECK([SGKaraokeLinesForTrack(track).firstObject.translation isEqual:@"안녕"]);
+    CHECK([SGKaraokeLinesForTrack(track).firstObject.translationLanguage isEqual:@"ko"]);
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    [NSNotificationCenter.defaultCenter removeObserver:watcher];
+    SGKaraokeForgetLyrics(track);
+    sg_testTranslations = NO; sg_translationReply = nil; sg_translatedLines = nil;
+    printf("live translation target: %s passed\n", scenario.UTF8String);
+}
+
+static void checkCommunityPersistence(BOOL cached) {
+    SGSetInt(SGKeyLyricsTranslationLanguage, 7);
+    SGSetEnabled(SGKeyLyricsOffline, YES);
+    sg_testTranslations = YES;
+    NSString *track = NSUUID.UUID.UUIDString;
+    NSArray<SGKaraokeLine *> *lines = SGLrcLibRecordResult(@{@"syncedLyrics": @"[00:01]Original\n[00:02]"}).karaokeLines;
+    SGKaraokeLine *translated = [lines.firstObject copy]; translated.translation = @"Hello";
+    sg_translatedLines = @[translated];
+    NSDictionary *reply = @{@"Original": @"Hello"};
+    __block BOOL translatedNotification = NO;
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesKeptNotification
+        object:track queue:nil usingBlock:^(NSNotification *note) {
+        CHECK(NSThread.isMainThread);
+        SGKaraokeLine *line = SGKaraokeLinesForTrack(track).firstObject;
+        if ([line.translation isEqual:@"Hello"] && [line.translationLanguage isEqual:@"en"]) translatedNotification = YES;
+    }];
+    sg_cachedTranslationReply = cached ? reply : nil;
+    SGKaraokeKeepLines(track, lines);
+    SGLyricsSetCredit(track, @"Community fixture");
+    if (!cached) {
+        drainReplies(); // The original, untranslated write may already have started.
+        translatedNotification = NO;
+        sg_translationReply(reply);
+    }
+    CHECK(translatedNotification); // community kept notification
+    drainReplies(); // Submit the keeper's end-of-turn write before the I/O fence.
+    __block BOOL writesDrained = NO;
+    SGLyricsStoreSize(^(unsigned long long bytes) { CHECK(bytes > 0); writesDrained = YES; });
+    pumpUntil(^BOOL { return writesDrained; });
+    // Fresh offline session: no memory answer, no community transport, only the real disk store.
+    sg_testTranslations = NO; sg_cachedTranslationReply = nil; sg_translationReply = nil; sg_translatedLines = nil;
+    [sg_lyrics removeAllObjects]; [sg_requested removeAllObjects]; [sg_asking removeAllObjects];
+    [sg_requests removeAllObjects]; [sg_storeRequests removeAllObjects]; [sg_storeWrites removeAllObjects];
+    SGLyricsRestoreKept(track, nil);
+    SGKaraokeRequestLyrics(track);
+    pumpUntil(^BOOL { return SGKaraokeLinesForTrack(track) != nil; });
+    SGKaraokeLine *restored = SGKaraokeLinesForTrack(track).firstObject;
+    CHECK([SGKaraokeLineText(restored) isEqual:@"Original"]);
+    CHECK([restored.translation isEqual:@"Hello"]); // community offline translation
+    CHECK([restored.translationLanguage isEqual:@"en"]); // community offline provenance
+    CHECK(restored.start == 1000);
+    CHECK([SGLyricsCreditFor(track) isEqual:@"Community fixture"]);
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    SGKaraokeForgetLyrics(track);
+    SGSetEnabled(SGKeyLyricsOffline, NO);
+    printf("community translation: %s reply announced and restored offline passed\n", cached ? "cached" : "delayed");
+}
+
+static void checkLiveTranslations(void) {
+    NSString *only = getenv("VITRINE_TRANSLATION_CASE") ? @(getenv("VITRINE_TRANSLATION_CASE")) : nil;
+    for (NSString *scenario in @[@"community-stale", @"ttml-stale", @"received"]) {
+        if (!only || [only isEqual:scenario]) checkLiveTranslationTarget(scenario);
+    }
+    if (!only || [only isEqual:@"delayed"]) checkCommunityPersistence(NO);
+    if (!only || [only isEqual:@"cached"]) checkCommunityPersistence(YES);
+    [sg_testDefaults removeObjectForKey:SGKeyLyricsTranslationLanguage];
+    SGPrefsChanged();
 }
 
 static void checkStoredTranslationLanguage(void) {
@@ -1843,12 +1990,14 @@ int main(void) {
         sg_requested = [NSMutableSet set]; sg_asking = [NSMutableSet set]; sg_looking = [NSMutableSet set];
         sg_losses = [NSMutableDictionary dictionary]; sg_ownSources = YES;
         sg_lastSeenID = @"song";
+        if (getenv("VITRINE_TRANSLATION_CASE")) { checkLiveTranslations(); return 0; }
         if (getenv("VITRINE_STORE_ONLY")) { checkStoredTranslationLanguage(); return 0; }
         checkAsyncLRCLIBPick();
         checkUpNext();
         if (aheadOnly) { puts("lyrics up-next: replacement, coalescing, stale result and foreground gate passed"); return 0; }
         checkTranslationDelivery();
         checkStoredTranslationLanguage();
+        checkLiveTranslations();
         checkMissingRecovery();
         checkSpicyCancellation();
         checkCompletedBounds();
