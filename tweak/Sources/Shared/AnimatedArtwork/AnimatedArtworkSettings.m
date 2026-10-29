@@ -74,9 +74,66 @@ NSArray *SGLockScreenMotionRows(void) {
             };
         }
         [rows insertObjects:background atIndexes:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(3, background.count)]];
+        [rows addObject:SGArtworkCacheRow()];
         return rows;
     }
-    return @[SGLockScreenArtworkNeedsRow()];
+    return @[SGLockScreenArtworkNeedsRow(), SGArtworkCacheRow()];
+}
+
+#pragma mark - downloaded covers and artist photos
+
+// Main queue. The size shown is measured off main when the row is built and again after each clear; a measurement
+// or clear that began before the epoch last changed no longer owns the row.
+static NSString *sg_cacheSize;
+static BOOL sg_cacheMeasuring, sg_cacheClearing;
+static NSUInteger sg_cacheEpoch;
+
+static NSString *cacheDetail(void) {
+    if (sg_cacheClearing) return SGL(@"settings.artwork_clear.clearing", @"Clearing…");
+    if (sg_cacheSize) return sg_cacheSize;
+    if (!sg_cacheMeasuring) {
+        sg_cacheMeasuring = YES;
+        NSUInteger epoch = sg_cacheEpoch;
+        SGMotionCacheBytes(^(uint64_t bytes) {
+            if (epoch != sg_cacheEpoch) return;
+            sg_cacheMeasuring = NO;
+            sg_cacheSize = [NSByteCountFormatter stringFromByteCount:(long long)bytes countStyle:NSByteCountFormatterCountStyleFile];
+        });
+    }
+    return SGL(@"settings.artwork_clear.calculating", @"Calculating…");
+}
+
+static void clearCache(void) {
+    if (sg_cacheClearing) return;
+    sg_cacheClearing = YES;
+    sg_cacheEpoch++;
+    sg_cacheMeasuring = NO;
+    sg_cacheSize = nil;
+    SGMotionCacheClear(^(BOOL complete) {
+        sg_cacheClearing = NO;
+        sg_cacheEpoch++;
+        if (!complete)
+            SGPresentInformation(SGTopController(), SGL(@"settings.artwork_clear.title", @"Clear Downloaded Covers and Artist Photos"),
+                                 SGL(@"settings.artwork_clear.failed", @"Some files couldn't be removed."));
+    });
+}
+
+static void confirmClearCache(void) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:SGL(@"settings.artwork_clear.alert.title", @"Clear Downloaded Covers and Artist Photos?")
+                                                                  message:SGL(@"settings.artwork_clear.alert.message", @"Animated covers and artist photos are fetched again when needed. Your songs are not touched.")
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.artwork_clear.alert.action", @"Clear") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) { clearCache(); }]];
+    [SGTopController() presentViewController:alert animated:YES completion:nil];
+}
+
+SGModRow *SGArtworkCacheRow(void) {
+    if (!sg_cacheClearing) {   // a page opened again measures again
+        sg_cacheEpoch++;
+        sg_cacheMeasuring = NO;
+        sg_cacheSize = nil;
+    }
+    return SGStatActionRow(SGL(@"settings.artwork_clear.title", @"Clear Downloaded Covers and Artist Photos"), nil, ^NSString *{ return cacheDetail(); }, ^{ confirmClearCache(); });
 }
 
 // Below iOS 26 the section stays, with one row that says why there is nothing to pick.

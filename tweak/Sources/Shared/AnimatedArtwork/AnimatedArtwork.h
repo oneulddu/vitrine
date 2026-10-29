@@ -111,6 +111,18 @@ NSURL *SGMotionMadeFile(NSString *key);
 // The supplied URL pins a ready file until its last consumer releases that URL.
 void SGMotionMakeFile(NSURL *file, BOOL (^write)(void), void (^done)(BOOL));
 
+// The clips the store keeps on disk: their bytes (`done` on main), and removal of every one no consumer holds. Removal
+// is main queue; it cancels the downloads in flight, whose consumers get nil, and `done(complete)` on main is NO
+// when a clip could not be removed.
+void SGMotionStoreBytes(void (^done)(uint64_t bytes));
+void SGMotionStoreClear(void (^done)(BOOL complete));
+
+// Everything downloaded for covers and artist photos that Vitrine can fetch again (SGMotionCatalog.m): the store's
+// clips and the catalog's answers, in memory and on disk. `done` runs on main. Clearing is main queue; `complete` is NO
+// when something could not be removed. Lookups and downloads started before a clear leave nothing behind after it.
+void SGMotionCacheBytes(void (^done)(uint64_t bytes));
+void SGMotionCacheClear(void (^done)(BOOL complete));
+
 // The first frame of a local video. Main queue.
 void SGMotionPoster(NSURL *file, void (^done)(UIImage *poster));
 
@@ -118,6 +130,8 @@ void SGMotionPoster(NSURL *file, void (^done)(UIImage *poster));
 // SGLockScreenArtworkNeedsRow, which says the setting needs iOS 26 and, tapped, why.
 NSArray *SGLockScreenMotionRows(void);
 SGModRow *SGLockScreenArtworkNeedsRow(void);
+// The page's last row: the size of the downloaded covers and artist photos, and a tap that clears them after asking.
+SGModRow *SGArtworkCacheRow(void);
 
 // Pure steps, for the harness.
 NSString *SGMotionNameKey(NSString *name);

@@ -1480,7 +1480,11 @@ its Lyrics line, Original or Translation, and Spotify's like and dislike buttons
 Artwork (Off, Moving artwork, Lyrics, Every song or Moving artwork with lyrics, the lyrics' style, Still or Animated,
 fallback Background with darkening, blur strength or solid color, Translations, Switch with the star,
 the sources and Low Data Mode; below iOS 26
-one row saying why not). Spotify's podcast, audiobook and artwork flags stay in All flags. Player: Gestures, Blocked artists (with the count on the row), Sleep timer's Fade-out duration and Load ahead (spotifyglass.loadAhead, on
+one row saying why not), and last under either Clear Downloaded Covers and Artist Photos (AnimatedArtworkSettings.m's
+SGArtworkCacheRow): their size measured off the main queue, and after an alert with Cancel only the store's own clip
+files (SGMotionStoreClear, a clip in use left in place) and the album answers file (SGMotionCacheClear) removed; a
+transfer or lookup begun before it delivers to its own caller but keeps and starts nothing; songs, a chosen cover,
+edits and lyrics are untouched; harness/artwork-clear/. Spotify's podcast, audiobook and artwork flags stay in All flags. Player: Gestures, Blocked artists (with the count on the row), Sleep timer's Fade-out duration and Load ahead (spotifyglass.loadAhead, on
 until switched off: the next track's artwork and lyrics are prepared ahead; off, only that advance work stops, the current
 track is untouched, and a change applies at once), which work with either look, including below iOS 17;
 in the native look also Now playing bar (its device button and its flags), Queue & devices, and

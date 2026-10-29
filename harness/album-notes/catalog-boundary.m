@@ -23,6 +23,9 @@ SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *)) {
     SGMotionFile(remote, done);
     return [SGMotionTicket new];
 }
+// The store's half of the settings page's clear (SGMotionCacheBytes, SGMotionCacheClear); the fixture holds no clips.
+void SGMotionStoreBytes(void (^done)(uint64_t bytes)) { done(0); }
+void SGMotionStoreClear(void (^done)(BOOL complete)) { done(YES); }
 
 @interface ReplayedCatalog : NSURLProtocol @end
 @implementation ReplayedCatalog

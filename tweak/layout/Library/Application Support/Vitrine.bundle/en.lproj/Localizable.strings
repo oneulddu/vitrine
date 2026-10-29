@@ -226,6 +226,14 @@
 "settings.artwork.sources.summary.format" = "%@ +%lu";
 "settings.artwork.sources.title" = "Artwork sources";
 
+"settings.artwork_clear.alert.action" = "Clear";
+"settings.artwork_clear.alert.message" = "Animated covers and artist photos are fetched again when needed. Your songs are not touched.";
+"settings.artwork_clear.alert.title" = "Clear Downloaded Covers and Artist Photos?";
+"settings.artwork_clear.calculating" = "Calculating…";
+"settings.artwork_clear.clearing" = "Clearing…";
+"settings.artwork_clear.failed" = "Some files couldn't be removed.";
+"settings.artwork_clear.title" = "Clear Downloaded Covers and Artist Photos";
+
 "settings.audioeffects.amount.title" = "Amount";
 "settings.audioeffects.analogmodeling.subtitle" = "Tube amplifier warmth";
 "settings.audioeffects.analogmodeling.title" = "Analog modeling";

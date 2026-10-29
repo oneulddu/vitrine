@@ -225,6 +225,13 @@
 "settings.artwork.sources.row.title" = "아트워크 소스";
 "settings.artwork.sources.summary.format" = "%@ +%lu";
 "settings.artwork.sources.title" = "아트워크 소스";
+"settings.artwork_clear.alert.action" = "지우기";
+"settings.artwork_clear.alert.message" = "움직이는 커버와 아티스트 사진은 필요할 때 다시 받아 옵니다. 노래는 변경되지 않습니다.";
+"settings.artwork_clear.alert.title" = "다운로드한 커버와 아티스트 사진을 지우시겠습니까?";
+"settings.artwork_clear.calculating" = "계산 중…";
+"settings.artwork_clear.clearing" = "지우는 중…";
+"settings.artwork_clear.failed" = "일부 파일을 지우지 못했습니다.";
+"settings.artwork_clear.title" = "다운로드한 커버와 아티스트 사진 지우기";
 
 "settings.audioeffects.amount.title" = "세기";
 "settings.audioeffects.analogmodeling.subtitle" = "진공관 앰프의 따뜻한 음색";

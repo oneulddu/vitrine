@@ -56,6 +56,8 @@ HARNESSES = [
      "run": "sh harness/player-visualiser/build.sh"},
     {"name": "Now playing bar text", "dir": "now-playing-bar", "theos": True,
      "run": "bash harness/now-playing-bar/check.sh"},
+    {"name": "Artwork clear", "dir": "artwork-clear",
+     "run": "sh harness/artwork-clear/build.sh"},
     {"name": "Meaning translation", "dir": "meaning-translate",
      "run": "sh harness/meaning-translate/build.sh"},
     {"name": "Artist artwork", "dir": "artist-artwork",

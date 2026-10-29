@@ -62,6 +62,8 @@ SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *)) {
     dispatch_async(dispatch_get_main_queue(), ^{ if (!ticket.cancelled) done(remote); });
     return ticket;
 }
+void SGMotionStoreBytes(void (^done)(uint64_t bytes)) { done(0); }
+void SGMotionStoreClear(void (^done)(BOOL complete)) { done(YES); }
 BOOL SGFlag(NSString *key, BOOL fallback) { return fallback; }
 NSURL *SGMotionTestAlbumAnswersFile(void) { return store; }
 

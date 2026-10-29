@@ -4,6 +4,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <objc/runtime.h>
+#import <stdatomic.h>
 #import <stdlib.h>
 #import <string.h>
 #import "Core/SGCore.h"
@@ -12,6 +13,8 @@
 
 static const NSUInteger kFiles = 40;
 static NSCountedSet<NSString *> *sg_inUse; // store queue only; counts retained handoff URLs
+// Bumped by each clear. A file the mod was asked to make before a clear is not made after it.
+static _Atomic uint64_t sg_clearGeneration;
 static void trim(void);
 
 static NSURL *folder(void) {
@@ -91,7 +94,9 @@ NSURL *SGMotionMadeFile(NSString *key) {
 }
 
 void SGMotionMakeFile(NSURL *file, BOOL (^write)(void), void (^done)(BOOL)) {
+    uint64_t generation = atomic_load(&sg_clearGeneration);
     dispatch_async(storeQueue(), ^{
+        if (generation != atomic_load(&sg_clearGeneration)) { done(NO); return; }
         BOOL ok = [NSFileManager.defaultManager fileExistsAtPath:file.path];
         if (!ok) {
             ok = [NSFileManager.defaultManager createDirectoryAtURL:folder() withIntermediateDirectories:YES attributes:nil error:nil];
@@ -298,6 +303,81 @@ SGMotionTicket *SGMotionRequestFile(NSURL *remote, void (^done)(NSURL *file)) {
 
 void SGMotionFile(NSURL *remote, void (^done)(NSURL *file)) {
     SGMotionRequestFile(remote, done);
+}
+
+#pragma mark - clearing
+
+// The clips this store makes and nothing else in the folder: the hash of an address or key, then .mp4.
+static BOOL ownedClip(NSURL *file) {
+    NSString *name = file.lastPathComponent.stringByDeletingPathExtension;
+    NSCharacterSet *notHex = [NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"].invertedSet;
+    return [file.pathExtension isEqualToString:@"mp4"] && name.length == CC_SHA1_DIGEST_LENGTH * 2 &&
+        [name rangeOfCharacterFromSet:notHex].location == NSNotFound;
+}
+
+// Store queue. *error is set when a folder that exists could not be read; one not made yet has no clips.
+static NSArray<NSURL *> *ownedClips(NSError **error) {
+    NSError *listing = nil;
+    NSArray<NSURL *> *files = [NSFileManager.defaultManager contentsOfDirectoryAtURL:folder() includingPropertiesForKeys:@[NSURLFileSizeKey]
+                                                                             options:NSDirectoryEnumerationSkipsHiddenFiles error:&listing];
+    if (!files) {
+        if (![NSFileManager.defaultManager fileExistsAtPath:folder().path]) return @[];
+        if (error) *error = listing;
+        return @[];
+    }
+    NSMutableArray<NSURL *> *owned = [NSMutableArray array];
+    for (NSURL *file in files) if (ownedClip(file)) [owned addObject:file];
+    return owned;
+}
+
+void SGMotionStoreBytes(void (^done)(uint64_t bytes)) {
+    dispatch_async(storeQueue(), ^{
+        uint64_t total = 0;
+        for (NSURL *file in ownedClips(NULL)) {
+            NSNumber *size = nil;
+            [file getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
+            total += size.unsignedLongLongValue;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{ done(total); });
+    });
+}
+
+void SGMotionStoreClear(void (^done)(BOOL complete)) {
+    atomic_fetch_add(&sg_clearGeneration, 1);
+    // A download from before the clear may not land afterwards, nor may a request after it join one:
+    // its consumers get nothing and the next request fetches again.
+    NSArray<SGMotionDownload *> *stale = sg_downloads.allValues;
+    [sg_downloads removeAllObjects];
+    for (SGMotionDownload *owner in stale) {
+        owner.cancelled = YES;
+        [owner.task cancel];
+        NSArray *waiting = [owner.waiters copy];
+        [owner.waiters removeAllObjects];
+        for (SGMotionWaiter *waiter in waiting) {
+            waiter.onCancel = nil;
+            void (^completion)(NSURL *) = waiter.done;
+            waiter.done = nil;
+            if (completion) completion(nil);
+        }
+    }
+    dispatch_async(storeQueue(), ^{
+        NSError *listing = nil;
+        BOOL complete = YES;
+        for (NSURL *file in ownedClips(&listing)) {
+            // A clip a consumer holds stays; it goes with the next trim once released.
+            if ([sg_inUse containsObject:file.URLByResolvingSymlinksInPath.path]) continue;
+            NSError *error = nil;
+            if (![NSFileManager.defaultManager removeItemAtURL:file error:&error] && [NSFileManager.defaultManager fileExistsAtPath:file.path]) {
+                SGLog(@"motion: cannot remove clip: %@", error.localizedDescription);
+                complete = NO;
+            }
+        }
+        if (listing) {
+            SGLog(@"motion: cannot list clips: %@", listing.localizedDescription);
+            complete = NO;
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{ done(complete); });
+    });
 }
 
 void SGMotionPoster(NSURL *file, void (^done)(UIImage *poster)) {

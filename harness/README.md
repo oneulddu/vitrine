@@ -89,6 +89,7 @@ their check executable in the workflow.
 | `pitch/build.sh` | Synthetic sine pitch/speed assertions, no song argument. |
 | `player/title-notification-check.sh` | Real Logos controller with offline notification fixtures. |
 | `now-playing-bar/check.sh` | Catalyst title and artists split of the redesigned now playing bar through Logos: titles with and without " • ", with and without a device line, neighbour pages and an unknown track. |
+| `artwork-clear/build.sh` | Clearing downloaded animated covers and artist answers in a sandboxed Caches folder: size, alert, Cancel, leased clips, stale transfers and lookups, failure reporting; songs, chosen covers, edits and lyrics untouched (`mutate.py` for the mutants). |
 | `fonts/build.sh` | Catalyst `FontLibrary.m` and the Free fonts page with Core Text faked at its two entry calls: installed families register off main, publish on main, never twice, and a removal is never overridden by a late publish; the real Font page (free and imported families) opens and the Free fonts page finishes a download while registrations are held, a block queued on main runs before each release, and the previews and the chosen font update after; a hidden Font page reloads nothing. |
 | `library/rows-check.sh` | Simulator executable through Logos: the Library row separator spans from the artwork's text edge, mirrored right to left. |
 | `playlist/creator-check.sh` | Simulator executable through Logos: the playlist header's creator lookup keeps one-character names and skips the facepile's initial. |

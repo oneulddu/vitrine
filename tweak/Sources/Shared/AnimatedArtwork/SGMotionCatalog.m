@@ -44,6 +44,20 @@ static NSURL *albumAnswersFile(void) {
 
 // Key to {url: the address, "" for none; at: when it was asked}.
 static NSMutableDictionary<NSString *, NSDictionary *> *sg_albumAnswers;
+// Bumped by each clear (main). A lookup that began in an earlier generation is delivered to its own callers but kept nowhere.
+static NSUInteger sg_generation;
+// Set by a clear that ran before the first lookup: the file on disk is gone, so the launch must not read it.
+static BOOL sg_answersCleared;
+
+// Every read and write of the answers file runs here, in order.
+static dispatch_queue_t albumQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("spotifyglass.motion.albumAnswers", DISPATCH_QUEUE_SERIAL);
+    });
+    return queue;
+}
 
 static NSUInteger logoBytes(id value) {
     if (![value isKindOfClass:UIImage.class]) return 0;
@@ -92,12 +106,7 @@ static void keepAlbumAnswer(NSString *key, id value) {
     // immutable snapshots off main in order so an older write cannot win.
     NSDictionary *answers = [sg_albumAnswers copy];
     NSURL *file = albumAnswersFile();
-    static dispatch_queue_t queue;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        queue = dispatch_queue_create("spotifyglass.motion.albumAnswers", DISPATCH_QUEUE_SERIAL);
-    });
-    dispatch_async(queue, ^{
+    dispatch_async(albumQueue(), ^{
         [NSFileManager.defaultManager createDirectoryAtURL:file.URLByDeletingLastPathComponent withIntermediateDirectories:YES attributes:nil error:nil];
         [answers writeToURL:file atomically:YES];
     });
@@ -109,7 +118,7 @@ static void setUp(void) {
         sg_kept = [NSMutableDictionary dictionary];
         sg_keptOrder = [NSMutableArray array];
         sg_albumAnswers = [NSMutableDictionary dictionary];
-        NSDictionary *stored = [NSDictionary dictionaryWithContentsOfURL:albumAnswersFile()];
+        NSDictionary *stored = sg_answersCleared ? nil : [NSDictionary dictionaryWithContentsOfURL:albumAnswersFile()];
         for (NSString *key in stored) {
             NSDictionary *answer = stored[key];
             NSDate *at = [answer isKindOfClass:NSDictionary.class] ? answer[@"at"] : nil;
@@ -567,14 +576,18 @@ static void lookUp(NSString *key, void (^done)(id value), void (^look)(void (^an
         [waiting addObject:[done copy]];
         return;
     }
-    sg_waiting[key] = [NSMutableArray arrayWithObject:[done copy]];
+    NSMutableArray *callers = [NSMutableArray arrayWithObject:[done copy]];
+    sg_waiting[key] = callers;
+    NSUInteger generation = sg_generation;
     look(^(id value, BOOL keep) {
-        if (keep) keepValue(key, value);
-        if (keep && (([key hasPrefix:@"album\n"] && (!value || [value isKindOfClass:NSURL.class]))
-                  || ([key hasPrefix:@"album-records\n"] && [value isKindOfClass:NSArray.class]))) keepAlbumAnswer(key, value);
-        NSArray *callers = sg_waiting[key];
-        [sg_waiting removeObjectForKey:key];
-        for (void (^caller)(id) in callers) caller(value);
+        // After a clear this answer is old: it keeps nothing and its callers are not in sg_waiting any more.
+        if (generation == sg_generation) {
+            if (keep) keepValue(key, value);
+            if (keep && (([key hasPrefix:@"album\n"] && (!value || [value isKindOfClass:NSURL.class]))
+                      || ([key hasPrefix:@"album-records\n"] && [value isKindOfClass:NSArray.class]))) keepAlbumAnswer(key, value);
+            [sg_waiting removeObjectForKey:key];
+        }
+        for (void (^caller)(id) in [callers copy]) caller(value);
     });
 }
 
@@ -647,9 +660,11 @@ SGMotionTicket *SGMotionRequestAlbumCover(NSString *artist, NSString *album, CGF
     }
     // The persisted key retains the tall-first catalog choice's numeric value.
     NSString *key = [NSString stringWithFormat:@"album\n1\n%@\n%@", artistKey, albumKey];
+    NSUInteger generation = sg_generation;
     // The remote file is what is kept: the store may drop its local copy later in the launch.
     lookUp(key, ^(NSURL *remote) {
         if (ticket.cancelled) return;
+        if (generation != sg_generation) { done(nil); return; }   // asked before a clear: no download after it
         ticket.child = SGMotionRequestFile(remote, ^(NSURL *file) {
             ticket.child = nil;
             if (!ticket.cancelled) done(file);
@@ -790,7 +805,11 @@ void SGMotionArtistArtwork(NSString *artist, NSArray<NSString *> *titles, CGFloa
     if ((!photo && !motion) || titles.count < 2 || !artist.length) {
         done(nil, nil, titles.count < 2 ? SGMotionArtistArtworkNeedsEvidence : SGMotionArtistArtworkFinished); return;
     }
+    // A request that began before a clear starts no further lookup or download after it, at any step below. It is
+    // answered as a metadata failure, which nothing keeps, so a later request asks again.
+    NSUInteger generation = sg_generation;
     artistRecords(artist, ^(NSArray *records) {
+        if (generation != sg_generation) { done(nil, nil, SGMotionArtistArtworkMetadataFailed); return; }
         NSString *identity = [@"artist " stringByAppendingString:artist];
         catalogDiagnostic(identity, @"records", [NSString stringWithFormat:@"artist search records=%lu extend=editorialArtwork,editorialVideo", (unsigned long)records.count]);
         if (!records) {
@@ -836,6 +855,7 @@ void SGMotionArtistArtwork(NSString *artist, NSArray<NSString *> *titles, CGFloa
             });
         }
         dispatch_group_notify(group, dispatch_get_main_queue(), ^{
+            if (generation != sg_generation) { done(nil, nil, SGMotionArtistArtworkMetadataFailed); return; }
             NSDictionary *match = SGMotionArtistMatch(candidates, artist, titles);
             if (failed) match = nil; // still log successful candidates' overlaps
             SGLog(@"catalog %@: %@", identity, match ?
@@ -846,6 +866,7 @@ void SGMotionArtistArtwork(NSString *artist, NSArray<NSString *> *titles, CGFloa
                 return;
             }
             void (^assetsForResource)(NSDictionary *) = ^(NSDictionary *resource) {
+            if (generation != sg_generation) { done(nil, nil, SGMotionArtistArtworkMetadataFailed); return; }
             dispatch_group_t assets = dispatch_group_create();
             __block UIImage *image = nil;
             __block NSURL *file = nil;
@@ -872,6 +893,7 @@ void SGMotionArtistArtwork(NSString *artist, NSArray<NSString *> *titles, CGFloa
                 dispatch_group_enter(assets);
                 NSString *key = [NSString stringWithFormat:@"artist-motion\n%@\n%.0f", master.absoluteString, pixels];
                 lookUp(key, ^(NSURL *remote) {
+                    if (generation != sg_generation) { dispatch_group_leave(assets); return; }   // asked before a clear
                     SGMotionFile(remote, ^(NSURL *local) { file = local; dispatch_group_leave(assets); });
                 }, ^(void (^answer)(id, BOOL)) { wholeFileOf(master, pixels, answer); });
             }
@@ -930,4 +952,49 @@ void SGMotionSongsWithISRC(NSString *isrc, void (^done)(NSArray *songs)) {
             askCatalog(addressIn(@"us"), @"data", YES, ^(NSArray *inUS, BOOL answeredInUS) { answer(inUS, answeredInUS); });
         });
     });
+}
+
+#pragma mark - clearing
+
+void SGMotionCacheBytes(void (^done)(uint64_t bytes)) {
+    dispatch_group_t group = dispatch_group_create();
+    __block uint64_t total = 0;   // main only
+    dispatch_group_enter(group);
+    SGMotionStoreBytes(^(uint64_t bytes) { total += bytes; dispatch_group_leave(group); });
+    dispatch_group_enter(group);
+    NSURL *answers = albumAnswersFile();
+    dispatch_async(albumQueue(), ^{
+        NSNumber *size = [NSFileManager.defaultManager attributesOfItemAtPath:answers.path error:nil][NSFileSize];
+        dispatch_async(dispatch_get_main_queue(), ^{ total += size.unsignedLongLongValue; dispatch_group_leave(group); });
+    });
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{ done(total); });
+}
+
+void SGMotionCacheClear(void (^done)(BOOL complete)) {
+    if (!NSThread.isMainThread) {
+        dispatch_async(dispatch_get_main_queue(), ^{ SGMotionCacheClear(done); });
+        return;
+    }
+    sg_answersCleared = YES;   // a clear before the first lookup: the launch need not read what the clear removes
+    setUp();
+    sg_generation++;
+    [sg_kept removeAllObjects];
+    [sg_keptOrder removeAllObjects];
+    sg_logoBytes = 0;
+    [sg_albumAnswers removeAllObjects];
+    [sg_waiting removeAllObjects];
+    dispatch_group_t group = dispatch_group_create();
+    __block BOOL complete = YES;   // main only
+    dispatch_group_enter(group);
+    SGMotionStoreClear(^(BOOL clipsGone) { if (!clipsGone) complete = NO; dispatch_group_leave(group); });
+    dispatch_group_enter(group);
+    NSURL *answers = albumAnswersFile();
+    // Behind any write already queued, so an older write cannot bring the file back.
+    dispatch_async(albumQueue(), ^{
+        NSError *error = nil;
+        BOOL gone = [NSFileManager.defaultManager removeItemAtURL:answers error:&error] || ![NSFileManager.defaultManager fileExistsAtPath:answers.path];
+        if (!gone) SGLog(@"motion: cannot remove album answers: %@", error.localizedDescription);
+        dispatch_async(dispatch_get_main_queue(), ^{ if (!gone) complete = NO; dispatch_group_leave(group); });
+    });
+    dispatch_group_notify(group, dispatch_get_main_queue(), ^{ done(complete); });
 }
