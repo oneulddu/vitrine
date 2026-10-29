@@ -1037,6 +1037,22 @@
 "settings.load_ahead.subtitle" = "다음 곡의 아트워크와 가사를 미리 불러옵니다. 이 설정을 꺼도 현재 곡에는 영향을 주지 않습니다.";
 "settings.load_ahead.title" = "미리 불러오기";
 
+"settings.localfiles.delete.failed" = "파일을 삭제할 수 없음";
+"settings.localfiles.delete.message" = "%@ 파일이 이 iPhone에서 삭제되고 Spotify의 로컬 파일에서도 사라집니다.";
+"settings.localfiles.delete.title" = "이 파일을 삭제할까요?";
+"settings.localfiles.import.done.many" = "파일 %lu개를 가져왔습니다";
+"settings.localfiles.import.done.one" = "파일 1개를 가져왔습니다";
+"settings.localfiles.import.failed.message" = "다음 파일을 복사할 수 없습니다:\n%@";
+"settings.localfiles.import.failed.title" = "가져올 수 없음";
+"settings.localfiles.import.footer" = "가져온 파일은 Spotify 설정에서 이 기기의 오디오 파일 표시를 켜면 Spotify의 로컬 파일에 나타납니다. 이미 쓰고 있는 이름이면 이름 뒤에 번호가 붙습니다.";
+"settings.localfiles.import.subtitle" = "파일 앱에서 복사하며, 이동하지 않습니다";
+"settings.localfiles.import.title" = "오디오 파일 가져오기";
+"settings.localfiles.imported.empty" = "가져온 파일 없음";
+"settings.localfiles.imported.footer" = "여기서 가져온 파일만 표시됩니다. 파일을 왼쪽으로 밀어 삭제하세요.";
+"settings.localfiles.imported.title" = "가져온 파일";
+"settings.localfiles.imported.value.none" = "없음";
+"settings.localfiles.title" = "로컬 파일";
+
 "settings.locallyrics.error.deletefailed" = "파일을 삭제할 수 없음";
 "settings.locallyrics.error.importfailed" = "파일을 가져올 수 없음";
 "settings.locallyrics.error.nothing" = "가져올 내용이 없습니다.";

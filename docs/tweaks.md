@@ -558,6 +558,22 @@ Shared:
                   playing info changes, so artwork that arrives late replaces the provisional one); the native look puts it into the front
                   cover's empty image view (Native/LocalFiles/LocalCover.x), the redesign's artwork bridge takes it
                   as the picture of a local file whose metadata names none. A cover picked in Edit info wins.
+                  Import audio files (LocalAudioImport.h, LocalAudioPage.m), on the Local files page under Player
+                  settings in either look: a multiple-selection Files picker for audio (asCopy), whose picks are
+                  copied, never moved, into the app's Documents folder at the top level, where Spotify scans its own
+                  Local Files, so Vitrine only copies and Spotify indexes and plays once its setting for showing audio
+                  files from this device is on in Spotify's settings (the footer says so). A file is never overwritten:
+                  the copy itself refuses a taken name and the next is tried, "song 2.mp3", "song 3.mp3"…, with the
+                  number before the extension. The copies run off main with security-scoped access around each; one
+                  alert says "Imported N files" and, below it, the names that failed. The names imported are kept in
+                  Vitrine's defaults (SGKeyLocalAudioImported) with each file's identity (device, inode and size, read
+                  right after the copy); the Imported files page lists only those whose file in Documents still has
+                  that identity, dropping a name whose file is gone or was replaced, and a swipe asks before it deletes
+                  that one file with a single non-recursive unlink on the Documents-anchored name, after checking the
+                  identity again; any mismatch deletes nothing, unlists the name and shows the delete-failed message.
+                  A file the user put in Documents any other way, or that took an import's name, is never listed, renamed or deleted,
+                  and there are no folders and no network. The numbering, never overwriting, the list and the delete
+                  are checked on the Mac in harness/local-files/audio.m.
                   The model, the cover fallback and every kind of lyrics file are checked on the Mac against
                   harness/local-files/, whose README lists the cases, the row and the editor in the simulator
                   against its sim/

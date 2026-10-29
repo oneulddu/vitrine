@@ -1038,6 +1038,22 @@
 "settings.load_ahead.subtitle" = "Prepare the next track's artwork and lyrics. Turning this off does not affect the current track.";
 "settings.load_ahead.title" = "Load ahead";
 
+"settings.localfiles.delete.failed" = "Could not delete the file";
+"settings.localfiles.delete.message" = "%@ is deleted from this iPhone and leaves Spotify's Local Files.";
+"settings.localfiles.delete.title" = "Delete this file?";
+"settings.localfiles.import.done.many" = "Imported %lu files";
+"settings.localfiles.import.done.one" = "Imported 1 file";
+"settings.localfiles.import.failed.message" = "These files could not be copied:\n%@";
+"settings.localfiles.import.failed.title" = "Could not import";
+"settings.localfiles.import.footer" = "Imported files show in Spotify's Local Files once its setting for showing audio files from this device is on, in Spotify's settings. A file with a name already in use gets a number after it.";
+"settings.localfiles.import.subtitle" = "Copied from Files, never moved";
+"settings.localfiles.import.title" = "Import audio files";
+"settings.localfiles.imported.empty" = "No imported files";
+"settings.localfiles.imported.footer" = "Only files imported here are listed. Swipe left on a file to delete it.";
+"settings.localfiles.imported.title" = "Imported files";
+"settings.localfiles.imported.value.none" = "None";
+"settings.localfiles.title" = "Local files";
+
 "settings.locallyrics.error.deletefailed" = "Could not delete the file";
 "settings.locallyrics.error.importfailed" = "Could not import the file";
 "settings.locallyrics.error.nothing" = "There is nothing to import.";

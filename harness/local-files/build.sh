@@ -44,3 +44,9 @@ xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -ifr
     "$HERE/now-playing.m" "$OUT/LocalFileInfo.m" "$SRC/Shared/LocalFiles/LocalFiles.m" \
     -framework UIKit -framework MediaPlayer -framework CoreGraphics -framework Foundation -framework ImageIO -o "$OUT/now-playing"
 CFFIXED_USER_HOME="$OUT/home" "$OUT/now-playing"
+# Audio import: the copy's names, never overwriting, the list of what was imported and the delete. AUDIO_SOURCE
+# names the file under test, so a deliberately broken copy can be checked to fail.
+xcrun -sdk macosx clang -target arm64-apple-ios17.0-macabi -isysroot "$SDK" -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" \
+    -fobjc-arc -g -Wall -Werror -I"$SRC" "$HERE/audio.m" "${AUDIO_SOURCE:-$SRC/Shared/LocalFiles/LocalAudioImport.m}" \
+    -framework Foundation -o "$OUT/audio"
+CFFIXED_USER_HOME="$OUT/home" "$OUT/audio" "$OUT/audio-files"

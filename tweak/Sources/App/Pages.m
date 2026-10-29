@@ -21,6 +21,7 @@
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Shared/LyricsPiP/LyricsPiP.h"
 #import "Shared/Lossless/SGLossless.h"
+#import "Shared/LocalFiles/LocalAudioImport.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Lyrics/LyricsLook.h"
 #import "Redesigned/Lyrics/LyricsTools.h"
@@ -262,6 +263,10 @@ UIViewController *SGPlayerSettingsPage(void) {
        @"and its sound matches what Spotify plays, from about 4 s after the song starts or you seek. Spotify still "
        @"streams its own copy, at its lowest quality while the next song has a file. Karaoke and speeds other than "
        @"1x keep Spotify's sound. Applies after you restart Spotify."))];
+
+    [sections addObject:SGSection(nil, @[
+        SGWithTile(named(SGPageRow(SGL(@"settings.localfiles.title", @"Local files"), ^UIViewController *{ return SGLocalFilesSettingsPage(); }), @"player.localfiles"), @"folder", UIColor.systemOrangeColor),
+    ])];
 
     // The redesign's page leads with a card of its player and the background's control, the background's
     // rows and the Mini player section under it.

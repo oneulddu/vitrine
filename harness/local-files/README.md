@@ -67,6 +67,17 @@ artwork upgrades to a late blue metadata thumbnail, but an image installed by Sp
 With palette rendering doubled, it verifies that provisional red and exact blue have different
 identities and the field accepts the upgrade, then rejects late provisional resolver/screen replies.
 
+`audio.m` builds `LocalAudioImport.m` alone against a Documents folder and a defaults suite of its own. It checks the
+name numbering ("song 2.mp3", before the extension), that a user's file of the same name is never overwritten and the
+picked original stays, two picks of one name, a missing file named in `failed` with the rest still copied, that only
+imported files are listed, by the identity (device, inode, size) the copy made: a name whose file is gone, or was
+replaced by another regular file, a folder with contents or a link, leaves the list, and a replacement made after the
+page listed it is neither deleted nor changed (the delete answers NO and unlists it). The delete is one non-recursive
+`unlinkat` on the Documents-anchored name. `AUDIO_SOURCE=<file> ./build.sh` runs it against a changed copy of the
+source, for the mutation checks (overwrite, delete without the list, a numbering without the space, listing or
+deleting without the identity, and a recursive delete all fail).
+It does not cover the picker, the page or Spotify's own scan of Documents.
+
 ## Edit info in the simulator
 
 `sim/build-sim.sh <udid>` builds `EditInfoMenu.x` and `LocalFiles.m` as the tweak compiles them into an
