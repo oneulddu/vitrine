@@ -14,6 +14,15 @@
 // A line too wide for the room shrinks a little, and then shows in successive portions, each of whole words: the
 // line being sung's portion while it is timed by the word, else its share of the line's time (PlayerLyricFit.h).
 //
+// While the lyrics' menu shows translations (SGRKeyLyricsTranslation, the lyrics page's own switch), the line's
+// translation (SGRPlayerLineTranslation: none, or one that only repeats the line, shows nothing) sits under it in a
+// smaller, dimmer footnote with the lyrics page's translation weight and brightness, on one row that shrinks to
+// SGRLyricMinScale and then truncates. It goes under the line only when the room holds both with a gap either side
+// (SGRPlayerLineFitIn); else the line shows alone in today's place. The translations are the lyrics page's: on the
+// same kept lines, which it translates in place, and the saved ones read onto them from disk (SGLyricsLoadTranslation,
+// as the Live Activity restores them); the line never asks a translator. One saved, removed or switched on or off is
+// picked up at once: the translation fades in or out and the pair settles into place (at once under Reduce Motion).
+//
 // It reads the line on a one-shot timer armed again after every update, aimed at the next portion or the next line,
 // not a display link (a CADisplayLink capped at 60 Hz drags the player's 120 Hz transitions down), and changes only
 // when the line does: the new line crosses over the old one. Seeks, rate changes, lyrics changes and coming back to
@@ -21,7 +30,10 @@
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/Player/PlayerState.h"
+#import "Redesigned/Lyrics/AutoTranslation.h"
+#import "Redesigned/Lyrics/LyricsText.h"
 #import <math.h>
 #import "Player.h"
 #import "PlayerLyricLine.h"
@@ -43,7 +55,9 @@ BOOL SGRPlayerLyricLineOn(void) {
 
 @interface SGRLyricLineView : UIView
 @property (nonatomic) BOOL fits;   // set by the layout: there is room for it
+@property (nonatomic) CGRect room; // set by the layout: the gap under the cover, CGRectNull without one
 - (void)tick;
+- (BOOL)place;
 @end
 
 @interface SGRLyricLineView () <SGPlayerStateObserver>
@@ -60,6 +74,12 @@ BOOL SGRPlayerLyricLineOn(void) {
     NSArray<SGRLyricPortion *> *_portions;   // that line's portions for the label's width and font
     CGFloat _portionWidth;                   // the width they were measured for
     BOOL _shown;
+    UILabel *_translationLabel;
+    NSString *_translation;      // the line being sung's translation, nil for none
+    BOOL _translationShown;      // it is under the line: there is one and the room holds both
+    // The kept lines the saved translations were last read onto, and in which language.
+    NSArray<SGKaraokeLine *> *_restored;
+    NSString *_restoredLanguage;
     // Where the timer was armed, to tell a seek, a pause or resume and a speed change from the report that follows.
     BOOL _armed;
     double _armedMs, _armedRate;
@@ -69,6 +89,7 @@ BOOL SGRPlayerLyricLineOn(void) {
 - (instancetype)initWithFrame:(CGRect)frame {
     if (!(self = [super initWithFrame:frame])) return nil;
     _index = NSNotFound;
+    _room = CGRectNull;
     self.alpha = 0;
     self.userInteractionEnabled = NO;
     self.accessibilityElementsHidden = YES;
@@ -76,13 +97,21 @@ BOOL SGRPlayerLyricLineOn(void) {
     self.accessibilityTraits = UIAccessibilityTraitButton | UIAccessibilityTraitUpdatesFrequently;
     self.accessibilityHint = SGL(@"settings.player.lyric_line.hint", @"Opens the lyrics.");
     _label = [[UILabel alloc] initWithFrame:self.bounds];
-    _label.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     _label.textAlignment = NSTextAlignmentCenter;
     _label.numberOfLines = 1;
     _label.lineBreakMode = NSLineBreakByTruncatingTail;
     _label.textColor = SGRSecondary();
     _label.font = [SGRLyricLineView font];
     [self addSubview:_label];
+    _translationLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+    _translationLabel.textAlignment = NSTextAlignmentCenter;
+    _translationLabel.numberOfLines = 1;
+    _translationLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+    _translationLabel.adjustsFontSizeToFitWidth = YES;
+    _translationLabel.minimumScaleFactor = SGRLyricMinScale;
+    _translationLabel.alpha = 0;
+    [self styleTranslation];
+    [self addSubview:_translationLabel];
     [self addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(tapped)]];
     NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
     [center addObserver:self selector:@selector(clock) name:UIApplicationDidBecomeActiveNotification object:nil];
@@ -90,8 +119,94 @@ BOOL SGRPlayerLyricLineOn(void) {
     // Lyrics kept for the track, or the Lyrics page's Delay changed: the line and its portions are read again.
     [center addObserver:self selector:@selector(linesChanged) name:SGKaraokeLinesKeptNotification object:nil];
     [center addObserver:self selector:@selector(linesChanged) name:SGLyricsOffsetsDidChangeNotification object:nil];
+    // A translation saved, removed or deleted, or a job of the lyrics page's starting or ending (all posted on main):
+    // the saved ones are read onto the lines again and the line looks again.
+    for (NSNotificationName name in @[SGLyricsTranslationSavedNotification, SGLyricsTranslationsDidChangeNotification,
+                                      SGRTranslationNotification]) {
+        [center addObserver:self selector:@selector(translationsChanged) name:name object:nil];
+    }
+    // The menu's translation switch, or the Text sizes page's translation look.
+    [center addObserver:self selector:@selector(lyricsTextChanged) name:SGRLyricsTextDidChangeNotification object:nil];
     SGAddPlayerStateObserver(self);
     return self;
+}
+
+// The lyrics page's translation weight and brightness (its Text sizes page) on a footnote, dimmer than the line.
+- (void)styleTranslation {
+    SGRLyricsTextLook look = SGRLyricsTextLookOf(SGRLyricsTextTranslation);
+    _translationLabel.font = SGCategoryCappedFont(UIFontTextStyleFootnote, SGRLyricsTextFontWeight(look.weight),
+                                                  UIContentSizeCategoryExtraExtraExtraLarge);
+    UIColor *dim = SGRTertiary();
+    _translationLabel.textColor = [dim colorWithAlphaComponent:MIN(1, CGColorGetAlpha(dim.CGColor) * look.brightness / 100.0)];
+}
+
+- (CGFloat)translationHeight {
+    return ceil(_translationLabel.font.lineHeight);
+}
+
+- (void)lyricsTextChanged {
+    [self styleTranslation];
+    [self place];
+    [self setNeedsLayout];
+    [self translationsChanged];
+}
+
+- (void)translationsChanged {
+    _restored = nil;
+    if (_running) [self tick];
+}
+
+// The saved translations of the playing track's kept lines read onto them, once for the lines and language: what
+// the lyrics page shows for them even when it has not been opened this launch. A read from disk only.
+- (void)restoreTranslations {
+    NSString *track = SGKaraokePlayingTrack(), *language = SGLyricsGeminiLanguage();
+    NSArray<SGKaraokeLine *> *lines = _source;
+    if (!track.length || !lines.count || !language.length) return;
+    if (lines == _restored && [language isEqualToString:_restoredLanguage]) return;
+    _restored = lines;
+    _restoredLanguage = language;
+    __weak SGRLyricLineView *weakSelf = self;
+    SGLyricsLoadTranslation(track, language, lines, ^BOOL {
+        return [track isEqualToString:SGKaraokePlayingTrack()] && lines == SGKaraokeLinesForTrack(track)
+            && [language isEqualToString:SGLyricsGeminiLanguage()] && SGFlag(SGRKeyLyricsTranslation, NO);
+    }, ^{
+        SGRLyricLineView *view = weakSelf;
+        if (view && view->_running) [view tick];
+    });
+}
+
+// The frame in the room, with the translation under the line when the room holds both; NO when it cannot hold the
+// line, which leaves the frame as it was. The translation fades in or out with its place.
+- (BOOL)place {
+    if (CGRectIsNull(_room)) return NO;
+    SGRPlayerLineFit fit = SGRPlayerLineFitIn(_room.size.height, [self lineHeight], _translation ? [self translationHeight] : 0,
+                                              SGRGrid, kTapHeight);
+    if (!fit.line) return NO;
+    CGRect frame = CGRectIntegral(CGRectMake(CGRectGetMinX(_room), CGRectGetMinY(_room) + (_room.size.height - fit.height) / 2,
+                                             _room.size.width, fit.height));
+    if (!CGRectEqualToRect(self.frame, frame)) self.frame = frame;
+    if (fit.translation != _translationShown) {
+        _translationShown = fit.translation;
+        [self setNeedsLayout];
+        UILabel *label = _translationLabel;
+        SGRAnimate(SGRMotionFade, ^{ label.alpha = fit.translation ? 1 : 0; }, nil);
+    }
+    self.accessibilityValue = _translationShown ? _translation : nil;
+    return YES;
+}
+
+// The line alone fills the view, as it always has; with its translation the two are centered together.
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGRect bounds = self.bounds;
+    if (!_translationShown) {
+        _label.frame = bounds;
+        return;
+    }
+    CGFloat lineHeight = [self lineHeight], translationHeight = [self translationHeight];
+    CGFloat top = floor((bounds.size.height - lineHeight - translationHeight) / 2);
+    _label.frame = CGRectMake(0, top, bounds.size.width, lineHeight);
+    _translationLabel.frame = CGRectMake(SGRGrid, top + lineHeight, [self textWidth], translationHeight);
 }
 
 + (UIFont *)font {
@@ -106,13 +221,16 @@ BOOL SGRPlayerLyricLineOn(void) {
     [super traitCollectionDidChange:previous];
     _label.font = [SGRLyricLineView font];
     _label.textColor = SGRSecondary();
+    [self styleTranslation];
     _portions = nil;
     [self.superview setNeedsLayout];
 }
 
 // Touches only over the words, a tap's height tall, so a swipe across the rest of the gap still reaches the covers.
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    CGFloat width = MIN(self.bounds.size.width, [_label sizeThatFits:self.bounds.size].width + 2 * SGRSideMargin);
+    CGFloat text = [_label sizeThatFits:self.bounds.size].width;
+    if (_translationShown) text = MAX(text, [_translationLabel sizeThatFits:self.bounds.size].width);
+    CGFloat width = MIN(self.bounds.size.width, text + 2 * SGRSideMargin);
     CGRect words = CGRectMake(CGRectGetMidX(self.bounds) - width / 2, 0, width, self.bounds.size.height);
     return CGRectContainsPoint(words, point);
 }
@@ -244,6 +362,14 @@ BOOL SGRPlayerLyricLineOn(void) {
         SGRLyricPortion *shown = _portions[(NSUInteger)SGRLyricPortionAt(_portions, SGKaraokePositionMs() - SGKaraokeDelayMs())];
         [self showText:shown.text scale:shown.scale];
     }
+    // Its translation, read again every update, so one that arrives mid-line shows at once. With no line the last one
+    // stays, as the line's own text does, for the fade out.
+    BOOL translations = SGFlag(SGRKeyLyricsTranslation, NO);
+    if (translations && _source) [self restoreTranslations];
+    if (line) {
+        NSString *translation = SGRPlayerLineTranslation(line, translations);
+        if (translation != _translation && ![translation isEqualToString:_translation]) [self showTranslation:translation];
+    }
     // Spotify's own preview can come up with no pass of a view this file hooks (its cover cell unhidden as the song
     // changes), so every update looks again: the line stands down by its next portion at the latest. The layout gives
     // the room back once the preview goes.
@@ -277,6 +403,29 @@ BOOL SGRPlayerLyricLineOn(void) {
     [UIView transitionWithView:label duration:SGRCrossfade
                        options:UIViewAnimationOptionTransitionCrossDissolve | UIViewAnimationOptionAllowUserInteraction
                     animations:^{ label.text = text; } completion:nil];
+}
+
+// A new translation crosses over the one under the line, or comes in with its place; none fades the last one out.
+// The pair settles into its place with a layout spring, at once under Reduce Motion, where only the fade is kept.
+- (void)showTranslation:(NSString *)translation {
+    BOOL crossing = _shown && _translationShown && translation;
+    _translation = translation;
+    UILabel *label = _translationLabel;
+    if (crossing) {
+        [UIView transitionWithView:label duration:SGRCrossfade
+                           options:UIViewAnimationOptionTransitionCrossDissolve | UIViewAnimationOptionAllowUserInteraction
+                        animations:^{ label.text = translation; } completion:nil];
+    } else if (translation) {
+        label.text = translation;
+    }
+    if (!_shown) {
+        [self place];
+        return;
+    }
+    SGRAnimate(SGRMotionLayout, ^{
+        [self place];
+        [self layoutIfNeeded];
+    }, nil);
 }
 
 @end
@@ -342,21 +491,17 @@ static void placeLine(void) {
 
     UIView *tilt = SGRPlayerShowingCover().superview;
     UIView *stack = SGRFindByIdentifier(host, @"npv.bottomStackView", &kStackKey);
-    BOOL fits = NO;
+    CGRect room = CGRectNull;
     if (tilt && stack && [tilt isDescendantOfView:host] && host.bounds.size.height > host.bounds.size.width
         && !previewShowing(tilt, host)) {
         CGRect cover = [host convertRect:tilt.bounds fromView:tilt];
         CGFloat top = CGRectGetMaxY(cover), bottom = CGRectGetMinY([host convertRect:stack.bounds fromView:stack]);
         CGRect chips = chipsIn(host);
         if (!CGRectIsNull(chips) && CGRectGetMaxY(chips) > top && CGRectGetMinY(chips) < bottom) bottom = MAX(top, CGRectGetMinY(chips));
-        CGFloat room = bottom - top;
-        fits = room >= line.lineHeight + 2 * SGRGrid;
-        if (fits) {
-            CGFloat height = MIN(kTapHeight, room);
-            CGRect frame = CGRectIntegral(CGRectMake(CGRectGetMinX(cover), top + (room - height) / 2, cover.size.width, height));
-            if (!CGRectEqualToRect(line.frame, frame)) line.frame = frame;
-        }
+        room = CGRectMake(CGRectGetMinX(cover), top, cover.size.width, bottom - top);
     }
+    line.room = room;
+    BOOL fits = [line place];
     if (fits != line.fits) {
         line.fits = fits;
         static NSUInteger logged;

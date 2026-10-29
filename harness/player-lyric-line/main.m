@@ -1,10 +1,12 @@
 // Asserts the line under the cover's fit and clock offline (Redesigned/Player/PlayerLyricFit.m): a line that fits,
 // one that shrinks, one that splits into portions of whole words (word timed and not, syllable spans and CJK spans
 // written without spaces), and the wait to the next transition at different speeds and delays, with both clamps and
-// overlapping lines. The contract's own numbers are asserted, not the constants that carry them. Exits 1 on any
-// failure.
+// overlapping lines, and the translation under the line (PlayerLyricLine.h): shown, absent, off, repeating the line,
+// arriving late, and left out where the room does not hold it. The contract's own numbers are asserted, not the
+// constants that carry them. Exits 1 on any failure.
 #import <UIKit/UIKit.h>
 #import "Redesigned/Player/PlayerLyricFit.h"
+#import "Redesigned/Player/PlayerLyricLine.h"
 #import "Shared/Lyrics/Lyrics.h"
 #import "../harness-fail.h"
 
@@ -292,6 +294,36 @@ int main(void) {
         HARNESS_CHECK([[emojiTexts componentsJoinedByString:@" "] isEqualToString:@"hold me close 😀"]);
         SGKaraokeLine *emojiWord = makeLine(@[ @"love😀" ], 0, 1000, NO, NO);
         HARNESS_CHECK([SGRLyricPortions(emojiWord, kWidth, font()).firstObject.text isEqualToString:@"love😀"]);
+
+        // The translation under the line (PlayerLyricLine.h): none while the line has none, then the one that arrives
+        // later on the same line, trimmed; none with translations off, and none for one that only repeats the line.
+        SGKaraokeLine *sung = makeLine(@[ @"Woke", @"up", @"feeling", @"damned" ], 0, 2000, YES, NO);
+        HARNESS_CHECK(SGRPlayerLineTranslation(sung, YES) == nil);
+        sung.translation = @" 저주받은 기분으로 깼어\n";
+        HARNESS_CHECK([SGRPlayerLineTranslation(sung, YES) isEqualToString:@"저주받은 기분으로 깼어"]);
+        HARNESS_CHECK(SGRPlayerLineTranslation(sung, NO) == nil);
+        sung.translation = @"Woke up, feeling DAMNED!";
+        HARNESS_CHECK(SGRPlayerLineTranslation(sung, YES) == nil);
+        sung.translation = @" \n";
+        HARNESS_CHECK(SGRPlayerLineTranslation(sung, YES) == nil);
+
+        // Its room: a line 20 tall, a translation 16, a margin of 8 either side, a tap 44 tall.
+        SGRPlayerLineFit alone = SGRPlayerLineFitIn(100, 20, 0, 8, 44);
+        HARNESS_CHECK(alone.line && !alone.translation && alone.height == 44);
+        SGRPlayerLineFit shallow = SGRPlayerLineFitIn(40, 20, 0, 8, 44);
+        HARNESS_CHECK(shallow.line && shallow.height == 40);
+        HARNESS_CHECK(!SGRPlayerLineFitIn(35, 20, 0, 8, 44).line);
+        // Shown: the pair within a tap's height keeps it; a taller pair takes its own.
+        SGRPlayerLineFit pair = SGRPlayerLineFitIn(100, 20, 16, 8, 44);
+        HARNESS_CHECK(pair.line && pair.translation && pair.height == 44);
+        SGRPlayerLineFit tall = SGRPlayerLineFitIn(100, 26, 22, 8, 44);
+        HARNESS_CHECK(tall.translation && tall.height == 48);
+        HARNESS_CHECK(SGRPlayerLineFitIn(52, 20, 16, 8, 44).translation);
+        // Does not fit: the translation goes and the line keeps exactly the place it has without one.
+        SGRPlayerLineFit cramped = SGRPlayerLineFitIn(51, 20, 16, 8, 44);
+        HARNESS_CHECK(cramped.line && !cramped.translation && cramped.height == SGRPlayerLineFitIn(51, 20, 0, 8, 44).height);
+        SGRPlayerLineFit cut = SGRPlayerLineFitIn(60, 26, 22, 8, 44);
+        HARNESS_CHECK(cut.line && !cut.translation && cut.height == 44);
 
         printf("player lyric line: all checks passed\n");
         return 0;

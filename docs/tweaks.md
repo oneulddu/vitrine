@@ -1108,7 +1108,18 @@ Redesigned:
                   player's 120 Hz transitions down. A player report re-aims it when the rate changed (a pause or a
                   resume), and, paused, on any move of the place, else only when the position is more than 500 ms off
                   where the armed timer was heading; kept lines, the Delay and coming back to the foreground re-aim it
-                  too. Checked on the Mac against harness/player-lyric-line/
+                  too. While the lyrics' menu shows translations (SGRKeyLyricsTranslation; no switch of its own), the line's
+                  translation (SGLyricsShownTranslation: none, or one that reads the same as the line, adds nothing) sits
+                  under it as a footnote in SGRTertiary with the lyrics page's translation weight and brightness (Text
+                  sizes), on one row that shrinks to 0.85 and then truncates. It goes under the line only where the room
+                  holds the pair with a grid gap either side (SGRPlayerLineFitIn, PlayerLyricLine.h); else it is left
+                  out and the line keeps exactly its place without one, the line never shrinking for it. The
+                  translations are the lyrics page's, on the same kept lines it translates in place, plus the saved
+                  ones read onto them from disk (SGLyricsLoadTranslation, as the Live Activity restores them); the line
+                  never asks a translator. A save (SGLyricsTranslationSavedNotification), a removal or job change
+                  (SGRTranslationNotification, SGLyricsTranslationsDidChangeNotification) or the menu's switch
+                  (SGRLyricsTextDidChangeNotification) shows at once: the translation fades in or out and the pair
+                  settles with a layout spring, at once under Reduce Motion. Checked on the Mac against harness/player-lyric-line/
     Lyrics/       the full screen lyrics page on glass with Apple Music style lyrics over it, always on (SGRKaraokeView,
                   which the player shows in itself too, Player/PlayerLyrics.x, where with Hide the controls set to
                   Everything, everything else -- the header row, the thumbnail, the title row and the controls --
