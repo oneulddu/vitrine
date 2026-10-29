@@ -92,6 +92,7 @@ their check executable in the workflow.
 | `player/repeat-check.sh` | Production repeat-mode transition (`SGPlayerAdvanceRepeat`) extracted from `PlayerState.x`: every flag combination, command order and returned answer; no simulator. |
 | `player/upcoming-tracks-check.sh` | Production upcoming-track parsing (`SGURIString`, `SGPlayerUpcomingTracks`) extracted from `PlayerState.x` and run against Foundation doubles; no simulator. |
 | `player-lyric-line/build.sh` | Catalyst fitting (shrink and whole-word portions) and the line's wait/re-arm rules for synthetic lines and positions. |
+| `adblock/build.sh` | The real `AdHubs.x` hook through Logos against a Hub builder double: explicit ad metadata is removed only with Hide ads on, upsells only with Hide upsells on, in all four switch combinations. |
 | `player-visualiser/build.sh` | Catalyst `PlayerVisualiser.m` under stubs: the Lyrics visualizer clears its words when the lyrics are replaced by unsynced ones, and the display link asks the screen's full rate while drawing skips to 60/30/15 Hz. |
 | `player-refinements/check.sh` | Catalyst rolling-digit rules and the real roll on a label in a window, plus Star add button and Plain checkmark through Logos; no simulator. |
 | `prefs/check.sh` | Foundation preference validation plus counter persistence and file-hash checks (`counters.m`), and the Load ahead gate read through `SGEnabled` for wrong kinds and stock reset (`optional-work.m`). |

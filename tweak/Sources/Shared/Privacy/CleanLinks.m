@@ -2,16 +2,16 @@
 // Foundation only, so it runs on whatever thread the share sheet asks on and in the Mac check
 // (harness/clean-links).
 //
-// What goes is what says who shared the link and from where: si, nd, pt, context and every utm_. What the link
+// What goes is what says who shared the link and from where: si, nd, context and every utm_. What the link
 // opens stays: the path with its intl-xx/ segment, the fragment, and every other parameter in its order --
-// t, above all, the second a shared episode starts at.
+// t, the second a shared episode starts at, and pt, a playlist collaborator invitation token.
 #import "Privacy.h"
 
 static NSString *const kHost = @"open.spotify.com";
 
 static BOOL isTracking(NSString *name) {
     NSString *lower = name.lowercaseString;
-    return [lower isEqualToString:@"si"] || [lower isEqualToString:@"nd"] || [lower isEqualToString:@"pt"] ||
+    return [lower isEqualToString:@"si"] || [lower isEqualToString:@"nd"] ||
            [lower isEqualToString:@"context"] || [lower hasPrefix:@"utm_"];
 }
 

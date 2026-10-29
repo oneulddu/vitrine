@@ -26,8 +26,12 @@ int main(void) {
         check(url([track stringByAppendingString:@"?si=a1b2c3"]), track, @"si alone goes, and the ? with it");
         check(url([track stringByAppendingString:@"?si=a1b2c3&utm_source=copy-link&utm_medium=x"]), track,
               @"si and utm_* go");
-        check(url([track stringByAppendingString:@"?SI=a1&UTM_Campaign=x&nd=1&pt=abc&context=spotify%3Aplaylist%3Ax"]), track,
-              @"names compared without case; nd, pt and context go");
+        check(url([track stringByAppendingString:@"?SI=a1&UTM_Campaign=x&nd=1&pt=abc&context=spotify%3Aplaylist%3Ax"]),
+              [track stringByAppendingString:@"?pt=abc"], @"names compared without case; nd and context go, pt stays");
+        check(url(@"https://open.spotify.com/playlist/invite?si=share&pt=a%2Fb%2Bc&utm_source=copy-link"),
+              @"https://open.spotify.com/playlist/invite?pt=a%2Fb%2Bc", @"playlist invitation token stays byte for byte");
+        check(SGCleanLinksInText(@"Join: https://open.spotify.com/playlist/invite?pt=collaborate&si=share&utm_medium=copy"),
+              @"Join: https://open.spotify.com/playlist/invite?pt=collaborate", @"invitation in shared text stays usable");
         check(url(@"https://open.spotify.com/episode/abc?si=x&t=30"), @"https://open.spotify.com/episode/abc?t=30",
               @"t stays");
         check(url(@"https://open.spotify.com/episode/abc?t=30&go=1&si=x"), @"https://open.spotify.com/episode/abc?t=30&go=1",

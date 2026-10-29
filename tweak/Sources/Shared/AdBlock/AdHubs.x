@@ -1,7 +1,8 @@
 // Ad components taken out of the Hub JSON Home, Browse and Search pages are built from, before
 // the builder renders them (EeveeSpotify's HubsAdBlocker). A component is an ad when its
 // namespace, name, id, type or the keys of its metadata, logging or custom dictionaries say so;
-// its title never counts, "Billboard Hot 100" is a playlist. The plain ad words go with the ads
+// explicit ad flags require a true value, not just their key. Its title never counts,
+// "Billboard Hot 100" is a playlist. The plain ad words go with the ads
 // switch, a promotion word next to a surface word with the upsells one.
 #import "Core/SGCore.h"
 #import "AdBlock.h"
@@ -36,15 +37,30 @@ static BOOL adWord(NSString *text) {
     return upsells && containsAny(text, intentWords, COUNT(intentWords)) && containsAny(text, surfaceWords, COUNT(surfaceWords));
 }
 
+static NSString *const flagKeys[] = {@"ad", @"is_ad", @"is_sponsored"};
+
 static BOOL anyKey(NSDictionary *dictionary) {
     if (![dictionary isKindOfClass:NSDictionary.class]) return NO;
     for (NSString *key in dictionary) {
-        if (adWord(key)) return YES;
+        BOOL explicitFlag = NO;
+        for (size_t i = 0; i < COUNT(flagKeys); i++) {
+            if ([key isEqualToString:flagKeys[i]]) {
+                explicitFlag = YES;
+                break;
+            }
+        }
+        if (explicitFlag) {
+            id value = dictionary[key];
+            if (ads && (([value isKindOfClass:NSNumber.class] && [value doubleValue] != 0)
+                        || ([value isKindOfClass:NSString.class]
+                            && ([value isEqualToString:@"true"] || [value isEqualToString:@"1"])))) return YES;
+        } else if (adWord(key)) {
+            return YES;
+        }
     }
     return NO;
 }
 
-static NSString *const flagKeys[] = {@"ad", @"is_ad", @"is_sponsored"};
 static NSString *const childKeys[] = {@"children", @"rows", @"body"};
 
 static BOOL isAd(NSDictionary *component) {
@@ -57,12 +73,6 @@ static BOOL isAd(NSDictionary *component) {
     }
     if (adWord(component[@"id"]) || adWord(component[@"type"])) return YES;
     NSDictionary *metadata = component[@"metadata"];
-    if ([metadata isKindOfClass:NSDictionary.class]) {
-        for (size_t i = 0; i < COUNT(flagKeys); i++) {
-            id flag = metadata[flagKeys[i]];
-            if ([flag respondsToSelector:@selector(boolValue)] && [flag boolValue]) return YES;
-        }
-    }
     if (anyKey(metadata) || anyKey(component[@"custom"])) return YES;
     NSDictionary *logging = component[@"logging"];
     return [logging isKindOfClass:NSDictionary.class] && (adWord(logging[@"type"]) || anyKey(logging));

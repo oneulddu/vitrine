@@ -48,6 +48,8 @@ HARNESSES = [
      "run": "sh harness/settings-search/build.sh"},
     {"name": "Settings bars inset", "dir": "settings-bars",
      "run": "sh harness/settings-bars/build.sh"},
+    {"name": "Ad block hubs", "dir": "adblock", "theos": True,
+     "run": "sh harness/adblock/build.sh"},
     {"name": "Player visualiser", "dir": "player-visualiser",
      "run": "sh harness/player-visualiser/build.sh"},
     {"name": "Now playing bar text", "dir": "now-playing-bar", "theos": True,
