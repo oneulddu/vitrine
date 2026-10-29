@@ -56,6 +56,11 @@ not a full Spotify playback test on an iPhone.
 Metadata file covers use the bounded ImageIO reader on a worker; layouts synchronously reuse its
 current-track cache. The check rejects main-thread reads, retains cached images after file removal,
 remembers failed reads past the old retry interval, and drops an in-flight result across A → B → A.
+`watcher.m` runs the real native watcher (`Native/LocalFiles/LocalCover.x` through Logos) over the production
+resolver, with Spotify's list, cell and cover-tilt classes as doubles under their runtime names. Two local tracks share a
+title and artist; the second shows the first's artwork, the watcher's 0 and 1.5 s retries pass, and the second's own
+artwork then reaches the now playing info with only the info-changed notification posted: the displayed cover must
+become it with no layout and no playback change.
 The native image-view publisher is exercised with the production resolver: provisional red system
 artwork upgrades to a late blue metadata thumbnail, but an image installed by Spotify remains intact.
 `bridge.m` compiles the real redesigned Logos artwork bridge, local resolver and `SGRArtworkField`.

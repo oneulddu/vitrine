@@ -71,7 +71,7 @@ their check executable in the workflow.
 | `haptics/build.sh` | `build/track`: synthetic ISRC/protobuf/catalog assertions. |
 | `head-gestures/build.sh` | Synthetic motion traces with expected gestures. |
 | `listening-stats/build.sh` | Synthetic imports, calendar cases and 100k-row checks. |
-| `local-files/build.sh` | Isolated metadata and imported LRC checks. |
+| `local-files/build.sh` | Isolated metadata and imported LRC checks, the cover resolver, and the native cover watcher (`watcher.m`) updating to system artwork that arrives after its retries. |
 | `lyrics/translation-check.sh` | Catalyst lyrics-menu assertions, not screenshots alone. |
 | `lyrics-clip/build.sh` | Default synthetic still/animated clips with decode assertions. |
 | `lyrics-pip/build.sh` | Catalyst PiP text decision (`LyricsPiPText.m`) for synthetic lines and positions, plus frame fitting checks (`LyricsPiPFrame.m`) and sample frame PNGs. |
@@ -89,7 +89,7 @@ their check executable in the workflow.
 | `pitch/build.sh` | Synthetic sine pitch/speed assertions, no song argument. |
 | `player/title-notification-check.sh` | Real Logos controller with offline notification fixtures. |
 | `now-playing-bar/check.sh` | Catalyst title and artists split of the redesigned now playing bar through Logos: titles with and without " • ", with and without a device line, neighbour pages and an unknown track. |
-| `fonts/build.sh` | Catalyst `FontLibrary.m` and the Free fonts page with Core Text faked at its two entry calls: installed families register off main, publish on main, never twice, and a removal is never overridden by a late publish. |
+| `fonts/build.sh` | Catalyst `FontLibrary.m` and the Free fonts page with Core Text faked at its two entry calls: installed families register off main, publish on main, never twice, and a removal is never overridden by a late publish; the real Font page (free and imported families) opens and the Free fonts page finishes a download while registrations are held, a block queued on main runs before each release, and the previews and the chosen font update after; a hidden Font page reloads nothing. |
 | `library/rows-check.sh` | Simulator executable through Logos: the Library row separator spans from the artwork's text edge, mirrored right to left. |
 | `playlist/creator-check.sh` | Simulator executable through Logos: the playlist header's creator lookup keeps one-character names and skips the facepile's initial. |
 | `player/repeat-check.sh` | Production repeat-mode transition (`SGPlayerAdvanceRepeat`) extracted from `PlayerState.x`: every flag combination, command order and returned answer; no simulator. |

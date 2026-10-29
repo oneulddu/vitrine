@@ -27,13 +27,18 @@ SGLibraryFont *SGFontLibraryFont(NSString *identifier);
 BOOL SGFontLibraryInstalled(NSString *identifier);
 // Registers the installed family's files with Core Text for this process and answers the family name the files
 // carry, or nil when the family is not installed or Core Text takes none of it. Calling it again is harmless.
+// It waits for the registration queue, so it is for the launch path (Fonts.x), which needs the family before
+// any hook runs; a page uses SGFontLibraryRegisterAsync.
 NSString *SGFontLibraryRegister(NSString *identifier);
 // What SGFontLibraryRegister answered, published on the main thread by it or by SGFontLibraryRegisterInstalled;
 // nil until then. Reads nothing from disk and registers nothing, so a page can ask on every row.
 NSString *SGFontLibraryRegisteredFamily(NSString *identifier);
-// Registers every installed family on a queue of its own (the same one SGFontLibraryRegister and
-// SGFontLibraryRemove run on), then publishes each family name and posts the change notification for it on
-// the main thread. Returns at once.
+// Registers the family on a queue of its own (the same one SGFontLibraryRegister and SGFontLibraryRemove run
+// on), then on the main thread publishes its name, posts the change notification for it when the name is new,
+// and runs `done` (may be nil) with the family name, or nil when the family is not installed (any more) or Core
+// Text takes none of it. Returns at once; nothing registers on the calling thread.
+void SGFontLibraryRegisterAsync(NSString *identifier, void (^done)(NSString *family));
+// SGFontLibraryRegisterAsync for every family in the catalog.
 void SGFontLibraryRegisterInstalled(void);
 
 // One family downloads at a time. While it does, SGFontLibraryDownloading names it and SGFontLibraryProgress

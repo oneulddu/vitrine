@@ -7,6 +7,9 @@
 #import "Shared/LocalFiles/LocalFiles.h"
 #import "Shared/Player/PlayerState.h"
 #import "Native/LocalFiles/LocalCoverFill.h"
+#import "Shared/Player/NowPlayingExtras.h"
+
+NSNotificationName const SGNowPlayingInfoDidChangeNotification = @"spotifyglass.nowPlayingInfoDidChange";
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #c); exit(1); } } while (0)
 

@@ -11,6 +11,9 @@
 #import "Redesigned/Kit/SGRTokens.h"
 #import "Redesigned/Kit/SGRFlow.h"
 #import "Redesigned/Kit/SGRFluid.h"
+#import "Shared/Player/NowPlayingExtras.h"
+
+NSNotificationName const SGNowPlayingInfoDidChangeNotification = @"spotifyglass.nowPlayingInfoDidChange";
 
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #c); exit(1); } } while (0)
 

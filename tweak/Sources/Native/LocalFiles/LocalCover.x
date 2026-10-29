@@ -47,7 +47,9 @@ static void fillFront(UIScrollView *list) {
     }
 }
 
-// The track changing, or the now playing info catching up with it a moment later, lays nothing out.
+// The track changing, or the now playing info catching up with it a moment later, lays nothing out. The
+// retries below cover the first seconds; artwork arriving after them is announced by LocalCover.m when the
+// now playing info changes, which coverLoaded: answers.
 @interface SGLocalCoverWatcher : NSObject <SGPlayerStateObserver>
 @end
 

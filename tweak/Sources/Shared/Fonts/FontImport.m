@@ -187,15 +187,28 @@ static void pickFont(void (^done)(void)) {
 
 #pragma mark - the page
 
+// SGRegisterCustomFont on a queue of its own, one registration at a time; `done` runs on main with its answer.
+static void registerCustomOffMain(void (^done)(NSString *family)) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ queue = dispatch_queue_create("spotifyglass.fontImport.registration", DISPATCH_QUEUE_SERIAL); });
+    dispatch_async(queue, ^{
+        NSString *family = SGRegisterCustomFont();
+        dispatch_async(dispatch_get_main_queue(), ^{ done(family); });
+    });
+}
+
 // Each choice is drawn in its own font. Core Text makes it, so the font chosen now (Fonts.x hooks UIFont) does
 // not dress every row in itself.
 static UIFont *previewFont(NSString *nameOrFamily, BOOL family, CGFloat size) {
     CTFontRef font = NULL;
-    if (family) {
+    if (!nameOrFamily) {
+        return nil;
+    } else if (family) {
         CTFontDescriptorRef descriptor = CTFontDescriptorCreateWithAttributes((__bridge CFDictionaryRef)@{(id)kCTFontFamilyNameAttribute: nameOrFamily});
         font = CTFontCreateWithFontDescriptor(descriptor, size, NULL);
         CFRelease(descriptor);
-    } else if (nameOrFamily) {
+    } else {
         font = CTFontCreateWithName((__bridge CFStringRef)nameOrFamily, size, NULL);
     }
     return font ? (__bridge_transfer UIFont *)font : nil;
@@ -229,13 +242,15 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     NSArray<NSString *> *_families;
     NSArray<SGLibraryFont *> *_free;   // the free families on this iPhone
     UIView *_footer;
+    id _observer;
+    NSString *_customFamily;   // what registering the imported files answered, once it has landed
+    BOOL _visible;             // between viewWillAppear: and viewDidDisappear:
 }
 
 - (instancetype)init {
     if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
     self.title = SGL(@"settings.font.title", @"Font");
     _families = SGAppFontFamilies();
-    SGRegisterCustomFont();   // so the imported family can be drawn here, whichever font is chosen
     return self;
 }
 
@@ -248,9 +263,20 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     self.tableView.tableFooterView = _footer;
 }
 
+- (void)dealloc {
+    if (_observer) [NSNotificationCenter.defaultCenter removeObserver:_observer];
+}
+
 - (void)viewDidLoad {
     [super viewDidLoad];
     [self refreshFooter];
+    __weak SGFontPage *page = self;
+    // Posted on the main thread only (FontLibrary.m): a family registered off main is now drawable, or a
+    // family was added or removed.
+    _observer = [NSNotificationCenter.defaultCenter addObserverForName:SGFontLibraryChangedNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        SGFontPage *strong = page;
+        if (strong && strong->_visible) [strong reloadFree];   // viewWillAppear: refreshes it when it comes back
+    }];
 }
 
 - (void)viewWillLayoutSubviews {
@@ -260,20 +286,48 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    _visible = YES;
     [self refresh];
 }
 
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    _visible = NO;
+}
+
+// Installed families, free and imported, are registered off main and drawn in themselves once the library
+// announces each one or the imported files land; until then a row keeps the list's font. Nothing here or in
+// the cells registers a font synchronously.
 - (void)refresh {
-    _free = [SGFontLibrary() filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(SGLibraryFont *font, NSDictionary *bindings) {
-        return SGFontLibraryInstalled(font.identifier) && SGFontLibraryRegister(font.identifier);
-    }]];
+    SGFontLibraryRegisterInstalled();
+    __weak SGFontPage *page = self;
+    registerCustomOffMain(^(NSString *family) {
+        SGFontPage *strong = page;
+        if (!strong || strong->_customFamily == family || [strong->_customFamily isEqualToString:family]) return;
+        strong->_customFamily = family;
+        if (!strong.isViewLoaded) return;
+        [strong refreshFooter];
+        [strong.tableView reloadData];
+    });
     [self refreshFooter];
+    [self reloadFree];
+}
+
+- (void)reloadFree {
+    _free = [SGFontLibrary() filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(SGLibraryFont *font, NSDictionary *bindings) {
+        return SGFontLibraryInstalled(font.identifier);
+    }]];
     [self.tableView reloadData];
+}
+
+// The imported family once its files are registered; nil before that and when they are gone.
+- (NSString *)customFamily {
+    return [_customFamily isEqualToString:importedFamily()] ? _customFamily : nil;
 }
 
 // How many faces the imported family has on this iPhone.
 - (NSUInteger)styleCount {
-    NSString *name = importedFamily();
+    NSString *name = self.customFamily;
     return name ? [UIFont fontNamesForFamilyName:name].count : 0;
 }
 
@@ -317,7 +371,7 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
     } else if (path.section == SGFontFree && path.row < (NSInteger)_free.count) {
         SGLibraryFont *free = _free[(NSUInteger)path.row];
         title = free.name;
-        font = previewFont(SGFontLibraryRegister(free.identifier), YES, size);
+        font = previewFont(SGFontLibraryRegisteredFamily(free.identifier), YES, size);
         selected = chosen == SGAppFontLibrary && [free.identifier isEqualToString:[store stringForKey:SGKeyAppFontLibrary]];
     } else if (path.section == SGFontFree) {
         SGFillCell(cell, _free.count ? SGL(@"settings.font.free.more.title", @"More free fonts") : SGL(@"settings.font.free.get.title", @"Get free fonts"),
@@ -328,9 +382,9 @@ typedef NS_ENUM(NSInteger, SGFontSection) { SGFontBuiltIn, SGFontMore, SGFontFre
         return cell;
     } else if (path.row == 0 && importedFamily().length) {
         title = importedFamily();
-        font = previewFont(title, YES, size);
+        font = previewFont(self.customFamily, YES, size);
         selected = chosen == SGAppFontCustom;
-        subtitle = [NSString stringWithFormat:SGL(@"settings.font.style_count.format", @"%lu style%@"), (unsigned long)self.styleCount, self.styleCount == 1 ? @"" : @"s"];
+        if (self.styleCount) subtitle = [NSString stringWithFormat:SGL(@"settings.font.style_count.format", @"%lu style%@"), (unsigned long)self.styleCount, self.styleCount == 1 ? @"" : @"s"];
     } else {
         SGFillCell(cell, SGL(@"settings.font.add_file.title", @"Add a font file"), nil, SGGreen(), nil);
         cell.selectionStyle = UITableViewCellSelectionStyleDefault;

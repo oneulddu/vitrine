@@ -523,7 +523,8 @@ Shared:
                   order, which moves it on top at the first import and at every link once LyricsSources lists it.
                   Where Spotify's player shows its placeholder for a local file, the file's own cover is found
                   (LocalCover.m) in the image fields of its metadata or, while the titles and artists agree, in the
-                  system's now playing artwork, which the lock screen shows; the native look puts it into the front
+                  system's now playing artwork, which the lock screen shows (read again, and announced, whenever the now
+                  playing info changes, so artwork that arrives late replaces the provisional one); the native look puts it into the front
                   cover's empty image view (Native/LocalFiles/LocalCover.x), the redesign's artwork bridge takes it
                   as the picture of a local file whose metadata names none. A cover picked in Edit info wins.
                   The model, the cover fallback and every kind of lyrics file are checked on the Mac against
@@ -1413,7 +1414,9 @@ together) added from Files, refused when their faces name more than one family, 
 and registered again at each launch, each weight taken as the family's nearest face, Spotify's font coming back when
 the files are gone. Swiping the row deletes the family. An import from before families (one file under
 spotifyglass.font.file) moves to spotifyglass.font.files and the family name on first use. Free fonts, between More fonts and Your fonts, lists
-the free families on this iPhone and opens the free fonts page (Shared/Fonts/FontLibraryPage.m, also in Libraries & presets): sixteen SIL Open
+the free families on this iPhone, each drawn in itself once FontLibrary.m has registered it off main and announced it, as is the imported family once its
+files are registered (opening the page or finishing a download never waits for Core Text; the launch registers them synchronously
+in Fonts.x, as the global font hook needs them first), and opens the free fonts page (Shared/Fonts/FontLibraryPage.m, also in Libraries & presets): sixteen SIL Open
 Font License families from github.com/google/fonts pinned to one commit, Korean first, each file and its OFL.txt checked against its
 size and SHA-256 (FontLibrary.m) before the family moves from a hidden folder into Application Support/Vitrine/Font Library, one
 download at a time with its progress on the row and a tap stopping it. A family downloaded becomes the app's font

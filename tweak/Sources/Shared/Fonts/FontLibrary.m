@@ -281,18 +281,21 @@ NSString *SGFontLibraryRegisteredFamily(NSString *identifier) {
     return families()[identifier];
 }
 
-void SGFontLibraryRegisterInstalled(void) {
-    for (SGLibraryFont *font in SGFontLibrary()) {
-        dispatch_async(registrationQueue(), ^{
-            NSString *family = registerOnQueue(font);
-            if (!family) return;
-            dispatch_async(dispatch_get_main_queue(), ^{
-                // A removal that ran after the registration has taken the files and the family away.
-                if (!SGFontLibraryInstalled(font.identifier) || !publish(font.identifier, family)) return;
-                changed(font.identifier);
-            });
+void SGFontLibraryRegisterAsync(NSString *identifier, void (^done)(NSString *family)) {
+    SGLibraryFont *font = SGFontLibraryFont(identifier);
+    dispatch_async(registrationQueue(), ^{
+        NSString *family = font ? registerOnQueue(font) : nil;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            // A removal that ran after the registration has taken the files and the family away.
+            BOOL here = family && SGFontLibraryInstalled(identifier);
+            if (here && publish(identifier, family)) changed(identifier);
+            if (done) done(here ? family : nil);
         });
-    }
+    });
+}
+
+void SGFontLibraryRegisterInstalled(void) {
+    for (SGLibraryFont *font in SGFontLibrary()) SGFontLibraryRegisterAsync(font.identifier, nil);
 }
 
 void SGFontLibraryRemove(NSString *identifier) {

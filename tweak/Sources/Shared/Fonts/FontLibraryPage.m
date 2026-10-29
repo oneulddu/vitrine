@@ -197,21 +197,24 @@ static void choose(SGLibraryFont *font) {
     __weak SGFontLibraryList *page = self;
     UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, [NSString stringWithFormat:SGL(@"settings.font.library.a11y.downloading", @"Downloading %@"), font.name]);
     SGFontLibraryDownload(font.identifier, ^(NSString *error) {
-        SGFontLibraryList *strong = page;
         if (error.length) {
-            [strong tell:SGL(@"settings.font.library.failed.alert.title", @"Font not downloaded") message:error];
+            [page tell:SGL(@"settings.font.library.failed.alert.title", @"Font not downloaded") message:error];
             return;
         }
         if (error) return;   // stopped
-        // Keep the download available even if a newer choice or pending restart prevents selection.
-        if (!SGFontLibraryRegister(font.identifier)) {
-            [strong tell:SGL(@"settings.font.library.failed.alert.title", @"Font not downloaded") message:SGL(@"settings.font.library.error.unreadable", @"iOS could not read the downloaded font.")];
-            return;
-        }
-        BOOL select = SGFontSelectionUnchanged(selection);
-        if (select) choose(font);
-        [strong.tableView reloadData];
-        if (select) [strong offerRestart:font];
+        // Keep the download available even if a newer choice or pending restart prevents selection. The
+        // registration runs off main and the page goes on when it lands.
+        SGFontLibraryRegisterAsync(font.identifier, ^(NSString *family) {
+            SGFontLibraryList *strong = page;
+            if (!family) {
+                [strong tell:SGL(@"settings.font.library.failed.alert.title", @"Font not downloaded") message:SGL(@"settings.font.library.error.unreadable", @"iOS could not read the downloaded font.")];
+                return;
+            }
+            BOOL select = SGFontSelectionUnchanged(selection);
+            if (select) choose(font);
+            [strong.tableView reloadData];
+            if (select) [strong offerRestart:font];
+        });
     });
 }
 

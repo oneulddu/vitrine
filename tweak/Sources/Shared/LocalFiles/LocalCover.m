@@ -4,10 +4,12 @@
 // taken only while its title and artist agree with the track's, and read again when its artwork changes.
 //
 // Cache and publication are main-thread only. Metadata files are thumbnailed on a worker once per
-// path/playing track, including failures. Only system now-playing misses are retried after a second.
+// path/playing track, including failures. Only system now-playing misses are retried after a second, and a
+// change of the now playing info reads the system artwork again at once and announces a new cover.
 #import <MediaPlayer/MediaPlayer.h>
 #import "Core/SGCore.h"
 #import "Headers/SPTPlayer.h"
+#import "Shared/Player/NowPlayingExtras.h"
 #import "Shared/Player/PlayerState.h"
 #import "LocalFiles.h"
 
@@ -36,6 +38,17 @@ NSNotificationName const SGLocalFileFallbackCoverDidChangeNotification = @"SGLoc
     _systemCover = nil;
     _systemMiss = nil;
 }
+
+// The system's artwork arrives or changes with no layout and no player state change, and the retry interval
+// below would hold a miss back: read it again now and announce a new cover, as a metadata thumbnail does.
+- (void)nowPlayingInfoChanged:(NSNotification *)note {
+    SPTPlayerTrack *track = SGPlayerState().track;
+    if (!SGLocalFileIs(SGURIString(track.URI))) return;
+    UIImage *before = _systemCover;
+    _systemMiss = nil;
+    SGLocalFileFallbackCover(track, NULL);
+    if (_systemCover != before) [NSNotificationCenter.defaultCenter postNotificationName:SGLocalFileFallbackCoverDidChangeNotification object:_uri];
+}
 @end
 
 static SGLocalCoverCache *cache(void) {
@@ -44,6 +57,9 @@ static SGLocalCoverCache *cache(void) {
     dispatch_once(&once, ^{
         kept = [SGLocalCoverCache new];
         SGAddPlayerStateObserver(kept);
+        // Posted on main (NowPlayingExtras.h).
+        [NSNotificationCenter.defaultCenter addObserver:kept selector:@selector(nowPlayingInfoChanged:)
+            name:SGNowPlayingInfoDidChangeNotification object:nil];
     });
     [kept playerStateDidChange:SGPlayerState()];
     return kept;

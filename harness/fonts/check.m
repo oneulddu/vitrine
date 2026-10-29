@@ -8,6 +8,9 @@
 #import "../harness-fail.h"
 
 static atomic_int sg_mainCalls, sg_workerCalls;
+// While set, a registration enters and waits here, as a multi-MB Korean font takes its time in Core Text; the
+// imported font's file waits on a semaphore of its own, so the two kinds land one after the other.
+static dispatch_semaphore_t sg_holdRegistration, sg_holdImported, sg_registrationEntered;
 static CFArrayRef harnessDescriptors(CFURLRef url) {
     atomic_fetch_add(NSThread.isMainThread ? &sg_mainCalls : &sg_workerCalls, 1);
     CTFontDescriptorRef face = CTFontDescriptorCreateWithNameAndSize(CFSTR("Helvetica"), 12);
@@ -15,8 +18,14 @@ static CFArrayRef harnessDescriptors(CFURLRef url) {
     CFRelease(face);
     return faces;
 }
-static bool harnessRegister(CFURLRef url, CTFontManagerScope scope, CFErrorRef *error) {
+bool harnessRegister(CFURLRef url, CTFontManagerScope scope, CFErrorRef *error) {
     atomic_fetch_add(NSThread.isMainThread ? &sg_mainCalls : &sg_workerCalls, 1);
+    dispatch_semaphore_t hold = [((__bridge NSURL *)url).lastPathComponent isEqual:@"Harness.ttf"] ? sg_holdImported : sg_holdRegistration;
+    if (hold) {
+        dispatch_semaphore_signal(sg_registrationEntered);
+        if (dispatch_semaphore_wait(hold, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC)))
+            HARNESS_FAIL(@"a registration stayed held for 3 s: something waits for it before releasing it");
+    }
     return true;
 }
 static bool harnessUnregister(CFURLRef url, CTFontManagerScope scope, CFErrorRef *error) {
@@ -26,6 +35,7 @@ static bool harnessUnregister(CFURLRef url, CTFontManagerScope scope, CFErrorRef
 #define CTFontManagerRegisterFontsForURL harnessRegister
 #define CTFontManagerUnregisterFontsForURL harnessUnregister
 #import "Shared/Fonts/FontLibrary.m"
+#import "Settings/SGModPage.h"
 
 SGAppFont SGAppFontChosen(void) { return SGAppFontSpotify; }
 NSArray<NSString *> *SGAppFontNames(void) { return @[]; }
@@ -56,12 +66,29 @@ static void install(NSString *identifier) {
     HARNESS_FAIL(@"%@ is not in the catalog", identifier);
 }
 
+// The download the Free fonts page asks for, finished at once: the family's files are there and the page's
+// completion runs on main, as FontLibrary.m's does when the last file checks out.
+void harnessDownload(NSString *identifier, void (^done)(NSString *error)) {
+    install(identifier);
+    dispatch_async(dispatch_get_main_queue(), ^{ done(nil); });
+}
+
 static NSString *rowFamily(UITableViewController *page, NSString *identifier) {
     SGLibraryFont *font = SGFontLibraryFont(identifier);
     NSUInteger row = [[SGFontLibrary() filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"korean == %@", @(font.korean)]] indexOfObject:font];
     NSIndexPath *path = [NSIndexPath indexPathForRow:(NSInteger)row inSection:font.korean ? 0 : 1];
     UITableViewCell *cell = [page tableView:page.tableView cellForRowAtIndexPath:path];
     return ((UIListContentConfiguration *)cell.contentConfiguration).textProperties.font.familyName;
+}
+
+// The family the Font page's preview of the free font named `name` is drawn in, as the table shows it now.
+static NSString *pickerPreviewFamily(UITableViewController *page, NSString *name) {
+    [page.tableView layoutIfNeeded];
+    for (UITableViewCell *cell in page.tableView.visibleCells) {
+        UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+        if ([content.text isEqual:name]) return content.textProperties.font.familyName;
+    }
+    HARNESS_FAIL(@"the Font page shows no row for %@", name);
 }
 
 int main(void) { @autoreleasepool {
@@ -116,6 +143,87 @@ int main(void) { @autoreleasepool {
     [NSNotificationCenter.defaultCenter removeObserver:token];
     for (NSString *identifier in @[@"nanumgothic", @"lato", @"jua", @"barlow"]) SGFontLibraryRemove(identifier);
     [NSFileManager.defaultManager removeItemAtURL:libraryFolder() error:nil];
-    puts("PASS: free fonts register off main on a serial queue, publish and refresh rows on main, and a removal beats a pending registration");
+
+    // The Font page (FontImport.m) with two Korean families installed, a font of the user's own imported, and
+    // Core Text holding every registration: opening it asks for them without waiting, so a block queued on main
+    // runs while Core Text is still busy, and the previews turn into their fonts when the registrations land.
+    install(@"gowundodum");
+    install(@"dohyeon");
+    NSURL *support = [NSFileManager.defaultManager URLsForDirectory:NSApplicationSupportDirectory inDomains:NSUserDomainMask].firstObject;
+    NSURL *importedFolder = [[support URLByAppendingPathComponent:@"Vitrine" isDirectory:YES] URLByAppendingPathComponent:@"Font" isDirectory:YES];
+    HARNESS_CHECK([NSFileManager.defaultManager createDirectoryAtURL:importedFolder withIntermediateDirectories:YES attributes:nil error:nil]);
+    HARNESS_CHECK([NSFileManager.defaultManager createFileAtPath:[importedFolder URLByAppendingPathComponent:@"Harness.ttf"].path contents:nil attributes:nil]);
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    [store setObject:@[@"Harness.ttf"] forKey:SGKeyAppFontFiles];
+    [store setObject:@"Helvetica" forKey:SGKeyAppFontName];
+    atomic_store(&sg_mainCalls, 0);   // the synchronous entry above ran its registration on the calling thread
+    sg_holdRegistration = dispatch_semaphore_create(0);
+    sg_holdImported = dispatch_semaphore_create(0);
+    sg_registrationEntered = dispatch_semaphore_create(0);
+    NSMutableSet<NSString *> *pickerAnnounced = [NSMutableSet set];
+    id pickerToken = [NSNotificationCenter.defaultCenter addObserverForName:SGFontLibraryChangedNotification object:nil queue:nil
+        usingBlock:^(NSNotification *note) { [pickerAnnounced addObject:note.userInfo[@"identifier"]]; }];
+    UITableViewController *picker = (UITableViewController *)SGAppFontRows().firstObject.page();
+    [picker loadViewIfNeeded];   // a window needs the app's scene, which a command-line check does not have
+    picker.tableView.frame = CGRectMake(0, 0, 390, 2400);
+    [picker viewWillAppear:NO];
+    // The library's queue and the imported font's each hold one registration.
+    for (int held = 0; held < 2; held++)
+        HARNESS_CHECK(dispatch_semaphore_wait(sg_registrationEntered, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC)) == 0);
+    __block BOOL queuedRan = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ queuedRan = YES; });
+    pumpUntil(^BOOL { return queuedRan; });
+    HARNESS_CHECK(!SGFontLibraryRegisteredFamily(@"dohyeon") && !SGFontLibraryRegisteredFamily(@"gowundodum"));
+    HARNESS_CHECK(![pickerPreviewFamily(picker, @"Do Hyeon") isEqual:@"Helvetica"]);
+    HARNESS_CHECK(![pickerPreviewFamily(picker, @"Helvetica") isEqual:@"Helvetica"]);
+    // The library's families land first; the imported font is still waiting in Core Text.
+    for (int release = 0; release < 2; release++) dispatch_semaphore_signal(sg_holdRegistration);
+    pumpUntil(^BOOL { return pickerAnnounced.count == 2; });
+    HARNESS_CHECK([pickerPreviewFamily(picker, @"Do Hyeon") isEqual:@"Helvetica"]);
+    HARNESS_CHECK([pickerPreviewFamily(picker, @"Gowun Dodum") isEqual:@"Helvetica"]);
+    HARNESS_CHECK(![pickerPreviewFamily(picker, @"Helvetica") isEqual:@"Helvetica"]);
+    dispatch_semaphore_signal(sg_holdImported);
+    pumpUntil(^BOOL { return [pickerPreviewFamily(picker, @"Helvetica") isEqual:@"Helvetica"]; });
+    HARNESS_CHECK(atomic_load(&sg_mainCalls) == 0);
+    sg_holdRegistration = sg_holdImported = nil;
+
+    // Out of sight, a change reloads nothing; coming back shows it.
+    [picker viewDidDisappear:NO];
+    install(@"jua");
+    NSInteger rows = [picker tableView:picker.tableView numberOfRowsInSection:2];
+    [NSNotificationCenter.defaultCenter postNotificationName:SGFontLibraryChangedNotification object:nil userInfo:@{@"identifier": @"jua"}];
+    HARNESS_CHECK([picker tableView:picker.tableView numberOfRowsInSection:2] == rows);
+    [picker viewWillAppear:NO];
+    HARNESS_CHECK([picker tableView:picker.tableView numberOfRowsInSection:2] == rows + 1);
+    pumpUntil(^BOOL { return [pickerAnnounced containsObject:@"jua"]; });
+    [store removeObjectForKey:SGKeyAppFontFiles];
+    [store removeObjectForKey:SGKeyAppFontName];
+    [NSFileManager.defaultManager removeItemAtURL:importedFolder error:nil];
+
+    // The Free fonts page: a download that finishes while Core Text is busy leaves the page free; the family is
+    // chosen and announced once its registration lands.
+    sg_holdRegistration = dispatch_semaphore_create(0);
+    UITableViewController *library = (UITableViewController *)SGFontLibraryPage();
+    [library loadViewIfNeeded];
+    SGLibraryFont *sunflower = SGFontLibraryFont(@"sunflower");
+    NSUInteger sunflowerRow = [[SGFontLibrary() filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"korean == YES"]] indexOfObject:sunflower];
+    HARNESS_CHECK(!SGFontLibraryInstalled(@"sunflower") && ![store stringForKey:SGKeyAppFontLibrary]);
+    [library tableView:library.tableView didSelectRowAtIndexPath:[NSIndexPath indexPathForRow:(NSInteger)sunflowerRow inSection:0]];
+    HARNESS_CHECK(dispatch_semaphore_wait(sg_registrationEntered, dispatch_time(DISPATCH_TIME_NOW, 3 * NSEC_PER_SEC)) == 0);
+    queuedRan = NO;
+    dispatch_async(dispatch_get_main_queue(), ^{ queuedRan = YES; });
+    pumpUntil(^BOOL { return queuedRan; });
+    HARNESS_CHECK(!SGFontLibraryRegisteredFamily(@"sunflower") && ![store stringForKey:SGKeyAppFontLibrary]);
+    for (int release = 0; release < 3; release++) dispatch_semaphore_signal(sg_holdRegistration);
+    pumpUntil(^BOOL { return [[store stringForKey:SGKeyAppFontLibrary] isEqual:@"sunflower"]; });
+    HARNESS_CHECK([SGFontLibraryRegisteredFamily(@"sunflower") isEqual:@"Helvetica"] && atomic_load(&sg_mainCalls) == 0);
+    sg_holdRegistration = nil;
+    [store removeObjectForKey:SGKeyAppFontLibrary];
+    [store removeObjectForKey:SGKeyAppFont];
+
+    [NSNotificationCenter.defaultCenter removeObserver:pickerToken];
+    for (NSString *identifier in @[@"gowundodum", @"dohyeon", @"jua", @"sunflower"]) SGFontLibraryRemove(identifier);
+    [NSFileManager.defaultManager removeItemAtURL:libraryFolder() error:nil];
+    puts("PASS: free fonts register off main on a serial queue, publish and refresh rows on main, a removal beats a pending registration, and the Font page and the Free fonts page stay free while Core Text is busy and update when registration lands");
     return 0;
 } }
