@@ -12,10 +12,13 @@
 // default the row has the cover, the title and play alone, as the Music app's. Read each time the card goes
 // into the row, so a change shows the next time the bar minimizes.
 #define SGRKeyBarInlineConnect @"spotifyglass.redesign.nowPlayingBar.inlineConnect"
+// The artists on a second line under the title in that row, off unless set, and only when both lines fit the
+// bar's height (NowPlayingBar.x SGRBarText). A change lays the bar out again at once.
+#define SGRKeyBarInlineArtist @"spotifyglass.redesign.inlinePlayer.artist"
 
 // The bar's rows, the Mini player section of the Player page (Redesigned/Player/PlayerSettings.m): Apple
 // Music style (the tab bar's Minimize on scroll, Redesigned/Navbar/Navbar.h), the device button in that
-// row, and the device button hidden on the full card.
+// row, the artists under the title in that row, and the device button hidden on the full card.
 NSArray<SGModRow *> *SGRNowPlayingBarRows(void);
 
 // The bar's glass card in `host`'s coordinates, with its corner radius; CGRectNull before the bar has

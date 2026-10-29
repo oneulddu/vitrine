@@ -130,6 +130,113 @@ static void checkTextSize(void) {
     HARNESS_CHECK([textLook(kept) isEqualToString:small]);
 }
 
+#pragma mark - the artist under the title in the minimized row
+
+static UIView *sg_rowHost;
+
+// A page of `height` placed in the bar's row (the minimized tab bar's) or on the full card, the text it draws.
+static SGRBarText *placeAt(UIView *page, CGFloat height, BOOL inRow) {
+    if (!sg_rowHost) sg_rowHost = [UIView new];
+    sg_inline = inRow ? sg_rowHost : nil;
+    page.frame = CGRectMake(0, 0, 300, height);
+    placeText(page);
+    return objc_getAssociatedObject(page, &kTextKey);
+}
+
+static CGFloat lineHeights(SGRBarText *text, CGFloat *artistsHeight) {
+    *artistsHeight = ceil(text.artists.font.lineHeight);
+    return ceil(text.title.font.lineHeight);
+}
+
+// Title only: the artists faded out and the title alone centered in the bar.
+static void expectTitleOnly(NSString *name, SGRBarText *text, CGFloat height) {
+    CGFloat a, t = lineHeights(text, &a);
+    if (text.artists.alpha != 0 || text.title.frame.origin.y != round((height - t) / 2) || text.title.frame.size.height != t) {
+        HARNESS_FAIL(@"%@: wanted the title alone, got title %@ artists %@ alpha %.0f", name, NSStringFromCGRect(text.title.frame),
+                     NSStringFromCGRect(text.artists.frame), text.artists.alpha);
+    }
+    sg_checks++;
+}
+
+// Two lines, the artists `gap` under the title's frame, the pair centered in the bar.
+static void expectTwoLines(NSString *name, SGRBarText *text, CGFloat height, CGFloat gap) {
+    CGFloat a, t = lineHeights(text, &a);
+    CGFloat top = round((height - t - a - gap) / 2);
+    if (text.artists.alpha != 1 || text.title.frame.origin.y != top || text.artists.frame.origin.y != top + t + gap
+        || text.artists.frame.size.height != a) {
+        HARNESS_FAIL(@"%@: wanted two lines %.0fpt apart from y %.0f, got title %@ artists %@ alpha %.0f", name, gap, top,
+                     NSStringFromCGRect(text.title.frame), NSStringFromCGRect(text.artists.frame), text.artists.alpha);
+    }
+    sg_checks++;
+}
+
+static UIView *plainPage(void) { return makePage(@"Stay High", nil, NO, @"Juice WRLD"); }
+
+static void checkInlineArtist(void) {
+    UIWindow *window = [(id)UIApplication.sharedApplication.delegate window];
+    UIView *host = window.rootViewController.view;
+    setTextSize(window, UIContentSizeCategoryLarge);
+    sg_state = nil;
+    CGFloat a, t = lineHeights(placeAt(plainPage(), 56, YES), &a);
+    CGFloat fits = t + a + 6;
+
+    SGSetEnabled(SGRKeyBarInlineArtist, NO);
+    expectTitleOnly(@"off, in the row", placeAt(plainPage(), 56, YES), 56);
+
+    SGSetEnabled(SGRKeyBarInlineArtist, YES);
+    expectTwoLines(@"on, roomy bar", placeAt(plainPage(), 56, YES), 56, 1);
+    expectTwoLines(@"on, bar exactly as high as both lines and 6pt", placeAt(plainPage(), fits, YES), fits, 1);
+    expectTitleOnly(@"on, bar 1pt too low", placeAt(plainPage(), fits - 1, YES), fits - 1);
+
+    // A title with the bullet: the split is the same, and so are the two lines.
+    sg_state = [SPTPlayerState new];
+    sg_state.track = makeTrack(@"Rock • Roll", @"The Band");
+    SGRBarText *dotted = placeAt(makePage(@"Rock • Roll • The Band", @"", YES, nil), 56, YES);
+    HARNESS_CHECK([dotted.title.text isEqualToString:@"Rock • Roll"] && [dotted.artists.text isEqualToString:@"The Band"]);
+    expectTwoLines(@"on, title with a bullet", dotted, 56, 1);
+    sg_state = nil;
+
+    // No artist: the title alone, and two lines once the artist arrives.
+    UIView *late = makePage(@"Stay High", nil, NO, nil);
+    expectTitleOnly(@"on, no artist", placeAt(late, 56, YES), 56);
+    UIView *unit = late.subviews.firstObject;
+    ((UILabel *)unit.subviews[1].subviews.firstObject).text = @"Juice WRLD";
+    expectTwoLines(@"on, artist comes in late", placeAt(late, 56, YES), 56, 1);
+
+    // The switch flipped on a bar already drawn follows on the next placement.
+    UIView *kept = plainPage();
+    SGSetEnabled(SGRKeyBarInlineArtist, NO);
+    expectTitleOnly(@"live, switched off", placeAt(kept, 56, YES), 56);
+    SGSetEnabled(SGRKeyBarInlineArtist, YES);
+    expectTwoLines(@"live, switched on", placeAt(kept, 56, YES), 56, 1);
+
+    // The text size changes what fits: a bar just high enough at Small is too low at Large.
+    setTextSize(window, UIContentSizeCategorySmall);
+    UIView *small = plainPage();
+    [host addSubview:small];
+    SGRBarText *keptText = placeAt(small, 1, YES);
+    CGFloat smallArtists, smallTitle = lineHeights(keptText, &smallArtists);
+    CGFloat smallFits = smallTitle + smallArtists + 6;
+    keptText = placeAt(small, smallFits, YES);
+    expectTwoLines(@"small text, bar just high enough", keptText, smallFits, 1);
+    setTextSize(window, UIContentSizeCategoryLarge);
+    [keptText layoutIfNeeded];
+    HARNESS_CHECK(fits > smallFits);
+    expectTitleOnly(@"large text, same bar", keptText, smallFits);
+    [small removeFromSuperview];
+
+    // The full card is the two lines it always was, however low, and whatever the switch says.
+    for (NSNumber *on in @[@NO, @YES]) {
+        SGSetEnabled(SGRKeyBarInlineArtist, on.boolValue);
+        for (NSNumber *height in @[@56, @(fits - 1)]) {
+            SGRBarText *full = placeAt(plainPage(), height.doubleValue, NO);
+            expectTwoLines(@"full card", full, height.doubleValue, -2);
+        }
+    }
+    SGSetEnabled(SGRKeyBarInlineArtist, NO);
+    sg_inline = nil;
+}
+
 static void run(void) {
     SPTPlayerTrack *plain = makeTrack(@"Stay High", @"Juice WRLD"), *dotted = makeTrack(@"Rock • Roll", @"The Band");
     SPTPlayerTrack *shorter = makeTrack(@"Rock", @"Roll Crew");
@@ -190,6 +297,7 @@ static void run(void) {
     sg_state = nil;
     expect(@"no state", makePage(@"Stay High • Juice WRLD", @"", YES, nil), @"Stay High", @"Juice WRLD");
 
+    checkInlineArtist();
     checkTextSize();
 
     printf("[harness] now-playing-bar: %lu checks passed\n", (unsigned long)sg_checks);

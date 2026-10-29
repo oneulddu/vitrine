@@ -1516,6 +1516,8 @@
 "settings.nowplayingbar.hide_device_button.subtitle" = "전체 재생 중 막대에서 숨김";
 "settings.nowplayingbar.hide_device_button.title" = "기기 버튼 숨기기";
 "settings.nowplayingbar.hide_like.title" = "좋아요 버튼 숨기기";
+"settings.nowplayingbar.inline_artist.subtitle" = "탭 사이 막대에 공간이 될 때 두 번째 줄로 표시";
+"settings.nowplayingbar.inline_artist.title" = "최소화했을 때 제목 아래 아티스트";
 "settings.nowplayingbar.hold_drag_resize.title" = "길게 누르고 드래그하여 크기 조절";
 "settings.nowplayingbar.minimize.subtitle" = "페이지를 아래로 스크롤할 때 두 탭 사이에 배치";
 "settings.nowplayingbar.minimize.title" = "스크롤할 때 최소화";

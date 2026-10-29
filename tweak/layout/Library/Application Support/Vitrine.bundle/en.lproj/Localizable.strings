@@ -1520,6 +1520,8 @@
 "settings.nowplayingbar.hide_device_button.title" = "Hide the device button";
 "settings.nowplayingbar.hide_like.title" = "Hide the like button";
 "settings.nowplayingbar.hold_drag_resize.title" = "Hold and drag to resize";
+"settings.nowplayingbar.inline_artist.subtitle" = "A second line on the bar between the tabs, when it fits";
+"settings.nowplayingbar.inline_artist.title" = "Artist under the title when minimized";
 "settings.nowplayingbar.minimize.subtitle" = "Between two tabs as a page scrolls down";
 "settings.nowplayingbar.minimize.title" = "Minimize while scrolling";
 "settings.nowplayingbar.miniplayer_transition_animations.title" = "Mini player transition animations";

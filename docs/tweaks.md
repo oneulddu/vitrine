@@ -1519,7 +1519,9 @@ text keeps its contrast; the Light copies have no grain to scale); the
 card and the player follow each step at once through SGRFluidSettingsDidChangeNotification, the last three by
 blurring the cover again off the main thread, and Animated and Visualizer's Fluid with them,
 and Mini player: Apple Music style (the tab bar's minimize on scroll), Device button (the now playing bar keeps
-Spotify's device button in that minimized row, off by default), the device button hidden on the full bar, and the
+Spotify's device button in that minimized row, off by default), Artist under the title when minimized
+(`spotifyglass.redesign.inlinePlayer.artist`, off: in that row the artist as a second line, only when both lines fit
+the bar with 6 pt to spare, the full bar unchanged; harness/now-playing-bar/), the device button hidden on the full bar, and the
 like button hidden (Spotify's own flag ios-feature-nowplayingbar.add_button forced off),
 checked in the simulator against harness/player/ (`settings`). Vibrations, a page of its own under either
 look opened from the main page (the row reads out which of the two are on), leads with a preview (Shared/Haptics/SGVibrationsPreview.m): rings of dots that a tap sends a crest across, out

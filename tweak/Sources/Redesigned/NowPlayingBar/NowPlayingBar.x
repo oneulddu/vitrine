@@ -337,17 +337,22 @@ static void tuckExtras(UIView *bar, BOOL tuck) {
 }
 
 // The Music app's two lines, the title over the artists, in place of Spotify's "title • artists" and the
-// device line under it; the title alone in the minimized row. Each swipe page holds its own track's labels,
+// device line under it; the title alone in the minimized row, the artists too when the Player page asks for
+// them and both lines fit. Each swipe page holds its own track's labels,
 // so the text is read from them and drawn over them page by page. The page reads its own VoiceOver label.
 static NSString *const kPageId = @"now-playing-bar-page";
 static NSString *const kUnitId = @"Components.UI.PageInformationUnitNowPlayingBar";
 static NSString *const kDeviceLineId = @"now-plaging-bar-connect-content";   // Spotify's spelling
 static NSString *const kBullet = @" • ";
 static char kTextKey;
+// In the row the two lines are this far apart, and need this much of the bar's height beyond their own.
+static const CGFloat kRowLinesGap = 1, kRowLinesMargin = 6;
 
 @interface SGRBarText : UIView
 @property (nonatomic, readonly) SGMarqueeLabel *title, *artists;
 @property (nonatomic) BOOL inRow;
+// The Player page's Artist under the title when minimized (SGRKeyBarInlineArtist), as placeText read it.
+@property (nonatomic) BOOL artistInRow;
 @end
 
 @implementation SGRBarText
@@ -382,12 +387,15 @@ static char kTextKey;
     [super layoutSubviews];
     CGSize size = self.bounds.size;
     CGFloat titleHeight = ceil(_title.font.lineHeight), artistsHeight = ceil(_artists.font.lineHeight);
-    BOOL two = !_inRow && _artists.text.length;
-    // The lines share 2pt of their leading, set as close as the Music app sets its card's.
-    CGFloat shared = 2;
-    CGFloat top = round((size.height - titleHeight - (two ? artistsHeight - shared : 0)) / 2);
+    BOOL has = _artists.text.length > 0;
+    // In the row the artists come under the title only when both lines fit the bar's height with room to spare.
+    BOOL two = _inRow ? has && _artistInRow && titleHeight + artistsHeight + kRowLinesMargin <= size.height : has;
+    // The full card's lines share 2pt of their leading, set as close as the Music app sets its card's; the row's
+    // are parted by a point.
+    CGFloat overlap = _inRow ? -kRowLinesGap : 2;
+    CGFloat top = round((size.height - titleHeight - (two ? artistsHeight - overlap : 0)) / 2);
     _title.frame = CGRectMake(0, top, size.width, titleHeight);
-    _artists.frame = CGRectMake(0, top + titleHeight - shared, size.width, artistsHeight);
+    _artists.frame = CGRectMake(0, top + titleHeight - overlap, size.width, artistsHeight);
     _artists.alpha = two ? 1 : 0;
 }
 @end
@@ -510,6 +518,7 @@ static void placeText(UIView *page) {
         text.artists.text = artists ?: @"";
         // Every pass: the artists can come in after the title.
         text.inRow = inRow;
+        text.artistInRow = SGHidden(SGRKeyBarInlineArtist);
         [text setNeedsLayout];
         [text layoutIfNeeded];
     };
