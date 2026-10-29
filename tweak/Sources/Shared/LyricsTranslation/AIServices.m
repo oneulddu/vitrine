@@ -416,9 +416,11 @@ void SGLyricsAIAskWithFormat(SGLyricsAI service, NSString *system, NSString *pro
     }
     if (!request || !request.HTTPBody || request.HTTPBody.length > 1024 * 1024) { done(nil, problem ?: unreadable()); return; }
     __block BOOL finished = NO;
-    SGLyricsTranslationSendRequest(request, YES, nil, ^(NSData *data, NSInteger status, NSError *error) {
+    NSUInteger generation = SGLyricsCredentialGeneration(service);   // the request above carries this credential
+    SGLyricsTranslationSendRequest(request, YES, ^BOOL { return generation == SGLyricsCredentialGeneration(service); }, ^(NSData *data, NSInteger status, NSError *error) {
         if (finished) return;
         finished = YES;
+        if (generation != SGLyricsCredentialGeneration(service)) { done(nil, SGLyricsKeyChangedProblem()); return; }
         id root = data && data.length <= 512 * 1024 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         NSString *failure = nil;
         NSArray *answer = nil;

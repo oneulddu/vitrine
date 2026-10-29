@@ -2451,3 +2451,11 @@
 "settings.workshop.title" = "Libraries & presets";
 "settings.workshop.type.header" = "Type";
 "settings.workshop.visualizers.title" = "Visualizers";
+"settings.translation.key.remove_failed.title" = "Key not removed";
+"settings.translation.key.remove_failed.message" = "The Keychain could not remove this key, so it is still stored on this iPhone. Please try again.";
+"settings.mod.keychain.failed.title" = "Keychain not cleared";
+"settings.mod.keychain.failed.message" = "The Keychain could not remove every key, so some are still stored on this iPhone. Please try again.";
+"settings.lyricssources.spicy.alert.storage" = "The Keychain could not save this change. Please try again.";
+"settings.translation.key.save_failed.title" = "Key not saved";
+"settings.translation.key.save_failed.message" = "The Keychain could not save this key. Please try again.";
+"settings.translation.error.keychanged" = "The API key changed while this was translating. Try again.";

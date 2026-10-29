@@ -3,6 +3,7 @@
 // Replies below are made up, with no real lyrics. Exits non-zero on the first wrong answer.
 #import <UIKit/UIKit.h>
 #import <Security/Security.h>
+#import <objc/runtime.h>
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/LyricsSources/LyricsSources.h"
 #import "Shared/LyricsTranslation/AIServicesInternal.h"
@@ -165,6 +166,7 @@ static NSUInteger aiRequests;
 static NSURLRequest *lastAIRequest;
 static BOOL duplicateAIReply;
 static void (^beforeAIReply)(void);
+static BOOL aiBusyFirst;
 // Model lists go through the one-shot transport, which has no reply script of its own. An error here is
 // handed to the production job as its NSError, which is what the app receives from a refused request.
 static NSError *modelListFailure;
@@ -216,6 +218,8 @@ static NSString *const bingHTML = @"<div data-iid=\"translator.1\"></div><script
 static NSMutableArray *geminiTitleReplies;
 static NSUInteger geminiTitleRequests;
 static NSURLRequest *lastGeminiRequest;
+static NSInteger geminiTitleStatus;   // 0: 200
+static void (^beforeGeminiReply)(void);
 @interface SGGeminiTitleProtocol : NSURLProtocol
 @end
 @implementation SGGeminiTitleProtocol
@@ -243,7 +247,8 @@ static NSURLRequest *lastGeminiRequest;
         [geminiTitleReplies removeObjectAtIndex:0];
         id root = [reply isKindOfClass:NSString.class] ? @{@"candidates": @[@{@"content": @{@"parts": @[@{@"text": reply}]}, @"finishReason": @"STOP"}]} : reply;
         NSData *data = [NSJSONSerialization dataWithJSONObject:root options:0 error:nil];
-        NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
+        if (beforeGeminiReply) beforeGeminiReply();
+        NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:geminiTitleStatus ?: 200 HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
         [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
         [self.client URLProtocol:self didLoadData:data];
         [self.client URLProtocolDidFinishLoading:self];
@@ -251,6 +256,45 @@ static NSURLRequest *lastGeminiRequest;
 }
 - (void)stopLoading {}
 @end
+
+// DeepL.m keeps its own transport (the build renames only the symbol the other translators share), so its jobs
+// are routed into this protocol by giving every ephemeral session configuration it creates the protocol.
+static NSMutableArray<NSNumber *> *deepLStatuses;   // one per request; 200 answers one translated line
+static NSUInteger deepLRequests;
+static void (^beforeDeepLReply)(void);
+@interface SGDeepLProtocol : NSURLProtocol
+@end
+@implementation SGDeepLProtocol
++ (BOOL)canInitWithRequest:(NSURLRequest *)request { return [request.URL.host hasSuffix:@"deepl.com"]; }
++ (NSURLRequest *)canonicalRequestForRequest:(NSURLRequest *)request { return request; }
+- (void)startLoading {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        CHECK(deepLStatuses.count > 0);
+        deepLRequests++;
+        NSInteger status = deepLStatuses.firstObject.integerValue;
+        [deepLStatuses removeObjectAtIndex:0];
+        if (beforeDeepLReply) beforeDeepLReply();
+        NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"translations": @[@{@"text": @"로봇"}]} options:0 error:nil];
+        NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:self.request.URL statusCode:status HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type": @"application/json"}];
+        [self.client URLProtocol:self didReceiveResponse:response cacheStoragePolicy:NSURLCacheStorageNotAllowed];
+        [self.client URLProtocol:self didLoadData:data];
+        [self.client URLProtocolDidFinishLoading:self];
+    });
+}
+- (void)stopLoading {}
+@end
+static IMP realEphemeralConfiguration;
+static void routeEphemeralSessionsToDeepL(BOOL on) {
+    Method method = class_getClassMethod(NSURLSessionConfiguration.class, @selector(ephemeralSessionConfiguration));
+    if (!on) { method_setImplementation(method, realEphemeralConfiguration); return; }
+    realEphemeralConfiguration = method_getImplementation(method);
+    IMP routed = imp_implementationWithBlock(^NSURLSessionConfiguration *(id receiver) {
+        NSURLSessionConfiguration *config = ((NSURLSessionConfiguration *(*)(id, SEL))realEphemeralConfiguration)(receiver, @selector(ephemeralSessionConfiguration));
+        config.protocolClasses = @[SGDeepLProtocol.class];
+        return config;
+    });
+    method_setImplementation(method, routed);
+}
 
 // Stand-in for LyricsSources.m's transport, whose unrelated provider registry is not linked here.
 // The optional live check retains its 2 MiB bound, ephemeral storage and redirect refusal.
@@ -311,7 +355,7 @@ void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retry, BOOL (^al
         return;
     }
     if (![request.URL.host isEqual:@"www.bing.com"]) {
-        CHECK(NSThread.isMainThread && retry && !allowed && aiReplies.count);
+        CHECK(NSThread.isMainThread && retry && allowed && allowed() && aiReplies.count);
         CHECK([request.HTTPMethod isEqual:@"POST"] && request.HTTPBody.length <= 1024 * 1024);
         lastAIRequest = request; aiRequests++;
         id reply = aiReplies.firstObject;
@@ -319,6 +363,12 @@ void SGLyricsTranslationSendRequest(NSURLRequest *request, BOOL retry, BOOL (^al
         dispatch_async(dispatch_get_main_queue(), ^{
             NSData *data = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
             if (beforeAIReply) beforeAIReply();
+            if (aiBusyFirst) {
+                // The transport's 429 path: the service is asked again after a delay, and `allowed` decides whether it is.
+                aiBusyFirst = NO;
+                if (!allowed()) { done(nil, 0, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]); return; }
+                aiRequests++;
+            }
             done(data, 200, nil);
             if (duplicateAIReply) done(data, 200, nil);
         });

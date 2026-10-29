@@ -1311,7 +1311,8 @@ static void checkGeminiMemoBound(void) {
     puts("Gemini memo: evicted song refreshes; recent song remains reusable");
 }
 
-static void keyPromptAction(SGModRow *row, NSString *title, NSString *text) {
+// Taps one button of the row's key prompt; returns the alert that tap presented, nil when it presented none.
+static UIAlertController *keyPromptAction(SGModRow *row, NSString *title, NSString *text) {
     row.action();
     CHECK(keyPrompt);
     if (text) keyPrompt.textFields.firstObject.text = text;
@@ -1320,8 +1321,12 @@ static void keyPromptAction(SGModRow *row, NSString *title, NSString *text) {
     CHECK(selected);
     void (^handler)(UIAlertAction *) = [selected valueForKey:@"handler"];
     CHECK(handler);
-    handler(selected);
+    UIAlertController *__attribute__((objc_precise_lifetime)) opened = keyPrompt;   // the handlers hold their alert weakly
     keyPrompt = nil;
+    handler(selected);
+    UIAlertController *presented = keyPrompt;
+    keyPrompt = nil;
+    return presented;
 }
 
 static void checkCredentialEditing(void) {
@@ -1454,11 +1459,176 @@ static void checkCredentialAvailability(void) {
     puts("Credential availability: one lookup per provider/host, Save/Remove/reset, host isolation and locked-Keychain recovery");
 }
 
+// A Keychain that refuses the delete leaves the key stored: Remove and Clear Keychain must say so, not report
+// success, and still drop the availability cache so the next look reads what is really there.
+static void checkCredentialRemovalRefused(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    testPresenter = [SGKeyPresenter new];
+    NSArray *providers = @[@"Vitrine.Gemini", @"Vitrine.Claude", @"Vitrine.DeepL", @"Vitrine.OpenAI"];
+    NSArray *reads = @[[^BOOL { return SGGeminiKeySet(); } copy], [^BOOL { return SGClaudeKeySet(); } copy],
+                       [^BOOL { return SGDeepLKeySet(); } copy], [^BOOL { return SGOpenAIKeySet(); } copy]];
+    NSArray *clears = @[[^BOOL { return SGGeminiForgetKey(); } copy], [^BOOL { return SGClaudeForgetKey(); } copy],
+                        [^BOOL { return SGDeepLForgetKey(); } copy], [^BOOL { return SGOpenAIForgetKeys(); } copy]];
+    NSArray *rows = @[SGGeminiKeyRow(), SGClaudeKeyRow(), SGDeepLKeyRow(), SGOpenAIKeyRow()];
+    for (NSUInteger i = 0; i < providers.count; i++) {
+        testKeys = [NSSet set];
+        openAIKeys = [NSMutableDictionary dictionary];
+        BOOL (^available)(void) = reads[i], (^clear)(void) = clears[i];
+        CHECK(!keyPromptAction(rows[i], @"Save", @"refused-fixture-key"));
+        CHECK(available());
+
+        keyDeleteFailure = errSecInteractionNotAllowed;
+        UIAlertController *refused = keyPromptAction(rows[i], @"Remove", nil);
+        CHECK([refused.title isEqual:@"Key not removed"]);
+        CHECK(available());
+        NSUInteger before = keyReads;
+        CHECK(!clear());
+        CHECK(available() && keyReads > before);
+
+        keyDeleteFailure = errSecItemNotFound;
+        CHECK(clear());
+        keyDeleteFailure = 0;
+        CHECK(available());
+        CHECK(!keyPromptAction(rows[i], @"Remove", nil));
+        CHECK(!available());
+        CHECK(clear());
+    }
+    testPresenter = nil;
+    testKeys = [NSSet set]; openAIKeys = nil;
+    [defaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    puts("Credential removal: a refused Keychain delete is reported by Remove and Clear Keychain, the key stays, caches are dropped");
+}
+
+// A credential that changes while a job runs (Clear Keychain, Remove, a replacement Save) must not be used by that
+// job any more: no retry is sent, a late answer is dropped and is not kept, and a replaced key does not hand back
+// answers made with the old one. Providers: 0 Gemini, 1 Claude, 2 OpenAI-compatible, 3 DeepL.
+static NSString *const kProviderServices[] = {@"Vitrine.Gemini", @"Vitrine.Claude", @"Vitrine.OpenAI", @"Vitrine.DeepL"};
+static void giveProviderKey(NSUInteger provider) {
+    testKeys = [NSSet setWithObject:kProviderServices[provider]];
+    openAIKeys = provider == 2 ? [@{@"api.openai.com": [@"job-fixture-key" dataUsingEncoding:NSUTF8StringEncoding]} mutableCopy] : [NSMutableDictionary dictionary];
+}
+static BOOL clearProviderKey(NSUInteger provider) {
+    return provider == 0 ? SGGeminiForgetKey() : provider == 1 ? SGClaudeForgetKey() : provider == 2 ? SGOpenAIForgetKeys() : SGDeepLForgetKey();
+}
+static void scriptProviderReply(NSUInteger provider, NSInteger status) {
+    NSString *wire = @"L0001\t로봇";
+    if (provider == 0) { geminiTitleReplies = [@[wire] mutableCopy]; geminiTitleStatus = status == 200 ? 0 : status; }
+    else if (provider == 3) deepLStatuses = [@[@(status)] mutableCopy];
+    else {
+        aiReplies = [NSMutableArray arrayWithObject:provider == 1 ? claudeReply(wire) : chatReply(wire)];
+        aiBusyFirst = status != 200;
+    }
+}
+static void duringProviderReply(NSUInteger provider, void (^hook)(void)) {
+    if (provider == 0) beforeGeminiReply = hook;
+    else if (provider == 3) beforeDeepLReply = hook;
+    else beforeAIReply = hook;
+}
+static NSUInteger providerRequests(NSUInteger provider) {
+    return provider == 0 ? geminiTitleRequests : provider == 3 ? deepLRequests : aiRequests;
+}
+static NSArray *askProvider(NSUInteger provider, NSString *track, NSString **problem) {
+    NSArray *lines = aiLines(@[@"Blue robot"]);
+    if (provider != 3) return askLyrics((SGLyricsAI)provider, track, lines, SGLyricsReplyIndexed, problem);
+    __block BOOL finished = NO;
+    __block NSArray *out;
+    __block NSString *failure;
+    SGLyricsTranslateWithDeepL(track, lines, @"ko", ^(NSArray *answer, NSString *error) { finished = YES; out = answer; failure = error; });
+    waitFor(^BOOL { return finished; });
+    if (problem) *problem = failure;
+    return out;
+}
+static void checkCredentialChangedDuringJob(void) {
+    CHECK([NSURLProtocol registerClass:SGGeminiTitleProtocol.class]);
+    routeEphemeralSessionsToDeepL(YES);
+    testPresenter = [SGKeyPresenter new];
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    NSArray *rows = @[SGGeminiKeyRow(), SGClaudeKeyRow(), SGOpenAIKeyRow(), SGDeepLKeyRow()];
+    NSArray *expected = @[@"로봇"];
+    NSMutableArray *changes = [NSMutableArray array];
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsTranslationServiceSettingsDidChangeNotification object:nil
+                                                                   queue:nil usingBlock:^(NSNotification *note) { [changes addObject:note]; }];
+    for (NSUInteger provider = 0; provider < rows.count; provider++) {
+        NSString *problem = nil, *track = [NSString stringWithFormat:@"changing-key-%lu", (unsigned long)provider];
+        giveProviderKey(provider);
+
+        // Cleared while the answer is on its way: the answer is dropped and nothing is kept for the song.
+        scriptProviderReply(provider, 200);
+        duringProviderReply(provider, ^{ clearProviderKey(provider); });
+        CHECK(!askProvider(provider, track, &problem) && [problem isEqual:SGLyricsKeyChangedProblem()]);
+        duringProviderReply(provider, nil);
+        giveProviderKey(provider);
+        NSUInteger before = providerRequests(provider);
+        scriptProviderReply(provider, 200);
+        CHECK([askProvider(provider, track, &problem) isEqual:expected] && !problem);
+        CHECK(providerRequests(provider) == before + 1);
+
+        // Cleared after the service said busy: the retry is not sent.
+        giveProviderKey(provider);
+        before = providerRequests(provider);
+        scriptProviderReply(provider, 429);
+        duringProviderReply(provider, ^{ clearProviderKey(provider); });
+        CHECK(!askProvider(provider, [track stringByAppendingString:@"-busy"], &problem) && [problem isEqual:SGLyricsKeyChangedProblem()]);
+        duringProviderReply(provider, nil);
+        CHECK(providerRequests(provider) == before + 1);
+        geminiTitleStatus = 0; aiBusyFirst = NO; geminiTitleReplies = nil; deepLStatuses = nil;
+
+        // A replacement key does not hand back the answer the old one earned.
+        giveProviderKey(provider);
+        scriptProviderReply(provider, 200);
+        CHECK([askProvider(provider, [track stringByAppendingString:@"-kept"], &problem) isEqual:expected]);
+        before = providerRequests(provider);
+        scriptProviderReply(provider, 200);
+        CHECK(!keyPromptAction(rows[provider], @"Save", @"replacement-fixture-key"));
+        CHECK([askProvider(provider, [track stringByAppendingString:@"-kept"], &problem) isEqual:expected]);
+        CHECK(providerRequests(provider) == before + 1);
+
+        // Saving the key that is already stored changes nothing: the answer on its way arrives, and no change is posted.
+        giveProviderKey(provider);
+        [changes removeAllObjects];
+        scriptProviderReply(provider, 200);
+        duringProviderReply(provider, ^{ CHECK(!keyPromptAction(rows[provider], @"Save", provider == 2 ? @"job-fixture-key" : @"offline-test-key")); });
+        CHECK([askProvider(provider, [track stringByAppendingString:@"-same"], &problem) isEqual:expected] && !problem);
+        duringProviderReply(provider, nil);
+        CHECK(!changes.count);
+
+        // A Save the Keychain refuses says so, posts no change, and does not claim a previous key is in use:
+        // the old key may already be gone when the new one could not be added.
+        NSString *const notSaved = @"The Keychain could not save this key. Please try again.";
+        giveProviderKey(provider);
+        [changes removeAllObjects];
+        if (provider == 2) keyWriteFailure = errSecInteractionNotAllowed; else keyDeleteFailure = errSecInteractionNotAllowed;
+        UIAlertController *refused = keyPromptAction(rows[provider], @"Save", @"refused-save-fixture-key");
+        keyWriteFailure = keyDeleteFailure = 0;
+        CHECK([refused.title isEqual:@"Key not saved"] && [refused.message isEqual:notSaved] && !changes.count);
+        if (provider != 2) {
+            giveProviderKey(provider);
+            keyWriteFailure = errSecInteractionNotAllowed;
+            refused = keyPromptAction(rows[provider], @"Save", @"unaddable-fixture-key");
+            keyWriteFailure = 0;
+            CHECK([refused.title isEqual:@"Key not saved"] && [refused.message isEqual:notSaved] && !changes.count);
+            CHECK(!(provider == 0 ? SGGeminiKeySet() : provider == 1 ? SGClaudeKeySet() : SGDeepLKeySet()));   // the old key was deleted before the add failed
+            giveProviderKey(provider);
+        }
+        CHECK(!keyPromptAction(rows[provider], @"Save", @"accepted-save-fixture-key") && changes.count == 1);
+    }
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    routeEphemeralSessionsToDeepL(NO);
+    [NSURLProtocol unregisterClass:SGGeminiTitleProtocol.class];
+    geminiTitleReplies = nil; geminiTitleStatus = 0; aiReplies = nil; aiBusyFirst = NO; deepLStatuses = nil;
+    testPresenter = nil; testKeys = [NSSet set]; openAIKeys = nil;
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:SGKeyLyricsOpenAIBaseURL];
+    puts("Credential change during a job: no retry, late answer or kept answer survives a Clear, a replacement drops the old answers, a refused Save posts nothing");
+}
+
 static void checkNewAI(void) {
     NSArray *keys = @[SGKeyLyricsOpenAIBaseURL, SGKeyLyricsOpenAIModel, SGKeyLyricsClaudeModel, SGKeyLyricsGeminiModel, SGKeyLyricsPronunciationNotation];
     NSMutableDictionary *before = [NSMutableDictionary dictionary];
     for (NSString *key in keys) before[key] = [NSUserDefaults.standardUserDefaults objectForKey:key] ?: NSNull.null;
     checkCredentialAvailability();
+    checkCredentialRemovalRefused();
+    checkCredentialChangedDuringJob();
     checkCredentialEditing();
     checkGooglePreparation();
     checkOpenAIHostKeys();

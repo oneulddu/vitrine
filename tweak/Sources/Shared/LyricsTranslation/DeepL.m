@@ -165,6 +165,10 @@ static NSDictionary *keyQuery(void) {
     return @{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
              (__bridge id)kSecAttrService: kService, (__bridge id)kSecAttrAccount: kAccount};
 }
+// Bumped before every save, Remove and Clear of the key, also when the Keychain refuses; a job holds the one its
+// key was read under, and drops its next batch, its retry and its kept answer once it is no longer current.
+// Main queue only: sendRequest's retry timer and its completions run there.
+static NSUInteger sg_credentialGeneration;
 static NSNumber *sg_keyAvailable;
 static NSString *storedKey(void) {
     NSMutableDictionary *query = [keyQuery() mutableCopy];
@@ -180,24 +184,34 @@ static NSString *storedKey(void) {
     sg_keyAvailable = @(valid);
     return valid ? key : nil;
 }
-static void storeKey(NSString *key) {
+// NO when the Keychain refused: a removed key is still stored then, and the caller says so.
+static BOOL storeKey(NSString *key) {
+    sg_credentialGeneration++;
     sg_keyAvailable = nil;
-    SecItemDelete((__bridge CFDictionaryRef)keyQuery());
     [sg_done removeAllObjects];
-    if (!key.length) return;
+    OSStatus deleted = SecItemDelete((__bridge CFDictionaryRef)keyQuery());
+    if (deleted != errSecSuccess && deleted != errSecItemNotFound) {
+        SGLog(@"deepl: the old key could not be removed (%d)", (int)deleted);
+        return NO;
+    }
+    if (!key.length) return YES;
     NSMutableDictionary *item = [keyQuery() mutableCopy];
     item[(__bridge id)kSecValueData] = [key dataUsingEncoding:NSUTF8StringEncoding];
     item[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
     OSStatus status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
     if (status != errSecSuccess) SGLog(@"deepl: the key could not be kept (%d)", (int)status);
+    return status == errSecSuccess;
 }
 BOOL SGDeepLKeySet(void) { return sg_keyAvailable ? sg_keyAvailable.boolValue : storedKey() != nil; }
 // Clear Keychain: the service's own items go, every account in it; answers kept for the launch go too.
-void SGDeepLForgetKey(void) {
+BOOL SGDeepLForgetKey(void) {
+    sg_credentialGeneration++;
     sg_keyAvailable = nil;
-    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-                                              (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                                                (__bridge id)kSecAttrService: kService});
+    if (status != errSecSuccess && status != errSecItemNotFound) SGLog(@"deepl: the keys could not be cleared (%d)", (int)status);
+    return status == errSecSuccess || status == errSecItemNotFound;
 }
 
 #pragma mark - asking
@@ -211,7 +225,7 @@ static NSString *unreadable(void) {
 @property (nonatomic, copy) NSArray<NSString *> *texts;
 @property (nonatomic, copy) NSArray<NSArray<NSNumber *> *> *batches;
 @property (nonatomic, strong) NSMutableArray<NSString *> *out;
-@property (nonatomic) NSUInteger next, size;
+@property (nonatomic) NSUInteger next, size, generation;
 @property (nonatomic, copy) void (^done)(NSArray<NSString *> *, NSString *);
 - (void)advance;
 @end
@@ -230,7 +244,8 @@ static NSString *unreadable(void) {
     [request setValue:[@"DeepL-Auth-Key " stringByAppendingString:self.key] forHTTPHeaderField:@"Authorization"];
     request.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"text": texts, @"target_lang": self.target} options:0 error:nil];
     if (!request.HTTPBody || request.HTTPBody.length > 128 * 1024) { self.done(nil, unreadable()); return; }
-    SGLyricsTranslationSendRequest(request, NO, nil, ^(NSData *data, NSInteger status, NSError *error) {
+    SGLyricsTranslationSendRequest(request, NO, ^BOOL { return self.generation == sg_credentialGeneration; }, ^(NSData *data, NSInteger status, NSError *error) {
+        if (self.generation != sg_credentialGeneration) { self.done(nil, SGLyricsKeyChangedProblem()); return; }
         NSString *problem = nil;
         NSArray *translated = nil;
         if (error) problem = SGL(@"settings.translation.deepl.error.unreachable", @"DeepL could not be reached.");
@@ -263,6 +278,7 @@ static void startDeepL(NSString *key, NSString *target, NSArray<NSString *> *tex
     NSMutableArray *out = [NSMutableArray array];
     for (NSUInteger i = 0; i < texts.count; i++) [out addObject:@""];
     SGDeepLTranslation *job = [SGDeepLTranslation new];
+    job.generation = sg_credentialGeneration;   // the key was read in this ask, on main
     job.key = key; job.target = target; job.texts = texts; job.out = out; job.batches = batches;
     job.done = ^(NSArray *translated, NSString *problem) {
         if (translated && memo) {
@@ -321,8 +337,9 @@ static void askForKey(void) {
         SGL(@"settings.translation.deeplkey.placeholder", @"API key"),
         ^BOOL(NSString *text) { return cleanKey(text).length > 0; }, ^(NSString *text) {
         NSString *key = cleanKey(text);
-        if (key.length) { storeKey(key); SGLyricsTranslationServiceSettingsChanged(); }
-    }, ^BOOL { return SGDeepLKeySet(); }, ^{ storeKey(nil); SGLyricsTranslationServiceSettingsChanged(); });
+        if (!key.length || [storedKey() isEqualToString:key]) return;   // the same key again changes nothing, so no job is cut off
+        if (storeKey(key)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotSaved();
+    }, ^BOOL { return SGDeepLKeySet(); }, ^{ if (storeKey(nil)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotRemoved(); });
 }
 SGModRow *SGDeepLKeyRow(void) {
     return SGStatActionRow(SGL(@"settings.translation.deeplkey.title", @"DeepL API key"),

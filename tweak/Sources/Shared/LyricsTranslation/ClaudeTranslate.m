@@ -32,9 +32,14 @@ static NSString *storedKey(void) {
     return key.length ? key : nil;
 }
 static BOOL storeKey(NSString *key) {
+    SGLyricsCredentialChanged(SGLyricsAIClaude);
     sg_keyAvailable = nil;
-    SecItemDelete((__bridge CFDictionaryRef)keyQuery());
     [sg_done removeAllObjects];
+    OSStatus deleted = SecItemDelete((__bridge CFDictionaryRef)keyQuery());
+    if (deleted != errSecSuccess && deleted != errSecItemNotFound) {
+        SGLog(@"claude: the old key could not be removed (%d)", (int)deleted);
+        return NO;
+    }
     if (!key.length) return YES;
     NSMutableDictionary *item = [keyQuery() mutableCopy];
     item[(__bridge id)kSecValueData] = [key dataUsingEncoding:NSUTF8StringEncoding];
@@ -45,11 +50,14 @@ static BOOL storeKey(NSString *key) {
 }
 BOOL SGClaudeKeySet(void) { return sg_keyAvailable ? sg_keyAvailable.boolValue : storedKey() != nil; }
 // Clear Keychain: the service's own items go, every account in it; answers kept for the launch go too.
-void SGClaudeForgetKey(void) {
+BOOL SGClaudeForgetKey(void) {
+    SGLyricsCredentialChanged(SGLyricsAIClaude);
     sg_keyAvailable = nil;
-    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-                                              (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                                                (__bridge id)kSecAttrService: kService});
+    if (status != errSecSuccess && status != errSecItemNotFound) SGLog(@"claude: the keys could not be cleared (%d)", (int)status);
+    return status == errSecSuccess || status == errSecItemNotFound;
 }
 NSString *SGClaudeModel(void) {
     return SGLyricsAICleanModel([NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsClaudeModel]) ?: kModel;
@@ -151,9 +159,9 @@ static void askForKey(void) {
         SGL(@"settings.translation.openaikey.key", @"API key"),
         ^BOOL(NSString *text) { return cleanKey(text).length > 0; }, ^(NSString *text) {
         NSString *key = cleanKey(text);
-        if (!key.length || !storeKey(key)) return;
-        SGLyricsTranslationServiceSettingsChanged();
-    }, ^BOOL { return SGClaudeKeySet(); }, ^{ if (storeKey(nil)) SGLyricsTranslationServiceSettingsChanged(); });
+        if (!key.length || [storedKey() isEqualToString:key]) return;   // the same key again changes nothing, so no job is cut off
+        if (storeKey(key)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotSaved();
+    }, ^BOOL { return SGClaudeKeySet(); }, ^{ if (storeKey(nil)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotRemoved(); });
 }
 SGModRow *SGClaudeKeyRow(void) {
     return SGStatActionRow(SGL(@"settings.translation.ai.key.title", @"API key"), nil,

@@ -1,4 +1,5 @@
 #import <Security/Security.h>
+#import <stdatomic.h>
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
@@ -78,6 +79,14 @@ static NSDictionary *keyQuery(void) {
              (__bridge id)kSecAttrService: kService, (__bridge id)kSecAttrAccount: kAccount};
 }
 
+static _Atomic NSUInteger sg_credentialGeneration[3];   // by SGLyricsAI; read off the main queue by retries
+NSUInteger SGLyricsCredentialGeneration(SGLyricsAI service) { return atomic_load(&sg_credentialGeneration[service]); }
+void SGLyricsCredentialChanged(SGLyricsAI service) { atomic_fetch_add(&sg_credentialGeneration[service], 1); }
+NSString *SGLyricsKeyChangedProblem(void) {
+    return SGL(@"settings.translation.error.keychanged", @"The API key changed while this was translating. Try again.");
+}
+
+static NSMutableDictionary<NSString *, NSDictionary *> *sg_done;   // per launch, by track and language; source texts must still match
 static NSNumber *sg_keyAvailable;
 static NSString *storedKey(void) {
     NSMutableDictionary *query = [keyQuery() mutableCopy];
@@ -92,15 +101,37 @@ static NSString *storedKey(void) {
     return key.length ? key : nil;
 }
 
-static void storeKey(NSString *key) {
+// NO when the Keychain refused: a removed key is still stored then, and the caller says so.
+static BOOL storeKey(NSString *key) {
+    SGLyricsCredentialChanged(SGLyricsAIGemini);
     sg_keyAvailable = nil;
-    SecItemDelete((__bridge CFDictionaryRef)keyQuery());
-    if (!key.length) return;
+    [sg_done removeAllObjects];
+    OSStatus deleted = SecItemDelete((__bridge CFDictionaryRef)keyQuery());
+    if (deleted != errSecSuccess && deleted != errSecItemNotFound) {
+        SGLog(@"gemini: the old key could not be removed (%d)", (int)deleted);
+        return NO;
+    }
+    if (!key.length) return YES;
     NSMutableDictionary *item = [keyQuery() mutableCopy];
     item[(__bridge id)kSecValueData] = [key dataUsingEncoding:NSUTF8StringEncoding];
     item[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
     OSStatus status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
     if (status != errSecSuccess) SGLog(@"gemini: the key could not be kept (%d)", (int)status);
+    return status == errSecSuccess;
+}
+
+static void alertKeychain(NSString *title, NSString *message) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:alert animated:YES completion:nil];
+}
+void SGLyricsAlertKeyNotRemoved(void) {
+    alertKeychain(SGL(@"settings.translation.key.remove_failed.title", @"Key not removed"),
+                  SGL(@"settings.translation.key.remove_failed.message", @"The Keychain could not remove this key, so it is still stored on this iPhone. Please try again."));
+}
+void SGLyricsAlertKeyNotSaved(void) {
+    alertKeychain(SGL(@"settings.translation.key.save_failed.title", @"Key not saved"),
+                  SGL(@"settings.translation.key.save_failed.message", @"The Keychain could not save this key. Please try again."));
 }
 
 BOOL SGGeminiKeySet(void) {
@@ -201,21 +232,26 @@ NSArray<NSString *> *SGGeminiReplyIn(id root, NSInteger status, NSError *error, 
 // asked again.
 // plain is the same request without the thinking level, sent once if Gemini turns that field down: a model behind
 // gemini-flash-latest that does not know it still translates.
-static void sendToGemini(NSURLRequest *request, NSURLRequest *plain, NSUInteger attempt,
+// allowed is asked before every send, the first, the one without thinking and each retry; a refusal ends the job as cancelled.
+static void sendToGemini(NSURLRequest *request, NSURLRequest *plain, NSUInteger attempt, BOOL (^allowed)(void),
                          void (^finished)(NSData *data, NSInteger status, NSError *error)) {
+    if (!allowed()) {
+        finished(nil, 0, [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorCancelled userInfo:nil]);
+        return;
+    }
     [[NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
         NSString *reply = status == 400 && data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : nil;
         if (plain && [reply localizedCaseInsensitiveContainsString:@"thinking"]) {
             SGLog(@"gemini: the thinking level was turned down, asking without it");
-            sendToGemini(plain, nil, attempt, finished);
+            sendToGemini(plain, nil, attempt, allowed, finished);
             return;
         }
         if (attempt < 3 && !error && (status == 408 || status == 429 || status >= 500)) {
             double delay = (double)(1 << attempt) * (0.75 + arc4random_uniform(500) / 1000.0);
             SGLog(@"gemini: %ld, asking again in %.1f s", (long)status, delay);
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-                sendToGemini(request, plain, attempt + 1, finished);
+                sendToGemini(request, plain, attempt + 1, allowed, finished);
             });
             return;
         }
@@ -223,15 +259,16 @@ static void sendToGemini(NSURLRequest *request, NSURLRequest *plain, NSUInteger 
     }] resume];
 }
 
-static NSMutableDictionary<NSString *, NSDictionary *> *sg_done;   // per launch, by track and language; source texts must still match
-
 // Clear Keychain: the service's own items go, the account left out so every one in it does, and with them
 // the answers kept for the launch, which were made with that key.
-void SGGeminiForgetKey(void) {
+BOOL SGGeminiForgetKey(void) {
+    SGLyricsCredentialChanged(SGLyricsAIGemini);
     sg_keyAvailable = nil;
-    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-                                              (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                                                (__bridge id)kSecAttrService: kService});
+    if (status != errSecSuccess && status != errSecItemNotFound) SGLog(@"gemini: the keys could not be cleared (%d)", (int)status);
+    return status == errSecSuccess || status == errSecItemNotFound;
 }
 
 void SGLyricsTranslateWithGemini(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
@@ -265,13 +302,15 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
     [plainConfig removeObjectForKey:@"thinkingConfig"];
     plainBody[@"generationConfig"] = plainConfig;
     plain.HTTPBody = [NSJSONSerialization dataWithJSONObject:plainBody options:0 error:nil];
-    sendToGemini(request, plain, 0, ^(NSData *data, NSInteger status, NSError *error) {
+    NSUInteger generation = SGLyricsCredentialGeneration(SGLyricsAIGemini);   // the request above carries this credential
+    sendToGemini(request, plain, 0, ^BOOL { return generation == SGLyricsCredentialGeneration(SGLyricsAIGemini); }, ^(NSData *data, NSInteger status, NSError *error) {
         id root = data && data.length <= 512 * 1024 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         NSString *problem = nil;
         NSArray *translations = SGLyricsTranslationReply(SGGeminiReplyIn(root, status, error, texts.count, format, &problem), texts, format);
         if (!translations && !problem) problem = SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.");
         SGLog(@"gemini: %@ lines into %@: %@", @(texts.count), languageTag, translations ? @"translated" : problem);
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != SGLyricsCredentialGeneration(SGLyricsAIGemini)) { done(nil, SGLyricsKeyChangedProblem()); return; }
             if (translations && trackID) {
                 if (sg_done.count >= 32) [sg_done removeAllObjects];
                 sg_done[memo] = @{@"texts": texts, @"model": model, @"answer": translations};
@@ -293,8 +332,9 @@ static void askForKey(void) {
         NSMutableCharacterSet *around = [NSMutableCharacterSet whitespaceAndNewlineCharacterSet];
         [around addCharactersInString:@"\"'“”‘’"];
         NSString *key = [text stringByTrimmingCharactersInSet:around];
-        if (key.length) { storeKey(key); SGLyricsTranslationServiceSettingsChanged(); }
-    }, ^BOOL { return SGGeminiKeySet(); }, ^{ storeKey(nil); SGLyricsTranslationServiceSettingsChanged(); });
+        if (!key.length || [storedKey() isEqualToString:key]) return;   // the same key again changes nothing, so no job is cut off
+        if (storeKey(key)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotSaved();
+    }, ^BOOL { return SGGeminiKeySet(); }, ^{ if (storeKey(nil)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotRemoved(); });
 }
 
 NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";

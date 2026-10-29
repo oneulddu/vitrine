@@ -39,13 +39,15 @@ BOOL SGDeezerARLSet(void) { return storedARL().length > 0; }
 
 // Clear Keychain: the ARL goes and the JWT signed in with it is dropped, so no request uses either; the
 // order is a setting, so it stays.
-void SGDeezerForgetKey(void) {
-    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-                                              (__bridge id)kSecAttrService: @"Vitrine.Deezer"});
+BOOL SGDeezerForgetKey(void) {
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                                                (__bridge id)kSecAttrService: @"Vitrine.Deezer"});
     sg_jwt = nil;
     sg_arl = nil;
     sg_arlLoaded = NO;
     sg_generation++;
+    if (status != errSecSuccess && status != errSecItemNotFound) SGLog(@"deezer: the ARL could not be cleared (%d)", (int)status);
+    return status == errSecSuccess || status == errSecItemNotFound;
 }
 
 static BOOL safeARL(NSString *arl) {

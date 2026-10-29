@@ -25,11 +25,16 @@ SGModRow *SGTranslateEverySongRow(void);
 #define SGKeyLyricsAppleIntelligence @"spotifyglass.lyrics.appleIntelligence"
 NSArray<SGModRow *> *SGOnDeviceTranslatorRows(void);
 
-// Mod > Clear Keychain: each service's own items go, every account in it and no other app's.
-void SGGeminiForgetKey(void);
-void SGClaudeForgetKey(void);
-void SGOpenAIForgetKeys(void);
-void SGDeepLForgetKey(void);
+// Mod > Clear Keychain: each service's own items go, every account in it and no other app's. NO when the
+// Keychain refused the delete, so the items are still stored; the caches are dropped either way.
+BOOL SGGeminiForgetKey(void);
+BOOL SGClaudeForgetKey(void);
+BOOL SGOpenAIForgetKeys(void);
+BOOL SGDeepLForgetKey(void);
+// Tells the user a key's Remove was refused by the Keychain, so it is still stored. Main queue.
+void SGLyricsAlertKeyNotRemoved(void);
+// The same for a Save the Keychain refused: the old key, if any, is still the one in use. Main queue.
+void SGLyricsAlertKeyNotSaved(void);
 // Gemini-only tuning; the fork keeps each provider's transport and settings.
 #define SGKeyAIThinking @"spotifyglass.lyrics.gemini.thinking"
 #define SGKeyAITimeout @"spotifyglass.lyrics.ai.timeout"
@@ -152,6 +157,12 @@ void SGLyricsTranslateWithClaude(NSString *trackID, NSArray<SGKaraokeLine *> *li
 SGModRow *SGOpenAIPresetRow(void);
 
 typedef NS_ENUM(NSInteger, SGLyricsAI) { SGLyricsAIGemini = 0, SGLyricsAIClaude, SGLyricsAIOpenAI };
+// A service's credential generation: bumped before every save, Remove and Clear of its key, also when the Keychain
+// refuses. A job captures it once its request carries the key; a retry, a later batch or a memo write whose
+// captured generation is no longer the current one is dropped, and the job ends with SGLyricsKeyChangedProblem().
+NSUInteger SGLyricsCredentialGeneration(SGLyricsAI service);
+void SGLyricsCredentialChanged(SGLyricsAI service);
+NSString *SGLyricsKeyChangedProblem(void);
 NSArray<NSNumber *> *SGLyricsAIAvailable(void);
 NSString *SGLyricsAIName(SGLyricsAI service);
 

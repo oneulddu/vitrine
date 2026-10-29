@@ -42,19 +42,30 @@ static void confirmClearKeychain(void) {
                                                                   message:SGL(@"settings.mod.keychain.alert.message", @"The Gemini, Claude, OpenAI-compatible and DeepL API keys, the Spicy Lyrics key and the Deezer ARL are removed from this iPhone. Settings stay as they are.")
                                                            preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.mod.keychain.action.clear", @"Clear Keychain") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-        SGGeminiForgetKey();
-        SGClaudeForgetKey();
-        SGOpenAIForgetKeys();
-        SGDeepLForgetKey();
-        SGSpicyLyricsForgetKey();
-        SGDeezerForgetKey();
+        // Every service is asked even after one refuses, so a locked Keychain leaves as little as possible behind.
+        BOOL cleared = YES;
+        cleared &= SGGeminiForgetKey();
+        cleared &= SGClaudeForgetKey();
+        cleared &= SGOpenAIForgetKeys();
+        cleared &= SGDeepLForgetKey();
+        cleared &= SGSpicyLyricsForgetKey();
+        cleared &= SGDeezerForgetKey();
         // The translators' rows, their pages and the lyrics menu follow this notification, as their own
         // Remove does. The lyrics sources read their key at each ask; their rows and the lyrics view hear
         // the sources' own change, so the track playing is announced reloaded and builds its lines again.
         SGLyricsTranslationServiceSettingsChanged();
         NSString *playing = SGKaraokePlayingTrack();
         if (playing.length) [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsDidReloadNotification object:playing];
-        SGLog(@"reset: keychain cleared");
+        if (cleared) {
+            SGLog(@"reset: keychain cleared");
+            return;
+        }
+        SGLog(@"reset: keychain not cleared, the Keychain refused a delete");
+        UIAlertController *failed = [UIAlertController alertControllerWithTitle:SGL(@"settings.mod.keychain.failed.title", @"Keychain not cleared")
+                                                                        message:SGL(@"settings.mod.keychain.failed.message", @"The Keychain could not remove every key, so some are still stored on this iPhone. Please try again.")
+                                                                 preferredStyle:UIAlertControllerStyleAlert];
+        [failed addAction:[UIAlertAction actionWithTitle:SGL(@"common.ok", @"OK") style:UIAlertActionStyleCancel handler:nil]];
+        [SGTopController() presentViewController:failed animated:YES completion:nil];
     }]];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
     [SGTopController() presentViewController:alert animated:YES completion:nil];

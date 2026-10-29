@@ -2451,3 +2451,11 @@
 "settings.workshop.title" = "라이브러리 및 프리셋";
 "settings.workshop.type.header" = "서체";
 "settings.workshop.visualizers.title" = "비주얼라이저";
+"settings.translation.key.remove_failed.title" = "키를 삭제하지 못했습니다";
+"settings.translation.key.remove_failed.message" = "키체인에서 이 키를 삭제하지 못해 키가 아직 이 iPhone에 저장되어 있습니다. 다시 시도해 주세요.";
+"settings.mod.keychain.failed.title" = "키체인을 비우지 못했습니다";
+"settings.mod.keychain.failed.message" = "키체인에서 일부 키를 삭제하지 못해 아직 이 iPhone에 저장되어 있습니다. 다시 시도해 주세요.";
+"settings.lyricssources.spicy.alert.storage" = "키체인에 저장하지 못했습니다. 다시 시도해 주세요.";
+"settings.translation.key.save_failed.title" = "키를 저장하지 못했습니다";
+"settings.translation.key.save_failed.message" = "키체인에 이 키를 저장하지 못했습니다. 다시 시도해 주세요.";
+"settings.translation.error.keychanged" = "번역하는 동안 API 키가 바뀌었습니다. 다시 시도해 주세요.";

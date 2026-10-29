@@ -128,7 +128,9 @@ static NSString *readKey(NSString *account, OSStatus *status) {
 static NSMutableDictionary<NSString *, NSNumber *> *sg_keyAvailable;
 static BOOL storeKey(NSString *key, NSString *host) {
     if (!host.length) return NO;
+    SGLyricsCredentialChanged(SGLyricsAIOpenAI);
     [sg_keyAvailable removeObjectForKey:host];
+    [sg_done removeAllObjects];
     NSDictionary *query = keyQuery(host);
     OSStatus status;
     if (!key.length) {
@@ -144,8 +146,7 @@ static BOOL storeKey(NSString *key, NSString *host) {
             status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
         }
     }
-    if (status == errSecSuccess) [sg_done removeAllObjects];
-    else SGLog(@"openai translation: the key could not be kept (%d)", (int)status);
+    if (status != errSecSuccess) SGLog(@"openai translation: the key could not be kept (%d)", (int)status);
     return status == errSecSuccess;
 }
 // Call before changing the stored base as well as before lookup: the old key belongs only to
@@ -188,11 +189,14 @@ BOOL SGOpenAIKeySet(void) {
 }
 // Clear Keychain: every account under the service goes (the legacy key and each host-bound one), so no
 // server's key outlives it; answers kept for the launch go too.
-void SGOpenAIForgetKeys(void) {
+BOOL SGOpenAIForgetKeys(void) {
+    SGLyricsCredentialChanged(SGLyricsAIOpenAI);
     [sg_keyAvailable removeAllObjects];
-    SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-                                              (__bridge id)kSecAttrService: kService});
     [sg_done removeAllObjects];
+    OSStatus status = SecItemDelete((__bridge CFDictionaryRef)@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+                                                                (__bridge id)kSecAttrService: kService});
+    if (status != errSecSuccess && status != errSecItemNotFound) SGLog(@"openai translation: the keys could not be cleared (%d)", (int)status);
+    return status == errSecSuccess || status == errSecItemNotFound;
 }
 NSString *SGOpenAIModel(void) {
     return SGLyricsAICleanModel([NSUserDefaults.standardUserDefaults objectForKey:SGKeyLyricsOpenAIModel]) ?: kModel;
@@ -240,7 +244,9 @@ void SGLyricsTranslateWithOpenAIFormat(NSString *trackID, NSArray<SGKaraokeLine 
         NSString *requestProblem = nil;
         NSURLRequest *request = SGOpenAIRequest(SGLyricsTranslationInstructionForFormat(format), prompt, format, &requestProblem);
         if (!request || !request.HTTPBody || request.HTTPBody.length > 1024 * 1024) { done(nil, requestProblem ?: unreadable()); return; }
-        SGLyricsTranslationSendRequest(request, YES, nil, ^(NSData *data, NSInteger status, NSError *error) {
+        NSUInteger generation = SGLyricsCredentialGeneration(SGLyricsAIOpenAI);   // the request above carries this credential
+        SGLyricsTranslationSendRequest(request, YES, ^BOOL { return generation == SGLyricsCredentialGeneration(SGLyricsAIOpenAI); }, ^(NSData *data, NSInteger status, NSError *error) {
+            if (generation != SGLyricsCredentialGeneration(SGLyricsAIOpenAI)) { done(nil, SGLyricsKeyChangedProblem()); return; }
             NSString *problem = nil;
             NSArray *translated = nil;
             if (error) problem = SGL(@"settings.translation.openai.error.unreachable", @"The translation service could not be reached.");
@@ -314,9 +320,10 @@ static void askForKey(void) {
         SGL(@"settings.translation.openaikey.key", @"API key"),
         ^BOOL(NSString *text) { return cleanKey(text).length > 0; }, ^(NSString *text) {
         NSString *key = cleanKey(text);
-        if (!key.length || !migrateKey(base) || !storeKey(key, host)) return;
-        SGLyricsTranslationServiceSettingsChanged();
-    }, ^BOOL { return SGOpenAIKeySet(); }, ^{ if (storeKey(nil, host)) SGLyricsTranslationServiceSettingsChanged(); });
+        OSStatus read;
+        if (!key.length || [readKey(host, &read) isEqualToString:key]) return;   // the same key again changes nothing, so no job is cut off
+        if (migrateKey(base) && storeKey(key, host)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotSaved();
+    }, ^BOOL { return SGOpenAIKeySet(); }, ^{ if (storeKey(nil, host)) SGLyricsTranslationServiceSettingsChanged(); else SGLyricsAlertKeyNotRemoved(); });
 }
 SGModRow *SGOpenAIKeyRow(void) {
     return SGStatActionRow(SGL(@"settings.translation.ai.key.title", @"API key"), nil,

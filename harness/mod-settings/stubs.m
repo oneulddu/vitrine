@@ -36,7 +36,7 @@ PAGE(SGNowPlayingBarSettingsPage) PAGE(SGQueueSettingsPage) PAGE(SGRAlbumSetting
 PAGE(SGRNavbarSettingsPage)
 PAGE(SGAlbumSettingsPage) PAGE(SGArtistSettingsPage) PAGE(SGPlaylistSettingsPage)
 PAGE(SGDSPHeadphonesPage) PAGE(SGDSPPresetsPage) PAGE(SGFontLibraryPage)
-PAGE(SGRHomeSettingsPage) PAGE(SGRVisualiserSettingsPage)
+PAGE(SGRHomeSettingsPage) PAGE(SGRLibrarySettingsPage) PAGE(SGRVisualiserSettingsPage)
 PAGE(SGSingSettingsPage) PAGE(SGSpatialVoiceSettingsPage) PAGE(SGVibrationsSettingsPage)
 UIViewController *SGRPlayerSettingsPage(NSArray *more) { return blank(@"SGRPlayerSettingsPage"); }
 UIViewController *SGRLyricsSettingsPage(NSString *title, NSString *intro, NSArray<SGModSection *> *sections) { return blank(title); }
@@ -56,12 +56,12 @@ void SGImportSettings(UIViewController *presenter) {}
 void SGShareDiagnostics(UIViewController *presenter) {}
 void SGAutoMixApply(BOOL on) {}
 void SGLosslessLowerQuality(BOOL lower) {}
-void SGGeminiForgetKey(void) {}
-void SGClaudeForgetKey(void) {}
-void SGOpenAIForgetKeys(void) {}
-void SGDeepLForgetKey(void) {}
-void SGSpicyLyricsForgetKey(void) {}
-void SGDeezerForgetKey(void) {}
+BOOL SGGeminiForgetKey(void) { return YES; }
+BOOL SGClaudeForgetKey(void) { return YES; }
+BOOL SGOpenAIForgetKeys(void) { return YES; }
+BOOL SGDeepLForgetKey(void) { return YES; }
+BOOL SGSpicyLyricsForgetKey(void) { return YES; }
+BOOL SGDeezerForgetKey(void) { return YES; }
 void SGLyricsTranslationServiceSettingsChanged(void) {}
 NSString *SGKaraokePlayingTrack(void) { return nil; }
 NSNotificationName const SGLyricsDidReloadNotification = @"harness.lyrics.reload";

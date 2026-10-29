@@ -334,7 +334,8 @@ SGLyricsResult *SGDeezerResult(id root);
 SGModRow *SGDeezerARLRow(void);
 BOOL SGDeezerARLSet(void);
 // Removes the ARL from the Keychain and the login it signed in with (Mod > Clear Keychain); the order stays.
-void SGDeezerForgetKey(void);
+// NO when the Keychain refused the delete, so the ARL is still stored.
+BOOL SGDeezerForgetKey(void);
 extern SGLyricsAsk SGGeniusAsk;
 // Genius.m. The rows of the lyrics in Genius's embed script, "" between stanzas and the [Chorus]
 // headings left out; nil when the script is not the shape it reads or holds no line.
@@ -387,7 +388,8 @@ NSNumber *SGGeniusSongIn(NSDictionary *response, NSString *title, NSString *arti
 extern NSString *const SGSpicyLyricsKey;
 BOOL SGSpicyLyricsKeySet(void);
 // Removes the key from the Keychain and forgets a refusal (Mod > Clear Keychain); the order stays.
-void SGSpicyLyricsForgetKey(void);
+// NO when the Keychain refused the delete, so the key is still stored.
+BOOL SGSpicyLyricsForgetKey(void);
 NSString *SGSpicyLyricsStatus(void);
 @class SGModRow;
 SGModRow *SGSpicyLyricsKeyRow(void);

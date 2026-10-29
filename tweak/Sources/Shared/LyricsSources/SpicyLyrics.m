@@ -58,16 +58,22 @@ static NSString *storedKey(void) {
     return sg_key;
 }
 
-static void storeKey(NSString *key) {
+// NO when the Keychain refused: a removed key is still stored then, and the caller says so.
+static BOOL storeKey(NSString *key) {
     sg_key = nil;
     sg_keyLoaded = NO;
-    SecItemDelete((__bridge CFDictionaryRef)keyQuery());
-    if (!key.length) return;
+    OSStatus deleted = SecItemDelete((__bridge CFDictionaryRef)keyQuery());
+    if (deleted != errSecSuccess && deleted != errSecItemNotFound) {
+        SGLog(@"spicy lyrics: the old key could not be removed (%d)", (int)deleted);
+        return NO;
+    }
+    if (!key.length) return YES;
     NSMutableDictionary *item = [keyQuery() mutableCopy];
     item[(__bridge id)kSecValueData] = [key dataUsingEncoding:NSUTF8StringEncoding];
     item[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
     OSStatus status = SecItemAdd((__bridge CFDictionaryRef)item, NULL);
     if (status != errSecSuccess) SGLog(@"spicy lyrics: the key could not be kept (%d)", (int)status);
+    return status == errSecSuccess;
 }
 
 BOOL SGSpicyLyricsKeySet(void) {
@@ -452,27 +458,30 @@ NSString *SGSpicyLyricsKeyProblem(NSString *key) {
 
 // A key saved puts the source at the top of the order, since it was set to be used; a key removed
 // takes it out, as it can answer nothing without one. Either way a refusal of the old key is forgotten.
-static void setKey(NSString *key) {
-    storeKey(key);
+// NO when the Keychain refused, and then the order stays as it was.
+// What was learned under the old key goes before the Keychain is asked, so it is gone even when the Keychain refuses.
+static void dropKeyState(void) {
     sg_keyGeneration++;
     [sg_answers removeAllObjects];
     sg_waitUntil = 0;
     sg_refused = nil;
     sg_refusedUntil = 0;
+}
+static BOOL setKey(NSString *key) {
+    dropKeyState();
+    if (!storeKey(key)) return NO;
     NSMutableArray<NSString *> *order = [SGLyricsOrder() mutableCopy];
     [order removeObject:SGSpicyLyricsKey];
     if (key.length) [order insertObject:SGSpicyLyricsKey atIndex:0];
     SGLyricsSetOrder(order);
+    return YES;
 }
 
 // Clear Keychain: the key goes and the refusal it earned is forgotten; the lyrics order is a setting, so it stays.
-void SGSpicyLyricsForgetKey(void) {
-    storeKey(nil);
-    sg_keyGeneration++;
-    [sg_answers removeAllObjects];
-    sg_waitUntil = 0;
-    sg_refused = nil;
-    sg_refusedUntil = 0;
+// NO when the Keychain refused the delete; the caches are dropped either way.
+BOOL SGSpicyLyricsForgetKey(void) {
+    dropKeyState();
+    return storeKey(nil);
 }
 
 static void askForKey(NSString *problem) {
@@ -496,7 +505,7 @@ static void askForKey(NSString *problem) {
         NSString *wrong = SGSpicyLyricsKeyProblem(key);
         // Asked again, saying what was wrong, rather than kept and failing on every track.
         if (wrong) dispatch_async(dispatch_get_main_queue(), ^{ askForKey(wrong); });
-        else setKey(key);
+        else if (!setKey(key)) dispatch_async(dispatch_get_main_queue(), ^{ askForKey(SGL(@"settings.lyricssources.spicy.alert.storage", @"The Keychain could not save this change. Please try again.")); });
     }];
     [alert addAction:save];
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"settings.lyricssources.spicy.action.open_dashboard", @"Open Dashboard") style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
@@ -504,7 +513,7 @@ static void askForKey(NSString *problem) {
     }]];
     if (SGSpicyLyricsKeySet()) {
         [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.remove", @"Remove") style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
-            setKey(nil);
+            if (!setKey(nil)) dispatch_async(dispatch_get_main_queue(), ^{ askForKey(SGL(@"settings.lyricssources.spicy.alert.storage", @"The Keychain could not save this change. Please try again.")); });
         }]];
     }
     [alert addAction:[UIAlertAction actionWithTitle:SGL(@"common.cancel", @"Cancel") style:UIAlertActionStyleCancel handler:nil]];
