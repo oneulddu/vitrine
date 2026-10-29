@@ -146,6 +146,12 @@ static void googleHolds(void) {
 #include "wrap-check.inc"
 
 void SGHarnessRunTranslationCheck(UIWindow *window) {
+    if (getenv("SG_LYRICS_WRAP_ONLY")) {
+        wrapChecks();
+        printf("%d failed\n", sg_failed);
+        fflush(stdout);
+        exit(sg_failed);
+    }
     addToLookupChecks();
     if (getenv("SG_LYRICS_REVIEW_ONLY")) {
         [NSTimer scheduledTimerWithTimeInterval:0.1 repeats:NO block:^(NSTimer *timer) {

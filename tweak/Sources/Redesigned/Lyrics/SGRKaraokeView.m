@@ -617,6 +617,7 @@ static const CGFloat kPairTighten = 2, kPairGap = 4, kPartGap = 6;
 @property (nonatomic) CGFloat height;
 @property (nonatomic, copy) NSArray<NSValue *> *lyricFrames, *spokenFrames;
 @property (nonatomic, copy) NSArray<NSNumber *> *lyricOffsets, *spokenOffsets;
+@property (nonatomic, copy) NSArray<SGKaraokeWord *> *spokenWords;
 @property (nonatomic) CGRect translation;   // CGRectNull without one
 @property (nonatomic) CGFloat backingTop;   // 0 without a backing row
 @property (nonatomic) CGRect note;           // CGRectNull without one
@@ -679,6 +680,88 @@ static NSUInteger flow(NSArray<SGKaraokeWord *> *words, UIFont *font, CGFloat wi
         offset += wide;
     }
     return words.count ? row + 1 : 0;
+}
+
+// A contextual reading has no character-by-character dictionary alignment. Divide it by the
+// source's grapheme count, using cumulative boundaries so no reading grapheme is lost or repeated.
+static NSString *readingFragment(NSString *reading, NSString *source, NSRange part) {
+    __block NSUInteger count = 0, before = 0, through = 0;
+    [source enumerateSubstringsInRange:NSMakeRange(0, source.length) options:NSStringEnumerationByComposedCharacterSequences
+        usingBlock:^(NSString *substring, NSRange range, NSRange enclosing, BOOL *stop) {
+            count++;
+            if (NSMaxRange(range) <= part.location) before++;
+            if (NSMaxRange(range) <= NSMaxRange(part)) through++;
+        }];
+    NSMutableArray<NSNumber *> *boundaries = [NSMutableArray arrayWithObject:@0];
+    [reading enumerateSubstringsInRange:NSMakeRange(0, reading.length) options:NSStringEnumerationByComposedCharacterSequences
+        usingBlock:^(NSString *substring, NSRange range, NSRange enclosing, BOOL *stop) {
+            [boundaries addObject:@(NSMaxRange(range))];
+        }];
+    NSUInteger graphemes = boundaries.count - 1;
+    NSUInteger from = count ? (NSUInteger)round((double)graphemes * before / count) : 0;
+    NSUInteger until = count ? (NSUInteger)round((double)graphemes * through / count) : graphemes;
+    return [reading substringWithRange:NSMakeRange(boundaries[from].unsignedIntegerValue,
+        boundaries[until].unsignedIntegerValue - boundaries[from].unsignedIntegerValue)];
+}
+
+// flow remains the owner of wrapping, including joined groups. Only a generated reading whose
+// source crosses those rows is split; provider readings retain their timestamp-based alignment.
+static NSArray<SGKaraokeWord *> *readingsForRows(SGKaraokeLine *line, UIFont *font, CGFloat width,
+    NSArray<SGKaraokeWord *> *spoken, NSArray<NSValue *> *wordRanges, NSArray<NSValue *> **readingRanges) {
+    SGRPlace *places = calloc(line.words.count + 1, sizeof(SGRPlace));
+    flow(line.words, font, width, places);
+    NSString *text = SGKaraokeLineText(line);
+    NSMutableArray<SGKaraokeWord *> *words = [NSMutableArray array];
+    NSMutableArray<NSValue *> *ranges = [NSMutableArray array];
+    BOOL split = NO;
+    for (NSUInteger j = 0; j < spoken.count; j++) {
+        NSRange source = (*readingRanges)[j].rangeValue;
+        NSMutableArray<NSValue *> *fragments = [NSMutableArray array];
+        NSUInteger row = NSNotFound;
+        for (NSUInteger i = 0; i < line.words.count; i++) {
+            NSRange overlap = NSIntersectionRange(source, wordRanges[i].rangeValue);
+            if (!overlap.length) continue;
+            if (row == places[i].row) {
+                fragments[fragments.count - 1] = [NSValue valueWithRange:NSUnionRange(fragments.lastObject.rangeValue, overlap)];
+            } else {
+                [fragments addObject:[NSValue valueWithRange:overlap]];
+                row = places[i].row;
+            }
+        }
+        if (fragments.count <= 1) {
+            [words addObject:spoken[j]];
+            [ranges addObject:(*readingRanges)[j]];
+            continue;
+        }
+        split = YES;
+        BOOL first = YES;
+        for (NSUInteger k = 0; k < fragments.count; k++) {
+            // Include separators between source words in exactly one fragment.
+            NSUInteger from = k ? fragments[k].rangeValue.location : source.location;
+            NSUInteger until = k + 1 < fragments.count ? fragments[k + 1].rangeValue.location : NSMaxRange(source);
+            NSString *piece = readingFragment(spoken[j].text, [text substringWithRange:source],
+                NSMakeRange(from - source.location, until - from));
+            if (!piece.length) continue;
+            SGKaraokeWord *word = [SGKaraokeWord new];
+            word.text = piece;
+            // These are existing source-word clocks, not invented subdivisions of a word.
+            word.start = NSIntegerMax;
+            word.end = 0;
+            for (NSUInteger i = 0; i < line.words.count; i++) {
+                if (!NSIntersectionRange(NSMakeRange(from, until - from), wordRanges[i].rangeValue).length) continue;
+                word.start = MIN(word.start, line.words[i].start);
+                word.end = MAX(word.end, line.words[i].end);
+            }
+            word.joined = first ? spoken[j].joined : YES;
+            first = NO;
+            [words addObject:word];
+            [ranges addObject:[NSValue valueWithRange:NSMakeRange(from, until - from)]];
+        }
+    }
+    free(places);
+    if (!split) return spoken;
+    *readingRanges = ranges;
+    return words;
 }
 
 // Written right to left, rows are laid out left to right and turned around, so the first word is at
@@ -747,7 +830,7 @@ static CGFloat layRun(NSArray<SGKaraokeWord *> *words, UIFont *font, CGFloat wid
 static CGFloat layPair(NSArray<SGKaraokeWord *> *lead, UIFont *leadFont, NSArray<SGKaraokeWord *> *under, UIFont *underFont,
                        CGFloat width, BOOL right, CGFloat top, NSArray<NSValue *> **leadFrames, NSArray<NSNumber *> **leadOffsets,
                        NSArray<NSValue *> **underFrames, NSArray<NSNumber *> **underOffsets, CGFloat leadRuby, CGFloat underRuby,
-                       NSArray<NSValue *> *leadRanges, NSArray<NSValue *> *underRanges) {
+                       NSArray<NSValue *> *leadRanges, NSArray<NSValue *> *underRanges, BOOL underFirst) {
     NSUInteger leads = lead.count, unders = under.count, count = leads + unders;
     SGRPlace *places = calloc(count + 1, sizeof(SGRPlace));
     CGRect *rects = calloc(count + 1, sizeof(CGRect));
@@ -771,6 +854,7 @@ static CGFloat layPair(NSArray<SGKaraokeWord *> *lead, UIFont *leadFont, NSArray
     CGFloat y = top, bottom = top;
     NSUInteger j = 0;
     for (NSUInteger r = 0; r < rows; r++) {
+        CGFloat rowTop = y;
         y += leadRuby;
         for (NSUInteger i = 0; i < leads; i++) {
             if (places[i].row != r) continue;
@@ -810,6 +894,16 @@ static CGFloat layPair(NSArray<SGKaraokeWord *> *lead, UIFont *leadFont, NSArray
         j = until;
         BOOL any = until > from;
         if (any) bottom = underTop + subRow * underRow + underHigh;
+        // A fragmented generated reading can be the first visible role, but its source rows
+        // still own the fragments. Exchange the two blocks inside each row, not their wrapping.
+        if (underFirst && any) {
+            CGFloat underHeight = bottom - underTop;
+            for (NSUInteger k = from; k < until; k++) rects[leads + k].origin.y -= underTop - rowTop;
+            for (NSUInteger i = 0; i < leads; i++) {
+                if (places[i].row == r) rects[i].origin.y = rowTop + underHeight - kPairTighten + leadRuby;
+            }
+            bottom = rowTop + underHeight - kPairTighten + leadRuby + leadHigh;
+        }
         y = any ? bottom + kPairGap : y + leadRow;
     }
     NSMutableString *text = [NSMutableString string];
@@ -872,16 +966,20 @@ static SGRKaraokeLayout *layOut(SGKaraokeLine *line, CGFloat width, SGRKaraokeSt
         if (paired) {
             NSArray<NSValue *> *pairedFrames;
             NSArray<NSNumber *> *pairedOffsets;
+            NSArray<SGKaraokeWord *> *unfragmented = spoken;
+            if (wordRanges && readingRanges)
+                spoken = readingsForRows(line, style.lyrics, width, spoken, wordRanges, &readingRanges);
+            BOOL lyricFlow = lyrics || spoken != unfragmented;
             // The lyrics' rows make room for furigana above them, whichever of the two leads.
             CGFloat ruby = style.furigana && hasKanji(line) ? ceil(style.furigana.lineHeight) : 0;
-            y = layPair(lyrics ? line.words : spoken, lyrics ? style.lyrics : style.pronunciation,
-                        lyrics ? spoken : line.words, lyrics ? style.pronunciation : style.lyrics,
-                        width, layout.right, y, &frames, &offsets, &pairedFrames, &pairedOffsets, lyrics ? ruby : 0, lyrics ? 0 : ruby,
-                        lyrics ? wordRanges : readingRanges, lyrics ? readingRanges : wordRanges);
-            layout.lyricFrames = lyrics ? frames : pairedFrames;
-            layout.lyricOffsets = lyrics ? offsets : pairedOffsets;
-            layout.spokenFrames = lyrics ? pairedFrames : frames;
-            layout.spokenOffsets = lyrics ? pairedOffsets : offsets;
+            y = layPair(lyricFlow ? line.words : spoken, lyricFlow ? style.lyrics : style.pronunciation,
+                        lyricFlow ? spoken : line.words, lyricFlow ? style.pronunciation : style.lyrics,
+                        width, layout.right, y, &frames, &offsets, &pairedFrames, &pairedOffsets, lyricFlow ? ruby : 0, lyricFlow ? 0 : ruby,
+                        lyricFlow ? wordRanges : readingRanges, lyricFlow ? readingRanges : wordRanges, !lyrics && lyricFlow);
+            layout.lyricFrames = lyricFlow ? frames : pairedFrames;
+            layout.lyricOffsets = lyricFlow ? offsets : pairedOffsets;
+            layout.spokenFrames = lyricFlow ? pairedFrames : frames;
+            layout.spokenOffsets = lyricFlow ? pairedOffsets : offsets;
             p++;
             lyrics = YES;
         } else {
@@ -900,6 +998,7 @@ static SGRKaraokeLayout *layOut(SGKaraokeLine *line, CGFloat width, SGRKaraokeSt
             y = layout.backingTop + layOut(line.backing, width, style.backing, layout.right).height;
         }
     }
+    layout.spokenWords = spoken;
     // A cultural note goes last, under everything the line shows, and only for a line of its own.
     if (right < 0 && style.note && line.note.length) {
         layout.note = blockFrame(line.note, style.note, width, y + kPartGap);
@@ -1161,7 +1260,7 @@ static double wholeFrom(SGKaraokeLine *run, BOOL sweepsEstimates) {
                                   offsets:layout.lyricOffsets wholeFrom:wholeFrom(line, sweepsEstimates) drawingStyle:style.drawingStyle];
     SGLyricsPreparedExtras *extras = line.words.count ? style.extras[line.words] : nil;
     SGKaraokeLine *pronunciation = line.pronunciation ?: extras.pronunciation;
-    SGRKaraokeSweep *spoken = [self sweepOf:pronunciation.words font:style.pronunciation waiting:_spokenDim sung:style.spokenSung
+    SGRKaraokeSweep *spoken = [self sweepOf:layout.spokenWords font:style.pronunciation waiting:_spokenDim sung:style.spokenSung
                                      frames:layout.spokenFrames offsets:layout.spokenOffsets
                                   wholeFrom:wholeFrom(pronunciation, sweepsEstimates) drawingStyle:style.drawingStyle];
     if (sung) [sweeps addObject:sung];
@@ -1172,7 +1271,7 @@ static double wholeFrom(SGKaraokeLine *run, BOOL sweepsEstimates) {
 
     if (!CGRectIsNull(layout.translation)) _translation = [self asideAt:layout.translation font:style.translation text:line.translation alpha:_translationDim];
     if (!CGRectIsNull(layout.note)) _note = [self asideAt:layout.note font:style.note text:line.note alpha:_noteDim];
-    if (style.furigana && !backing) _furigana = [self furiganaOver:sung.words font:style.furigana readings:extras.ruby];
+    if (style.furigana && !backing) _furigana = [self furiganaOver:sung.words font:style.furigana readings:extras.ruby width:width];
     if (layout.backingTop > 0) {
         _backing = [[SGRKaraokeLineView alloc] initWithLine:line.backing width:width style:style.backing under:self blurred:NO
                                             sweepsEstimates:sweepsEstimates];
@@ -1203,11 +1302,11 @@ static double wholeFrom(SGKaraokeLine *run, BOOL sweepsEstimates) {
 }
 
 // The line's kanji with their readings set over them, each centered on the kanji it reads and no narrower than
-// they are: furigana wider than their kanji spill evenly to both sides, as print sets them. The readings are
+// they are: furigana wider than their kanji spill to either side within the line's bounds. The readings are
 // taken from the whole line, since a source timed by the line hands its words over a character or two at a time
 // and a kanji read alone is read wrongly (夜 alone is よる, in 夜明け it is よ). A reading rides on the first
-// word view under it, so it rises and waves with it, and dims and lights with the line.
-- (NSArray<UILabel *> *)furiganaOver:(NSArray<SGRKaraokeWordView *> *)words font:(UIFont *)font readings:(NSArray<SGLyricsRuby *> *)readings {
+// word view of each row fragment, so it rises and waves with it, and dims and lights with the line.
+- (NSArray<UILabel *> *)furiganaOver:(NSArray<SGRKaraokeWordView *> *)words font:(UIFont *)font readings:(NSArray<SGLyricsRuby *> *)readings width:(CGFloat)lineWidth {
     if (!words.count) return nil;
     // Where each word's text starts in the line's, as SGKaraokeLineText joins them.
     NSMutableString *text = [NSMutableString string];
@@ -1221,32 +1320,46 @@ static double wholeFrom(SGKaraokeLine *run, BOOL sweepsEstimates) {
     NSMutableArray<UILabel *> *labels = [NSMutableArray array];
     for (SGLyricsRuby *ruby in readings) {
         if (NSMaxRange(ruby.range) > text.length || !ruby.reading.length) continue;
-        // The part of each word the kanji cover, in the line view's space, kept to the row the first is on.
-        CGRect under = CGRectNull;
-        SGRKaraokeWordView *first = nil;
+        // Finish each row independently instead of discarding everything after the first row.
+        __block CGRect under = CGRectNull;
+        __block SGRKaraokeWordView *first = nil;
+        __block NSRange fragment = NSMakeRange(0, 0);
+        void (^finish)(void) = ^{
+            if (!first) return;
+            NSString *reading = readingFragment(ruby.reading, [text substringWithRange:ruby.range],
+                NSMakeRange(fragment.location - ruby.range.location, fragment.length));
+            if (!reading.length) return;
+            CGFloat width = MIN(lineWidth, MAX(ceil([reading sizeWithAttributes:@{NSFontAttributeName: font}].width), ceil(under.size.width)));
+            CGFloat x = MAX(0, MIN(CGRectGetMidX(under) - width / 2, lineWidth - width));
+            CGRect frame = CGRectMake(x, CGRectGetMinY(under) - ceil(font.lineHeight), width, ceil(font.lineHeight));
+            UILabel *label = [[UILabel alloc] initWithFrame:[self convertRect:frame toView:first]];
+            label.text = reading;
+            label.font = font;
+            label.adjustsFontSizeToFitWidth = YES;
+            label.textColor = UIColor.whiteColor;
+            label.textAlignment = NSTextAlignmentCenter;
+            label.alpha = kDimAlpha;
+            [first addSubview:label];
+            [labels addObject:label];
+        };
         for (NSUInteger i = 0; i < words.count; i++) {
             SGRKaraokeWordView *view = words[i];
             NSString *piece = view.word.text ?: @"";
             NSRange inWord = NSIntersectionRange(ruby.range, NSMakeRange(starts[i], piece.length));
             if (!inWord.length) continue;
-            if (first && fabs(CGRectGetMinY(view.frame) - CGRectGetMinY(first.frame)) > 1) break;
+            if (first && fabs(CGRectGetMinY(view.frame) - CGRectGetMinY(first.frame)) > 1) {
+                finish();
+                first = nil;
+                under = CGRectNull;
+            }
+            fragment = first ? NSUnionRange(fragment, inWord) : inWord;
             if (!first) first = view;
             NSDictionary *attributes = @{NSFontAttributeName: view.font};
             CGFloat from = [[piece substringToIndex:inWord.location - starts[i]] sizeWithAttributes:attributes].width;
             CGFloat wide = [[piece substringWithRange:NSMakeRange(inWord.location - starts[i], inWord.length)] sizeWithAttributes:attributes].width;
             under = CGRectUnion(under, CGRectMake(CGRectGetMinX(view.frame) + from, CGRectGetMinY(view.frame), wide, 1));
         }
-        if (!first || CGRectIsNull(under)) continue;
-        CGFloat width = MAX(ceil([ruby.reading sizeWithAttributes:@{NSFontAttributeName: font}].width), ceil(under.size.width));
-        CGRect frame = CGRectMake(CGRectGetMidX(under) - width / 2, CGRectGetMinY(under) - ceil(font.lineHeight), width, ceil(font.lineHeight));
-        UILabel *label = [[UILabel alloc] initWithFrame:[self convertRect:frame toView:first]];
-        label.text = ruby.reading;
-        label.font = font;
-        label.textColor = UIColor.whiteColor;
-        label.textAlignment = NSTextAlignmentCenter;
-        label.alpha = kDimAlpha;
-        [first addSubview:label];
-        [labels addObject:label];
+        finish();
     }
     free(starts);
     return labels;

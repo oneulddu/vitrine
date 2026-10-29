@@ -4,7 +4,7 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$(cd "$HERE/../.." && pwd)/tweak/Sources
-OUT=$(mktemp -d /tmp/lyrics-translation-check.XXXXXX)
+OUT=${HARNESS_BUILD_DIR:-$(mktemp -d /tmp/lyrics-translation-check.XXXXXX)}
 trap 'rm -rf "$OUT"' EXIT
 APP=$OUT/Check.app
 mkdir -p "$APP/Contents/MacOS"

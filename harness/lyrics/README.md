@@ -52,6 +52,11 @@ stale song-language actions (manual, Automatic, and Keep) with current-track con
 The glyph is production code; the clock, providers and Spotify view-tree reader are test doubles.
 Artwork association in `SGRBridges.x` still needs a Spotify/device check.
 
+`SG_LYRICS_WRAP_ONLY=1 bash harness/lyrics/translation-check.sh` runs joined-group, oversize,
+Japanese and ordinary-word wrapping plus ruby and generated-pronunciation row-fragment checks.
+Set `HARNESS_BUILD_DIR` to your own `mktemp -d` directory to select the build location; the
+script removes that directory on exit.
+
 A real file goes in with `-file /path/song.ttml`: the simulator reads the Mac's paths.
 
 `-perf LABEL` logs the view's per frame cost (its display link's `tick`) every 240 frames; run with
