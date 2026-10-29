@@ -587,6 +587,7 @@ static void checkProviders(void) {
 #include "check-auto-retry.m"
 #include "check-kept.m"
 #include "check-bing-completion.m"
+#include "check-ai-gaps.m"
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
@@ -601,6 +602,7 @@ int main(int argc, const char **argv) {
             return 0;
         }
         if (argc > 1 && strcmp(argv[1], "--auto-retry-only") == 0) { checkAutoRetry(); return 0; }
+        if (argc > 1 && strcmp(argv[1], "--ai-gaps-only") == 0) { checkAIGaps(); return 0; }
         if (argc > 1 && strcmp(argv[1], "--bing-completion-only") == 0) { checkBing(); checkBingCompletion(); return 0; }
         if (argc > 1 && strcmp(argv[1], "--kept-only") == 0) { checkKeptTranslation(); return 0; }
         if (argc > 1 && strcmp(argv[1], "--connection-only") == 0) { checkConnection(); return 0; }
@@ -650,6 +652,7 @@ int main(int argc, const char **argv) {
         checkConnection();
         checkAutoRetry();
         checkBingCompletion();
+        checkAIGaps();
         puts("lyrics translation: all checks passed");
     }
     return 0;

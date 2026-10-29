@@ -152,7 +152,8 @@ static NSDictionary *readTranslation(NSURL *file) {
 static void applyTranslation(NSDictionary *saved, NSArray<SGKaraokeLine *> *lines) {
     for (SGKaraokeLine *line in lines) {
         id translation = saved[SGKaraokeLineText(line) ?: @""];
-        BOOL has = [translation isKindOfClass:NSString.class] && [translation length];
+        BOOL has = [translation isKindOfClass:NSString.class] &&
+            [translation stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length;
         if (line.translationMade) {
             line.translation = has ? translation : nil;
             line.translationMade = has;
@@ -218,7 +219,8 @@ void SGLyricsSaveTranslation(NSString *track, NSString *language, NSArray<SGKara
     NSMutableDictionary<NSString *, NSString *> *saved = [NSMutableDictionary dictionary];
     for (SGKaraokeLine *line in lines) {
         NSString *text = SGKaraokeLineText(line);
-        if (text.length && line.translationMade && line.translation.length) saved[text] = line.translation;
+        if (text.length && line.translationMade &&
+            [line.translation stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) saved[text] = line.translation;
     }
     if (!saved.count) return;
     NSData *data = [NSJSONSerialization dataWithJSONObject:saved options:0 error:nil];

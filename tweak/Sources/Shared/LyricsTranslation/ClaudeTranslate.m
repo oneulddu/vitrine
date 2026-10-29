@@ -139,10 +139,14 @@ void SGLyricsTranslateWithClaudeFormat(NSString *trackID, NSArray<SGKaraokeLine 
         NSDictionary *cached = trackID ? sg_done[memo] : nil;
         if ([cached[@"texts"] isEqual:texts] && [cached[@"model"] isEqual:model]) { done(cached[@"answer"], nil); return; }
         if (![[texts componentsJoinedByString:@""] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) { done(texts, nil); return; }
-        SGLyricsAIAskWithFormat(SGLyricsAIClaude, SGLyricsTranslationInstructionForFormat(format), prompt, texts.count, format, ^(NSArray *answer, NSString *problem) {
-            answer = SGLyricsTranslationReply(answer, texts, format);
-            if (!answer && !problem) problem = unreadable();
-            if (answer) {
+        NSUInteger generation = SGLyricsCredentialGeneration(SGLyricsAIClaude);
+        SGLyricsTranslateAIRows(texts, format, ^(NSArray *rows, void (^receive)(NSArray *, NSString *)) {
+            if (generation != SGLyricsCredentialGeneration(SGLyricsAIClaude)) { receive(nil, SGLyricsKeyChangedProblem()); return; }
+            SGLyricsAIAskWithFormat(SGLyricsAIClaude, SGLyricsTranslationInstructionForFormat(format),
+                SGLyricsTranslationPromptForFormat(rows, languageTag, format), rows.count, format, receive);
+        }, ^(NSArray *answer, NSString *problem) {
+            if (generation != SGLyricsCredentialGeneration(SGLyricsAIClaude)) { done(nil, SGLyricsKeyChangedProblem()); return; }
+            if (answer && !problem) {
                 if (trackID) {
                     if (sg_done.count >= 32) [sg_done removeAllObjects];
                     sg_done[memo] = @{@"texts": texts, @"model": model, @"answer": answer};

@@ -52,7 +52,7 @@ The checks cover:
   `/models` beside each base URL, the three list requests' addresses and headers, no request without a key,
   stored models cleaned, and Gemini's chosen model percent-encoded inside its path segment.
 - Indexed lyric translations across the real OpenAI-compatible, Claude and Gemini entry points:
-  exact `L0001<TAB>text` IDs/order/counts; rejection of missing, duplicated, shifted or extra IDs,
+  exact `L0001<TAB>text` IDs/order; recovery of missing IDs, rejection of duplicated, shifted or extra IDs,
   extra delimiters, JSON/fenced replies, refusals and truncation; source tab/newline normalization
   (CRLF is one space); Unicode and size boundaries; empty-row preservation; unchanged saved and
   memoized results after a rejected answer; explicit JSON title-mode isolation.
@@ -194,15 +194,35 @@ feature availability and the existing on-device boundary are fixtures; neither t
 OpenAI translation is stubbed. No service is contacted.
 
 Two cases begin with an existing translated line and a real provider response containing either one
-translated gap or only empty gaps. The automatic status becomes Partial or Failed. A direct call then
-proves that the provider has cached the incomplete array and returns it without another request.
+translated gap or only empty gaps. After one missing-row repair also returns empty values, the automatic
+status becomes Partial or Failed. Neither incomplete result is eligible for the provider memo.
 Explicit Retry itself sends nothing; the next automatic chain makes a fresh transport request and
 reaches Complete under the real track identity. A second track's seeded cache is reused even between
 Retry and that next chain. Both its cache and the existing translations survive the retry. In the
 partial case, the harness places the first successful line on the input model as the view would; the
 real chain's returned replacements leave both previously translated positions empty. A later ordinary
-attempt still reuses the original provider memo, demonstrating that the fresh request neither clears
-nor rewrites it.
+attempt makes a new request rather than replaying an incomplete provider memo.
+
+## AI gaps and repair
+
+```sh
+harness/lyrics-translation/build.sh --ai-gaps-only
+python3 harness/lyrics-translation/gap-mutation-check.py
+```
+
+`check-ai-gaps.m` reproduces the screenshot-shaped case: one translated row followed by blank or
+whitespace-only values in an otherwise correctly numbered answer. Before recovery, that answer was
+reported as success and memoized indefinitely. All three remote AI providers now request only its
+missing rows once, stitch them back by source index, and return an explicit error alongside any
+partial result when recovery fails. Only complete answers enter the per-provider memo.
+
+Fixtures cover indexed, JSON and prose formats, a first-N indexed reply, omitted IDs, duplicate
+source lines, empty/instrumental rows, CRLF, JSON fences, ambiguous off-by-one numbering, merged and
+split rows, and malformed indexed fences. Ambiguous formats fail rather than guessing timing
+positions; short JSON arrays fail because they carry no reliable row IDs. Successful repairs reach
+Complete through the real automatic chain and saved store. Partial disk maps retain only completed
+rows, and old whitespace-only saved values no longer mark a row complete. The mutation disables
+recovery in a temporary source copy and must fail on the screenshot-shaped assertion.
 
 Observed: both cases pass, using six scripted HTTP responses total; the integrated default harness
 also passes. A temporary negative-control copy under `build/retry-negative-control/` replaced only

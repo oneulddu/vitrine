@@ -294,29 +294,35 @@ void SGLyricsTranslateWithGeminiFormat(NSString *trackID, NSArray<SGKaraokeLine 
         return;
     }
     if (![[texts componentsJoinedByString:@""] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) { done(texts, nil); return; }
-    NSDictionary *body = geminiBody(SGLyricsTranslationInstructionForFormat(format), prompt, format);
+    NSUInteger generation = SGLyricsCredentialGeneration(SGLyricsAIGemini);
+    SGLyricsTranslateAIRows(texts, format, ^(NSArray *rows, void (^receive)(NSArray *, NSString *)) {
+    if (generation != SGLyricsCredentialGeneration(SGLyricsAIGemini)) { receive(nil, SGLyricsKeyChangedProblem()); return; }
+    NSDictionary *body = geminiBody(SGLyricsTranslationInstructionForFormat(format), SGLyricsTranslationPromptForFormat(rows, languageTag, format), format);
     NSMutableURLRequest *request = geminiRequest(key, body);
-    if (!request.HTTPBody || request.HTTPBody.length > 1024 * 1024) { done(nil, SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.")); return; }
+    if (!request.HTTPBody || request.HTTPBody.length > 1024 * 1024) { receive(nil, SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.")); return; }
     NSMutableURLRequest *plain = [request mutableCopy];
     NSMutableDictionary *plainBody = [body mutableCopy], *plainConfig = [body[@"generationConfig"] mutableCopy];
     [plainConfig removeObjectForKey:@"thinkingConfig"];
     plainBody[@"generationConfig"] = plainConfig;
     plain.HTTPBody = [NSJSONSerialization dataWithJSONObject:plainBody options:0 error:nil];
-    NSUInteger generation = SGLyricsCredentialGeneration(SGLyricsAIGemini);   // the request above carries this credential
     sendToGemini(request, plain, 0, ^BOOL { return generation == SGLyricsCredentialGeneration(SGLyricsAIGemini); }, ^(NSData *data, NSInteger status, NSError *error) {
         id root = data && data.length <= 512 * 1024 ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
         NSString *problem = nil;
-        NSArray *translations = SGLyricsTranslationReply(SGGeminiReplyIn(root, status, error, texts.count, format, &problem), texts, format);
+        NSArray *translations = SGGeminiReplyIn(root, status, error, rows.count, format, &problem);
         if (!translations && !problem) problem = SGL(@"settings.translation.error.unreadable", @"Gemini's answer could not be read. Try again.");
-        SGLog(@"gemini: %@ lines into %@: %@", @(texts.count), languageTag, translations ? @"translated" : problem);
+        SGLog(@"gemini: %@ lines into %@: %@", @(rows.count), languageTag, translations ? @"parsed" : @"failed");
         dispatch_async(dispatch_get_main_queue(), ^{
+            if (generation != SGLyricsCredentialGeneration(SGLyricsAIGemini)) { receive(nil, SGLyricsKeyChangedProblem()); return; }
+            receive(translations, problem);
+        });
+    });
+    }, ^(NSArray *translations, NSString *problem) {
             if (generation != SGLyricsCredentialGeneration(SGLyricsAIGemini)) { done(nil, SGLyricsKeyChangedProblem()); return; }
-            if (translations && trackID) {
+            if (translations && !problem && trackID) {
                 if (sg_done.count >= 32) [sg_done removeAllObjects];
                 sg_done[memo] = @{@"texts": texts, @"model": model, @"answer": translations};
             }
             done(translations, problem);
-        });
     });
 }
 

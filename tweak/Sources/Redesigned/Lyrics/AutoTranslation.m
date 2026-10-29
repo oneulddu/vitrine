@@ -136,7 +136,9 @@ static BOOL takeTranslations(NSArray<NSString *> *translations, NSArray<SGKaraok
     __block BOOL took = NO;
     [lines enumerateObjectsUsingBlock:^(SGKaraokeLine *line, NSUInteger i, BOOL *stop) {
         NSString *translation = i < translations.count ? translations[i] : nil;
-        if (![translation isKindOfClass:NSString.class] || !translation.length || [line.translation isEqualToString:translation]) return;
+        if (![translation isKindOfClass:NSString.class] ||
+            ![translation stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length ||
+            [line.translation isEqualToString:translation]) return;
         if (line.translation.length && !line.translationMade) return;
         line.translation = translation;
         line.translationMade = YES;

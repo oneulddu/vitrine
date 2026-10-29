@@ -39,6 +39,12 @@ NSString *SGLyricsTranslationPromptForFormat(NSArray<NSString *> *texts, NSStrin
 NSString *SGLyricsTranslationRowText(NSString *text);
 NSArray<NSString *> *SGLyricsIndexedRowsIn(id content, NSUInteger count);
 NSArray<NSString *> *SGLyricsTranslationReply(NSArray<NSString *> *answer, NSArray<NSString *> *texts, SGLyricsReplyFormat format);
+// A provider supplies one request/parser, retaining its own transport policy. Ask once for missing
+// nonempty rows, stitch by source index, and return a partial answer WITH an error if gaps remain.
+// Only an error-free result is eligible for the provider's complete-answer memo.
+void SGLyricsTranslateAIRows(NSArray<NSString *> *texts, SGLyricsReplyFormat format,
+    void (^send)(NSArray<NSString *> *, void (^)(NSArray<NSString *> *, NSString *)),
+    void (^done)(NSArray<NSString *> *, NSString *));
 NSArray<NSString *> *SGOpenAIReplyIn(id root, NSUInteger count, SGLyricsReplyFormat format);
 NSArray<NSString *> *SGClaudeReplyIn(id root, NSInteger status, NSError *error, NSUInteger count, SGLyricsReplyFormat format, NSString **problem);
 NSArray<NSString *> *SGGeminiReplyIn(id root, NSInteger status, NSError *error, NSUInteger count, SGLyricsReplyFormat format, NSString **problem);

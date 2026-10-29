@@ -330,20 +330,24 @@ NSArray<NSString *> *SGLyricsIndexedRowsIn(id content, NSUInteger count) {
     // A single final line terminator is wire framing, not an additional empty source row.
     if ([text hasSuffix:@"\n"]) text = [text substringToIndex:text.length - 1];
     NSArray *rows = [text componentsSeparatedByString:@"\n"];
-    if (rows.count != count) return nil;
+    if (rows.count > count) return nil;
     NSMutableArray *answer = [NSMutableArray arrayWithCapacity:count];
+    for (NSUInteger i = 0; i < count; i++) [answer addObject:@""];
     NSMutableCharacterSet *forbidden = [NSCharacterSet.newlineCharacterSet mutableCopy];
     [forbidden addCharactersInString:@"\t"];
-    NSUInteger size = 0;
-    for (NSUInteger i = 0; i < count; i++) {
-        NSString *prefix = [NSString stringWithFormat:@"L%04lu\t", (unsigned long)i + 1];
-        NSString *row = rows[i];
+    NSUInteger size = 0, previous = 0;
+    for (NSString *row in rows) {
+        if (row.length < 6) return nil;
+        NSUInteger index = [[row substringWithRange:NSMakeRange(1, 4)] integerValue];
+        if (!index || index > count || index <= previous) return nil;
+        NSString *prefix = [NSString stringWithFormat:@"L%04lu\t", (unsigned long)index];
         if (![row hasPrefix:prefix]) return nil;
         NSString *value = [row substringFromIndex:prefix.length];
         if (value.length > 64000 || value.length > 128000 - size ||
             [value rangeOfCharacterFromSet:forbidden].location != NSNotFound) return nil;
         size += value.length;
-        [answer addObject:value];
+        answer[index - 1] = value;
+        previous = index;
     }
     return [answer copy];
 }
@@ -351,12 +355,55 @@ NSArray<NSString *> *SGLyricsTranslationReply(NSArray<NSString *> *answer, NSArr
     if (!validTexts(answer) || answer.count != texts.count) return nil;
     NSMutableArray *clean = [answer mutableCopy];
     for (NSUInteger i = 0; i < texts.count; i++) {
-        if ([texts[i] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) continue;
-        // Indexed replies are atomic: even a fabricated value for an empty source invalidates the answer.
-        if (format == SGLyricsReplyIndexed && [answer[i] length]) return nil;
-        clean[i] = @"";
+        if (![texts[i] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) {
+            // A fabricated value for an empty source invalidates the answer, not its row alignment.
+            if (format == SGLyricsReplyIndexed && [answer[i] length]) return nil;
+            clean[i] = @"";
+        } else if (![answer[i] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) {
+            clean[i] = @"";
+        }
     }
     return [clean copy];
+}
+void SGLyricsTranslateAIRows(NSArray<NSString *> *texts, SGLyricsReplyFormat format,
+    void (^send)(NSArray<NSString *> *, void (^)(NSArray<NSString *> *, NSString *)),
+    void (^done)(NSArray<NSString *> *, NSString *)) {
+    __block BOOL received = NO;
+    send(texts, ^(NSArray *values, NSString *problem) {
+        if (received) return;
+        received = YES;
+        NSArray *answer = SGLyricsTranslationReply(values, texts, format);
+        if (!answer || problem) { done(nil, problem ?: unreadable()); return; }
+        NSMutableArray *missingTexts = [NSMutableArray array], *indexes = [NSMutableArray array];
+        for (NSUInteger i = 0; i < texts.count; i++) {
+            if ([texts[i] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length && ![answer[i] length]) {
+                [missingTexts addObject:texts[i]];
+                [indexes addObject:@(i)];
+            }
+        }
+        if (!indexes.count) { done(answer, nil); return; }
+        SGLog(@"AI translation rows: %lu/%lu missing; requesting missing rows once",
+            (unsigned long)indexes.count, (unsigned long)texts.count);
+        __block BOOL repaired = NO;
+        send(missingTexts, ^(NSArray *values, NSString *failure) {
+            if (repaired) return;
+            repaired = YES;
+            NSArray *repair = SGLyricsTranslationReply(values, missingTexts, format);
+            NSMutableArray *stitched = [answer mutableCopy];
+            NSUInteger remaining = indexes.count;
+            if (repair && !failure) for (NSUInteger i = 0; i < indexes.count; i++) {
+                if (![repair[i] length]) continue;
+                stitched[[indexes[i] unsignedIntegerValue]] = repair[i];
+                remaining--;
+            }
+            SGLog(@"AI translation rows: %lu/%lu still missing after repair",
+                (unsigned long)remaining, (unsigned long)texts.count);
+            // Each reply is bounded independently; their stitched result must obey the same
+            // whole-answer limit before it can be displayed, saved or memoized.
+            if (!validTexts(stitched)) { done(answer, unreadable()); return; }
+            done([stitched copy], remaining ? failure ?: unreadable() : nil);
+        });
+    });
 }
 NSString *SGLyricsTranslationInstructionForFormat(SGLyricsReplyFormat format) {
     return format == SGLyricsReplyIndexed ? SGLyricsTranslationInstruction()

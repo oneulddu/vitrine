@@ -46,29 +46,27 @@ static void checkAutoRetry(void) {
     CHECK(SGRAutoTranslationEnabled() && SGRAutoTranslationAvailable(SGRAutoTranslatorOpenAI, @"ko"));
     for (NSInteger provider = 1; provider < SGRAutoTranslatorCount; provider++)
         if (provider != SGRAutoTranslatorOpenAI) CHECK(!SGRAutoTranslationAvailable(provider, @"ko"));
-    NSUInteger allBefore = aiRequests;
     for (NSNumber *partial in @[@YES, @NO]) {
         NSString *track = [@"retry-provider-regression-" stringByAppendingString:partial.boolValue ? @"partial" : @"empty"];
         NSString *other = [track stringByAppendingString:@"-other"];
         NSArray *texts = @[@"Already translated source", @"Blue robot", @"Green robot"];
         NSArray<SGKaraokeLine *> *lines = aiLines(texts); lines[0].translation = @"keep existing translation";
         NSArray *incomplete = @[@"must not replace existing", partial.boolValue ? @"first translation" : @"", @""];
-        aiReplies = [@[autoRetryReply(incomplete)] mutableCopy];
+        NSArray *emptyRepair = partial.boolValue ? @[@""] : @[@"", @""];
+        aiReplies = [@[autoRetryReply(incomplete), autoRetryReply(emptyRepair)] mutableCopy];
         NSUInteger before = aiRequests;
         NSArray *first = autoRetryChain(track, lines);
         SGRAutoTranslationProgress *status = SGRAutoTranslationProgressFor(track, @"ko");
-        CHECK(aiRequests == before + 1 && !aiReplies.count);
+        CHECK(aiRequests == before + 2 && !aiReplies.count);
         CHECK(status.provider == SGRAutoTranslatorOpenAI && status.total == 2 && status.completed == partial.unsignedIntegerValue);
         CHECK(status.phase == (partial.boolValue ? SGRAutoTranslationPhasePartial : SGRAutoTranslationPhaseFailed));
         CHECK(partial.boolValue ? ([first[1] isEqual:@"first translation"] && ![first[2] length]) : !first);
         CHECK([lines[0].translation isEqual:@"keep existing translation"]);
-        // Prove the real provider cached this incomplete response before invoking Retry.
-        CHECK([autoRetryProvider(track, lines) isEqual:incomplete] && aiRequests == before + 1);
         CHECK(!SGRAutoTranslationClaim(track, @"ko"));
         // A second identity already has a provider memo. Retry must not globally disable/clear it.
         NSArray<SGKaraokeLine *> *otherLines = aiLines(texts); otherLines[0].translation = @"other existing";
         aiReplies = [@[autoRetryReply(@[@"ignore", @"other first", @"other second"])] mutableCopy];
-        CHECK(autoRetryProvider(other, otherLines).count == 3 && aiRequests == before + 2);
+        CHECK(autoRetryProvider(other, otherLines).count == 3 && aiRequests == before + 3);
         NSUInteger atRetry = aiRequests;
         CHECK(SGRAutoTranslationRetry(track, @"ko") && !SGRAutoTranslationProgressFor(track, @"ko"));
         CHECK(aiRequests == atRetry); // Retry only clears/rearms this pair; it does not send on its own.
@@ -88,19 +86,17 @@ static void checkAutoRetry(void) {
         else CHECK([retried[1] isEqual:@"fresh first"]);
         CHECK(!SGRAutoTranslationRetry(track, @"ko"));
         CHECK([autoRetryProvider(other, otherLines)[2] isEqual:@"other second"] && aiRequests == atRetry + 1);
-        // The nil identity bypasses cache writes too; normal calls still use the original memo.
-        CHECK([autoRetryProvider(track, lines) isEqual:incomplete] && aiRequests == atRetry + 1);
+        // A normal call cannot reuse either the failed partial result or a fresh retry's nil memo.
+        aiReplies = [@[autoRetryReply(@[@"ignore", @"ordinary first", @"ordinary second"])] mutableCopy];
         SGRAutoTranslationSettingsChanged();
         NSArray<SGKaraokeLine *> *ordinary = aiLines(texts); ordinary[0].translation = @"keep existing translation";
         autoRetryChain(track, ordinary);
-        CHECK(aiRequests == atRetry + 1 && SGRAutoTranslationProgressFor(track, @"ko").phase ==
-              (partial.boolValue ? SGRAutoTranslationPhasePartial : SGRAutoTranslationPhaseFailed));
+        CHECK(!aiReplies.count && SGRAutoTranslationProgressFor(track, @"ko").phase == SGRAutoTranslationPhaseComplete);
         SGRAutoTranslationSettingsChanged();
     }
-    CHECK(aiRequests == allBefore + 6);
     for (NSString *key in keys) { if (saved[key] == NSNull.null) [defaults removeObjectForKey:key]; else [defaults setObject:saved[key] forKey:key]; }
     testKeys = savedKeys; openAIKeys = savedCredentials; testLanguage = savedLanguage;
     bingEnabled = savedBing; deviceAvailable = savedDevice; autoRetryEnabled = savedAuto; aiReplies = nil;
     SGRAutoTranslationSettingsChanged();
-    puts("Auto Retry: real OpenAI partial/empty memo bypassed once, fresh request completes, other-track cache and existing translations preserved");
+    puts("Auto Retry: exhausted partial/empty repair is retryable, never memoized, and preserves other-track cache and existing translations");
 }

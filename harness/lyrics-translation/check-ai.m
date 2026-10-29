@@ -647,7 +647,8 @@ static void checkIndexedLyrics(void) {
     CHECK(!SGLyricsTranslationReply(@[@"wrong"], @[@""], SGLyricsReplyIndexed));
     CHECK(!SGLyricsTranslationReply(@[@" "], @[@"\t"], SGLyricsReplyIndexed));
     CHECK(SGLyricsIndexedRowsIn(@"", 0) && !SGLyricsIndexedRowsIn(@"\n", 0));
-    for (id bad in @[NSNull.null, @42, @"", @"L0001\tA", @"L0001\tA\nL0001\tB", @"L0002\tB\nL0001\tA",
+    CHECK(([SGLyricsIndexedRowsIn(@"L0001\tA", 2) isEqual:@[@"A", @""]]));
+    for (id bad in @[NSNull.null, @42, @"", @"L0001\tA\nL0001\tB", @"L0002\tB\nL0001\tA",
                     @"L0001\tA\nL0003\tB", @"L0000\tA\nL0002\tB", @"L1\tA\nL0002\tB",
                     @" L0001\tA\nL0002\tB", @"L0001 A\nL0002\tB", @"L0001\tA\tB\nL0002\tC",
                     @"L0001\tA\rL0002\tB", @"L0001\tA\u2028B\nL0002\tC",
