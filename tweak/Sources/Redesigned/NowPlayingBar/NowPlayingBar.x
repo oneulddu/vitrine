@@ -399,8 +399,7 @@ static BOOL inSight(UIView *view, UIView *unit) {
 // pager may show a neighbor: a title equal to the line wins, else the longest title the line starts with that
 // the track's artist follows, so a short title ("Rock" by "Roll") never takes the line of a longer one
 // ("Rock • Roll" by "The Band"). Nil when none matches.
-static NSString *knownTitleOf(NSString *line) {
-    SPTPlayerState *state = SGPlayerState();
+static NSString *scanKnownTitle(SPTPlayerState *state, NSString *line) {
     NSMutableArray *tracks = [NSMutableArray array];
     if (state.track) [tracks addObject:state.track];
     if ([state.future isKindOfClass:NSArray.class]) [tracks addObjectsFromArray:state.future];
@@ -418,6 +417,27 @@ static NSString *knownTitleOf(NSString *line) {
         if (rest.length && (![artist isKindOfClass:NSString.class] || !artist.length || [rest hasPrefix:artist])) best = title;
     }
     return best;
+}
+
+// The scan's answers kept for the state object they were made for, one per line, since the pager's pages each
+// hold their own: the cells lay out far more often than either changes, and the player reports a new state
+// object whenever it does. The state is held so that its address cannot be reused by another while the answers
+// are kept.
+static SPTPlayerState *sg_knownState;
+static NSMutableDictionary<NSString *, id> *sg_knownTitles;
+
+static NSString *knownTitleOf(NSString *line) {
+    SPTPlayerState *state = SGPlayerState();
+    if (!sg_knownTitles || state != sg_knownState) {
+        sg_knownTitles = [NSMutableDictionary dictionary];
+        sg_knownState = state;
+    }
+    id known = sg_knownTitles[line];
+    if (!known) {
+        known = scanKnownTitle(state, line) ?: NSNull.null;
+        sg_knownTitles[[line copy]] = known;
+    }
+    return known == NSNull.null ? nil : known;
 }
 
 static void placeText(UIView *page) {

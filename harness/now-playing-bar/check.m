@@ -13,7 +13,19 @@
 @property (nonatomic, readwrite) NSString *trackTitle;
 @property (nonatomic, readwrite) NSString *artistName;
 @end
-@implementation SPTPlayerTrack
+// Every read of a title is counted: a scan of the player's tracks reads one per track, so the count tells scans apart.
+static NSUInteger sg_titleReads;
+
+@implementation SPTPlayerTrack {
+    NSString *_trackTitle;
+}
+- (NSString *)trackTitle {
+    sg_titleReads++;
+    return _trackTitle;
+}
+- (void)setTrackTitle:(NSString *)title {
+    _trackTitle = title;
+}
 @end
 
 @interface SPTPlayerState ()
@@ -107,6 +119,28 @@ static void run(void) {
     expect(@"collision, neighbor, hidden artists", makePage(@"Rock • Roll • The Band", @"The Band", YES, nil), @"Rock • Roll", @"The Band");
     expect(@"collision, neighbor, hidden artists empty", makePage(@"Rock • Roll • The Band", @"", YES, nil), @"Rock • Roll", @"The Band");
     expect(@"collision, current", makePage(@"Rock", nil, NO, @"Roll"), @"Rock", @"Roll");
+
+    // The same page laid out again, with the same state and line, is not scanned again; a new line or a new state
+    // is, and its answer follows.
+    sg_state = [SPTPlayerState new];
+    sg_state.track = makeTrack(@"Rock • Roll", @"The Band");
+    sg_state.future = @[makeTrack(@"Stay High", @"Juice WRLD")];
+    UIView *again = makePage(@"Rock • Roll • The Band", @"", YES, nil);
+    sg_titleReads = 0;
+    expect(@"cache, first layout", again, @"Rock • Roll", @"The Band");
+    NSUInteger scan = sg_titleReads;
+    HARNESS_CHECK(scan > 0);
+    expect(@"cache, same layout again", again, @"Rock • Roll", @"The Band");
+    expect(@"cache, same line on another page", makePage(@"Rock • Roll • The Band", @"The Band", YES, nil), @"Rock • Roll", @"The Band");
+    if (sg_titleReads != scan) HARNESS_FAIL(@"cache: an unchanged line and state were scanned again (%lu reads, %lu for one scan)", (unsigned long)sg_titleReads, (unsigned long)scan);
+    expect(@"cache, new line", makePage(@"Stay High • Juice WRLD", @"", YES, nil), @"Stay High", @"Juice WRLD");
+    if (sg_titleReads == scan) HARNESS_FAIL(@"cache: a new line was not scanned");
+    scan = sg_titleReads;
+    SPTPlayerState *next = [SPTPlayerState new];
+    next.track = makeTrack(@"Stay High • Juice WRLD", @"Someone");
+    sg_state = next;
+    expect(@"cache, new state", makePage(@"Stay High • Juice WRLD", nil, NO, @"Someone"), @"Stay High • Juice WRLD", @"Someone");
+    HARNESS_CHECK(sg_titleReads > scan);
 
     // Nothing the player knows: today's reading, the first bullet parts the title.
     sg_state = [SPTPlayerState new];
