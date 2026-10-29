@@ -1119,7 +1119,10 @@ Redesigned:
                   Music app's size,
                   continuous corners on the covers, and, under the Home look switch (the Home page's first row; off, none of
                   its hooks install and Home is as before it): at the trailing edge a glass pill of the filter (a menu that
-                  drives Spotify's own chips, with the device picker and the top shelf's Show all) and the avatar, Top picks
+                  drives Spotify's own chips, with the device picker and the top shelf's Show all; with Podcasts and audiobooks
+                  hidden on the Home page, `spotifyglass.redesign.home.hidePodcasts`, shown unless set, it leaves out the
+                  Podcasts and Audiobooks chips and takes Home back to the default chip once when one was chosen, at once
+                  when flipped; harness/home-podcasts/) and the avatar, Top picks
                   (the first shelf, or the one Cards from names, found in Spotify's feed model before its cells are
                   built, moved above the shortcuts and drawn as large cards in their covers' colors with no heading
                   unless Show Top picks heading is on, the page tinted by the first card) and each shortcut tile as

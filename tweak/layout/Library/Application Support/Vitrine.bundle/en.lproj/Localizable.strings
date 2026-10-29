@@ -712,6 +712,8 @@
 "settings.home.on_home.header" = "On Home";
 "settings.home.pill.devices" = "Devices";
 "settings.home.playlists.row.title" = "Playlists";
+"settings.home.podcasts.subtitle" = "The Podcasts and Audiobooks chips in Home's filter menu";
+"settings.home.podcasts.title" = "Podcasts and audiobooks";
 "settings.home.preview.a11y" = "Preview of Home";
 "settings.home.previews.subtitle" = "The cards that play as Home scrolls";
 "settings.home.previews.title" = "Video and playlist previews";

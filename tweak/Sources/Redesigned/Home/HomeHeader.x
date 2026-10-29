@@ -112,10 +112,56 @@ static BOOL chosen(UIControl *chip) {
     return solid;
 }
 
+#pragma mark - podcasts and audiobooks
+
+static NSString *const kDefaultChip = @"home-feed-default";
+static NSString *const kPodcastsChip = @"home-feed-podcasts-chip";
+
+static BOOL isPodcastChip(UIView *chip) {
+    NSString *identifier = chip.accessibilityIdentifier;
+    return [identifier isEqualToString:kPodcastsChip] || [identifier.lowercaseString containsString:@"audiobook"];
+}
+
+// The hidden chip Home was left on: not asked again for it until it is no longer chosen.
+static __weak UIControl *sg_leaving;
+
+// While the podcasts and audiobooks chips are hidden, takes Home off one that is chosen, back to the default chip through
+// Spotify's own action, on the next turn of the run loop.
+static void syncPodcastChips(UIStackView *stack) {
+    if (!stack) return;
+    BOOL hidden = SGHidden(SGRKeyHomeHidePodcasts);
+    NSArray<UIControl *> *all = chips(stack);
+    UIControl *fallback = nil;
+    for (UIControl *chip in all) {
+        if ([chip.accessibilityIdentifier isEqualToString:kDefaultChip]) fallback = chip;
+    }
+    for (UIControl *chip in all) {
+        if (!isPodcastChip(chip)) continue;
+        if (!hidden || !chosen(chip)) {
+            if (sg_leaving == chip) sg_leaving = nil;
+            continue;
+        }
+        if (sg_leaving == chip) continue;
+        sg_leaving = chip;
+        __weak UIControl *weakChip = chip, *weakFallback = fallback;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIControl *strongChip = weakChip, *strongFallback = weakFallback;
+            if (!SGHidden(SGRKeyHomeHidePodcasts) || !strongChip || !chosen(strongChip)) return;
+            if (!strongFallback) {
+                SGLog(@"redesign home: the default chip not found, Home stays on a hidden filter");
+                return;
+            }
+            SGRActivate(strongFallback);
+        });
+    }
+}
+
 static NSArray<UIMenuElement *> *menuElements(void) {
     NSMutableArray<UIMenuElement *> *elements = [NSMutableArray array];
     NSMutableArray<UIMenuElement *> *filters = [NSMutableArray array];
+    BOOL hidePodcasts = SGHidden(SGRKeyHomeHidePodcasts);
     for (UIControl *chip in chips(sg_stack)) {
+        if (hidePodcasts && isPodcastChip(chip)) continue;
         __weak UIControl *weakChip = chip;
         UIAction *action = [UIAction actionWithTitle:chip.accessibilityLabel ?: @"" image:nil identifier:nil handler:^(UIAction *a) {
             if (weakChip) SGRActivate(weakChip);
@@ -440,6 +486,7 @@ static void layoutHeader(UIViewController *page) {
     UIView *header = sg_header;
     UIStackView *stack = sg_stack;
     vanish(sg_scrim);
+    syncPodcastChips(stack);
     layoutHeaderOnceSized(page, header);
 
     UIView *face = nil;
@@ -531,4 +578,17 @@ static void layoutHeader(UIViewController *page) {
         @"_TtC16Home_EvoPageImpl33EvoLoadableResourceViewController",
         @"_TtC29ListeningActivity_ElementsKit21AdaptiveFaceContainer",
     ]);
+    // The switch applies live: a flip to hidden takes Home off a hidden filter at once. Posted on the writing thread, which
+    // a main-queue observer would leave waiting on main.
+    static BOOL hidingPodcasts;
+    hidingPodcasts = SGHidden(SGRKeyHomeHidePodcasts);
+    [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            SGPrefsChanged();
+            BOOL hidden = SGHidden(SGRKeyHomeHidePodcasts);
+            if (hidden == hidingPodcasts) return;
+            hidingPodcasts = hidden;
+            syncPodcastChips(sg_stack);
+        });
+    }];
 }

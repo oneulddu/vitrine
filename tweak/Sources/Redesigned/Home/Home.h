@@ -8,7 +8,8 @@
 //     HomeShelves.m    a shelf's identity from its heading, the shelves seen lately and which are hidden
 //     HomeFeed.swift   every section's shelf identity from Spotify's model of the feed, built or not
 //     HomeSettings.m   the Home page of Mod Settings: Top picks, what stays on Home, one switch per shelf
-//     HomeHeader.x     a large title where the filter pills were, the avatar at the trailing edge, no scrim
+//     HomeHeader.x     a large title where the filter pills were, the avatar at the trailing edge, no scrim; the
+//                      Podcasts and Audiobooks chips out of the filter menu while hidden
 //     HomeHeadings.x   the shelves' headings in the Music app's size, drawn over Spotify's
 //     HomeCards.x      the Encore button every card is: shortcut tiles (HomeTiles.m), continuous corners on the
 //                      shelf covers, the DJ card at the card radius without its talking transcript
@@ -47,6 +48,9 @@ BOOL SGRHomeLook(void);
 // Discovery_PreviewElement).
 #define SGRKeyHomeSongSuggestions @"spotifyglass.redesign.home.songSuggestions"
 #define SGRKeyHomePreviews @"spotifyglass.redesign.home.previews"
+// Podcasts and audiobooks hidden when set, on Home (the Podcasts and Audiobooks chips of the filter menu, HomeHeader.x). Off
+// until switched on; applied live.
+#define SGRKeyHomeHidePodcasts @"spotifyglass.redesign.home.hidePodcasts"
 // A shelf hidden when set: this prefix and the shelf's identity (SGRHomeShelfHideKey).
 #define SGRKeyHomeShelfHidePrefix @"spotifyglass.redesign.home.hide.shelf."
 // The shelves seen lately: identity -> the date it was last on Home (HomeShelves.m).

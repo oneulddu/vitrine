@@ -719,6 +719,8 @@
 "settings.home.shelves.header" = "선반";
 "settings.home.shelves.none" = "아직 표시된 항목 없음";
 "settings.home.shelves.note" = "지난 30일 동안 홈 화면에 표시된 선반입니다. 선반은 제목으로 구분되므로 다른 언어로 설정된 Spotify에서 이름이 다른 선반은 별도로 나열됩니다.";
+"settings.home.podcasts.subtitle" = "홈 필터 메뉴의 팟캐스트 및 오디오북 칩";
+"settings.home.podcasts.title" = "팟캐스트 및 오디오북";
 "settings.home.shortcuts.title" = "바로가기";
 "settings.home.song_suggestions.subtitle" = "홈 화면에서 제공할 때 들어볼 노래를 보여주는 Spotify의 캐러셀";
 "settings.home.song_suggestions.title" = "노래 추천";
