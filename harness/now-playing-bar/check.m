@@ -89,6 +89,47 @@ static void expect(NSString *name, UIView *page, NSString *title, NSString *arti
     sg_checks++;
 }
 
+// The text size is the app's (stubs.m) and the window's traits, which is how UIKit tells a view the size changed.
+extern UIContentSizeCategory sg_harnessTextSize;
+
+static void setTextSize(UIWindow *window, UIContentSizeCategory category) {
+    sg_harnessTextSize = category;
+    window.traitOverrides.preferredContentSizeCategory = category;
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+}
+
+static SGRBarText *barIn(UIView *host) {
+    UIView *page = makePage(@"Stay High • Juice WRLD", @"", YES, nil);
+    [host addSubview:page];
+    placeText(page);
+    return objc_getAssociatedObject(page, &kTextKey);
+}
+
+// Both fonts and both frames, as the bar draws them.
+static NSString *textLook(SGRBarText *text) {
+    return [NSString stringWithFormat:@"title %.1fpt %@, artists %.1fpt %@", text.title.font.pointSize,
+            NSStringFromCGRect(text.title.frame), text.artists.font.pointSize, NSStringFromCGRect(text.artists.frame)];
+}
+
+// A bar kept across text sizes looks as one made at that size.
+static void checkTextSize(void) {
+    UIWindow *window = [(id)UIApplication.sharedApplication.delegate window];
+    UIView *host = window.rootViewController.view;
+    setTextSize(window, UIContentSizeCategorySmall);
+    SGRBarText *kept = barIn(host);
+    NSString *small = textLook(kept);
+    NSString *large = nil;
+    for (UIContentSizeCategory category in @[UIContentSizeCategoryLarge, UIContentSizeCategorySmall]) {
+        setTextSize(window, category);
+        NSString *fresh = textLook(barIn(host)), *now = textLook(kept);
+        if (![now isEqualToString:fresh]) HARNESS_FAIL(@"text size %@: a kept bar draws %@, a new one %@", category, now, fresh);
+        if (category == UIContentSizeCategoryLarge) large = now;
+        sg_checks++;
+    }
+    if ([small isEqualToString:large]) HARNESS_FAIL(@"same %@ / %@", small, large);
+    HARNESS_CHECK([textLook(kept) isEqualToString:small]);
+}
+
 static void run(void) {
     SPTPlayerTrack *plain = makeTrack(@"Stay High", @"Juice WRLD"), *dotted = makeTrack(@"Rock • Roll", @"The Band");
     SPTPlayerTrack *shorter = makeTrack(@"Rock", @"Roll Crew");
@@ -148,6 +189,8 @@ static void run(void) {
     expect(@"unknown, no bullet", makePage(@"Unknown Song", nil, NO, @"Somebody"), @"Unknown Song", @"Somebody");
     sg_state = nil;
     expect(@"no state", makePage(@"Stay High • Juice WRLD", @"", YES, nil), @"Stay High", @"Juice WRLD");
+
+    checkTextSize();
 
     printf("[harness] now-playing-bar: %lu checks passed\n", (unsigned long)sg_checks);
     fflush(stdout);

@@ -15,8 +15,16 @@ NSHashTable<UIView *> *sgr_nowPlayingPainted;
 
 BOOL SGRedesignedUI(void) { return NO; }
 UIColor *SGRAccentColor(void) { return nil; }
+// The app's text size, which the harness changes; production reads UIApplication.preferredContentSizeCategory.
+// Catalyst's Mac idiom does not scale text, so the sizes are the phone's: the bar's two styles at Large, a point less
+// below it, and capped at `largest` like SGCategoryCappedFont.
+UIContentSizeCategory sg_harnessTextSize;
 UIFont *SGCategoryCappedFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest) {
-    return [UIFont systemFontOfSize:UIFont.labelFontSize weight:weight];
+    UIContentSizeCategory category = sg_harnessTextSize ?: UIContentSizeCategoryLarge;
+    if (UIContentSizeCategoryCompareToCategory(category, largest) == NSOrderedDescending) category = largest;
+    CGFloat atLarge = [style isEqual:UIFontTextStyleSubheadline] ? 15 : 13;
+    BOOL below = UIContentSizeCategoryCompareToCategory(category, UIContentSizeCategoryLarge) == NSOrderedAscending;
+    return [UIFont systemFontOfSize:atLarge - (below ? 1 : 0) weight:weight];
 }
 UIVisualEffectView *SGGlassFor(UIView *host, const void *key) { return nil; }
 void SGShapeGlass(UIView *glass, CGFloat radius, BOOL capsule) {}

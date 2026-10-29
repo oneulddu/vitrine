@@ -10,8 +10,13 @@
 // The redesign's own green until another is picked; Spotify's is a pick of its own, stored as -1.
 #define SGRDefaultAccent 0x37F200
 
+// Follow the cover (Player/PlayerCoverAccent.x), read at launch. It paints only what carries provenance, so a launch
+// with it on installs the provenance hooks even under Spotify's green.
+#define SGRKeyPlayerFollowsCover @"spotifyglass.redesign.player.followsCover"
+
 UIColor *SGRAccentColor(void);   // nil for Picked/Spotify, as before; otherwise a live token
-// A Picked/Spotify launch needs relaunch to enable an accent; accent launches can toggle live.
+// A Picked/Spotify launch needs relaunch to enable an accent (Follow the cover alone installs the hooks, not the
+// substitution); accent launches can toggle live.
 BOOL SGRAccentSubstitutionEnabled(void);
 NSInteger SGRAccentRGB(void);    // the color in effect, 0xRRGGBB, Spotify's green included
 NSInteger SGRPickedAccentRGB(void); // saved pick, never the temporary page/cover color

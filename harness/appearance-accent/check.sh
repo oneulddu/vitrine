@@ -61,9 +61,9 @@ xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -O0 -g -isysroot "$SDK
 codesign -f -s - "$CHECK"
 case "${1:-all}" in
     stock|animations|reenable) "$CHECK/Contents/MacOS/check" "$1"; exit ;;
+    provenance) ;;
+    *) "$CHECK/Contents/MacOS/check"; "$CHECK/Contents/MacOS/check" stock ;;
 esac
-"$CHECK/Contents/MacOS/check"
-"$CHECK/Contents/MacOS/check" stock
 "${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "${PLAYER_ACCENT:-$SRC/Redesigned/Player/PlayerCoverAccent.x}" > "$OUT/PlayerCoverAccent.m"
 xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -O0 -g -isysroot "$SDK" \
     -iframework "$SDK/System/iOSSupport/System/Library/Frameworks" -I"$SRC" -I"$SRC/Redesigned/Kit" -I"$SRC/Redesigned/Player" \
@@ -71,6 +71,8 @@ xcrun clang -target arm64-apple-ios17.0-macabi -fobjc-arc -O0 -g -isysroot "$SDK
     "$SRC/Redesigned/Kit/SGRTokens.m" "$SRC/Core/SGPrefs.m" "$SRC/Core/SGViewTree.m" "$SRC/Core/SGLog.m" \
     -framework UIKit -framework QuartzCore -framework CoreGraphics -framework Foundation -o "$OUT/Player.app/Contents/MacOS/player-check"
 codesign -f -s - "$PLAYER"
+"$PLAYER/Contents/MacOS/player-check" stock
+[ "${1:-all}" = provenance ] && exit 0
 for automatic in 0 1; do
     for follow in 0 1; do
         "$PLAYER/Contents/MacOS/player-check" -spotifyglass.redesign.accent.auto "$automatic" -spotifyglass.redesign.player.followsCover "$follow"

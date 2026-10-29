@@ -101,7 +101,54 @@ static void checkAnimations(CAShapeLayer *shape, NSInteger initial, CFTimeInterv
 }
 @end
 
+// A fresh process launched with Spotify's own accent and Follow the cover on. Typed negative preferences must be in
+// place before the tweak constructors (the Kit decides its hooks there), and +load runs before them.
+static BOOL stockLaunch(void) { return [NSProcessInfo.processInfo.arguments containsObject:@"stock"]; }
+@interface StockLaunchDefaults : NSObject @end
+@implementation StockLaunchDefaults
++ (void)load {
+    if (!stockLaunch()) return;
+    [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGRKeyAccent:@(-1),SGRKeyAccentAuto:@NO,SGRKeyPlayerFollowsCover:@YES} forName:NSArgumentDomain];
+    SGPrefsChanged();
+}
+@end
+
+static void runStockChecks(void) {
+    SGRAccentStart();
+    expect(!SGRAccentSubstitutionEnabled() && SGRAccentColor()==nil,@"stock launch substitutes no accent");
+    expect(SGRPlayerFollowsCover(),@"stock launch input: Follow the cover is on");
+    UIColor *stockGreen=[UIColor colorWithRed:30/255.0 green:215/255.0 blue:96/255.0 alpha:1];
+    // The same three kinds of control Spotify draws its lit player controls with, once in the player's stack and once outside it.
+    Class lottieClass=objc_allocateClassPair(UIView.class,"Lottie.LottieAnimationView",0); objc_registerClassPair(lottieClass);
+    NSMutableArray<NSDictionary *> *sets=[NSMutableArray array];
+    UIStackView *stack=[[UIStackView alloc] initWithFrame:CGRectMake(0,0,300,200)]; [front.view addSubview:stack];
+    UIView *outside=[[UIView alloc] initWithFrame:CGRectMake(0,200,300,200)]; [front.view addSubview:outside];
+    for (UIView *host in @[stack,outside]) {
+        UIImageView *icon=[[UIImageView alloc] initWithImage:knownIcon(stockGreen)];
+        UIView *dot=[UIView new]; dot.backgroundColor=stockGreen;
+        UIView *lottie=[[lottieClass alloc] initWithFrame:CGRectMake(0,0,50,50)];
+        CAShapeLayer *shape=[CAShapeLayer layer]; [lottie.layer addSublayer:shape]; shape.fillColor=stockGreen.CGColor;
+        for (UIView *view in @[icon,dot,lottie]) [host addSubview:view];
+        [sets addObject:@{@"icon":icon,@"dot":dot,@"shape":shape}];
+    }
+    void (^expectAll)(NSDictionary *,NSInteger,NSString *)=^(NSDictionary *set,NSInteger wanted,NSString *where) {
+        expectRGB(imageRGB([(UIImageView *)set[@"icon"] image]),wanted,[where stringByAppendingString:@" image"]);
+        expectRGB(rgb([(UIView *)set[@"dot"] backgroundColor]),wanted,[where stringByAppendingString:@" background"]);
+        expectRGB(rgb([UIColor colorWithCGColor:[(CAShapeLayer *)set[@"shape"] fillColor]]),wanted,[where stringByAppendingString:@" shape"]);
+    };
+    expectAll(sets[0],0x1ED760,@"stock launch: player control before a cover");
+    SGRPlayerSetCoverAccent(color(0xFF00FF));
+    SGRPlayerPaintCover(stack);
+    expectAll(sets[0],0xFF26FF,@"stock launch with Follow the cover: player control follows the cover");
+    expectAll(sets[1],0x1ED760,@"stock launch with Follow the cover: control outside the player stays Spotify green");
+    SGRPlayerSetCoverAccent(UIColor.grayColor);
+    expectAll(sets[0],0x1ED760,@"stock launch: a gray cover gives Spotify green back");
+    printf("player accent stock launch with Follow: %lu checks passed\n",(unsigned long)checks);
+    exit(0);
+}
+
 static void runChecks(void) {
+    if (stockLaunch()) runStockChecks();
     BOOL automatic=SGFlag(SGRKeyAccentAuto,NO), follow=SGRPlayerFollowsCover();
     [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGRKeyAccentAuto:@(automatic),SGRKeyPlayerFollowsCover:@(follow),SGRKeyAccent:@0xFFFF00} forName:NSArgumentDomain];
     SGPrefsChanged(); SGRAccentStart(); SGRAccentPublishPageColor(front.view,color(0x402020));

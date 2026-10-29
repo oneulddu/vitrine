@@ -357,13 +357,25 @@ static char kTextKey;
     self.accessibilityElementsHidden = YES;
     _title = [SGMarqueeLabel new];
     _title.textColor = SGRPrimary();
-    _title.font = SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryLarge);
     _artists = [SGMarqueeLabel new];
     _artists.textColor = SGRSecondary();
-    _artists.font = SGCategoryCappedFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryLarge);
+    [self applyFonts];
     [self addSubview:_title];
     [self addSubview:_artists];
     return self;
+}
+
+// Capped at Large, so a bar made at one text size and shown at another needs them made again.
+- (void)applyFonts {
+    _title.font = SGCategoryCappedFont(UIFontTextStyleSubheadline, UIFontWeightSemibold, UIContentSizeCategoryLarge);
+    _artists.font = SGCategoryCappedFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryLarge);
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    [super traitCollectionDidChange:previous];
+    if ([previous.preferredContentSizeCategory isEqualToString:self.traitCollection.preferredContentSizeCategory]) return;
+    [self applyFonts];
+    [self setNeedsLayout];
 }
 
 - (void)layoutSubviews {

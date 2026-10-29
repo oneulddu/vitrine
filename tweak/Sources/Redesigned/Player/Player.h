@@ -173,8 +173,8 @@ BOOL SGRPlayerPlaceVolume(UIView *stack, UIView *controls, UIView *row, CGFloat 
 
 // Follow the cover (PlayerCoverAccent.x): the player's lit controls painted in the cover's color instead of the accent.
 // Off until switched on, read at launch. The cover's color (a gray one gives the accent back), and a paint of Spotify's
-// bottom stack, which the footer's layout asks for.
-#define SGRKeyPlayerFollowsCover @"spotifyglass.redesign.player.followsCover"
+// bottom stack, which the footer's layout asks for. The switch's key is the Kit's (SGRAccent.h): it keeps the accent's
+// provenance hooks installed under Spotify's green.
 BOOL SGRPlayerFollowsCover(void);
 void SGRPlayerSetCoverAccent(UIColor *cover);
 void SGRPlayerPaintCover(UIView *stack);

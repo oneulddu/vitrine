@@ -16,6 +16,7 @@ mutations = [
     ("SGRAccent.x", "off-provenance.x",
      "static CGFloat tokenShade(CGFloat r, CGFloat g, CGFloat b) {\n",
      "static CGFloat tokenShade(CGFloat r, CGFloat g, CGFloat b) {\n    if (!SGRAccentSubstitutionEnabled()) return -1;\n"),
+    ("SGRAccent.x", "provenance.x", "SGRAccentSubstitutionEnabled() || SGHidden(SGRKeyPlayerFollowsCover)", "SGRAccentSubstitutionEnabled()"),
 ]
 for filename, destination, before, after in mutations:
     text = (source / filename).read_text()
@@ -39,6 +40,10 @@ if ACCENT_HOOK="$OUT/off-provenance.x" bash "$HERE/check.sh" reenable > "$OUT/of
     printf 'FAIL: off-interval provenance mutation survived\n' >&2
     exit 1
 fi
+if ACCENT_HOOK="$OUT/provenance.x" bash "$HERE/check.sh" provenance > "$OUT/provenance.log" 2>&1; then
+    printf 'FAIL: stock-launch Follow the cover provenance mutation survived\n' >&2
+    exit 1
+fi
 python3 - "$OUT" <<'PY'
 from pathlib import Path
 import sys
@@ -48,6 +53,7 @@ for case, expected in [
     ("reenable", "accent launch restores Automatic live after switching to Spotify"),
     ("animations", "no-token animation setters write no metadata"),
     ("off-provenance", "colors assigned while stock recolor when Automatic returns"),
+    ("provenance", "stock launch with Follow the cover: player control follows the cover image"),
 ]:
     log = (output / f"{case}.log").read_text()
     if expected not in log:

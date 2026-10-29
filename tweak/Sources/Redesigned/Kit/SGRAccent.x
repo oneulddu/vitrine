@@ -330,13 +330,15 @@ static void refreshPaint(void) {
 %end
 %ctor {
     if (!SGRedesignedUI()) return;
-    // Stock launches install no per-color/per-animation hooks. The Appearance page's existing
-    // restart note applies when enabling from stock; live changes only repaint existing provenance.
+    // A stock launch installs the per-color/per-animation hooks only for Follow the cover, which paints the
+    // player's controls by their provenance; the tokens then resolve to Spotify's own colors everywhere else.
+    // Otherwise none are installed. The Appearance page's existing restart note applies when enabling from
+    // stock (and Follow the cover is read at launch too); live changes only repaint existing provenance.
     SGRAccentPreferencesChanged();
     %init(SGRAccentLifecycle);
-    if (SGRAccentSubstitutionEnabled()) {
+    if (SGRAccentSubstitutionEnabled() || SGHidden(SGRKeyPlayerFollowsCover)) {
         %init(SGRAccentPaint);
-        %init(SGRTokenDerivation, SGRDerivedColor = object_getClass(SGRAccentColor()));
+        %init(SGRTokenDerivation, SGRDerivedColor = object_getClass(SGRAccentTokenColor(1, 1)));
     }
     [NSNotificationCenter.defaultCenter addObserverForName:SGRAccentDidChangeNotification object:nil queue:nil
         usingBlock:^(NSNotification *note) { refreshPaint(); }];
