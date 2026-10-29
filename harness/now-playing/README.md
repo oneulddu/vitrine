@@ -52,3 +52,17 @@ followed by no further requests, paused retry recovery, and disabling during a l
 also checked. This boundary was missing from the older
 nil → image now-playing tests. Rendering/encoding and the OS remain stand-ins, so these checks do
 not establish the origin of a device's placeholder or validate device video playback.
+
+The harness also compiles the real `Shared/LiveActivity/LiveActivity.x`, replacing only its
+ActivityKit bridge and unrelated services. Saved-translation store completions are controlled:
+paused artist-row/artwork deletion without a lyrics view, activity restore/save/delete/language
+and source replacement, and no activity-triggered automatic translation are covered. A held
+clip encoder checks that same-track seeks discard obsolete next-line jobs and serve current
+demand before the latest prefetch. A held filesystem cleanup interleaves an already-queued
+worker with a new track's cleanup and video request; the delivered URL must remain readable
+after both cleanups finish.
+
+Run `THEOS=$HOME/theos python3 harness/now-playing/mutations.py` from the repository root
+to remove each fix in isolated temporary source copies and require its regression to fail.
+Those copies and their build outputs are removed automatically. Device ActivityKit delivery,
+actual video decoding/encoding, and lock-screen presentation still need a device check.

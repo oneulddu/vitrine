@@ -16,6 +16,7 @@
 #import "Shared/Player/SleepTimer.h"
 #import "Headers/SPTPlayer.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/LyricsPiP/LyricsPiP.h"
 #import "Shared/HeadGestures/HeadGestures.h"
 #import "Shared/Sing/Sing.h"
@@ -96,6 +97,9 @@ static NSDate *sg_lastSent;
 static SGLiveActivityTab sg_tab;
 // After PiP, wait for playback before restoring the card; send() already waits for foreground.
 static BOOL sg_pipResumePending;
+static NSString *sg_translationTrack, *sg_translationLanguage;
+static NSArray<SGKaraokeLine *> *sg_translationLines;
+static NSUInteger sg_translationRevision;
 
 static void tick(void) API_AVAILABLE(ios(17.0));
 // When ActivityKit last said none is showing, with the app in the background; until kRefresh on, nothing is sent.
@@ -159,8 +163,27 @@ static NSInteger repeatModeOf(SPTPlayerOptions *options) {
 // at all, a note holds the place. `none` says the track has no timed lines to follow, no lyrics or plain text,
 // and only once a look for them has ended and no other is under way: a look that never ends, as with
 // EeveeSpotify answering the lyrics, leaves the track in the note's place without the line saying so.
-static NSString *lyricsLine(NSString *trackID, NSString **next, NSString **translation, BOOL *none) {
+static NSString *lyricsLine(NSString *trackID, NSString **next, NSString **translation, BOOL *none) API_AVAILABLE(ios(17.0)) {
     NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(trackID);
+    if (lines.count && SGFlag(SGKeyLiveActivityTranslation, NO)) {
+        NSString *language = SGLyricsGeminiLanguage();
+        if (![trackID isEqual:sg_translationTrack] || ![language isEqual:sg_translationLanguage]
+            || lines != sg_translationLines) {
+            sg_translationTrack = trackID;
+            sg_translationLanguage = language;
+            sg_translationLines = lines;
+            NSUInteger revision = ++sg_translationRevision;
+            // Restore only: an activity must never start an automatic translation.
+            SGLyricsLoadTranslation(trackID, language, lines, ^BOOL {
+                return sg_timer && revision == sg_translationRevision
+                    && [trackID isEqual:SGKaraokePlayingTrack()] && [language isEqual:SGLyricsGeminiLanguage()]
+                    && lines == SGKaraokeLinesForTrack(trackID) && SGFlag(SGKeyLiveActivityTranslation, NO);
+            }, ^{ tick(); });
+        }
+    } else if (sg_translationTrack) {
+        sg_translationTrack = nil;
+        sg_translationRevision++;
+    }
     if (!lines) {
         SGKaraokeRequestLyrics(trackID);
         if (trackID && ![trackID isEqualToString:sg_missingLyrics]) {
@@ -468,6 +491,8 @@ void SGSetLiveActivityEnabled(BOOL on) {
         sg_timer = nil;
         sg_shown = nil;
         sg_lastStart = nil;
+        sg_translationTrack = nil;
+        sg_translationRevision++;
         // A sleep timer runs on its own clock (SleepTimer.m) and stays set: the shortcut and the control set it
         // with the card off, and a card switched back on shows it from its first tick.
         if (!on || SGLyricsPiPActive()) {
@@ -478,6 +503,18 @@ void SGSetLiveActivityEnabled(BOOL on) {
         static dispatch_once_t observing;
         dispatch_once(&observing, ^{
             NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+            for (NSNotificationName name in @[SGLyricsTranslationSavedNotification, SGLyricsTranslationsDidChangeNotification]) {
+                [center addObserverForName:name object:nil queue:nil usingBlock:^(NSNotification *note) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        if ([note.name isEqual:SGLyricsTranslationSavedNotification]
+                            && (![note.object isEqual:SGKaraokePlayingTrack()]
+                                || ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()])) return;
+                        sg_translationTrack = nil;
+                        sg_translationRevision++;
+                        if (sg_timer) tick();
+                    });
+                }];
+            }
             // The card's intents post from a background thread. With a queue, the post would wait for main, which
             // waits on Spotify's core at a launch in the background: no queue, and on to main without waiting.
             [center addObserverForName:@"SGLiveActivityPlay" object:nil queue:nil usingBlock:^(NSNotification *note) {

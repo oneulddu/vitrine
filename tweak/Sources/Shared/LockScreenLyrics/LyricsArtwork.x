@@ -98,6 +98,10 @@ static BOOL sg_settingsPending;
 static NSString *sg_shownID;   // the artwork handed over last, nil for none; read on sg_queue too
 static NSObject *sg_lock;
 static dispatch_queue_t sg_queue;   // writes the clips, one at a time
+// Under sg_lock: demand and cache maintenance stay FIFO, ahead of the replaceable next-line job.
+static NSMutableArray<void (^)(void)> *sg_clipRequests;
+static void (^sg_prefetch)(void);
+static BOOL sg_clipWorker;
 // Draws the previews, apart from the clips: one waiting behind a clip that takes seconds left the lock screen blank.
 static dispatch_queue_t sg_previewQueue;
 
@@ -111,7 +115,7 @@ static BOOL currentLine(SGLockLine *line) {
 }
 
 static void invalidateRenders(void) {
-    @synchronized (sg_lock) { sg_renderGeneration++; }
+    @synchronized (sg_lock) { sg_renderGeneration++; sg_prefetch = nil; }
 }
 
 static BOOL stillShown(NSString *artworkID) {
@@ -123,7 +127,30 @@ static BOOL stillShown(NSString *artworkID) {
 static void setShown(NSString *artworkID) {
     @synchronized (sg_lock) {
         sg_shownID = artworkID;
+        sg_prefetch = nil;
     }
+}
+
+static void drainClip(void) {
+    void (^next)(void);
+    @synchronized (sg_lock) {
+        next = sg_clipRequests.firstObject;
+        if (next) [sg_clipRequests removeObjectAtIndex:0];
+        else { next = sg_prefetch; sg_prefetch = nil; }
+        if (!next) { sg_clipWorker = NO; return; }
+    }
+    next();
+    dispatch_async(sg_queue, ^{ drainClip(); });
+}
+
+static void enqueueClip(void (^job)(void), BOOL prefetch) {
+    @synchronized (sg_lock) {
+        if (prefetch) sg_prefetch = job;
+        else [sg_clipRequests addObject:job];
+        if (sg_clipWorker) return;
+        sg_clipWorker = YES;
+    }
+    dispatch_async(sg_queue, ^{ drainClip(); });
 }
 
 // The lock screen's last asks, as absolute times: lines are drawn ahead only while it is showing them, previews and
@@ -190,7 +217,7 @@ static void drawAhead(NSString *artworkID, SGLockLine *line) {
     CFAbsoluteTime time = CFAbsoluteTimeGetCurrent();
     CGSize size = line.size;
     if (time - sg_previewAskedAt <= 15) dispatch_async(sg_previewQueue, ^{ previewFor(artworkID, line, size); });
-    if (time - sg_askedAt <= 15) dispatch_async(sg_queue, ^{ writeClip(artworkID, line, size); });
+    if (time - sg_askedAt <= 15) enqueueClip(^{ writeClip(artworkID, line, size); }, YES);
 }
 
 API_AVAILABLE(ios(26.0))
@@ -214,7 +241,7 @@ static MPMediaItemAnimatedArtwork *artworkFor(NSString *artworkID, SGLockLine *l
         }
         videoAssetFileURLRequestHandler:^(CGSize wanted, void (^completion)(NSURL *)) {
             sg_askedAt = CFAbsoluteTimeGetCurrent();
-            dispatch_async(sg_queue, ^{
+            enqueueClip(^{
                 // A line already sung by the time its turn comes is not drawn.
                 if (!stillShown(artworkID)) {
                     completion(nil);
@@ -222,7 +249,7 @@ static MPMediaItemAnimatedArtwork *artworkFor(NSString *artworkID, SGLockLine *l
                 }
                 BOOL ok = writeClip(artworkID, line, size);
                 completion(ok && stillShown(artworkID) ? clipFile(artworkID) : nil);
-            });
+            }, NO);
         }];
 }
 
@@ -336,11 +363,11 @@ static NSTimeInterval update(void) {
             sg_coverKey = @"no-cover";
             sg_coverGeneration++;
             invalidateRenders();
-            // The IDs name the track, so the last track's clips are never asked for again.
-            dispatch_async(sg_queue, ^{
+            // The worker owns cleanup too: no new-track request may overtake it.
+            enqueueClip(^{
                 [NSFileManager.defaultManager removeItemAtURL:folder() error:nil];
                 [NSFileManager.defaultManager createDirectoryAtURL:folder() withIntermediateDirectories:YES attributes:nil error:nil];
-            });
+            }, NO);
         }
         NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(trackID);
         if (sg_lines != lines) {
@@ -535,6 +562,7 @@ static void tick(void) {
     if (@available(iOS 26.0, *)) {
         sg_lock = [NSObject new];
         sg_queue = dispatch_queue_create("spotifyglass.lockscreen.lyrics", DISPATCH_QUEUE_SERIAL);
+        sg_clipRequests = [NSMutableArray array];
         sg_previewQueue = dispatch_queue_create("spotifyglass.lockscreen.lyrics.preview", DISPATCH_QUEUE_SERIAL);
         sg_previews = [NSCache new];
         sg_failedMotion = [NSMutableOrderedSet orderedSet];
@@ -554,15 +582,17 @@ static void tick(void) {
         __block NSString *background = SGLyricsBackgroundIdentity(SGLyricsBackgroundRead(@"spotifyglass.lockscreen.background"));
         __block BOOL translation = SGFlag(SGKeyLockScreenTranslation, NO);
         // A translation saved while the player is paused has no tick to pick it up (Shared/LyricsTranslation).
-        [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsTranslationSavedNotification object:nil queue:nil
+        for (NSNotificationName name in @[SGLyricsTranslationSavedNotification, SGLyricsTranslationsDidChangeNotification]) {
+        [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:nil
                                                     usingBlock:^(NSNotification *note) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                NSString *track = note.object;
+                BOOL saved = [note.name isEqual:SGLyricsTranslationSavedNotification];
+                NSString *track = saved ? note.object : SGKaraokePlayingTrack();
                 if (![track isEqualToString:SGKaraokePlayingTrack()] || !SGLockArtworkShowsLyrics(SGLockScreenArtwork())
-                    || ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()]
+                    || (saved && ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()])
                     || !SGFlag(SGKeyLockScreenTranslation, NO)) return;
                 NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(track);
-                NSString *language = note.userInfo[@"language"];
+                NSString *language = SGLyricsGeminiLanguage();
                 SGLyricsLoadTranslation(track, language, lines, ^BOOL {
                     return [track isEqual:SGKaraokePlayingTrack()] && [language isEqual:SGLyricsGeminiLanguage()]
                         && lines == SGKaraokeLinesForTrack(track) && SGLockArtworkShowsLyrics(SGLockScreenArtwork())
@@ -570,6 +600,7 @@ static void tick(void) {
                 }, ^{ tick(); });
             });
         }];
+        }
         style = SGInt(SGKeyLockScreenLyricsStyle, SGLyricsClipStill);
         layout = SGInt(SGKeyLockScreenLyricsLayout, SGLyricsClipLeft);
         delay = SGKaraokeDelayMs();

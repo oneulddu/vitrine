@@ -11,6 +11,9 @@
 #import "Headers/SPTPlayer.h"
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "artwork.h"
+#import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
+#import "Shared/LiveActivity/LiveActivity.h"
 
 #pragma mark - the system, underneath
 
@@ -36,10 +39,14 @@ __attribute__((constructor)) static void underneath(void) {
 
 // These preference stubs read live values or fallbacks, so there is no cache to invalidate.
 void SGPrefsChanged(void) {}
+void SGMigrateKey(NSString *from, NSString *to) {}
 
 BOOL SGFlag(NSString *key, BOOL fallback) {
+    if ([key isEqual:SGKeyLockScreenTranslation] || [key isEqual:SGKeyLiveActivityTranslation])
+        return [NSUserDefaults.standardUserDefaults boolForKey:key];
     return [key isEqual:SGKeyLockScreenLyrics] ? getenv("LSL") != NULL : fallback;
 }
+BOOL SGEnabled(NSString *key) { return SGFlag(key, YES); }
 
 @implementation SPTPlayerTrack {
 @public
@@ -60,6 +67,7 @@ BOOL SGFlag(NSString *key, BOOL fallback) {
 - (SPTPlayerTrack *)track { return _track; }
 - (BOOL)isPaused { return YES; }
 - (NSArray *)future { return nil; }
+- (double)playbackSpeed { return 1; }
 @end
 
 @interface SGStubPlayer : NSObject
@@ -93,16 +101,43 @@ static BOOL sg_showTranslation;
 NSInteger SGInt(NSString *key, NSInteger fallback) {
     return [key isEqual:SGKeyLockScreenLyricsLine] && sg_showTranslation ? SGLockScreenLyricsLineTranslation : fallback;
 }
-NSString *SGLyricsGeminiLanguage(void) { return @"en"; }
+NSString *harnessLanguage = @"en";
+NSDictionary *harnessTranslations;
+BOOL harnessHoldTranslation;
+static NSMutableArray<void (^)(void)> *heldTranslations;
+NSString *SGLyricsGeminiLanguage(void) { return harnessLanguage; }
 void SGLyricsSyncSavedTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines) {}
 void SGLyricsLoadTranslation(NSString *track, NSString *language, NSArray<SGKaraokeLine *> *lines,
                              BOOL (^current)(void), void (^done)(void)) {
-    dispatch_async(dispatch_get_main_queue(), ^{ if (current()) done(); });
+    NSDictionary *values = harnessTranslations[language];
+    void (^deliver)(void) = ^{
+        if (!current()) return;
+        for (SGKaraokeLine *line in lines) {
+            NSString *value = values[SGKaraokeLineText(line)];
+            if (line.translationMade || (!line.translation.length && value.length)) {
+                line.translation = value;
+                line.translationMade = value.length > 0;
+            }
+        }
+        done();
+    };
+    if (harnessHoldTranslation) {
+        if (!heldTranslations) heldTranslations = [NSMutableArray array];
+        [heldTranslations addObject:deliver];
+    } else dispatch_async(dispatch_get_main_queue(), deliver);
 }
+void harnessDeliverTranslations(void) {
+    NSArray *pending = [heldTranslations copy];
+    [heldTranslations removeAllObjects];
+    for (void (^deliver)(void) in pending.reverseObjectEnumerator) deliver();
+}
+NSUInteger harnessAutomaticTranslations;
 void SGRAutoTranslateWithoutView(NSString *track, NSArray<SGKaraokeLine *> *lines, BOOL (^mayContinue)(void), void (^loaded)(void)) {
-    dispatch_async(dispatch_get_main_queue(), ^{ if (mayContinue()) loaded(); });
+    harnessAutomaticTranslations++;
+    SGLyricsLoadTranslation(track, SGLyricsGeminiLanguage(), lines, mayContinue, loaded);
 }
 NSNotificationName const SGLyricsTranslationSavedNotification = @"spotifyglass.lyricsTranslationSaved";
+NSNotificationName const SGLyricsTranslationsDidChangeNotification = @"spotifyglass.lyricsTranslationsDidChange";
 
 SGKaraokeLine *lineOf(NSString *text, NSInteger start, NSInteger end) {
     SGKaraokeWord *word = [SGKaraokeWord new];
@@ -225,6 +260,20 @@ static void pausedTrackDuringTick(void) {
     sg_lines = saved;
 }
 
+static void deletedTranslation(void) {
+    sg_showTranslation = YES;
+    harnessTranslations = @{@"en": @{@"Hola": @"Hello saved"}};
+    sg_lines = @[lineOf(@"Hola", 0, 10000)];
+    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = spotifyInfo(@"Song", 0, 0);
+    runFor(.05);
+    check([sg_system[MPMediaItemPropertyArtist] isEqual:@"Hello saved"], @"paused artist row restores saved translation without a view");
+    harnessTranslations = nil;
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
+    runFor(.05);
+    check([sg_system[MPMediaItemPropertyArtist] isEqual:@"Hola"], @"paused artist row removes deleted translation without a view");
+    sg_showTranslation = NO;
+}
+
 // Two tracks with one title: what the first had must not stay on the second's info once it is cleared.
 static void sameTitle(void) {
     MPNowPlayingInfoCenter *center = MPNowPlayingInfoCenter.defaultCenter;
@@ -277,8 +326,10 @@ int main(void) {
         if (lyrics) progressBar();
         if (lyrics) translation();
         if (lyrics) pausedTrackDuringTick();
+        if (lyrics) deletedTranslation();
         sameTitle();
         artworkChecks();
+        activityChecks();
         printf(failures ? "%d failed\n" : "all passed\n", failures);
         return failures ? 1 : 0;
     }

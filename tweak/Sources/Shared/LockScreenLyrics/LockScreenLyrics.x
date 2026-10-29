@@ -313,14 +313,16 @@ static void lookNow(void) {
     %init;
     // A translation saved while the player is paused has no tick to pick it up (Shared/LyricsTranslation).
     // Heard on the writing thread and handed to main without waiting (AGENTS.md).
-    [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsTranslationSavedNotification object:nil queue:nil
+    for (NSNotificationName name in @[SGLyricsTranslationSavedNotification, SGLyricsTranslationsDidChangeNotification]) {
+    [NSNotificationCenter.defaultCenter addObserverForName:name object:nil queue:nil
                                                 usingBlock:^(NSNotification *note) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            NSString *track = note.object;
+            BOOL saved = [note.name isEqual:SGLyricsTranslationSavedNotification];
+            NSString *track = saved ? note.object : SGKaraokePlayingTrack();
             if (![track isEqualToString:SGKaraokePlayingTrack()]
-                || ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()]
+                || (saved && ![note.userInfo[@"language"] isEqual:SGLyricsGeminiLanguage()])
                 || SGInt(SGKeyLockScreenLyricsLine, SGLockScreenLyricsLineOriginal) != SGLockScreenLyricsLineTranslation) return;
-            NSString *language = note.userInfo[@"language"];
+            NSString *language = SGLyricsGeminiLanguage();
             NSArray *lines = SGKaraokeLinesForTrack(track);
             SGLyricsLoadTranslation(track, language, lines, ^BOOL {
                 return [track isEqual:SGKaraokePlayingTrack()] && [language isEqual:SGLyricsGeminiLanguage()]
@@ -332,6 +334,7 @@ static void lookNow(void) {
             });
         });
     }];
+    }
     // Lines kept for a track, or replaced by better timed ones, can change the line at once.
     [NSNotificationCenter.defaultCenter addObserverForName:SGKaraokeLinesKeptNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
         if (!note.object || [note.object isEqual:SGKaraokePlayingTrack()]) tick(NO);

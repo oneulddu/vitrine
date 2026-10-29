@@ -10,6 +10,7 @@
 #import "Shared/LockScreenLyrics/LockScreenLyrics.h"
 #import "Shared/LockScreenLyrics/SGLyricsClip.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/LyricsTranslation/LyricsTranslation.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/NowPlayingExtras.h"
 #import "Shared/Player/SGLastTrack.h"
@@ -19,6 +20,9 @@ typedef void (^Video)(CGSize, void (^)(NSURL *));
 static char idKey, previewKey, videoKey;
 static NSArray *supported;
 static NSURL *cacheRoot;
+static BOOL holdLyricsCleanup, cleanupGateTimedOut;
+static dispatch_semaphore_t cleanupEntered, cleanupRelease;
+static NSUInteger completedLyricsCleanups;
 static CGSize lastCoverRequest;
 static NSUInteger nativeAcquisitions;
 static CGRect screenBounds(id self, SEL cmd) { return CGRectMake(0, 0, 32, 48); }
@@ -61,11 +65,32 @@ static NSUInteger coverLoads;
 
 @interface NSFileManager (Harness)
 - (NSArray *)harnessURLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domains;
+- (BOOL)harnessRemoveItemAtURL:(NSURL *)url error:(NSError **)error;
 @end
 @implementation NSFileManager (Harness)
 - (NSArray *)harnessURLsForDirectory:(NSSearchPathDirectory)directory inDomains:(NSSearchPathDomainMask)domains {
     if (directory == NSCachesDirectory) return @[cacheRoot];
     return [self harnessURLsForDirectory:directory inDomains:domains];
+}
+- (BOOL)harnessRemoveItemAtURL:(NSURL *)url error:(NSError **)error {
+    BOOL lyrics = [url.path isEqual:[cacheRoot.path stringByAppendingPathComponent:@"Vitrine/Lyrics"]];
+    BOOL hold = NO;
+    if (lyrics) {
+        @synchronized (cacheRoot) {
+            hold = holdLyricsCleanup;
+            holdLyricsCleanup = NO;
+        }
+    }
+    if (hold) {
+        dispatch_semaphore_signal(cleanupEntered);
+        BOOL timedOut = dispatch_semaphore_wait(cleanupRelease, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0;
+        @synchronized (cacheRoot) { cleanupGateTimedOut = timedOut; }
+    }
+    BOOL removed = [self harnessRemoveItemAtURL:url error:error];
+    if (lyrics) {
+        @synchronized (cacheRoot) { completedLyricsCleanups++; }
+    }
+    return removed;
 }
 @end
 
@@ -74,11 +99,13 @@ __attribute__((constructor)) static void artworkBoundary(void) {
     coverRequests = [NSMutableDictionary dictionary];
     [NSURLProtocol registerClass:CoverProtocol.class];
     char *path = strdup([[NSTemporaryDirectory() stringByAppendingPathComponent:@"vitrine-artwork.XXXXXX"] fileSystemRepresentation]);
-    if (!mkdtemp(path)) abort();
+    if (!mkdtemp(path)) { perror("mkdtemp artwork cache"); exit(1); }
     cacheRoot = [NSURL fileURLWithPath:@(path) isDirectory:YES];
     free(path);
     method_exchangeImplementations(class_getInstanceMethod(NSFileManager.class, @selector(URLsForDirectory:inDomains:)),
                                    class_getInstanceMethod(NSFileManager.class, @selector(harnessURLsForDirectory:inDomains:)));
+    method_exchangeImplementations(class_getInstanceMethod(NSFileManager.class, @selector(removeItemAtURL:error:)),
+                                   class_getInstanceMethod(NSFileManager.class, @selector(harnessRemoveItemAtURL:error:)));
     class_replaceMethod(object_getClass(MPNowPlayingInfoCenter.class), @selector(supportedAnimatedArtworkKeys), (IMP)keys, "@@:");
     Method bounds = class_getInstanceMethod(UIScreen.class, @selector(nativeBounds));
     class_replaceMethod(UIScreen.class, @selector(nativeBounds), (IMP)screenBounds, method_getTypeEncoding(bounds));
@@ -193,10 +220,36 @@ static BOOL writeFrame(NSURL *file, CGImageRef frame) {
     NSData *data = UIImagePNGRepresentation([UIImage imageWithCGImage:frame]);
     return [data writeToURL:file atomically:YES];
 }
+static NSMutableArray<NSString *> *encodedLines;
+static NSMutableDictionary<NSString *, NSString *> *encodedTranslations;
+static NSString *heldClip;
+static dispatch_semaphore_t clipEntered, clipRelease;
+static BOOL clipGateTimedOut;
+static void recordClip(NSURL *file, NSString *line, NSString *translation) {
+    BOOL hold;
+    @synchronized (cacheRoot) {
+        if (!encodedLines) encodedLines = [NSMutableArray array];
+        if (!encodedTranslations) encodedTranslations = [NSMutableDictionary dictionary];
+        [encodedLines addObject:line ?: @""];
+        encodedTranslations[file.path] = translation ?: @"";
+        hold = [line isEqual:heldClip];
+        if (hold) heldClip = nil;
+    }
+    if (hold) {
+        dispatch_semaphore_signal(clipEntered);
+        clipGateTimedOut = dispatch_semaphore_wait(clipRelease, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0;
+    }
+}
 BOOL SGLyricsClipWriteWithLayout(NSURL *file, CGImageRef backdrop, NSString *line, NSString *translation, NSString *next,
-                                 CGSize size, SGLyricsClipStyle style, SGLyricsClipLayout layout) { return writeFrame(file, backdrop); }
+                                 CGSize size, SGLyricsClipStyle style, SGLyricsClipLayout layout) {
+    recordClip(file, line, translation);
+    return writeFrame(file, backdrop);
+}
 BOOL SGLyricsClipWriteOverMotion(NSURL *file, NSURL *motion, NSString *previous, NSString *line, NSString *translation,
-                                 NSString *next, double from, double seconds, SGLyricsClipLayout layout) { return writeFrame(file, blue.CGImage); }
+                                 NSString *next, double from, double seconds, SGLyricsClipLayout layout) {
+    recordClip(file, line, translation);
+    return writeFrame(file, blue.CGImage);
+}
 CGImageRef SGLyricsClipMotionFrame(NSURL *motion, NSString *previous, NSString *line, NSString *translation,
                                    NSString *next, double from, double seconds, SGLyricsClipLayout layout) { return CGImageRetain(blue.CGImage); }
 BOOL SGMotionClipShape(NSURL *file, CGFloat ratio, NSURL *out) { return writeFrame(out, blue.CGImage); }
@@ -464,7 +517,8 @@ void artworkChecks(void) {
           @"in-flight correction reaches the lazy video without another event");
     runFor(.1);
     check(preparations() <= prepared + 2 && harnessSets() <= sets + 2 && lookups == fetched,
-          @"in-flight recovery stays bounded with no source re-download");
+          [NSString stringWithFormat:@"in-flight recovery stays bounded with no source re-download (renders +%lu, sets +%lu, lookups +%lu)",
+              (unsigned long)(preparations() - prepared), (unsigned long)(harnessSets() - sets), (unsigned long)(lookups - fetched)]);
     @synchronized (cacheRoot) { check(!renderGateTimedOut, @"held render was explicitly released, not timed out"); }
 
     nativeInfo(nil);
@@ -825,4 +879,85 @@ void artworkChecks(void) {
     choose(SGLockArtworkOff);
     finishCover(@"source-disabled", red);
     check(!artwork(), @"late metadata cover cannot revive disabled lyrics");
+
+    [NSUserDefaults.standardUserDefaults setVolatileDomain:@{SGKeyLockScreenTranslation: @YES} forName:NSArgumentDomain];
+    harnessTranslations = @{@"en": @{@"Hola": @"Hello saved"}};
+    track(@"translation-delete", SGLockArtworkLyrics, nil, @[lineOf(@"Hola", 0, 10000)]);
+    runFor(.05);
+    NSURL *translatedFile = video(artwork());
+    check([encodedTranslations[translatedFile.path] isEqual:@"Hello saved"],
+          @"paused artwork restores saved translation without a lyrics view");
+    harnessTranslations = nil;
+    [NSNotificationCenter.defaultCenter postNotificationName:SGLyricsTranslationsDidChangeNotification object:nil];
+    runFor(.05);
+    NSURL *deletedFile = video(artwork());
+    check([encodedTranslations[deletedFile.path] isEqual:@""],
+          @"paused artwork removes deleted translation without a lyrics view");
+    [NSUserDefaults.standardUserDefaults setVolatileDomain:@{} forName:NSArgumentDomain];
+
+    NSArray *seekLines = @[lineOf(@"Held", 0, 900), lineOf(@"Passed", 1000, 1900),
+        lineOf(@"Obsolete", 2000, 2900), lineOf(@"Demand", 3000, 3900), lineOf(@"Wanted", 4000, 4900)];
+    track(@"prefetch-seek", SGLockArtworkLyrics, nil, seekLines);
+    clipEntered = dispatch_semaphore_create(0);
+    clipRelease = dispatch_semaphore_create(0);
+    @synchronized (cacheRoot) { heldClip = @"Held"; }
+    Video heldVideo = objc_getAssociatedObject(artwork(), &videoKey);
+    __block BOOL heldDone = NO, demandDone = NO;
+    heldVideo(CGSizeMake(24, 32), ^(NSURL *url) {
+        dispatch_async(dispatch_get_main_queue(), ^{ heldDone = YES; });
+    });
+    check(dispatch_semaphore_wait(clipEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0,
+          @"current clip holds the real serial artwork worker");
+    @synchronized (cacheRoot) { [encodedLines removeAllObjects]; }
+    position = 1000; report(); // queues Obsolete
+    position = 3000; report(); // replaces it with Wanted
+    Video demandVideo = objc_getAssociatedObject(artwork(), &videoKey);
+    demandVideo(CGSizeMake(24, 32), ^(NSURL *url) {
+        dispatch_async(dispatch_get_main_queue(), ^{ demandDone = url != nil; });
+    });
+    dispatch_semaphore_signal(clipRelease);
+    check(await(^BOOL {
+        @synchronized (cacheRoot) { return heldDone && demandDone && [encodedLines containsObject:@"Wanted"]; }
+    }), @"current and latest next-line clips finish after releasing worker");
+    @synchronized (cacheRoot) {
+        check([encodedLines isEqual:@[@"Demand", @"Wanted"]],
+              @"same-track seeks drop superseded prefetches before encoding and current demand goes first");
+    }
+    check(!clipGateTimedOut, @"held clip is released without a timeout");
+
+    check(video(artwork()) != nil, @"the system is requesting clips before the cleanup interleaving");
+    cleanupEntered = dispatch_semaphore_create(0);
+    cleanupRelease = dispatch_semaphore_create(0);
+    NSUInteger cleaned;
+    @synchronized (cacheRoot) {
+        cleaned = completedLyricsCleanups;
+        holdLyricsCleanup = YES;
+        cleanupGateTimedOut = NO;
+    }
+    // Hold A's filesystem cleanup while its next-line worker is queued. B's cleanup
+    // and video request then arrive before that queued worker gets to select a job.
+    track(@"cleanup-held", SGLockArtworkLyrics, nil,
+          @[lineOf(@"Old", 0, 900), lineOf(@"Old next", 1000, 1900)]);
+    check(dispatch_semaphore_wait(cleanupEntered, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0,
+          @"old-track cache cleanup holds the serial worker");
+    state = harnessState(@"cleanup-new", @"Song");
+    harnessLines(@[lineOf(@"New current", 0, 10000)]);
+    report();
+    Video newTrackVideo = objc_getAssociatedObject(artwork(), &videoKey);
+    __block NSURL *newTrackFile;
+    __block BOOL newTrackDone = NO;
+    newTrackVideo(CGSizeMake(24, 32), ^(NSURL *url) {
+        dispatch_async(dispatch_get_main_queue(), ^{ newTrackFile = url; newTrackDone = YES; });
+    });
+    dispatch_semaphore_signal(cleanupRelease);
+    check(await(^BOOL {
+        @synchronized (cacheRoot) { return newTrackDone && completedLyricsCleanups >= cleaned + 2; }
+    }), @"new-track delivery and both queued cache cleanups finish");
+    check(newTrackFile && [NSData dataWithContentsOfURL:newTrackFile].length > 0,
+          @"new-track clip URL remains readable after queued cache cleanup");
+    @synchronized (cacheRoot) {
+        check(!cleanupGateTimedOut, @"held cleanup is explicitly released without a timeout");
+    }
+    choose(SGLockArtworkOff);
+    [NSFileManager.defaultManager removeItemAtURL:cacheRoot error:nil];
 }
