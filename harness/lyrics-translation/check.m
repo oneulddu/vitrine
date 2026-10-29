@@ -586,6 +586,7 @@ static void checkProviders(void) {
 #include "check-connection.m"
 #include "check-auto-retry.m"
 #include "check-kept.m"
+#include "check-bing-completion.m"
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
@@ -600,6 +601,7 @@ int main(int argc, const char **argv) {
             return 0;
         }
         if (argc > 1 && strcmp(argv[1], "--auto-retry-only") == 0) { checkAutoRetry(); return 0; }
+        if (argc > 1 && strcmp(argv[1], "--bing-completion-only") == 0) { checkBing(); checkBingCompletion(); return 0; }
         if (argc > 1 && strcmp(argv[1], "--kept-only") == 0) { checkKeptTranslation(); return 0; }
         if (argc > 1 && strcmp(argv[1], "--connection-only") == 0) { checkConnection(); return 0; }
         if (argc > 1 && strcmp(argv[1], "--gemini-memo-only") == 0) { checkGeminiMemoBound(); return 0; }
@@ -647,6 +649,7 @@ int main(int argc, const char **argv) {
         checkModelPagination();
         checkConnection();
         checkAutoRetry();
+        checkBingCompletion();
         puts("lyrics translation: all checks passed");
     }
     return 0;
