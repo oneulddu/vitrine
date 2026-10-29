@@ -26,6 +26,15 @@ void SGRPlayerMenuWatch(UIView *button);
 // touch.m: a finger's touches, through UIKit's own recognizers.
 extern void SGHarnessTap(UIWindow *window, CGPoint point);
 
+// The real request owner, for supersession without replaying UIKit's still-dismissing menu animation.
+// Other delayed scenarios exercise creation and release entirely through the real pull-down menu.
+@interface SGRMenuSession : NSObject
+@property (nonatomic) BOOL direct;
+@property (nonatomic, weak) UIControl *spotify;
+- (void)requestSheet;
+- (void)menuEnded;
+@end
+
 static NSString *scenario(void) {
     NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
     return arguments.count > 1 ? arguments.lastObject : @"rows";
@@ -138,6 +147,9 @@ static NSArray<NSArray<NSString *> *> *spotifyRows(void) {
 
 static NSString *sg_selected;
 static NSUInteger sg_spotifyTaps;
+static NSUInteger sg_selectionCount;
+// Hold the presentation itself, not just its rows, until the menu has released its session.
+static BOOL sg_sheetHeld;
 // The sheet waits for the harness to give it its rows (sg_rowsAfter seconds after it loads, or never).
 static BOOL sg_rowsHeld, sg_rowsNever;
 static NSTimeInterval sg_rowsAfter;
@@ -188,6 +200,7 @@ static SGHarnessPlayer *sg_player;
 @property (nonatomic, weak) UINavigationController *sheet;
 @property (nonatomic, weak) UIViewController *sleepSheet;
 - (void)presentSleepOptions;
+- (void)presentMenuSheet;
 @end
 
 @implementation _TtC24ContextMenu_InternalImpl25ContextMenuViewController
@@ -259,6 +272,7 @@ static SGHarnessPlayer *sg_player;
 // (`sleep`) or as a context menu sheet of its own presented from the player (`sleeppresent`); every other row
 // does its thing and closes the sheet.
 - (void)rowTapped:(SGHarnessListRow *)row {
+    sg_selectionCount++;
     sg_selected = row.title;
     NSLog(@"[harness] selected %@", row.title);
     UINavigationController *navigation = self.navigationController;
@@ -423,9 +437,13 @@ static void pick(NSString *title) {
 - (void)moreTapped {
     sg_spotifyTaps++;
     NSLog(@"[harness] Spotify's ⋯ action ran");
+    if (!sg_sheetHeld) [self presentMenuSheet];
+}
+
+- (void)presentMenuSheet {
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:[_TtC24ContextMenu_InternalImpl25ContextMenuViewController new]];
     self.sheet = navigation;
-    if (is(@"wrapped")) {
+    if (is(@"wrapped") || [scenario() hasPrefix:@"delayed-wrapped-"]) {
         SGHarnessWrapper *wrapper = [SGHarnessWrapper new];
         wrapper.inner = navigation;
         [self presentViewController:wrapper animated:YES completion:nil];
@@ -505,6 +523,73 @@ static NSArray<NSString *> *quickTitles(void) {
     sg_rowsHeld = is(@"loading") || is(@"quick") || is(@"quicklate") || is(@"podcast") || is(@"stored");
     sg_rowsNever = is(@"quicklate");
     sg_rowsAfter = is(@"quick") ? 1.2 : is(@"loading") || is(@"podcast") ? 1.5 : 0;
+
+    if ([run hasPrefix:@"delayed-"] || [run hasPrefix:@"request-timeout-"] || is(@"request-superseded")) {
+        sg_sheetHeld = YES;
+        BOOL selection = [run hasSuffix:@"pick"];
+        BOOL timeout = [run hasPrefix:@"request-timeout-"];
+        [self tap:^(CFTimeInterval took) {
+            check(took >= 0, @"the menu opened before Spotify presents");
+            __weak id session = [self.front valueForKey:@"session"];
+            check(session != nil, @"the open menu owns its session");
+            waitFor(^BOOL { return sg_spotifyTaps == 1; }, 1, ^{
+                check(sg_spotifyTaps == 1 && !self.sheet, @"Spotify was asked once but has not presented");
+                if (selection) pick(@"Add to Queue");
+                else [self.front.contextMenuInteraction dismissMenu];
+                waitFor(^BOOL { return [self.front valueForKey:@"session"] == nil; }, 1, ^{
+                    check([self.front valueForKey:@"session"] == nil, @"the ended menu released its session");
+                    // Let menuEnded's queued block finish: neither the harness nor an anchor owns the request.
+                    after(0.15, ^{
+                        check(session != nil, @"an outstanding request survives the menu ending");
+                        check(sg_selectionCount == 0, @"no action runs before the sheet arrives");
+                        if (timeout) {
+                            after(3.2, ^{
+                                check(session == nil, @"a timed-out request releases its session");
+                                check(sg_selectionCount == 0, @"a timed-out request fires no action");
+                                finish();
+                            });
+                            return;
+                        }
+                        if (is(@"request-superseded")) {
+                            __weak SGRMenuSession *newer;
+                            @autoreleasepool {
+                                SGRMenuSession *replacement = [SGRMenuSession new];
+                                replacement.direct = YES;
+                                replacement.spotify = self.more;
+                                [replacement requestSheet];
+                                [replacement menuEnded];
+                                newer = replacement;
+                            }
+                            after(0.15, ^{
+                                check(sg_spotifyTaps == 2, @"the newer session requested Spotify's sheet");
+                                check(session == nil, @"superseding releases the old request immediately");
+                                check(newer != nil, @"the newer request survives its menu ending");
+                                [self presentMenuSheet];
+                                after(4.3, ^{
+                                    check(newer == nil && self.sheetGone, @"the newer cancelled menu drops its sheet and releases its session");
+                                    check(sg_selectionCount == 0, @"superseded and cancelled requests fire no actions");
+                                    finish();
+                                });
+                            });
+                            return;
+                        }
+                        [self presentMenuSheet];
+                        // Beyond both timeout callbacks and the picked row's settle timer: no double fire or leak.
+                        after(4.3, ^{
+                            check(sg_selectionCount == (selection ? 1 : 0), selection
+                                  ? @"the early selection fires exactly once" : @"the early dismissal fires no action");
+                            if (selection) check([sg_selected isEqualToString:@"Add to queue"], @"the selected Spotify action runs");
+                            check(self.sheetGone, selection ? @"the selected action dismisses the late sheet"
+                                                          : @"the early dismissal drops the late sheet");
+                            check(session == nil, @"the adopted request releases its session after the sheet goes");
+                            finish();
+                        });
+                    });
+                });
+            });
+        }];
+        return;
+    }
 
     if (is(@"stored-disabled")) {
         sg_rowsHeld = YES;

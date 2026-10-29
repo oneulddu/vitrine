@@ -51,8 +51,9 @@ static char kAnchorKey, kFrontKey, kSessionKey;
 @class SGRMenuSession;
 // The session whose pick is being fired on its hidden sheet, for a page the row pushes inside the sheet.
 static __weak SGRMenuSession *sg_firing;
-// The player's menu asking Spotify for its sheet, and when: the next presentation is that sheet.
-static __weak SGRMenuSession *sg_requesting;
+// Own the outstanding request after the anchor releases its menu. Adoption transfers ownership to the
+// sheet; timeout or a newer request releases it. The timeout and row callbacks stay weak (no cycle).
+static SGRMenuSession *sg_requesting;
 static CFTimeInterval sg_requestedAt;
 // The session whose sheet is in the mod's own window, and the presentation the mod is making itself.
 static __weak SGRMenuSession *sg_hosted;
@@ -575,8 +576,9 @@ static void raiseHost(UIWindow *window) {
     __weak SGRMenuSession *weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kRequestWindow * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         SGRMenuSession *session = weakSelf;
-        if (!session || session.presented) return;
-        if (sg_requesting == session) sg_requesting = nil;
+        // Adoption or supersession already ended this request; its old timeout must do nothing.
+        if (!session || sg_requesting != session) return;
+        sg_requesting = nil;
         session->_failed = YES;
         SGLog(@"system menu: Spotify's sheet did not come %.0f s after it was asked for", kRequestWindow);
         session->_waiting = NO;

@@ -56,3 +56,30 @@ sheet is the player's, and that the sheet is in the mod's window under the app's
 - `animated`: Show Animated Artwork switches it on and the sheet goes.
 - `wrapped`: Spotify presents a controller of its own that puts the sheet in only as it appears
   (NavigationUI_SheetImpl.ContainerViewController on the phone); More and a pick work the same.
+- `delayed-pick`, `delayed-close`: hold Spotify's presentation until after a selection or dismissal has
+  ended the menu and released its anchor's session. The request stays alive, the selected Add to Queue
+  action runs exactly once, or the dismissed menu drops the late sheet without firing anything. Weak
+  references verify session deallocation after the sheet goes, beyond both timeout callbacks.
+- `delayed-wrapped-pick`, `delayed-wrapped-close`: the same delayed presentation with a wrapper that
+  adds the sheet only in `viewWillAppear:`; sheet recognition is unchanged.
+- `request-timeout-pick`, `request-timeout-close`: no sheet ever arrives; after an early selection or
+  dismissal, the request stays alive until its timeout, then deallocates without firing an action.
+- `request-superseded`: dismiss a menu whose request is pending, then start and end a newer real
+  session directly before timeout. This isolates request supersession from UIKit's liquid menu
+  animation (reopening during its dismissal traps inside UIKit on iOS 26.5). The old session
+  deallocates immediately; the newer cancelled session drops its late sheet, releases that session,
+  and fires neither request's actions.
+
+Use a unique temporary output directory for checks:
+
+    HARNESS_BUILD_DIR=$(mktemp -d /tmp/fix-menu-session.XXXXXX)
+    export HARNESS_BUILD_DIR
+    THEOS=$HOME/theos ./build.sh
+    xcrun simctl install <udid> "$HARNESS_BUILD_DIR/SystemMenuHarness.app"
+    xcrun simctl launch --console-pty <udid> com.vitrine.systemmenuharness delayed-pick
+
+For the mutation check, make a temporary copy of `ContextMenu.x`, change only
+`static SGRMenuSession *sg_requesting;` back to `static __weak SGRMenuSession *sg_requesting;`,
+and pass its absolute path as `CONTEXT_MENU_SOURCE` to `build.sh` with a separate temporary output
+directory. `delayed-pick` must fail because the outstanding request no longer survives menu ending.
+Remove only those temporary build/source directories after the runs.
