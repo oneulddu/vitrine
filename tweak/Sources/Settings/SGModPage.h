@@ -1,7 +1,7 @@
 // A page of sections of rows, the shape of every feature's settings page.
 #import "SGPage.h"
 
-// A row is a switch when it has a key, a link to another page when it has a page and a slider when it has
+// A row is a switch when it has a key (or a readSwitch), a link to another page when it has a page and a slider when it has
 // a number. A flag row
 // switches one of Spotify's remote-config flags: on forces it (off for a forceOff row, which is how
 // a flag Spotify ships on is turned off), the switch off leaves Spotify's own value. A row
@@ -36,6 +36,10 @@
 @property (nonatomic) BOOL glows;
 // The switch shows the opposite of what is stored under its key (SGShownRow).
 @property (nonatomic) BOOL inverted;
+// A switch row whose value lives somewhere other than a key of its own (SGBlockSwitchRow): read and stored through
+// these instead of the key.
+@property (nonatomic, copy) BOOL (^readSwitch)(void);
+@property (nonatomic, copy) void (^storeSwitch)(BOOL on);
 // An ⓘ button beside the row's switch, whose tap reads this out under the row's title.
 @property (nonatomic, copy) NSString *info;
 // The row shows only while this answers YES, asked again whenever a switch on the page is flipped, the
@@ -102,6 +106,10 @@ SGModRow *SGHideRow(NSString *title, NSString *subtitle, NSString *key);     // 
 SGModRow *SGShownRow(NSString *title, NSString *subtitle, NSString *hideKey);
 // A switch for something the mod adds rather than takes away: off until it is asked for.
 SGModRow *SGOptionRow(NSString *title, NSString *subtitle, NSString *key);
+// The same switch for a value kept elsewhere (an entry of a dictionary): `get` reads it as the row is drawn, `set`
+// stores a flip, then `changed` runs and the page reloads as for any switch. Nothing is waited on it (`waitsOn` names
+// a key) and the search remembers it only by a searchIdentifier.
+SGModRow *SGBlockSwitchRow(NSString *title, NSString *subtitle, BOOL (^get)(void), void (^set)(BOOL on));
 SGModRow *SGFlagRow(NSString *title, NSString *key);   // forces one of Spotify's flags on
 SGModRow *SGKillRow(NSString *title, NSString *key);   // forces a flag Spotify ships on off
 SGModRow *SGStatRow(NSString *title, NSString *(^value)(void));

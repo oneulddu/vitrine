@@ -42,6 +42,15 @@ SGModRow *SGOptionRow(NSString *title, NSString *subtitle, NSString *key) {
     return row;
 }
 
+SGModRow *SGBlockSwitchRow(NSString *title, NSString *subtitle, BOOL (^get)(void), void (^set)(BOOL on)) {
+    SGModRow *row = [SGModRow new];
+    row.title = title;
+    row.subtitle = subtitle;
+    row.readSwitch = get;
+    row.storeSwitch = set;
+    return row;
+}
+
 SGModRow *SGFlagRow(NSString *title, NSString *key) {
     SGModRow *row = SGHideRow(title, nil, key);
     row.flag = YES;
@@ -1051,13 +1060,14 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
     cell.contentConfiguration = content;
     cell.separatorInset = UIEdgeInsetsMake(0, tile ? SGTileRowInset : row.symbol && row.color ? 48 : 16, 0, 0);
 
-    if (row.key) {
+    if (row.key || row.readSwitch) {
         BOOL locked = flagRowLocked(row);
         // A lock that beats an override shows over one; the others give way to it.
         BOOL beats = NO;
         if (locked) SGLockedFlagValue(row.key, &beats);
         BOOL showsLock = locked && (beats || !SGFlagOverride(row.key));
-        BOOL on = row.flag ? (showsLock ? lockedRowOn(row) : flagRowOn(row)) : SGFlag(row.key, row.defaultOn) != row.inverted;
+        BOOL on = row.readSwitch ? row.readSwitch()
+            : row.flag ? (showsLock ? lockedRowOn(row) : flagRowOn(row)) : SGFlag(row.key, row.defaultOn) != row.inverted;
         UIControl *toggle;
         if (row.glows) {
             SGGlowSwitch *glow = [SGGlowSwitch new];
@@ -1115,7 +1125,7 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
         return;
     }
     // A switch is seen when it is flipped and a menu when it is picked from, not when their row is touched.
-    if (!row.key && !row.menu && markSeen(row)) dropNew([table cellForRowAtIndexPath:path], row);
+    if (!row.key && !row.readSwitch && !row.menu && markSeen(row)) dropNew([table cellForRowAtIndexPath:path], row);
     if (row.page) [self.navigationController pushViewController:row.page() animated:YES];
     if (!row.action) return;
     row.action();
@@ -1191,7 +1201,8 @@ static void light(UITableViewCell *cell, NSTimeInterval hold, NSTimeInterval fad
     if (!path) return;
     SGModRow *row = [self rowAt:path];
     if (markSeen(row)) dropNew([self.tableView cellForRowAtIndexPath:path], row);
-    if (row.flag) SGSetFlagOverride(row.key, on ? @(!row.forceOff) : nil);
+    if (row.storeSwitch) row.storeSwitch(on);
+    else if (row.flag) SGSetFlagOverride(row.key, on ? @(!row.forceOff) : nil);
     else SGSetEnabled(row.key, on != row.inverted);
     if (row.changed) row.changed(on);
     // A glowing switch is let finish its slide before the reload puts a new one in its place; rows coming

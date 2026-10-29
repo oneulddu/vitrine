@@ -35,6 +35,12 @@
 // track to read, so it falls back to LyricsLook's sample lines; it uses this view's frame clock, never one
 // of its own.
 //
+// Poster and Cut, the sixth and seventh, read the same line by the same rules and draw the same quieter hills, and
+// hand the line to a stage of their own over them (PlayerLyricStages.m): the line set word by word as a type
+// poster over a halftone print of the cover, or one word at a time over the cover, cut to the singing. Where
+// Lyrics shows no words, they show nothing over the hills either. Their words move as soon as a word's start
+// passes, so the link reads their line on every tick, not only on the ticks the hills draw.
+//
 // Threading: main thread only, but for the reader, which runs on the render thread.
 // Hills retains the drawing below. Bars, Nebula, Halo and Lyrics share its envelopes and lifecycle, using
 // only finite layer paths/transforms driven here. Silence stops drawing; a low-frequency timer watches for sound.
@@ -47,12 +53,13 @@
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
+#import "PlayerLyricStages.h"
 #import "SGRSpectrum.h"
 
 NSNotificationName const SGRVisualiserStyleDidChangeNotification = @"spotifyglass.visualizer.styleDidChange";
 
-NSArray<NSString *> *SGRVisualiserStyleNames(void) { return @[SGL(@"settings.visualizer.style.choice.hills", @"Hills"), SGL(@"settings.visualizer.style.choice.bars", @"Bars"), SGL(@"settings.visualizer.style.choice.nebula", @"Nebula"), SGL(@"settings.visualizer.style.choice.halo", @"Halo"), SGL(@"settings.visualizer.style.choice.lyrics", @"Lyrics")]; }
-NSArray<NSString *> *SGRVisualiserStyleIDs(void) { return @[@"builtin:hills", @"builtin:bars", @"builtin:nebula", @"builtin:halo", @"builtin:lyrics"]; }
+NSArray<NSString *> *SGRVisualiserStyleNames(void) { return @[SGL(@"settings.visualizer.style.choice.hills", @"Hills"), SGL(@"settings.visualizer.style.choice.bars", @"Bars"), SGL(@"settings.visualizer.style.choice.nebula", @"Nebula"), SGL(@"settings.visualizer.style.choice.halo", @"Halo"), SGL(@"settings.visualizer.style.choice.lyrics", @"Lyrics"), SGL(@"settings.visualizer.style.choice.poster", @"Poster"), SGL(@"settings.visualizer.style.choice.cut", @"Cut")]; }
+NSArray<NSString *> *SGRVisualiserStyleIDs(void) { return @[@"builtin:hills", @"builtin:bars", @"builtin:nebula", @"builtin:halo", @"builtin:lyrics", SGRVisualiserPosterID, SGRVisualiserCutID]; }
 
 NSString *SGRVisualiserStyle(void) {
     id value = [NSUserDefaults.standardUserDefaults objectForKey:SGRKeyVisualiserStyle];
@@ -91,7 +98,12 @@ BOOL SGRVisualiserStandsDownFor(NSProcessInfoThermalState state) {
     return state >= NSProcessInfoThermalStateSerious && !SGHidden(SGRKeyVisualiserIgnoreHeat);
 }
 
-typedef NS_ENUM(NSUInteger, SGRVisualiserStyleKind) { SGRHills, SGRBars, SGRNebula, SGRHalo, SGRLyricsStyle };
+typedef NS_ENUM(NSUInteger, SGRVisualiserStyleKind) { SGRHills, SGRBars, SGRNebula, SGRHalo, SGRLyricsStyle, SGRPosterStyle, SGRCutStyle };
+
+// The styles that read the sung line and draw the quieter hills under it.
+static BOOL readsLyrics(SGRVisualiserStyleKind style) {
+    return style == SGRLyricsStyle || style == SGRPosterStyle || style == SGRCutStyle;
+}
 
 // The two bands under 80 Hz stay out of the picture: sub-bass is quieter than the kick above it in most mixes,
 // so drawn at the middle it cut a notch into the crest right under the play button.
@@ -217,6 +229,7 @@ static NSDictionary *noActions(void) {
     BOOL _asked;   // the playing track was asked for lyrics once
     CFTimeInterval _sampleEpoch, _delayAt;
     NSInteger _delayMs;
+    SGRLyricStage *_stage;   // Poster's or Cut's, in the words' host; nil for the other styles
 }
 
 // As PlayerMotion.x: what fades is the effect view's effect, never its alpha or an ancestor's.
@@ -349,21 +362,23 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
         UIColor *color = lit(colors[i], kGlow * 0.65);
         _clouds[i].colors = @[(id)color.CGColor, (id)[color colorWithAlphaComponent:0].CGColor];
     }
+    [_stage setColours:colors];
 }
 
 - (void)artworkChanged {
     NSUInteger generation = ++_palette; // nil/new-track artwork invalidates an outstanding palette too
-    NSString *uri = nil;
-    UIImage *image = SGRNowPlayingArtwork(&uri, NULL);
+    NSString *uri = nil, *identity = nil;
+    UIImage *image = SGRNowPlayingArtwork(&uri, &identity);
     NSString *current = SGURIString(SGPlayerState().track.URI);
-    // The bridge intentionally keeps the previous track's cover while the next arrives. Halo must not.
+    // The bridge intentionally keeps the previous track's cover while the next arrives. Halo, Poster and Cut must not.
     UIImage *recordImage = current.length && [current isEqualToString:uri] ? image : nil;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     _record.contents = (id)recordImage.CGImage;
     [CATransaction commit];
-    // Hills draws the cover's palette; Lyrics draws the same hills, so it reads the cover too.
-    if (_style != SGRHills && _style != SGRLyricsStyle) image = recordImage;
+    [_stage setCover:recordImage identity:recordImage ? identity : nil];
+    // Hills draws the cover's palette; the lyric styles draw the same hills, so they read the cover too.
+    if (_style != SGRHills && !readsLyrics(_style)) image = recordImage;
     if (!image) return;
     SGRPaletteRequest request = {.flow = YES};
     __weak SGRVisualiserView *weakSelf = self;
@@ -393,8 +408,8 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 - (void)styleChanged {
     SGRVisualiserStyleKind next = (SGRVisualiserStyleKind)[SGRVisualiserStyleIDs() indexOfObject:SGRVisualiserStyle()];
     self.accessibilityValue = SGRVisualiserStyleNames()[next];
-    // Lyrics draws the hills themselves, so it owns them as Hills does.
-    BOOL hills = next == SGRHills || next == SGRLyricsStyle;
+    // The lyric styles draw the hills themselves, so they own them as Hills does.
+    BOOL hills = next == SGRHills || readsLyrics(next);
     if (_style == next && (hills || _styleLayer)) return;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
@@ -407,11 +422,21 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     memset(_wave, 0, sizeof _wave);
     _backFill.hidden = _frontFill.hidden = !hills;
     _content.layer.mask = hills ? _crestFade : nil;
-    // The words belong to Lyrics alone; nothing is read or shown for another style.
-    _words.hidden = next != SGRLyricsStyle;
+    // The words belong to the lyric styles alone; nothing is read or shown for another style. Lyrics' labels are
+    // its own, and Poster and Cut each draw on a stage of their own.
+    _words.hidden = !readsLyrics(next);
     if (next != SGRLyricsStyle) {
         for (UILabel *label in _lyricLabels) label.alpha = 0;
-        _lines = nil; _linesTimed = NO; _linesTrack = nil; _lineIndex = -1; _asked = NO;
+        _lineIndex = -1;
+    }
+    [_stage removeFromSuperview];
+    _stage = [SGRLyricStage stageForStyle:SGRVisualiserStyleIDs()[next]];
+    if (_stage) {
+        [_words addSubview:_stage];
+        [self layOutStage];
+    }
+    if (!readsLyrics(next)) {
+        _lines = nil; _linesTimed = NO; _linesTrack = nil; _asked = NO;
     } else {
         [self takeUpTrack];
         [self readLine];
@@ -552,11 +577,16 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 // Reads the line for the clock and, only when the line index changed, hands the new text to the label that is
 // not in front and fades it over the old one, rising in. Nothing is allocated from frame to frame: the line's
 // text is built only when the index moves.
+// Poster and Cut hand the line and the clock to their stage, which compares them with what it shows.
 - (void)readLine {
-    if (_style != SGRLyricsStyle) return;
+    if (!readsLyrics(_style)) return;
     NSArray<SGKaraokeLine *> *lines = [self lyricLines];
     NSInteger ms = [self lyricPositionMs];
     NSInteger index = [self lineAt:ms lines:lines];
+    if (_stage) {
+        [_stage showLine:index of:lines at:ms];
+        return;
+    }
     if (index == _lineIndex) return;
     _lineIndex = index;
     NSString *text = nil;
@@ -607,6 +637,15 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     }
 }
 
+// Poster's or Cut's stage over the whole view; its type within the margins Lyrics keeps, above the baseline, on
+// the line Lyrics centers its words on.
+- (void)layOutStage {
+    CGRect bounds = self.bounds;
+    CGFloat baseline = _baseline > 0 ? _baseline : bounds.size.height;
+    _stage.frame = bounds;
+    [_stage setField:CGRectMake(kLyricMargin, 0, MAX(0, bounds.size.width - 2 * kLyricMargin), baseline) centre:baseline * kLyricAnchor];
+}
+
 - (void)lyricsKept:(NSNotification *)note {
     if (_sample || ![note.object isEqual:SGKaraokePlayingTrack()]) return;
     _lines = nil;
@@ -636,6 +675,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     _frontShape.frame = bounds;
     _crestFade.frame = bounds;
     if (_style == SGRLyricsStyle) [self layoutLyrics];
+    if (_stage) [self layOutStage];
     [self draw];
 }
 
@@ -689,13 +729,13 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     // Off the screen nothing is read: the Player page's preview is kept between taps and held by nothing once
     // the page is gone, and a report there would only advance its sample's lines and measure its labels.
     if (!self.window || self.hidden) return;
-    if (_style == SGRLyricsStyle && (!_link || _sample)) [self readLine];
+    if (readsLyrics(_style) && (!_link || _sample)) [self readLine];
 }
 
 - (void)didMoveToWindow {
     [super didMoveToWindow];
     // Back on a window, the line the reports read while it was off is read once more.
-    if (self.window && _style == SGRLyricsStyle) [self readLine];
+    if (self.window && readsLyrics(_style)) [self readLine];
     [self updateMotion];
 }
 
@@ -703,7 +743,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     if (self.hidden == hidden) return;
     [super setHidden:hidden];
     // Shown again, the line the reports skipped while it was hidden is read once more.
-    if (!hidden && self.window && _style == SGRLyricsStyle) [self readLine];
+    if (!hidden && self.window && readsLyrics(_style)) [self readLine];
     [self updateMotion];
 }
 
@@ -748,10 +788,10 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     SPTPlayerState *state = SGPlayerState();
     BOOL playing = state && !state.isPaused;
     // The settings card's sample has no track to play: its clock steps the lines for as long as it is on screen.
-    BOOL sampleTicking = _sample && _style == SGRLyricsStyle;
-    // Lyrics keeps its clock while the song plays even through a quiet passage, since the next line must come
-    // in then; the other styles may stop once the hills have settled.
-    BOOL moving = sampleTicking || (_style == SGRLyricsStyle && playing) || (playing && !_idle) || !self.settled;
+    BOOL sampleTicking = _sample && readsLyrics(_style);
+    // The lyric styles keep their clock while the song plays even through a quiet passage, since the next line
+    // must come in then; the other styles may stop once the hills have settled.
+    BOOL moving = sampleTicking || (readsLyrics(_style) && playing) || (playing && !_idle) || !self.settled;
     // The card's preview reads the same sound as the player's, so its hills move there too.
     [self setReading:may && playing];
     [self setMoving:may && moving];
@@ -838,6 +878,8 @@ static float ease(float value, float target, double dt, double up, double down) 
         [self updateMotion];
         return;
     }
+    // Poster's and Cut's words change as a word's start passes, whatever rate the hills draw at.
+    if (_stage) [self readLine];
     CFTimeInterval now = link.timestamp;
     // The link ticks at the screen's rate; a tick less than a frame short of the wanted interval is skipped, and
     // the next one that draws takes the time since the last draw.
@@ -954,18 +996,18 @@ static void shape(CAShapeLayer *layer, const float *bands, CGFloat width, CGFloa
     CGFloat foot = MAX(baseline, bounds.size.height), rest = round(screen * kRestHeight);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    // Lyrics draws the hills too, at a share of their height and with the words over them.
-    if (_style != SGRHills && _style != SGRLyricsStyle) {
+    // The lyric styles draw the hills too, at a share of their height and with the words over them.
+    if (_style != SGRHills && !readsLyrics(_style)) {
         [self drawStyleWithBaseline:baseline screen:screen];
         [CATransaction commit];
         return;
     }
-    BOOL calm = _style == SGRLyricsStyle;
+    BOOL calm = readsLyrics(_style);
     CGFloat share = calm ? kLyricHills : 1;
     shape(_backShape, _back, bounds.size.width, baseline, foot, screen * kBackHeight * share, rest * 1.5);
     shape(_frontShape, _front, bounds.size.width, baseline, foot, screen * kFrontHeight * share, rest);
     _frontFill.opacity = kPulseFloor + (1 - kPulseFloor) * _pulse;
-    if (calm) {
+    if (_style == SGRLyricsStyle) {
         // The words breathe with the kick: a little brighter and a little larger, never much either way.
         CGFloat pulse = SGRReduceMotion() ? 0 : _pulse;
         _lyricBox.alpha = 0.84f + 0.16f * pulse;

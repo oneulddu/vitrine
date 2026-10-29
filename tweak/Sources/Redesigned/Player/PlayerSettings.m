@@ -50,7 +50,7 @@ static NSArray<NSString *> *backgroundNotes(void) {
         SGL(@"settings.player.bg_desc.colors", @"The cover's colors, drifting slowly."),
         SGL(@"settings.player.bg_desc.fluid", @"The cover itself, blurred and slowly turning. It rests while a song is paused."),
         SGL(@"settings.player.bg_desc.animated", @"The song's Canvas or the album's moving cover, else Fluid. The player's ⋯ menu switches between this, Fluid and Visualizer."),
-        SGL(@"settings.player.bg_desc.visualizer", @"The song's sound in Hills, Bars, Nebula or Halo, over Fluid held still. Choose a style below; it settles on pause or silence."),
+        SGL(@"settings.player.bg_desc.visualizer", @"The song's sound in Hills, Bars, Nebula or Halo, or its synced lyrics in Lyrics, Poster or Cut, over Fluid held still. Choose a style below; it settles on pause or silence."),
         SGL(@"settings.player.bg_desc.black", @"Pure black, nothing of the cover."),
         SGL(@"settings.player.bg_desc.photo", @"A photo of your own, darkened so the words over it stay easy to read."),
     ];
@@ -394,7 +394,56 @@ SGModRow *SGRVisualiserStyleRow(void) {
     });
 }
 
+// A Poster or Cut parameter's rows (PlayerLyricStages.m), shown only while that style is chosen. The switches keep
+// their value in the parameters' dictionary, so the search remembers them by the entry they store.
+static SGModRow *visualiserSwitch(NSString *title, NSString *style, NSString *param) {
+    SGModRow *row = SGBlockSwitchRow(title, nil, ^BOOL { return SGRVisualiserParam(style, param) != 0; },
+                                     ^(BOOL on) { SGRSetVisualiserParam(style, param, on); });
+    row.searchIdentifier = [NSString stringWithFormat:@"%@.%@.%@", SGRKeyVisualiserParams, style, param];
+    row.visible = ^BOOL { return [SGRVisualiserStyle() isEqualToString:style]; };
+    return row;
+}
+
+static SGModRow *visualiserSlider(NSString *title, NSString *style, NSString *param) {
+    SGRVisualiserParamLimits l = SGRVisualiserParamLimitsOf(style, param);
+    SGModRow *row = SGSliderRow(title, nil, l.least, l.most, l.step, ^double { return SGRVisualiserParam(style, param); },
+                                ^(double value) { SGRSetVisualiserParam(style, param, value); },
+                                ^NSString *(double value) { return [NSString stringWithFormat:@"%.0f%%", value * 100]; });
+    row.visible = ^BOOL { return [SGRVisualiserStyle() isEqualToString:style]; };
+    return row;
+}
+
+static SGModRow *visualiserColour(NSString *title, NSString *style, NSString *param) {
+    SGModRow *row = SGStatActionRow(title, nil, ^NSString *{
+        return [NSString stringWithFormat:@"#%06lX", lround(SGRVisualiserParam(style, param))];
+    }, ^{
+        SGPickColor(title, lround(SGRVisualiserParam(style, param)), ^(NSInteger rgb) { SGRSetVisualiserParam(style, param, rgb); });
+    });
+    row.swatch = ^UIColor *{ return SGColorRGB(lround(SGRVisualiserParam(style, param))); };
+    row.visible = ^BOOL { return [SGRVisualiserStyle() isEqualToString:style]; };
+    return row;
+}
+
 UIViewController *SGRVisualiserSettingsPage(void) {
+    NSString *ink = SGL(@"settings.visualizer.ink.title", @"Type color");
+    NSArray<SGModRow *> *poster = @[
+        visualiserSwitch(SGL(@"settings.visualizer.halftone.title", @"Halftone"), SGRVisualiserPosterID, SGRVisualiserHalftone),
+        visualiserColour(ink, SGRVisualiserPosterID, SGRVisualiserInk),
+        visualiserSlider(SGL(@"settings.visualizer.backdrop.title", @"Print strength"), SGRVisualiserPosterID, SGRVisualiserBackdrop),
+        visualiserSlider(SGL(@"settings.visualizer.ghost.title", @"Words ahead"), SGRVisualiserPosterID, SGRVisualiserGhost)];
+    NSArray<SGModRow *> *cut = @[
+        visualiserColour(ink, SGRVisualiserCutID, SGRVisualiserInk),
+        visualiserSlider(SGL(@"settings.visualizer.shade.title", @"Background"), SGRVisualiserCutID, SGRVisualiserShade),
+        visualiserSlider(SGL(@"settings.visualizer.motion.title", @"Motion"), SGRVisualiserCutID, SGRVisualiserMotion),
+        visualiserSwitch(SGL(@"settings.visualizer.subtitle.title", @"Whole line"), SGRVisualiserCutID, SGRVisualiserSubtitle)];
+    // Picking a style brings its rows in and takes the last one's away.
+    __block __weak SGModPage *weakPage;
+    SGModRow *style = SGRVisualiserStyleRow();
+    void (^pick)(NSInteger) = style.chosen;
+    style.chosen = ^(NSInteger index) {
+        pick(index);
+        [weakPage refreshVisibility];
+    };
     SGModRow *shuffle = SGOptionRow(SGL(@"settings.player.visualizer_shuffle.title", @"Shuffle styles"),
                                     SGL(@"settings.player.visualizer_shuffle.subtitle", @"A different style with each song"), SGRKeyVisualiserShuffle);
     shuffle.changed = ^(BOOL on) { SGRVisualiserShuffleChanged(); };
@@ -402,14 +451,22 @@ UIViewController *SGRVisualiserSettingsPage(void) {
                                  SGL(@"settings.player.visualizer_heat.subtitle", @"Keeps the Visualizer moving while the iPhone is hot. Uses more battery."),
                                  SGRKeyVisualiserIgnoreHeat);
     heat.changed = ^(BOOL on) { SGRVisualiserIgnoreHeatChanged(); };
-    return [[SGModPage alloc] initWithTitle:SGL(@"settings.player.visualizers.title", @"Visualizers") intro:SGL(@"settings.player.visualizers.intro", @"Local styles for the redesigned player's Visualizer background.")
-        sections:@[SGNotedSection(nil, @[SGRVisualiserStyleRow(), shuffle],
+    SGModPage *page = [[SGModPage alloc] initWithTitle:SGL(@"settings.player.visualizers.title", @"Visualizers") intro:SGL(@"settings.player.visualizers.intro", @"Local styles for the redesigned player's Visualizer background.")
+        sections:@[SGNotedSection(nil, @[style, shuffle],
             SGL(@"settings.player.visualizers.note", @"Hills: soft spectrum hills. Bars: a mirrored spectrum with the actual audio waveform. "
-             @"Nebula: slow clouds in the cover's colors. Halo: a dim turning cover with a spectrum ring.")),
+             @"Nebula: slow clouds in the cover's colors. Halo: a dim turning cover with a spectrum ring. Lyrics: the sung line, large, "
+             @"over quieter hills. Poster: the line filled in word by word as a type poster over a print of the cover. Cut: one word "
+             @"at a time over the cover, cut to the singing. The last three need synced lyrics.")),
+                   SGNotedSection(SGL(@"settings.visualizer.style.choice.poster", @"Poster"), poster,
+                                  SGL(@"settings.visualizer.poster.note", @"The sung line set word by word as a type poster over a print of the cover. Needs synced lyrics.")),
+                   SGNotedSection(SGL(@"settings.visualizer.style.choice.cut", @"Cut"), cut,
+                                  SGL(@"settings.visualizer.cut.note", @"One word at a time over the cover, cut to the singing. Needs synced lyrics.")),
                    SGSection(nil, @[heat])]
         footer:SGL(@"settings.player.visualizers.footer", @"The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer "
                 @"under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence "
                 @"and stops in the background, during player transitions, in Low Power Mode or when the device is hot.")];
+    weakPage = page;
+    return page;
 }
 
 SGModRow *SGRLyricsHideRow(void) {

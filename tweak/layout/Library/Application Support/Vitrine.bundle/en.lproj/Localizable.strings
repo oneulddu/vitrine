@@ -1848,7 +1848,7 @@
 "settings.player.bg_desc.fluid" = "The cover itself, blurred and slowly turning. It rests while a song is paused.";
 "settings.player.bg_desc.photo" = "A photo of your own, darkened so the words over it stay easy to read.";
 "settings.player.bg_desc.still" = "The cover, blurred and held still.";
-"settings.player.bg_desc.visualizer" = "The song's sound in Hills, Bars, Nebula or Halo, over Fluid held still. Choose a style below; it settles on pause or silence.";
+"settings.player.bg_desc.visualizer" = "The song's sound in Hills, Bars, Nebula or Halo, or its synced lyrics in Lyrics, Poster or Cut, over Fluid held still. Choose a style below; it settles on pause or silence.";
 "settings.player.bg_suffix" = " background";
 "settings.player.bg_visualizer.format" = "Visualizer background, %@";
 "settings.player.blocked_artists.title" = "Blocked artists";
@@ -1945,7 +1945,7 @@
 "settings.player.visualizer_style.title" = "Visualizer style";
 "settings.player.visualizers.footer" = "The style changes immediately in existing player and preview visualizers. To show it, choose Visualizer under Player > Background. This page leaves the background choice unchanged. Motion rests on pause or silence and stops in the background, during player transitions, in Low Power Mode or when the device is hot.";
 "settings.player.visualizers.intro" = "Local styles for the redesigned player's Visualizer background.";
-"settings.player.visualizers.note" = "Hills: soft spectrum hills. Bars: a mirrored spectrum with the actual audio waveform. Nebula: slow clouds in the cover's colors. Halo: a dim turning cover with a spectrum ring.";
+"settings.player.visualizers.note" = "Hills: soft spectrum hills. Bars: a mirrored spectrum with the actual audio waveform. Nebula: slow clouds in the cover's colors. Halo: a dim turning cover with a spectrum ring. Lyrics: the sung line, large, over quieter hills. Poster: the line filled in word by word as a type poster over a print of the cover. Cut: one word at a time over the cover, cut to the singing. The last three need synced lyrics.";
 "settings.player.visualizers.title" = "Visualizers";
 "settings.player.volume.title" = "Volume";
 "settings.player.widget.header" = "Widget";
@@ -2538,11 +2538,22 @@
 "settings.vibrations.system_off.subtitle" = "Tap to turn it on in Settings";
 "settings.vibrations.system_off.title" = "Music Haptics is off in iOS";
 
+"settings.visualizer.backdrop.title" = "Print strength";
+"settings.visualizer.cut.note" = "One word at a time over the cover, cut to the singing. Needs synced lyrics.";
+"settings.visualizer.ghost.title" = "Words ahead";
+"settings.visualizer.halftone.title" = "Halftone";
+"settings.visualizer.ink.title" = "Type color";
+"settings.visualizer.motion.title" = "Motion";
+"settings.visualizer.poster.note" = "The sung line set word by word as a type poster over a print of the cover. Needs synced lyrics.";
+"settings.visualizer.shade.title" = "Background";
 "settings.visualizer.style.choice.bars" = "Bars";
+"settings.visualizer.style.choice.cut" = "Cut";
 "settings.visualizer.style.choice.halo" = "Halo";
 "settings.visualizer.style.choice.hills" = "Hills";
 "settings.visualizer.style.choice.lyrics" = "Lyrics";
 "settings.visualizer.style.choice.nebula" = "Nebula";
+"settings.visualizer.style.choice.poster" = "Poster";
+"settings.visualizer.subtitle.title" = "Whole line";
 
 "settings.workshop.audio_presets.title" = "Audio presets";
 "settings.workshop.free_fonts.title" = "Free fonts";

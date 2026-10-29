@@ -21,6 +21,7 @@
 //     PlayerMotion.x     Animated artwork: the Canvas or Apple Music's animated cover behind the player
 //     PlayerVisualiser.m the Visualizer background: a calm spectrum of the song in the cover's colors, read
 //                        through SGRSpectrum.m from the audio effects' tap on Spotify's output
+//     PlayerLyricStages.m the Visualizer's Poster and Cut lyric styles and their parameters
 //     PlayerMenu.m       the more button's system menu: Share, Add to playlist and Add to queue on top, then
 //                        speed, pitch and reverb, the backgrounds it can switch to, and Spotify's other rows
 //                        under More (Redesigned/ContextMenu)
@@ -253,6 +254,9 @@ CGFloat SGRPlayerImageBrightEnd(CGImageRef image);
 
 // Compatibility exception to the redesign-only prefix: 0.51.0 stores these exact string IDs here.
 #define SGRKeyVisualiserStyle @"spotifyglass.visualizer.shader"
+// The two lyric styles after Lyrics, drawn by PlayerLyricStages.m.
+#define SGRVisualiserPosterID @"builtin:poster"
+#define SGRVisualiserCutID @"builtin:cut"
 extern NSNotificationName const SGRVisualiserStyleDidChangeNotification;
 NSArray<NSString *> *SGRVisualiserStyleNames(void);
 NSArray<NSString *> *SGRVisualiserStyleIDs(void);
@@ -273,6 +277,27 @@ void SGRVisualiserShuffleChanged(void);
 BOOL SGRVisualiserStandsDownFor(NSProcessInfoThermalState state);
 // The switch changed: the Visualizer on screen takes it up now rather than at its next check.
 void SGRVisualiserIgnoreHeatChanged(void);
+// Poster's and Cut's parameters (PlayerLyricStages.m), in one dictionary: style id -> { parameter id -> value }.
+// A switch is stored as a boolean, a color as "#RRGGBB", a number as itself. A missing or malformed entry reads
+// as its default and a number out of range is clamped; storing a parameter's default removes it, and a style left
+// with none is removed, so no empty dictionary stays behind.
+#define SGRKeyVisualiserParams @"spotifyglass.visualizer.params"
+#define SGRVisualiserHalftone @"halftone"   // Poster: switch, on
+#define SGRVisualiserInk @"ink"             // Poster: #F4EFE6, Cut: #FFFFFF
+#define SGRVisualiserBackdrop @"backdrop"   // Poster's print strength: 0 to 1, 0.6
+#define SGRVisualiserGhost @"ghost"         // Poster's words ahead: 0 to 0.5, 0.35
+#define SGRVisualiserShade @"shade"         // Cut's background darkening: 0 to 1, 0.75
+#define SGRVisualiserMotion @"motion"       // Cut: 0 to 1.5, 1
+#define SGRVisualiserSubtitle @"subtitle"   // Cut's whole line: switch, on
+// Posted on main when a parameter is stored; the views on screen take it up at once.
+extern NSNotificationName const SGRVisualiserParamsDidChangeNotification;
+typedef struct { double least, most, step; } SGRVisualiserParamLimits;
+// A number's range and step; a switch's 0 to 1, a color's 0 to 0xFFFFFF.
+SGRVisualiserParamLimits SGRVisualiserParamLimitsOf(NSString *style, NSString *param);
+// A number as itself, a switch as 0 or 1, a color as 0xRRGGBB.
+double SGRVisualiserParam(NSString *style, NSString *param);
+void SGRSetVisualiserParam(NSString *style, NSString *param, double value);
+
 @class SGModRow;
 SGModRow *SGRVisualiserStyleRow(void);
 // Local styles only; never changes the player's background kind or creates a player visualizer.

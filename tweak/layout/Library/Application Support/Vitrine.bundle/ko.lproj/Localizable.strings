@@ -1844,7 +1844,7 @@
 "settings.player.bg_desc.fluid" = "커버 자체가 흐리게 처리되어 천천히 회전합니다. 노래가 일시 정지되면 멈춥니다.";
 "settings.player.bg_desc.photo" = "직접 고른 사진입니다. 위의 글자가 잘 읽히도록 어둡게 처리됩니다.";
 "settings.player.bg_desc.still" = "커버를 흐리게 처리하여 고정합니다.";
-"settings.player.bg_desc.visualizer" = "멈춘 플루이드 위에 노래의 소리를 언덕, 막대, 성운 또는 헤일로로 그립니다. 아래에서 스타일을 고르십시오. 일시 정지하거나 소리가 없으면 잦아듭니다.";
+"settings.player.bg_desc.visualizer" = "멈춘 플루이드 위에 노래의 소리를 언덕, 막대, 성운 또는 헤일로로, 싱크 가사를 가사, 포스터 또는 컷으로 그립니다. 아래에서 스타일을 고르십시오. 일시 정지하거나 소리가 없으면 잦아듭니다.";
 "settings.player.bg_suffix" = " 배경";
 "settings.player.bg_visualizer.format" = "비주얼라이저 배경, %@";
 "settings.player.blocked_artists.title" = "차단한 아티스트";
@@ -1941,7 +1941,7 @@
 "settings.player.visualizer_style.title" = "비주얼라이저 스타일";
 "settings.player.visualizers.footer" = "기존 플레이어 및 미리보기 비주얼라이저에 스타일이 즉시 적용됩니다. 스타일을 표시하려면 플레이어 > 배경에서 비주얼라이저를 선택하십시오. 이 페이지에서는 배경 선택이 변경되지 않습니다. 모션은 일시 정지나 무음 상태일 때 정지하며, 백그라운드 환경, 플레이어 전환 중, 저전력 모드 또는 기기가 뜨거울 때 중단됩니다.";
 "settings.player.visualizers.intro" = "재설계 플레이어의 비주얼라이저 배경을 위한 로컬 스타일입니다.";
-"settings.player.visualizers.note" = "언덕: 부드러운 스펙트럼 언덕. 막대: 실제 오디오 파형을 담은 대칭 스펙트럼. 성운: 커버 색상의 느린 구름. 헤일로: 스펙트럼 고리를 두르고 천천히 도는 어두운 커버.";
+"settings.player.visualizers.note" = "언덕: 부드러운 스펙트럼 언덕. 막대: 실제 오디오 파형을 담은 대칭 스펙트럼. 성운: 커버 색상의 느린 구름. 헤일로: 스펙트럼 고리를 두르고 천천히 도는 어두운 커버. 가사: 낮아진 언덕 위에 크게 띄운 부르는 줄. 포스터: 커버의 인쇄 위에 단어마다 채워 가는 타이포 포스터. 컷: 노래에 맞춰 컷처럼 바뀌며 커버 위에 하나씩 띄우는 단어. 마지막 세 가지는 싱크 가사가 필요합니다.";
 "settings.player.visualizers.title" = "비주얼라이저";
 "settings.player.volume.title" = "음량";
 "settings.player.widget.header" = "위젯";
@@ -2529,11 +2529,22 @@
 "settings.vibrations.system_off.subtitle" = "탭하여 설정에서 켜기";
 "settings.vibrations.system_off.title" = "iOS에서 음악 햅틱이 꺼져 있습니다";
 
+"settings.visualizer.backdrop.title" = "인쇄 강도";
+"settings.visualizer.cut.note" = "부르는 단어를 하나씩 커버 위에 노래에 맞춰 컷처럼 바꿔 보여 줍니다. 싱크 가사가 필요합니다.";
+"settings.visualizer.ghost.title" = "다음 단어";
+"settings.visualizer.halftone.title" = "망점";
+"settings.visualizer.ink.title" = "글자 색상";
+"settings.visualizer.motion.title" = "움직임";
+"settings.visualizer.poster.note" = "부르는 줄을 커버의 인쇄 위에 단어마다 타이포 포스터처럼 채워 갑니다. 싱크 가사가 필요합니다.";
+"settings.visualizer.shade.title" = "배경 어둡게";
 "settings.visualizer.style.choice.bars" = "막대";
+"settings.visualizer.style.choice.cut" = "컷";
 "settings.visualizer.style.choice.halo" = "헤일로";
 "settings.visualizer.style.choice.hills" = "언덕";
 "settings.visualizer.style.choice.lyrics" = "가사";
 "settings.visualizer.style.choice.nebula" = "성운";
+"settings.visualizer.style.choice.poster" = "포스터";
+"settings.visualizer.subtitle.title" = "전체 줄";
 
 "settings.workshop.audio_presets.title" = "오디오 프리셋";
 "settings.workshop.free_fonts.title" = "무료 서체";

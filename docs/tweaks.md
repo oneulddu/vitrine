@@ -1553,9 +1553,17 @@ black or a photo of the user's own over the field instead (PlayerBackdrop.m, kin
 comes from PHPicker, is kept as a JPEG of 2048 px at most in Library/Application Support/Vitrine, fills the screen
 from its middle and is dimmed by its brightness as the Animated clip is, more with a blur behind the lyrics; it
 applies at the player's next layout, no restart; while Visualizer is chosen, its local style menu offers Hills (the default),
-mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The selection is stored under the existing
+mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo, then the lyric styles: Lyrics, Poster and Cut. The selection is stored under the existing
 `spotifyglass.visualizer.shader` key, with invalid or absent values falling back to Hills, and the preview and player update at
-once. Shuffle styles (`spotifyglass.visualizer.shuffle`, off) picks another style at random, never the current one, once
+once. Poster (`builtin:poster`) sets the sung line word by word as a heavy, left-aligned type poster over a halftone print of the
+cover on black, the words still ahead faint; Cut (`builtin:cut`) shows one word at a time as large as fits, over the darkened cover
+and a few flat blocks of its colors placed from the word, jumping a little at each word and settling (still with Reduce Motion),
+the whole line small under it (PlayerLyricStages.m). Both read the line as Lyrics does, so without synced lyrics, in a break or
+while the player's lyrics are open they show its quieter hills alone. The halftone is made once per artwork off the main queue;
+text is built only when the line or word changes. Their rows on the Visualizers page show only for the style chosen (Poster:
+Halftone, Type color, Print strength, Words ahead; Cut: Type color, Background, Motion, Whole line), stored in one dictionary,
+`spotifyglass.visualizer.params` (style id to parameter id to value, colors as `#RRGGBB`; a malformed value reads as its default,
+a number out of range is clamped, and a default is stored by removing it), and apply at once (harness/player-visualiser/). Shuffle styles (`spotifyglass.visualizer.shuffle`, off) picks another style at random, never the current one, once
 for each new track while the Visualizer is on screen with the app in front and not stood down; the user's own pick is
 kept under `spotifyglass.visualizer.shuffle.home` and comes back when shuffle is switched off. Visualizer motion pauses
 while hidden, backgrounded, in Low Power Mode, under serious heat (unless Ignore heat warnings,

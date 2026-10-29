@@ -278,7 +278,7 @@ with no gate and nothing from upstream's code, server or content.
 | Liveprog CPU budget | Done (Shared/AudioEffects/SGDSPEngine.m): half of real time, a click-free bypass and a quarantine, a 2 s start deadline; harness/liveprog-guard/ |
 | Your Files page, audio import and folders, offline animated covers for local albums | Not built yet: playing a local track from Vitrine's own page needs a traced 9.1.90 command, and moving or deleting files risks the user's data |
 | AutoMix per context and its info line | Not built yet: when Spotify reads the transition preferences must be shown on a phone first; upstream's rewriting of Spotify's remote-config files is not taken |
-| Poster and Cut lyric visualizers | Not built yet: they need a renderer of their own |
+| Poster and Cut lyric visualizers | Done (Redesigned/Player/PlayerLyricStages.m, PlayerVisualiser.m): layers and text, no Metal; the halftone made once per artwork off the main queue; parameters in `spotifyglass.visualizer.params`, rows only for the chosen style; harness/player-visualiser/ |
 | Lock screen style templates with a clock, lyrics shaders | Not taken: a template language for little gain over iOS's own clock; lyrics shaders exist only as downloads from upstream |
 | DSP suite, AutoEq, AutoMix styles | Already in Vitrine (Shared/AudioEffects, Shared/AutoMix) |
 | Bundled DDC and EEL example files | Not taken: each file's source and license would have to be checked first |
