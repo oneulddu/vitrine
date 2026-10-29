@@ -104,6 +104,14 @@ CGRect SGRPlayerArtworkAreaIn(UIView *host) { return gArea; }
 CGRect SGRPlayerLyricLineIn(UIView *view) { return gPlayerLine; }
 void SGRPlayerLyricStageTakesCover(BOOL takes) { gCoverTaken = takes; }
 
+// The device can remain foreground-inactive while the stage is visible. A nil shared application in the
+// command-line harness otherwise reads as Active and cannot exercise that boundary.
+@interface HarnessApplication : NSObject
+@property (nonatomic) UIApplicationState applicationState;
+@end
+@implementation HarnessApplication
+@end
+
 // A song that is playing, so the Lyrics style keeps its clock.
 @implementation SPTPlayerState
 - (BOOL)isPaused { return NO; }
@@ -339,6 +347,9 @@ static NSUInteger drawsOf(UIView *view, NSUInteger ticks) {
 
 int main(void) {
     @autoreleasepool {
+        HarnessApplication *application = [HarnessApplication new];
+        method_setImplementation(class_getClassMethod(UIApplication.class, @selector(sharedApplication)),
+            imp_implementationWithBlock(^id(id receiver) { return application; }));
         guardShowCover();
         gArea = gPlayerLine = CGRectNull;
         [NSUserDefaults.standardUserDefaults setObject:@"builtin:lyrics" forKey:SGRKeyVisualiserStyle];
@@ -671,9 +682,15 @@ int main(void) {
         [v didMoveToWindow];
         HARNESS_CHECK(gCoverTaken);
         [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationWillResignActiveNotification object:nil];
+        application.applicationState = UIApplicationStateInactive;
+        readAt(v, 1300);
+        HARNESS_CHECK(gCoverTaken);
+        application.applicationState = UIApplicationStateBackground;
+        [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidEnterBackgroundNotification object:nil];
         HARNESS_CHECK(!gCoverTaken);
         readAt(v, 1300);
         HARNESS_CHECK(!gCoverTaken);
+        application.applicationState = UIApplicationStateActive;
         [NSNotificationCenter.defaultCenter postNotificationName:UIApplicationDidBecomeActiveNotification object:nil];
         HARNESS_CHECK(gCoverTaken);
         [v setValue:@NO forKey:@"ownsCover"];

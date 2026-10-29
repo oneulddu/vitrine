@@ -337,6 +337,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
         [center addObserver:self selector:@selector(updateMotionSoon) name:name object:nil];
     }
     [center addObserver:self selector:@selector(resignActive) name:UIApplicationWillResignActiveNotification object:nil];
+    [center addObserver:self selector:@selector(tellCover) name:UIApplicationDidEnterBackgroundNotification object:nil];
     [center addObserver:self selector:@selector(becomeActive) name:UIApplicationDidBecomeActiveNotification object:nil];
     [center addObserver:self selector:@selector(artworkChanged) name:SGRNowPlayingArtworkDidChangeNotification object:nil];
     [center addObserver:self selector:@selector(styleChanged) name:SGRVisualiserStyleDidChangeNotification object:nil];
@@ -675,10 +676,11 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 }
 
 // The player's view tells PlayerMotion.x whether its stage's line takes the cover's place: only while it is in a
-// window with Spotify in front, so a closed player or one in the background gives the cover back.
+// window with Spotify in front, so a closed player or one in the background gives the cover back. Inactive is
+// still foreground: the stage remains visible there, even while its motion is held, and still owns its space.
 - (void)tellCover {
     if (!_ownsCover) return;
-    BOOL front = self.window && !_inactive && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
+    BOOL front = self.window && UIApplication.sharedApplication.applicationState != UIApplicationStateBackground;
     SGRPlayerLyricStageTakesCover(front && _stage.showing);
 }
 
@@ -799,7 +801,6 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 - (void)resignActive {
     // WillResignActive can arrive before UIApplication's state changes.
     _inactive = YES;
-    [self tellCover];
     [self updateMotion];
 }
 
