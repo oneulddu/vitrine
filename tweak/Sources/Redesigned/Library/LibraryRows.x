@@ -33,7 +33,8 @@ static void roundCorners(UIView *artwork, CGFloat radius) {
     if (!layer.masksToBounds) layer.masksToBounds = YES;
 }
 
-// The line under a row, from its text's leading edge to the trailing edge of the page. A cell holding a card
+// The line under a row, from its text's leading edge to the trailing edge of the page (mirrored right to left,
+// where the artwork is on the right). A cell holding a card
 // has none, and one reused from a row into a card loses the line it was left with.
 static void hairline(UIView *cell, UIView *thumb) {
     CALayer *line = objc_getAssociatedObject(cell, &kLineKey);
@@ -52,8 +53,13 @@ static void hairline(UIView *cell, UIView *thumb) {
     if (line.superlayer != cell.layer) [cell.layer addSublayer:line];
 
     CGFloat thickness = 1.0 / MAX(1, cell.window.screen.scale ?: UIScreen.mainScreen.scale);
-    CGFloat leading = CGRectGetMaxX(artwork) + kTextGap;
-    CGRect frame = CGRectMake(leading, size.height - thickness, MAX(0, size.width - leading), thickness);
+    // The text starts after the artwork on the artwork's own side: left to right that is its right edge and the
+    // line runs to the right edge of the cell; right to left the artwork is on the right, the text ends at its
+    // left edge and the line runs from the left edge of the cell to it.
+    BOOL rtl = cell.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+    CGFloat left = rtl ? 0 : CGRectGetMaxX(artwork) + kTextGap;
+    CGFloat right = rtl ? CGRectGetMinX(artwork) - kTextGap : size.width;
+    CGRect frame = CGRectMake(left, size.height - thickness, MAX(0, right - left), thickness);
     if (line.hidden || !CGRectEqualToRect(line.frame, frame)) {
         [CATransaction begin];
         [CATransaction setDisableActions:YES];

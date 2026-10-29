@@ -89,6 +89,8 @@ their check executable in the workflow.
 | `pitch/build.sh` | Synthetic sine pitch/speed assertions, no song argument. |
 | `player/title-notification-check.sh` | Real Logos controller with offline notification fixtures. |
 | `now-playing-bar/check.sh` | Catalyst title and artists split of the redesigned now playing bar through Logos: titles with and without " • ", with and without a device line, neighbour pages and an unknown track. |
+| `library/rows-check.sh` | Simulator executable through Logos: the Library row separator spans from the artwork's text edge, mirrored right to left. |
+| `playlist/creator-check.sh` | Simulator executable through Logos: the playlist header's creator lookup keeps one-character names and skips the facepile's initial. |
 | `player/repeat-check.sh` | Production repeat-mode transition (`SGPlayerAdvanceRepeat`) extracted from `PlayerState.x`: every flag combination, command order and returned answer; no simulator. |
 | `player/upcoming-tracks-check.sh` | Production upcoming-track parsing (`SGURIString`, `SGPlayerUpcomingTracks`) extracted from `PlayerState.x` and run against Foundation doubles; no simulator. |
 | `player-lyric-line/build.sh` | Catalyst fitting (shrink and whole-word portions) and the line's wait/re-arm rules for synthetic lines and positions. |

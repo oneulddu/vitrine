@@ -318,12 +318,14 @@ static NSString *plainText(NSString *html) {
     return trimmed.length ? trimmed : nil;
 }
 
-static NSString *firstText(UIView *root, UIView *skip) {
+// The first label under `root` outside `skip` with at least `minLength` characters. A line that is only a name
+// takes 1, since a creator can be one character ("X", "林"); the others pass 2 to pass over a single initial.
+static NSString *firstText(UIView *root, UIView *skip, NSUInteger minLength) {
     __block NSString *found = nil;
     SGForEachView(root, ^(UIView *v) {
         if (found || ![v isKindOfClass:UILabel.class] || (skip && [v isDescendantOfView:skip])) return;
         NSString *text = [((UILabel *)v).text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-        if (text.length > 1) found = text;
+        if (text.length >= minLength) found = text;
     });
     return found;
 }
@@ -339,7 +341,7 @@ static NSString *creatorIn(UIView *block) {
     });
     UIView *row = facepile.superview;
     for (NSUInteger level = 0; row && row != block && level < 3; level++, row = row.superview) {
-        NSString *name = firstText(row, facepile);
+        NSString *name = firstText(row, facepile, 1);
         if (name) return name;
     }
     return nil;
@@ -347,7 +349,7 @@ static NSString *creatorIn(UIView *block) {
 
 // The length line, as Spotify words it in the app's language: "8 saves • 41h 14m", "1 038 songs".
 static NSString *lengthIn(UIView *block) {
-    return firstText(SGRFindByIdentifier(block, @"Components.Header.UI.Metadata", &kMetaKey), nil);
+    return firstText(SGRFindByIdentifier(block, @"Components.Header.UI.Metadata", &kMetaKey), nil, 2);
 }
 
 // The header of the songs the user liked by one artist: the playlist page's kit with no playlist behind it.
@@ -369,7 +371,7 @@ static NSString *artistTitle(UIView *block) {
 // One's own playlists and Liked Songs keep their existing row with download alone.
 static void showPlaylist(SGRHeaderInfo *info, UIView *block, UIView *root, id model) {
     BOOL artistPage = isCollectionArtist(root);
-    NSString *title = modelString(model, @"playlistName") ?: (artistPage ? artistTitle(block) : firstText(block, nil));
+    NSString *title = modelString(model, @"playlistName") ?: (artistPage ? artistTitle(block) : firstText(block, nil, 2));
     [info showTitle:title creator:creatorIn(block) length:lengthIn(block)
               about:plainText(modelString(model, @"playlistDescription"))];
 
