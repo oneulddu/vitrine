@@ -100,7 +100,12 @@ void SGRClearCellPaint(UIView *cell);
 // Fires one of Spotify's own buttons the way a tap on it would: the first control under `source`, through
 // SGRFire, and through -accessibilityActivate when that control answers its touches some other way. For a
 // control the redesign conceals and draws itself (the action row's buttons, a header's creator line).
-void SGRActivate(UIView *source);
+// A source Spotify has disabled is not fired at all, by either route: NO, and nothing was dispatched.
+BOOL SGRActivate(UIView *source);
+
+// Whether Spotify's button is enabled: its first control is enabled and neither it nor `source` carries the
+// not-enabled accessibility trait. NO for nil. What a mirror of the button copies and SGRActivate checks.
+BOOL SGRSourceEnabled(UIView *source);
 
 // Fires a control's action the way a tap would: the actions registered for primary action triggered,
 // else those for touch up inside. NO when the control has neither (an Encore control that reads its

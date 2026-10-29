@@ -56,6 +56,18 @@ static UIFont *capsuleFont(void) {
     return font;
 }
 
+// A mirror looks as enabled as the button it stands in for, and says so to accessibility: dimmed, with the
+// not-enabled trait. It is never disabled as a control, because Spotify enables and disables a button with no
+// pass here and a mirror that cannot be tapped could never hear that the source is back. Every tap reads the
+// source (feedFrom:) before it fires, which is what clears the dim.
+static const CGFloat kDisabledAlpha = 0.4;
+static void takeEnabled(UIControl *mirror, UIView *source, NSArray<UIView *> *drawn) {
+    BOOL enabled = SGRSourceEnabled(source);
+    if (!(mirror.accessibilityTraits & UIAccessibilityTraitNotEnabled) == enabled) return;
+    mirror.accessibilityTraits = enabled ? UIAccessibilityTraitButton : UIAccessibilityTraitButton | UIAccessibilityTraitNotEnabled;
+    for (UIView *view in drawn) view.alpha = enabled ? 1 : kDisabledAlpha;
+}
+
 #pragma mark - the Play capsule
 
 @implementation SGRPlayCapsule {
@@ -116,6 +128,7 @@ static UIFont *capsuleFont(void) {
 - (void)feedFrom:(UIView *)source {
     if (!source) return;
     _source = source;
+    takeEnabled(self, source, @[_glyph, _title]);
 
     NSString *word = wordIn(source);
     // The disc is as tall as the button, not always as wide: Liked Songs' is 80x48 with the 48pt disc at
@@ -166,6 +179,7 @@ static UIFont *capsuleFont(void) {
 }
 
 - (void)sgr_tap {
+    [self feedFrom:self.source];
     SGRActivate(self.source);
 }
 
@@ -304,6 +318,7 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
         _download = [[SGRDownloadGlyph alloc] initWithFrame:CGRectZero];
         _download.bounds = _glyph.bounds;
         _download.center = _glyph.center;
+        _download.alpha = _glyph.alpha;
         [self addSubview:_download];
     }
     _download.hidden = NO;
@@ -386,6 +401,7 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
 - (void)feedFrom:(UIView *)source {
     if (!source) return;
     _source = source;
+    takeEnabled(self, source, @[_glyph, _download ?: _glyph]);
 
     if (self.readState) {
         BOOL on = NO;
@@ -465,6 +481,8 @@ static BOOL indicatorOn(UIView *button, BOOL *found) {
 }
 
 - (void)sgr_tap {
+    [self feedFrom:self.source];
+    if (!SGRSourceEnabled(self.source)) return;
     if ([self.source.accessibilityIdentifier hasPrefix:SGAlbumQueueButtonPrefix]) SGAlbumQueueMarkSource(self.source);
     SGRActivate(self.source);
     // The word is watched where Spotify writes it, but a button that rebuilds its content on the state it

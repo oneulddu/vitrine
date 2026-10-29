@@ -99,6 +99,9 @@ static void watchPinnedHold(UIView *page, BOOL freeze) {
     CFRelease(observer);
 }
 
+static void verifyDisabledDownload(SGRMirrorButton *mirror, UIControl *source, NSUInteger *fired);
+static void verifyDisabledPlay(SGRPlayCapsule *play);
+
 static void verifyMixActions(UIView *root, BOOL independent) {
     NSMutableArray *pending = [NSMutableArray arrayWithObject:root];
     SGRHeaderInfo *info = nil;
@@ -165,6 +168,7 @@ static void verifyMixActions(UIView *root, BOOL independent) {
             forControlEvents:UIControlEventTouchUpInside];
         [download sendActionsForControlEvents:UIControlEventTouchUpInside];
         HARNESS_CHECK(fired == 1);
+        verifyDisabledDownload(download, source, &fired);
     } else {
         // No download pinned: ⋯ alone, its own 44pt circle.
         HARNESS_CHECK(!download || download.hidden);
@@ -172,6 +176,7 @@ static void verifyMixActions(UIView *root, BOOL independent) {
         HARNESS_CHECK(circle && !circle.hidden && fabs(circle.bounds.size.width - 44) < 0.5 && fabs(circle.bounds.size.height - 44) < 0.5);
         HARNESS_CHECK(CGPointEqualToPoint(circle.center, CGPointMake(CGRectGetMidX(more.bounds), CGRectGetMidY(more.bounds))));
     }
+    verifyDisabledPlay(play);
     NSDictionary *result = @{@"passed": @YES, @"independent_actions": @(independent), @"native_action_and_layout_verified": @YES};
     NSString *path = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
         stringByAppendingPathComponent:@"playlist-actions-verification.json"];
@@ -324,8 +329,76 @@ static void verifyMixActions(UIView *root, BOOL independent) {
 }
 @end
 
+// Registers no action, as Spotify's Encore controls do: a tap on the redesign's Play reaches it only through accessibility.
+static NSUInteger sg_condensedActivated;
 @interface MockCondensedButton : UIControl @end
-@implementation MockCondensedButton @end
+@implementation MockCondensedButton
+- (BOOL)accessibilityActivate {
+    sg_condensedActivated++;
+    return YES;
+}
+@end
+
+// Spotify enables and disables a button with no layout pass the redesign hears, so a mirror is never disabled as a
+// control (it could not hear the source come back): it dims, carries the not-enabled trait, and every tap reads its
+// source first. Disabled, the source must not be reached; enabled again with no feed in between, the next tap must
+// reach it and clear the dim.
+static BOOL dimmedMirror(UIControl *mirror) {
+    BOOL trait = mirror.accessibilityTraits & UIAccessibilityTraitNotEnabled;
+    return trait && ((UIView *)[mirror valueForKey:@"_glyph"]).alpha < 1 && mirror.enabled;
+}
+static BOOL undimmedMirror(UIControl *mirror) {
+    BOOL trait = mirror.accessibilityTraits & UIAccessibilityTraitNotEnabled;
+    return !trait && ((UIView *)[mirror valueForKey:@"_glyph"]).alpha == 1 && mirror.enabled;
+}
+
+static void verifyDisabledSource(UIControl *mirror, void (^setSourceEnabled)(BOOL), NSUInteger (^reached)(void), NSString *name) {
+    NSUInteger before = reached();
+    UIView *source = [mirror valueForKey:@"source"];
+    setSourceEnabled(NO);
+    [(id)mirror feedFrom:source];
+    HARNESS_CHECK(dimmedMirror(mirror));
+    [mirror sendActionsForControlEvents:UIControlEventTouchUpInside];
+    HARNESS_CHECK(reached() == before && dimmedMirror(mirror));
+    // Back on, with no feed: the tap reads the source, fires it and clears the dim.
+    setSourceEnabled(YES);
+    HARNESS_CHECK(dimmedMirror(mirror));
+    [mirror sendActionsForControlEvents:UIControlEventTouchUpInside];
+    HARNESS_CHECK(reached() == before + 1 && undimmedMirror(mirror));
+    // Off again with no feed: the tap is refused and the mirror dims.
+    setSourceEnabled(NO);
+    [mirror sendActionsForControlEvents:UIControlEventTouchUpInside];
+    HARNESS_CHECK(reached() == before + 1 && dimmedMirror(mirror));
+    setSourceEnabled(YES);
+    [mirror sendActionsForControlEvents:UIControlEventTouchUpInside];
+    HARNESS_CHECK(reached() == before + 2 && undimmedMirror(mirror));
+    NSLog(@"[harness] PASS %@ follows its source's enabled state", name);
+}
+
+static void verifyDisabledDownload(SGRMirrorButton *mirror, UIControl *source, NSUInteger *fired) {
+    verifyDisabledSource(mirror, ^(BOOL on) { source.enabled = on; }, ^NSUInteger { return *fired; }, @"download mirror");
+}
+
+static void verifyDisabledPlay(SGRPlayCapsule *play) {
+    UIControl *control = nil;
+    NSMutableArray *pending = [NSMutableArray arrayWithObject:play.source];
+    while (pending.count && !control) {
+        UIView *view = pending.firstObject;
+        [pending removeObjectAtIndex:0];
+        if ([view isKindOfClass:MockCondensedButton.class]) control = (id)view;
+        [pending addObjectsFromArray:view.subviews];
+    }
+    HARNESS_CHECK(control && undimmedMirror(play));
+    verifyDisabledSource(play, ^(BOOL on) { control.enabled = on; }, ^NSUInteger { return sg_condensedActivated; }, @"play capsule");
+    // Disabled only as the accessibility trait on the wrapping view.
+    NSUInteger before = sg_condensedActivated;
+    play.source.accessibilityTraits |= UIAccessibilityTraitNotEnabled;
+    [play sendActionsForControlEvents:UIControlEventTouchUpInside];
+    HARNESS_CHECK(sg_condensedActivated == before && dimmedMirror(play));
+    play.source.accessibilityTraits &= ~UIAccessibilityTraitNotEnabled;
+    [play sendActionsForControlEvents:UIControlEventTouchUpInside];
+    HARNESS_CHECK(sg_condensedActivated == before + 1 && undimmedMirror(play));
+}
 
 #pragma mark - building the tree
 

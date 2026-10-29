@@ -501,18 +501,34 @@ void SGRClearCellPaint(UIView *cell) {
 // The way a tap on Spotify's own button would fire it: the first control under it, through the actions
 // it registered, and through accessibility for an Encore control that reads its touches from a gesture
 // recognizer instead -- which is every one of Spotify's own Swift controls.
-void SGRActivate(UIView *source) {
-    if (!source) return;
+static UIControl *firstControlIn(UIView *source) {
     __block UIControl *control = nil;
     SGForEachView(source, ^(UIView *v) {
         if (!control && [v isKindOfClass:UIControl.class]) control = (UIControl *)v;
     });
-    if (control && SGRFire(control)) return;
+    return control;
+}
+
+// Spotify says a button is off through the control's enabled flag or, for an Encore control that has no
+// such flag, through the not-enabled accessibility trait on it or on the view that wraps it. Not through
+// userInteractionEnabled, which the redesign's concealment changes on purpose.
+BOOL SGRSourceEnabled(UIView *source) {
+    if (!source) return NO;
+    UIControl *control = firstControlIn(source);
+    if (control && !control.enabled) return NO;
+    return !((source.accessibilityTraits | control.accessibilityTraits) & UIAccessibilityTraitNotEnabled);
+}
+
+BOOL SGRActivate(UIView *source) {
+    if (!SGRSourceEnabled(source)) return NO;
+    UIControl *control = firstControlIn(source);
+    if (control && SGRFire(control)) return YES;
     id target = control ?: source;
     static NSMutableSet<NSString *> *logged;
     NSString *name = NSStringFromClass([target class]);
     SGLogOnce(&logged, name, @"redesign kit: %@ fired through accessibility");
     [target accessibilityActivate];
+    return YES;
 }
 
 BOOL SGRFire(UIControl *control) {
