@@ -154,7 +154,7 @@ scenarios are not promoted to CI by merely compiling them.
 | `lyrics-page/build.sh` | iOS simulator settings UI. |
 | `menu/build.sh` | iOS simulator UI. |
 | `mod-settings/build.sh` | iOS simulator settings UI. |
-| `morph/build.sh` | iOS simulator visual rendering. |
+| `morph/build.sh` | iOS simulator visual rendering. `morph/check.sh --mutation` also checks the opt-in Music-like close against 9.1.90's compact transition doubles: staged geometry, velocity release, cancellation with the reversed fraction, the off path's old numbers, and a mutation. |
 | `native-player/build.sh` | iOS simulator UI. |
 | `onboarding/build.sh` | iOS simulator UI; also generates product release notes. |
 | `page-previews/build.sh` | iOS simulator: the five page settings with their preview cards, in a simulator of the run's own; asserts what VoiceOver reads and writes PNGs. |

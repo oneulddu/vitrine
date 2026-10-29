@@ -38,6 +38,15 @@
 @end
 
 static const CGFloat kScreenRadiusFallback = 55;
+// Exported here so the settings row and the transition use the same preference.
+NSString *const SGRKeyPlayerMusicClose = @"spotifyglass.redesign.player.musicClose";
+static const NSTimeInterval kMusicCloseDurationSeconds = 0.32;
+static const NSTimeInterval kMusicVelocityMaxAgeSeconds = 0.15;
+static const NSInteger kMusicCloseSteps = 20;
+static const CGPoint kMusicCloseControl1 = {0.245, 0.222};
+static const CGPoint kMusicCloseControl2 = {0.13, 1};
+static const CGPoint kMusicVelocityControl2 = {0.7, 1};
+static BOOL sMusicCloseEnabled;
 
 static CGFloat lerp(CGFloat a, CGFloat b, CGFloat t) {
     return a + (b - a) * t;
@@ -69,6 +78,12 @@ static CGFloat screenRadius(void) {
 
 @interface SGRPlayerMorph : NSObject
 @property (nonatomic, readonly) CGFloat restY;
+@property (nonatomic) CGFloat releaseVelocity; // full-player-to-card travel per second
+@property (nonatomic) CFTimeInterval releaseSampleTime;
+- (void)beginMusicClose;
+- (void)addMusicCloseKeyframes;
+- (void)sampleReleaseFromPan:(UIPanGestureRecognizer *)pan atTime:(CFTimeInterval)time;
+- (NSTimeInterval)musicReleaseDurationAt:(CGFloat)progress now:(CFTimeInterval)now;
 @end
 
 @implementation SGRPlayerMorph {
@@ -81,6 +96,10 @@ static CGFloat screenRadius(void) {
     CGColorRef _overlayColor;
     BOOL _coverHidden;
     BOOL _follows;   // 9.1.90: Spotify animates the player's frame and alpha, which the morph then only reads
+    UIView *_musicMask, *_dim;
+    CGRect _musicOpenFrame, _musicCoverFrame;
+    CGAffineTransform _musicOpenTransform;
+    CGFloat _musicOpenAlpha;
 }
 
 // Where the player's top edge rests when it has become the bar: 9.1.90's CompactOverlayTransition slides it down only
@@ -220,19 +239,109 @@ static CGFloat screenRadius(void) {
                 self->_cover.frame = CGRectOffset(lerpRect(from, to, t), sheet.origin.x, sheet.origin.y);
                 // The cover's corners are drawn under its paused shrink too.
                 self->_cover.layer.cornerRadius = lerp(from.size.width / 2, SGRRadiusArtwork * SGRPlayerCoverScale() * scale, t);
-                // Over an animated artwork the player's cover is hidden: the flown one fades out on the
+                // Over a clip or lyric stage the player's cover is hidden: the flown one fades out on the
                 // way there instead of landing on an empty slot.
-                self->_cover.alpha = SGRPlayerMotionShowing() ? 1 - ramp(0.6, 1, t) : 1;
+                self->_cover.alpha = SGRPlayerCoverHidden() ? 1 - ramp(0.6, 1, t) : 1;
             }
         }
     }];
     [CATransaction commit];
 }
 
+// Unlike the follower, these views belong to Spotify's property animator. The overlay keeps its
+// full-size bounds (and hence its layout); its view transform and a UIView mask supply the clipping.
+// No display link writes over the render server, including while the animator is paused/reversed.
+- (void)beginMusicClose {
+    UIView *overlay = _overlay;
+    _musicOpenFrame = overlay.frame;
+    _musicOpenTransform = overlay.transform;
+    _musicOpenAlpha = overlay.alpha;
+    _musicCoverFrame = SGRPlayerCoverFrameIn(_container);
+    _musicMask = [UIView new];
+    _musicMask.backgroundColor = UIColor.blackColor;
+    _musicMask.layer.cornerCurve = kCACornerCurveContinuous;
+    overlay.layer.mask = nil;
+    overlay.maskView = _musicMask;
+    _dim = [[UIView alloc] initWithFrame:_container.bounds];
+    _dim.backgroundColor = UIColor.blackColor;
+    _dim.userInteractionEnabled = NO;
+    [_container insertSubview:_dim belowSubview:_sheet];
+    if (_cover && !CGRectIsNull(_musicCoverFrame)) {
+        SGRPlayerSetCoverHidden(YES);
+        _coverHidden = YES;
+    } else {
+        [_cover removeFromSuperview];
+        _cover = nil;
+    }
+    [self applyMusicClose:0];
+}
+
+- (void)applyMusicClose:(CGFloat)p {
+    CGRect full = _container.bounds;
+    CGFloat side = ramp(0.70, 1, p), bottom = ramp(0.80, 1, p);
+    CGFloat left = lerp(CGRectGetMinX(full), CGRectGetMinX(_card), side);
+    CGFloat right = lerp(CGRectGetMaxX(full), CGRectGetMaxX(_card), side);
+    CGFloat top = lerp(CGRectGetMinY(full), CGRectGetMinY(_card), p);
+    CGFloat foot = lerp(CGRectGetMaxY(full), CGRectGetMaxY(_card), bottom);
+    CGRect sheet = CGRectMake(left, top, right - left, foot - top);
+    CGFloat radius = MIN(lerp(screenRadius(), _cardRadius, ramp(0.55, 1, p)), sheet.size.height / 2);
+    CGFloat scale = sheet.size.width / _overlay.bounds.size.width;
+    _sheet.frame = sheet;
+    _sheet.layer.cornerRadius = radius;
+    _sheet.alpha = 1;
+    _overlay.transform = CGAffineTransformMakeScale(scale, scale);
+    _overlay.center = CGPointMake(CGRectGetMidX(sheet), top + _overlay.bounds.size.height * scale / 2);
+    _musicMask.frame = CGRectMake(0, 0, sheet.size.width / scale, sheet.size.height / scale);
+    _musicMask.layer.cornerRadius = radius / scale;
+    _overlay.alpha = 1 - ramp(0.80, 1, p);
+    _dim.alpha = 0.30 * (1 - p);
+    _cover.frame = lerpRect(_musicCoverFrame, _barArtwork, p);
+    _cover.layer.cornerRadius = lerp(SGRRadiusArtwork * SGRPlayerCoverScale(), _barArtwork.size.width / 2, p);
+    _cover.alpha = SGRPlayerCoverHidden() ? ramp(0, 0.4, p) : 1;
+}
+
+- (void)addMusicCloseKeyframes {
+    [UIView animateKeyframesWithDuration:kMusicCloseDurationSeconds delay:0
+                                options:UIViewKeyframeAnimationOptionCalculationModeLinear animations:^{
+        for (NSInteger step = 1; step <= kMusicCloseSteps; step++) {
+            [UIView addKeyframeWithRelativeStartTime:(CGFloat)(step - 1) / kMusicCloseSteps
+                                   relativeDuration:1.0 / kMusicCloseSteps animations:^{
+                [self applyMusicClose:(CGFloat)step / kMusicCloseSteps];
+            }];
+        }
+    } completion:nil];
+}
+
+- (void)sampleReleaseFromPan:(UIPanGestureRecognizer *)pan atTime:(CFTimeInterval)time {
+    CGFloat travel = CGRectGetMinY(_card) - CGRectGetMinY(_container.bounds);
+    if (!pan || travel <= 0) return;
+    self.releaseVelocity = [pan velocityInView:_container].y / travel;
+    self.releaseSampleTime = time;
+}
+
+- (NSTimeInterval)musicReleaseDurationAt:(CGFloat)progress now:(CFTimeInterval)now {
+    CGFloat remaining = 1 - progress;
+    CFTimeInterval age = now - self.releaseSampleTime;
+    if (age < 0 || age > kMusicVelocityMaxAgeSeconds || remaining < 0.02 || self.releaseVelocity <= 0)
+        return 0; // Keep the fixed curve; Spotify alone decides finish versus cancel.
+    return MIN(kMusicCloseDurationSeconds, MAX(0.05, remaining / self.releaseVelocity * 1.1));
+}
+
 - (void)tearDown {
     UIView *overlay = _overlay;
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    if (_musicMask) {
+        overlay.maskView = nil;
+        overlay.transform = _musicOpenTransform;
+        overlay.frame = _musicOpenFrame;
+        overlay.alpha = _musicOpenAlpha;
+        [_dim removeFromSuperview];
+        _dim = nil;
+        _musicMask = nil;
+        // Spotify's completion restores/removes the overlay next; do not use the follower's saved frame.
+        _follows = YES;
+    }
     overlay.layer.sublayerTransform = CATransform3DIdentity;
     if (overlay.layer.mask == _mask) overlay.layer.mask = nil;
     if (!_follows) overlay.alpha = _spotifyAlpha;
@@ -363,6 +472,19 @@ static id ivarOf(id object, const char *name) {
 }
 
 static char kFollowerKey;
+static char kMusicAnimatorKey;
+// UIKit transition entry points and gesture callbacks are main-thread only. These scopes identify
+// precisely the animator being constructed/released; no unrelated UIKit animator is changed.
+static id sMusicTransition;
+static id<UIViewControllerContextTransitioning> sMusicContext;
+static BOOL sMusicClaimed;
+static UIPanGestureRecognizer *sMusicPan;
+static CFTimeInterval sMusicPanTime;
+
+static UICubicTimingParameters *musicTiming(BOOL velocityShaped) {
+    return [[UICubicTimingParameters alloc] initWithControlPoint1:kMusicCloseControl1
+                                                 controlPoint2:velocityShaped ? kMusicVelocityControl2 : kMusicCloseControl2];
+}
 
 static void followTransition(id transition, id<UIViewControllerContextTransitioning> context) {
     if (SGRReduceMotion() || !context) return;
@@ -400,19 +522,144 @@ static void followTransition(id transition, id<UIViewControllerContextTransition
     if (logged++ < 3) SGLog(@"player morph: follows CompactOverlayTransition (%@)", to.isBeingPresented ? @"open" : @"close");
 }
 
+// Check the owner's capabilities before changing either its advertised duration or its animator.
+// Ivar values are populated during setup; their declarations must already exist at the duration query.
+static BOOL musicCloseSupportedOwner(id transition, id<UIViewControllerContextTransitioning> context) {
+    if (!sMusicCloseEnabled || !context ||
+        [context viewControllerForKey:UITransitionContextToViewControllerKey].isBeingPresented || SGRReduceMotion() ||
+        context.containerView.traitCollection.horizontalSizeClass == UIUserInterfaceSizeClassRegular) return NO;
+    const char *fields[] = {"overlayView", "npbSnapshotView", "tabBarSnapshotView"};
+    for (NSUInteger i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+        Ivar field = class_getInstanceVariable(object_getClass(transition), fields[i]);
+        if (!field || ivar_getTypeEncoding(field)[0] != '@') return NO;
+    }
+    if (![transition respondsToSelector:@selector(animateTransition:)] ||
+        ![transition respondsToSelector:@selector(startInteractiveTransition:)] ||
+        ![transition respondsToSelector:@selector(transitionDuration:)]) return NO;
+    CGRect card = SGRNowPlayingCardFrameIn(context.containerView, NULL);
+    return !CGRectIsNull(card) && !CGRectIsEmpty(card);
+}
+
+static void compactTransition(id transition, id<UIViewControllerContextTransitioning> context, void (^original)(void)) {
+    id previousTransition = sMusicTransition;
+    id<UIViewControllerContextTransitioning> previousContext = sMusicContext;
+    BOOL previousClaimed = sMusicClaimed;
+    sMusicTransition = musicCloseSupportedOwner(transition, context) ? transition : nil;
+    sMusicContext = sMusicTransition ? context : nil;
+    sMusicClaimed = NO;
+    BOOL claimed;
+    @try {
+        original();
+        claimed = sMusicClaimed;
+    } @finally {
+        sMusicTransition = previousTransition;
+        sMusicContext = previousContext;
+        sMusicClaimed = previousClaimed;
+    }
+    if (!claimed) followTransition(transition, context);
+}
+
 %hook _TtC19MainUI_TabBarUIImpl24CompactOverlayTransition
+- (NSTimeInterval)transitionDuration:(id<UIViewControllerContextTransitioning>)context {
+    if (musicCloseSupportedOwner(self, context)) return kMusicCloseDurationSeconds;
+    return %orig;
+}
 - (void)animateTransition:(id<UIViewControllerContextTransitioning>)context {
-    %orig;
-    followTransition(self, context);
+    compactTransition(self, context, ^{
+        %orig;
+    });
 }
 - (void)startInteractiveTransition:(id<UIViewControllerContextTransitioning>)context {
-    %orig;
-    followTransition(self, context);
+    compactTransition(self, context, ^{
+        %orig;
+    });
 }
+%end
+
+%group SGRMusicCloseHooks
+%hook UIViewPropertyAnimator
+- (id)initWithDuration:(NSTimeInterval)duration curve:(UIViewAnimationCurve)curve animations:(void (^)(void))animations {
+    if (!NSThread.isMainThread || !sMusicTransition || sMusicClaimed ||
+        !musicCloseSupportedOwner(sMusicTransition, sMusicContext)) return %orig;
+    UIView *overlay = ivarOf(sMusicTransition, "overlayView");
+    UIView *container = sMusicContext.containerView;
+    if (!overlay || overlay != [sMusicContext viewForKey:UITransitionContextFromViewKey] || overlay.superview != container)
+        return %orig;
+    SGRPlayerMorph *morph = [[SGRPlayerMorph alloc] initWithContainer:container overlay:overlay
+        bar:ivarOf(sMusicTransition, "npbSnapshotView") barRest:CGRectZero];
+    if (!morph) return %orig;
+    sMusicClaimed = YES;
+    [morph beginMusicClose];
+    [morph sampleReleaseFromPan:sMusicPan atTime:sMusicPanTime];
+    ((UIView *)ivarOf(sMusicTransition, "tabBarSnapshotView")).alpha = 0;
+    void (^staged)(void) = ^{
+        if (animations) animations();
+        [morph addMusicCloseKeyframes];
+    };
+    // Call the other initializer on the same allocation. Raw ownership is deliberate: Logos's
+    // replacement is a C function, while init consumes +1 and may return a different object.
+    void *raw = ((void *(*)(void *, SEL, NSTimeInterval, CGPoint, CGPoint, id))objc_msgSend)(
+        (__bridge void *)self, @selector(initWithDuration:controlPoint1:controlPoint2:animations:),
+        kMusicCloseDurationSeconds, kMusicCloseControl1, kMusicCloseControl2, staged);
+    UIViewPropertyAnimator *animator = CFBridgingRelease(raw);
+    objc_setAssociatedObject(animator, &kMusicAnimatorKey, morph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // Registered before Spotify's completion: restore our paint, then let Spotify alone restore the
+    // hierarchy and call completeTransition: using transitionWasCancelled.
+    [animator addCompletion:^(__unused UIViewAnimatingPosition position) { [morph tearDown]; }];
+    return (__bridge id)CFBridgingRetain(animator);
+}
+- (void)setFractionComplete:(CGFloat)fraction {
+    SGRPlayerMorph *morph = objc_getAssociatedObject(self, &kMusicAnimatorKey);
+    [morph sampleReleaseFromPan:sMusicPan atTime:sMusicPanTime];
+    %orig;
+}
+- (void)continueAnimationWithTimingParameters:(id<UITimingCurveProvider>)parameters durationFactor:(CGFloat)factor {
+    SGRPlayerMorph *morph = objc_getAssociatedObject(self, &kMusicAnimatorKey);
+    if (!morph) {
+        %orig;
+        return;
+    }
+    [morph sampleReleaseFromPan:sMusicPan atTime:sMusicPanTime];
+    NSTimeInterval remaining = self.isReversed ? 0 :
+        [morph musicReleaseDurationAt:self.fractionComplete now:CACurrentMediaTime()];
+    %orig(musicTiming(remaining > 0), remaining > 0 ? remaining / self.duration : factor);
+}
+%end
+
+%hook _TtC19MainUI_TabBarUIImpl25CompactGestureCoordinator
+- (void)handleDismissPan:(UIPanGestureRecognizer *)pan {
+    UIPanGestureRecognizer *previous = sMusicPan;
+    CFTimeInterval previousTime = sMusicPanTime;
+    sMusicPan = pan;
+    sMusicPanTime = CACurrentMediaTime();
+    @try {
+        %orig;
+    } @finally {
+        sMusicPan = previous;
+        sMusicPanTime = previousTime;
+    }
+}
+- (void)scrollPanAction:(UIPanGestureRecognizer *)pan {
+    UIPanGestureRecognizer *previous = sMusicPan;
+    CFTimeInterval previousTime = sMusicPanTime;
+    sMusicPan = pan;
+    sMusicPanTime = CACurrentMediaTime();
+    @try {
+        %orig;
+    } @finally {
+        sMusicPan = previous;
+        sMusicPanTime = previousTime;
+    }
+}
+%end
 %end
 
 %ctor {
     if (!SGRedesignedUI()) return;
+    sMusicCloseEnabled = SGHidden(SGRKeyPlayerMusicClose);
     %init;
+    if (sMusicCloseEnabled) {
+        %init(SGRMusicCloseHooks);
+    }
     SGRequireClasses(@[@"SPTBarOverlayPresentationTransition"]);
 }

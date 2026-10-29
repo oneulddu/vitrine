@@ -38,6 +38,8 @@
 #import "Player.h"
 #import "PlayerLyricLine.h"
 
+extern NSString *const SGRKeyPlayerMusicClose;
+
 // The card's height as a share of its width, kept between the two bounds.
 static const CGFloat kCardAspect = 0.5, kCardMinHeight = 168, kCardMaxHeight = 220;
 static const CGFloat kCardRadius = 26;   // continuous, the radius of the page's own cards and then some
@@ -584,7 +586,10 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
                                                   SGRKeyPlayerRollingDigits), @"playerRollingDigits"),
                                       SGWithNew(SGOptionRow(SGL(@"settings.player.star_add.title", @"Star add button"),
                                                   SGL(@"settings.player.star_add.subtitle", @"The add button as a star, filled in the accent once the song is saved. In the player it takes the place of Plain checkmark."),
-                                                  SGRKeyPlayerStarAdd), @"playerStarAdd"), musicIcons],
+                                                  SGRKeyPlayerStarAdd), @"playerStarAdd"), musicIcons,
+                                      SGOptionRow(SGL(@"settings.player.music_close.title", @"Music-like player close"),
+                                                  SGL(@"settings.player.music_close.subtitle", @"Close into the mini player in stages. Applies after restarting Spotify."),
+                                                  SGRKeyPlayerMusicClose)],
                        SGL(@"settings.player.controls.footer", @"Volume puts a slider under the controls for this iPhone, or the speaker's while Spotify plays on another device. "
                        @"Follow the cover paints the like, shuffle and repeat in the color of the song playing.")),
         SGNotedSection(SGL(@"settings.player.mini_player.header", @"Mini player"), SGRNowPlayingBarRows(),

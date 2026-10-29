@@ -260,7 +260,7 @@ What beta.5 adds over beta.4, compared with Vitrine's code and built from behavi
 | Podcasts and audiobooks hidden on Home | Done for Home's filter chips (Redesigned/Home/HomeHeader.x): `spotifyglass.redesign.home.hidePodcasts`, shown unless set; harness/home-podcasts/. Search's category cards are deferred: rewriting the two-column grid's layout attributes overlapped on scroll, so they wait for a traced data-source boundary |
 | A full-screen cover when a song has no clip | Done (Redesigned/Player/PlayerMotion.x): `spotifyglass.redesign.player.animatedStill`, off, with a top scrim; harness/player/ `still` |
 | Page headers: covers blur and dim on scroll, the title faded under the top bar, a round artist Play, Play in the accent | Done (Redesigned/Kit/SGRHeroVeil.m, SGRHeaderInfo.m): `spotifyglass.redesign.hero.scrollVeil` and `.artist.roundPlay`, off; `spotifyglass.redesign.playInPageColour`, on; harness/album/veil-check.sh |
-| The Music app's player close | Not built yet: 9.1.90's own close animator is untraced, so it waits for a phone trace of tap, drag and cancel |
+| The Music app's player close | Done, off by default (Redesigned/Player/PlayerMorph.x): `spotifyglass.redesign.player.musicClose` stages the close inside 9.1.90's own CompactOverlayTransition animator (traced on a phone: tap, drag and cancel), lands on the measured mini player, shapes a release by its velocity and leaves cancellation to Spotify; an owner without those parts keeps Spotify's timing and the old path; harness/morph/check.sh |
 | Ambient sounds | Not taken: the recordings come from upstream's server, and the user chose to leave the feature out |
 
 ### Upstream Plus features, Vitrine's own versions (described by behavior)

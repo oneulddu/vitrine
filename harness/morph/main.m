@@ -6,6 +6,8 @@
 // artwork, the field and the log.
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import <objc/runtime.h>
+#import "../harness-fail.h"
 
 static const CGFloat kW = 402, kH = 874;
 
@@ -29,17 +31,15 @@ void SGRPlayerSetCoverHidden(BOOL hidden) { sg_cover.alpha = hidden ? 0 : 1; }
 // A playing cover at full size, and no animated artwork over it (PlayerMotion.x).
 CGFloat SGRPlayerCoverScale(void) { return 1; }
 BOOL SGRPlayerMotionShowing(void) { return NO; }
+BOOL SGRPlayerCoverHidden(void) { return NO; }
 id SGRPlayerField(void) { return nil; }
 BOOL SGRPlayerBackdropShowing(void) { return NO; }
-// PlayerArtwork.x and PlayerMotion.x, which this harness does not build: the cover fills its frame and
-// no motion picture is over it.
-CGFloat SGRPlayerCoverScale(void) { return 1; }
-BOOL SGRPlayerMotionShowing(void) { return NO; }
 UIImage *SGRNowPlayingArtwork(NSString **uri, NSString **identity) { return sg_art; }
 const CGFloat SGRRadiusArtwork = 12;
 BOOL SGRReduceMotion(void) { return NO; }
 BOOL SGRedesignedUI(void) { return YES; }
 void SGRequireClasses(NSArray *names) {}
+BOOL SGHidden(NSString *key) { return getenv("MORPH_MUSIC") && strcmp(getenv("MORPH_MUSIC"), "1") == 0; }
 
 #pragma mark - Spotify's transition, as 9.1.78 runs it
 
@@ -135,6 +135,8 @@ void SGRequireClasses(NSArray *names) {}
     self.transitioningContext = nil;
 }
 @end
+
+#import "compact.inc"
 
 #pragma mark - the page
 
@@ -284,8 +286,10 @@ static UILabel *label(NSString *text, CGRect frame, CGFloat size, UIColor *color
 @implementation AppDelegate
 - (BOOL)application:(UIApplication *)app didFinishLaunchingWithOptions:(NSDictionary *)options {
     self.window = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
-    self.window.rootViewController = [VC new];
+    BOOL checking = getenv("MORPH_CHECK") != NULL;
+    self.window.rootViewController = checking ? [UIViewController new] : [VC new];
     [self.window makeKeyAndVisible];
+    if (checking) runCompactChecks(self.window);
     return YES;
 }
 @end
