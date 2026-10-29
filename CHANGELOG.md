@@ -1,5 +1,69 @@
 # Changelog
 
+## [1.0.0-beta.24](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.23...v1.0.0-beta.24) (2026-10-29)
+
+
+### Features
+
+* Liveprog CPU 제한·시작 시간 제한 추가 ([d3866e3](https://github.com/oneulddu/vitrine/commit/d3866e3f0a195b2a70f5c9ac54edb27d4867ad3c))
+* 길게 눌러 빨리 듣기 켜기·속도 설정 추가 ([0e2659d](https://github.com/oneulddu/vitrine/commit/0e2659d03142a821b0af2c5a1022a3ec09b203e0))
+* 로컬 파일 정보 찾기 추가 ([461a9bc](https://github.com/oneulddu/vitrine/commit/461a9bcf0e34d4edc6067e81fd1ba61af96a7e69))
+* 로컬 파일로 오디오 가져오기 추가 ([8c66bc5](https://github.com/oneulddu/vitrine/commit/8c66bc5e3b05ddca10817c56b3bd4dbcd4b62efc))
+* 받은 커버·아티스트 사진 지우기 추가 ([904c247](https://github.com/oneulddu/vitrine/commit/904c2479a9aafb5d7bc32c645f3d7c1b144f2873))
+* 비주얼라이저에 Poster·Cut 가사 스타일 추가 ([d49a921](https://github.com/oneulddu/vitrine/commit/d49a921a86ac273e7fe7aed488435a4c865679ff))
+* 음악 앱처럼 플레이어 닫기 추가 ([aba7566](https://github.com/oneulddu/vitrine/commit/aba7566e64c9b374c8d0aecce61ea63941c4d19c))
+* 잠금 화면 가사 Messages·Vinyl 배치 추가 ([ca50ec3](https://github.com/oneulddu/vitrine/commit/ca50ec3defde91eff71e83b4eb09ea7e46e068ab))
+* 최소화한 미니 플레이어에 아티스트 줄 추가 ([b5fa607](https://github.com/oneulddu/vitrine/commit/b5fa607c18517ab2c1f754673a9430121212ec88))
+* 출력 기기별 효과 프리셋·헤드폰 형태 필터 추가 ([19ae25f](https://github.com/oneulddu/vitrine/commit/19ae25f95e75a70d8d6b25cf3d15fd9d746c0b89))
+* 클립 없는 곡의 전체 화면 커버 추가 ([97d348e](https://github.com/oneulddu/vitrine/commit/97d348ef962d1d0688ef8fac316a2be38ce93976))
+* 클립 없을 때 비주얼라이저·스타일 섞기 추가 ([06d76fb](https://github.com/oneulddu/vitrine/commit/06d76fbb38c3dea5db9e423395ecf2ab4f079166))
+* 페이지 헤더 스크롤 흐림·둥근 재생 버튼 추가 ([9282b1e](https://github.com/oneulddu/vitrine/commit/9282b1e4483572d1dd14a166ebc966b3ad2458b1))
+* 홈 필터에서 팟캐스트·오디오북 칩 숨기기 추가 ([1fcb58d](https://github.com/oneulddu/vitrine/commit/1fcb58d96d52d60777d95d65da23da33d0180f37))
+
+
+### Fixes
+
+* Poster·Cut 글자가 커버·제목과 겹치지 않게 함 ([c345291](https://github.com/oneulddu/vitrine/commit/c34529117721664bf30e3c7e2f655c1dcc80d843))
+* Poster·Cut 줄이 보일 때 실기기에서도 커버를 숨김 ([6b4704b](https://github.com/oneulddu/vitrine/commit/6b4704be47bd038297943aee60072d0753fd5880))
+* Sing이 미리 소리를 자르지 않고 꺼진 뒤 리버브를 멈추게 ([3f9e8c5](https://github.com/oneulddu/vitrine/commit/3f9e8c50895d4ae52c40a59ce002e48d8a2e18b9))
+* 가사 끝까지 스크롤, 빠진 줄만 다시 번역, 언어 감지를 메인 밖으로 ([514182a](https://github.com/oneulddu/vitrine/commit/514182ab9bbb2675c7a17663e8d3af55db2d1b0e))
+* 강조색 전환이 기존 컨트롤을 놓치지 않고 애니메이션마다 할당하지 않게 ([a4a429d](https://github.com/oneulddu/vitrine/commit/a4a429dc5b5e7eef0b95213f5428be413621f591))
+* 곡 도중 번역 언어를 바꾸면 이전 언어 번역을 바로 떼기 ([f9b62d7](https://github.com/oneulddu/vitrine/commit/f9b62d791107e796691991f40588c09024bc4b11))
+* 공용 protobuf 디코더에 필드 개수 한도 추가 ([6c6e97a](https://github.com/oneulddu/vitrine/commit/6c6e97a656158f6798aa9097e48f36ed179f1087))
+* 기본 강조색의 커버 따라가기와 재생 바 글자 크기 변경 ([9f2aa61](https://github.com/oneulddu/vitrine/commit/9f2aa617be3413b2d8b339ac0ec8b8cfe831e80f))
+* 늦은 AutoEq 다운로드가 새 EQ를 덮지 않고 저장 창이 새지 않게 ([0a63b8c](https://github.com/oneulddu/vitrine/commit/0a63b8ca7e6da7687f37c7488dadd8d960bdcd1c))
+* 대기 중인 메뉴 요청이 모드 패널을 Spotify 시트로 삼키지 않게 ([33df863](https://github.com/oneulddu/vitrine/commit/33df8633d4867ebf36e80926e7f992eab3de1a0d))
+* 로컬 곡 커버 갱신, 가사 가져오기·글꼴 등록을 메인 밖으로 ([484290b](https://github.com/oneulddu/vitrine/commit/484290b6d25fe0bf857590afb9c03a419667bb22))
+* 미리 받기 판정을 공용 판독기로 읽고 검색 기록의 룩 식별자 갱신 ([e4e982d](https://github.com/oneulddu/vitrine/commit/e4e982d0aa659c2f9cb10e78e9310c447f24d79f))
+* 번역 호출이 없던 파일의 화면 문구를 한국어로 연결 ([59e4a03](https://github.com/oneulddu/vitrine/commit/59e4a03732e9225121c8159bba0e6cfdd2f02acb))
+* 보관함 RTL 구분선과 한 글자 플레이리스트 제작자 이름 ([bffe6ac](https://github.com/oneulddu/vitrine/commit/bffe6ac911d03403c8e83d2556190b720a30d1a0))
+* 설정 미리보기 카드를 오른쪽→왼쪽 언어에서 좌우 반전 ([f0a128d](https://github.com/oneulddu/vitrine/commit/f0a128d22ae13e323fafd0767e375ed6272c0bfb))
+* 설정의 지금 재시작이 듣던 곡 기록을 잃지 않게 ([1498ea8](https://github.com/oneulddu/vitrine/commit/1498ea8baa582a8ff3666a52ee0887657a42307d))
+* 시각화가 가사 뒤에서 주사율을 낮추지 않고 남은 줄을 지우게 ([d118f87](https://github.com/oneulddu/vitrine/commit/d118f8747181e3f4d68cc58440406107a476a9a0))
+* 시트가 늦게 떠도 메뉴 선택이 사라지지 않게 ([0775c19](https://github.com/oneulddu/vitrine/commit/0775c19f75f7b84df5d7271a662c517e12325fde))
+* 실기기에서 음악 앱식 닫기가 켜지지 않던 문제 ([6bb9eab](https://github.com/oneulddu/vitrine/commit/6bb9eab3f7cc74d625c1a63adf480da3dfbe9992))
+* 액션 줄 미러가 Spotify가 끈 버튼을 켜진 것처럼 쏘지 않게 ([254d88a](https://github.com/oneulddu/vitrine/commit/254d88a5701670f7268f80a38b895c191e82357c))
+* 오프라인 가사 번역을 고른 언어와 맞을 때만 복원 ([dd2efb2](https://github.com/oneulddu/vitrine/commit/dd2efb2749bdd5788727ef17243319a29147b647))
+* 오프라인 가사 저장소가 공급자 번역과 출처 링크를 보관 ([8c061bc](https://github.com/oneulddu/vitrine/commit/8c061bc5db664763661f8d2e62919d95a1df9fd7))
+* 잠금화면·Live Activity가 저장된 번역을 맞게 따르고 낡은 클립을 버리게 ([66fa4ce](https://github.com/oneulddu/vitrine/commit/66fa4ce2de24a61c5a398e018709141ccc23b818))
+* 재생 기록이 꺼진 동안 들은 시간을 기록하지 않게 ([1631abd](https://github.com/oneulddu/vitrine/commit/1631abdfdffc7848e18eb5d820c6eb2abe70fea1))
+* 재생 바가 " • " 든 제목을 잘못 나누지 않게 ([9f0eb96](https://github.com/oneulddu/vitrine/commit/9f0eb967fe638afae773966e8332563e9645c252))
+* 줄바꿈된 한자어 읽기를 줄마다 나눠 표시 ([7974b31](https://github.com/oneulddu/vitrine/commit/7974b318ec535dbe7665c36491043716548f97f5))
+* 초대 링크의 pt를 지키고 광고 표시는 광고 숨기기에서만 처리 ([cb61765](https://github.com/oneulddu/vitrine/commit/cb61765e3240e1ffaf321d6fb88186a2161aa5e9))
+* 키체인 삭제 실패를 성공으로 처리하지 않게 ([12f06c2](https://github.com/oneulddu/vitrine/commit/12f06c287e93bc3f57dd7ca1f125c912d8f7ca64))
+* 한 곡 반복과 같은 곡 연속 재생을 따로 세기 ([a62652b](https://github.com/oneulddu/vitrine/commit/a62652b2ec23d109a2d75361257cc41abf2ac665))
+
+
+### Performance
+
+* PiP 가사 글꼴이 메인에서 Core Text 등록을 하지 않게 ([f476912](https://github.com/oneulddu/vitrine/commit/f47691262e160a84ea9dda205e196fa2dec27e5d))
+* PiP 설정 미리보기를 메인 밖에서 그리고 최신 것만 표시 ([f3beacf](https://github.com/oneulddu/vitrine/commit/f3beacf86a5b2af67a35373a3d1211aa43ca60b2))
+* 가사 소스 해석과 LRCLIB 고르기를 메인 스레드 밖으로 ([69adbd2](https://github.com/oneulddu/vitrine/commit/69adbd226203cb09ea7ac287c5ba7b2ae6a8474b))
+* 글꼴 화면이 등록을 기다리지 않고 늦은 로컬 커버를 반영 ([6ce7e9c](https://github.com/oneulddu/vitrine/commit/6ce7e9cae1f8551ca7b48c2ad56dab241d2b6a3a))
+* 설정 화면이 레이아웃마다 창 전체를 훑지 않게 ([06b9322](https://github.com/oneulddu/vitrine/commit/06b9322050589aeb993ec4d2838079b20d106f43))
+* 앨범 행의 E 배지를 바뀔 때만 다시 그리기 ([93ee5d6](https://github.com/oneulddu/vitrine/commit/93ee5d67b864e4c5cc4454754cfaf1a1fde40452))
+* 재생 바가 레이아웃마다 큐 전체를 다시 훑지 않게 ([fe9f14d](https://github.com/oneulddu/vitrine/commit/fe9f14d427220cd6c21bd1a20e25e02dd8eaafd6))
+
 ## [1.0.0-beta.23](https://github.com/oneulddu/vitrine/compare/v1.0.0-beta.22...v1.0.0-beta.23) (2026-10-28)
 
 
