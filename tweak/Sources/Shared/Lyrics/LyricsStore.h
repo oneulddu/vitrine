@@ -1,12 +1,14 @@
-// Offline lyrics, independent of UIKit. All file work is serialized on a utility queue;
+// Offline lyrics. All file work is serialized on a utility queue;
 // completions arrive on main. The codec does no I/O and may be used on either queue.
 #import <Foundation/Foundation.h>
-@class SGKaraokeLine;
+@class SGKaraokeLine, SGLyricsResult;
 
 NSDictionary *SGLyricsStoreEncode(NSArray<SGKaraokeLine *> *lines, NSString *credit);
 NSArray<SGKaraokeLine *> *SGLyricsStoreDecode(id record, NSString **credit);
+// Save is called on main to snapshot the provider's credit registry along with its lines.
 void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *credit);
-void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *lines, NSString *credit));
+// Loading does not register credits. The caller registers metadata only after accepting the lines.
+void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *lines, NSString *credit, SGLyricsResult *metadata));
 void SGLyricsStoreDelete(NSString *track);
 void SGLyricsStoreSize(void (^done)(unsigned long long bytes));
 void SGLyricsStoreDeleteAll(void (^done)(unsigned long long remainingBytes));

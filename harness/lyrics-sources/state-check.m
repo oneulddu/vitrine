@@ -1114,7 +1114,7 @@ static void checkPickRaces(NSUInteger only) {
             if (!pendingWrite.boolValue) {
                 drainReplies();
                 __block BOOL loaded = NO;
-                SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *credit) {
+                SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *credit, SGLyricsResult *metadata) {
                     CHECK(lines.count && [credit isEqual:keys[1]]); loaded = YES;
                 });
                 pumpUntil(^BOOL { return loaded; });
@@ -1126,7 +1126,7 @@ static void checkPickRaces(NSUInteger only) {
             CHECK([SGLyricsCreditFor(track) isEqual:keys[0]] && !SGLyricsChosenSource(track));
             drainReplies();
             __block BOOL loaded = NO;
-            SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *credit) {
+            SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *credit, SGLyricsResult *metadata) {
                 CHECK([SGKaraokeLineText(lines.firstObject) isEqual:keys[0]] && [credit isEqual:keys[0]]);
                 loaded = YES;
             });

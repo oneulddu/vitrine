@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import "Shared/Lyrics/Lyrics.h"
 #import "Shared/Lyrics/LyricsStore.h"
+#import "Shared/LyricsSources/LyricsSources.h"
+#import "credit-registry.inc"
 #import "../sha256-fixture.h"
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #c); exit(1); } } while (0)
 
@@ -28,9 +30,10 @@ static unsigned long long size(void) {
     return bytes;
 }
 
-static NSArray *load(NSString *track, NSString **credit) {
-    __block BOOL done = NO; __block NSArray *result; __block NSString *provider;
-    SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *name) {
+static NSArray<SGKaraokeLine *> *load(NSString *track, NSString **credit) {
+    __block BOOL done = NO; __block NSArray<SGKaraokeLine *> *result; __block NSString *provider;
+    SGLyricsStoreLoad(track, ^(NSArray *lines, NSString *name, SGLyricsResult *metadata) {
+        if (lines.count && metadata) SGLyricsNoteCredit(metadata);
         CHECK(NSThread.isMainThread); result = lines; provider = name; done = YES;
     });
     pump(^BOOL { return done; });
@@ -69,7 +72,7 @@ int main(void) {
         NSDictionary *record = SGLyricsStoreEncode(original, @"Fixture provider");
         NSData *data = [NSPropertyListSerialization dataWithPropertyList:record format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
         CHECK(data && !record[@"lines"][0][@"translation"] && !record[@"lines"][0][@"translationMade"]);
-        CHECK(!record[@"lines"][0][@"backing"][@"translation"] && !record[@"lines"][1][@"pronunciation"]);
+        CHECK([record[@"lines"][0][@"backing"][@"translation"] isEqual:@"오"] && !record[@"lines"][1][@"pronunciation"]);
         NSString *credit;
         NSArray<SGKaraokeLine *> *round = SGLyricsStoreDecode([NSPropertyListSerialization propertyListWithData:data options:0 format:nil error:nil], &credit);
         CHECK(round.count == 2 && [credit isEqual:@"Fixture provider"]);
@@ -79,12 +82,25 @@ int main(void) {
         CHECK([decoded.voice isEqual:@"v2"] && decoded.align == SGKaraokeAlignTrailing && decoded.timing == SGKaraokeTimingWords);
         CHECK([decoded.backing.words[0].text isEqual:@"Oh"] && [decoded.pronunciation.words[0].text isEqual:@"Hel-lo"]);
         CHECK([decoded.note isEqual:@"A reference"] && !decoded.translation && !decoded.translationMade);
+        CHECK([decoded.backing.translation isEqual:@"오"] && !decoded.backing.translationMade);
         CHECK(!round[1].pronunciation && round[1].pronunciationMade);
         CHECK(SGLyricsStoreDecode(SGLyricsStoreEncode(@[line(@"No credit", 0)], nil), &credit) && !credit);
         NSMutableDictionary *bad = [record mutableCopy]; bad[@"v"] = @2;
         CHECK(!SGLyricsStoreDecode(bad, &credit) && !credit);
         for (id garbage in @[@"garbage", @1, NSNull.null, @[], @{}, @{@"v": @1, @"lines": @[@"bad"]},
                               @{@"v": @1, @"lines": @[], @"credit": @7}]) CHECK(!SGLyricsStoreDecode(garbage, NULL));
+        // A literal v1 record predating provider metadata remains readable.
+        NSDictionary *legacy = @{@"v": @1, @"credit": @"Old provider", @"lines": @[
+            @{@"words": @[@{@"text": @"Old lyrics", @"start": @1000, @"end": @1500, @"joined": @NO}],
+              @"start": @1000, @"end": @1500, @"align": @0, @"timing": @1, @"pronunciationMade": @NO}]};
+        SGKaraokeLine *old = SGLyricsStoreDecode(legacy, &credit).firstObject;
+        CHECK([old.words.firstObject.text isEqual:@"Old lyrics"] && !old.translation && [credit isEqual:@"Old provider"]);
+        NSString *oversized = [@"界" stringByPaddingToLength:22000 withString:@"界" startingAtIndex:0];
+        for (id value in @[@42, @[], @{}, NSNull.null, oversized]) {
+            NSMutableDictionary *damaged = [legacy[@"lines"][0] mutableCopy]; damaged[@"translation"] = value;
+            SGKaraokeLine *restored = SGLyricsStoreDecode(@{@"v": @1, @"lines": @[damaged]}, NULL).firstObject;
+            CHECK([restored.words.firstObject.text isEqual:@"Old lyrics"] && !restored.translation);
+        }
         for (NSString *key in @[@"words", @"start", @"end", @"align", @"timing", @"voice", @"note", @"backing", @"pronunciation", @"pronunciationMade"]) {
             NSMutableDictionary *badLine = [record[@"lines"][0] mutableCopy]; badLine[key] = NSNull.null;
             CHECK(!SGLyricsStoreDecode(@{@"v": @1, @"lines": @[badLine]}, NULL));
@@ -131,6 +147,86 @@ int main(void) {
         CHECK([@"garbage" writeToURL:file atomically:YES encoding:NSUTF8StringEncoding error:nil]);
         CHECK(!load(@"../../track", NULL));
         SGLyricsStoreDelete(@"../../track"); CHECK(size() == 0);
+
+        SGKaraokeLine *providerLine = line(@"Bonjour", 3000);
+        providerLine.translation = @"Hello";
+        providerLine.backing = line(@"Salut", 3100); providerLine.backing.translation = @"Hi";
+        SGLyricsResult *provider = [SGLyricsResult new];
+        provider.provider = @"Linked provider"; provider.creditRequired = YES;
+        SGLyricsLink *link = [SGLyricsLink new];
+        link.title = @"Uploader: Fixture"; link.url = [NSURL URLWithString:@"https://example.org/lyrics/fixture"];
+        provider.creditLinks = @[link]; provider.karaokeLines = @[providerLine];
+        SGLyricsNoteCredit(provider);
+        SGLyricsStoreSave(@"provider", provider.karaokeLines, provider.provider);
+        unsigned long long providerBytes = size();
+        file = files(dir).firstObject;
+        NSDictionary *providerRecord = [NSPropertyListSerialization propertyListWithData:[NSData dataWithContentsOfURL:file]
+            options:0 format:nil error:nil];
+        CHECK(providerBytes == [NSData dataWithContentsOfURL:file].length);
+        CHECK([providerRecord[@"creditLinks"][0][@"url"] isEqual:@"https://example.org/lyrics/fixture"]);
+        CHECK(providerBytes > [NSPropertyListSerialization dataWithPropertyList:SGLyricsStoreEncode(@[line(@"Bonjour", 3000)], provider.provider)
+            format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil].length);
+        // Replace online metadata so only the persisted record can restore the original credit.
+        SGLyricsResult *replacement = [SGLyricsResult new]; replacement.provider = provider.provider;
+        SGLyricsLink *other = [SGLyricsLink new]; other.title = @"Other"; other.url = [NSURL URLWithString:@"https://example.org/other"];
+        replacement.creditLinks = @[other]; SGLyricsNoteCredit(replacement);
+        // An online/picked answer wins while a disk read is in flight. Rejecting that read
+        // must not replace its live credit, even when stored links are malformed.
+        for (id storedLinks in @[providerRecord[@"creditLinks"], @42]) {
+            NSMutableDictionary *staleRecord = [providerRecord mutableCopy];
+            staleRecord[@"creditLinks"] = storedLinks;
+            CHECK([[NSPropertyListSerialization dataWithPropertyList:staleRecord format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil]
+                writeToURL:file atomically:YES]);
+            __block BOOL rejected = NO;
+            SGLyricsStoreLoad(@"provider", ^(NSArray *lines, NSString *name, SGLyricsResult *metadata) {
+                CHECK(NSThread.isMainThread && lines.count == 1 && [name isEqual:@"Linked provider"]);
+                CHECK([metadata.provider isEqual:@"Linked provider"] && metadata.creditRequired);
+                rejected = YES; // The caller discards this result instead of registering its metadata.
+            });
+            SGLyricsNoteCredit(replacement);
+            pump(^BOOL { return rejected; });
+            CHECK([SGLyricsCreditLinks(@"Linked provider").firstObject.url.absoluteString isEqual:@"https://example.org/other"]);
+            CHECK(!SGLyricsCreditRequired(@"Linked provider"));
+        }
+        CHECK([[NSPropertyListSerialization dataWithPropertyList:providerRecord format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil]
+            writeToURL:file atomically:YES]);
+        NSArray<SGKaraokeLine *> *offline = load(@"provider", &credit);
+        CHECK([offline.firstObject.translation isEqual:@"Hello"] && [offline.firstObject.backing.translation isEqual:@"Hi"]);
+        CHECK(!offline.firstObject.translationMade && [credit isEqual:@"Linked provider"]);
+        CHECK([SGLyricsCreditLinks(credit).firstObject.title isEqual:@"Uploader: Fixture"]);
+        CHECK([SGLyricsCreditLinks(credit).firstObject.url.absoluteString isEqual:@"https://example.org/lyrics/fixture"]);
+        CHECK(SGLyricsCreditRequired(credit));
+        for (id value in @[@42, @{}, @[@{@"title": @"Bad", @"url": @"javascript:bad"}],
+                           @[@{@"title": oversized, @"url": @"https://example.org"}]]) {
+            NSMutableDictionary *damaged = [providerRecord mutableCopy];
+            damaged[@"credit"] = @"Damaged provider"; damaged[@"creditLinks"] = value;
+            NSData *damagedData = [NSPropertyListSerialization dataWithPropertyList:damaged
+                format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+            CHECK([damagedData writeToURL:file atomically:YES]);
+            CHECK([load(@"provider", &credit).firstObject.translation isEqual:@"Hello"]);
+            CHECK(!SGLyricsCreditLinks(credit).count && SGLyricsCreditRequired(credit));
+        }
+        NSMutableDictionary *badRequired = [providerRecord mutableCopy];
+        badRequired[@"credit"] = @"Bad required"; badRequired[@"creditRequired"] = @"yes";
+        CHECK([[NSPropertyListSerialization dataWithPropertyList:badRequired format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil]
+            writeToURL:file atomically:YES]);
+        CHECK(load(@"provider", &credit).count == 1 && !SGLyricsCreditRequired(credit));
+        CHECK([SGLyricsCreditLinks(credit).firstObject.title isEqual:@"Uploader: Fixture"]);
+        CHECK([[NSPropertyListSerialization dataWithPropertyList:legacy format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil]
+            writeToURL:file atomically:YES]);
+        CHECK([load(@"provider", &credit).firstObject.words.firstObject.text isEqual:@"Old lyrics"]);
+        CHECK(!SGLyricsCreditLinks(credit).count && !SGLyricsCreditRequired(credit));
+        SGLyricsStoreDelete(@"provider"); CHECK(size() == 0);
+
+        // A field that would push a single track past the cap is dropped, not the track.
+        NSArray *budgetLines = @[line(@"Budget", 0)];
+        NSUInteger baseBytes = [NSPropertyListSerialization dataWithPropertyList:SGLyricsStoreEncode(budgetLines, nil)
+            format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil].length;
+        ((SGKaraokeLine *)budgetLines.firstObject).translation = @"Provider translation exceeding the available bytes";
+        SGLyricsStoreConfigureForTests(dir, 1000, baseBytes);
+        SGLyricsStoreSave(@"budget", budgetLines, nil); CHECK(size() == baseBytes);
+        CHECK(load(@"budget", NULL).count == 1 && !load(@"budget", NULL).firstObject.translation);
+        SGLyricsStoreDelete(@"budget"); CHECK(size() == 0);
 
         // Count cap: five writes cross four; oldest two go, leaving newest three (90%).
         NSArray *small = @[line(@"Same", 0)];

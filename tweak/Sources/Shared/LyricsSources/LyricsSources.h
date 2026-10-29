@@ -155,6 +155,8 @@ void SGLyricsSetCredit(NSString *trackID, NSString *name);
 // does. Main queue.
 BOOL SGLyricsCreditRequired(NSString *credit);
 NSArray<SGLyricsLink *> *SGLyricsCreditLinks(NSString *text);
+// Register provider or restored offline credit metadata without selecting or keeping lyrics. Main queue.
+void SGLyricsNoteCredit(SGLyricsResult *result);
 // Opens one link at once; two or more as an action sheet held to `from`.
 void SGLyricsOpenCreditLinks(NSArray<SGLyricsLink *> *links, UIView *from);
 // Turns an install's old Musixmatch switches into an order. Called once, before anything reads one.

@@ -588,13 +588,14 @@ static void requestLyrics(NSString *trackID, BOOL tryStore, BOOL tryImported) {
         sg_storeRequests[trackID] = token;
         [sg_requested addObject:trackID];
         [sg_asking addObject:trackID];
-        SGLyricsStoreLoad(trackID, ^(NSArray<SGKaraokeLine *> *lines, NSString *credit) {
+        SGLyricsStoreLoad(trackID, ^(NSArray<SGKaraokeLine *> *lines, NSString *credit, SGLyricsResult *metadata) {
             if (sg_storeRequests[trackID] != token) return;
             [sg_storeRequests removeObjectForKey:trackID];
             [sg_asking removeObject:trackID];
             if (sg_lyrics[trackID]) return;
             if (lines.count && SGFlag(SGKeyLyricsOffline, YES)) {
                 if (!sg_lyrics) sg_lyrics = [NSMutableDictionary dictionary];
+                if (metadata) SGLyricsNoteCredit(metadata);
                 keep(trackID, lines, YES);
                 SGLyricsSetCredit(trackID, credit);
                 // Plain text was saved: Spotify is asked whether it has the song timed, as when the sources found it.

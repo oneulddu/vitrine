@@ -515,7 +515,7 @@ static BOOL named(SGLyricsQuery *query) {
 static NSMutableDictionary<NSString *, SGLyricsResult *> *sg_noted;
 static const NSUInteger kNotedCredits = 100;
 
-static void noteCredit(SGLyricsResult *result) {
+void SGLyricsNoteCredit(SGLyricsResult *result) {
     if (!result.provider.length || !(result.creditRequired || result.creditLinks.count)) return;
     if (!sg_noted) sg_noted = [NSMutableDictionary dictionary];
     if (sg_noted.count >= kNotedCredits) [sg_noted removeAllObjects];
@@ -679,7 +679,7 @@ static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyrics
         && [provider.key isEqualToString:SGImportedLRCKey] && betterLines(merged, fresh);
     if (fresh.karaokeLines.count && (pick || imported)) {
         if (!fresh.provider) fresh.provider = provider.name;
-        noteCredit(fresh);
+        SGLyricsNoteCredit(fresh);
         walk.merged = fresh;
         walk.pickedAnswered = pick;
         finish(walk);
@@ -691,7 +691,7 @@ static BOOL acceptReply(SGLyricsWalk *walk, SGLyricsProvider *provider, SGLyrics
     if (![provider.key isEqualToString:SGImportedLRCKey] &&
         ((allowed == SGLyricsTypesSynced && timing == SGKaraokeTimingNone) ||
          (allowed == SGLyricsTypesWords && timing != SGKaraokeTimingWords))) return YES;
-    noteCredit(fresh);
+    SGLyricsNoteCredit(fresh);
     if (fresh.instrumental) {
         if (walk.concurrent) {
             walk.instrumental = YES;
@@ -1079,7 +1079,7 @@ void SGLyricsKeepChosen(NSString *trackID, SGLyricsResult *result) {
         result.texts = texts;
         result.synced = SGKaraokeLinesTiming(result.karaokeLines) != SGKaraokeTimingNone;
     }
-    noteCredit(result);
+    SGLyricsNoteCredit(result);
     result.picked = YES;
     if (sg_kept.count >= kKeptTracks) [sg_kept removeAllObjects];
     sg_kept[trackID] = result;

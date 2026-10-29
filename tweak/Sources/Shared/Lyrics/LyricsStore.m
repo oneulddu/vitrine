@@ -1,5 +1,6 @@
 #import "LyricsStore.h"
 #import "Lyrics.h"
+#import "Shared/LyricsSources/LyricsSources.h"
 #import "Core/SGLog.h"
 #import "Core/SGFileHash.h"
 #import <math.h>
@@ -7,6 +8,56 @@
 // A corrupt/cyclic record cannot exhaust the stack. Real lyrics have at most a few
 // levels (lead, backing, pronunciation).
 static const NSUInteger kStoreDepth = 32;
+// Optional provider metadata is independently bounded: damage must not hide the lyrics.
+static const NSUInteger kOptionalTextBytes = 64 * 1024;
+static const NSUInteger kCreditLinkCount = 32;
+
+static NSString *optionalText(id value) {
+    if (![value isKindOfClass:NSString.class] || ![value length]
+        || [value length] > kOptionalTextBytes) return nil;
+    NSUInteger bytes = [value lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+    return bytes && bytes <= kOptionalTextBytes ? value : nil;
+}
+
+static NSURL *creditURL(id value) {
+    NSString *text = optionalText(value);
+    NSURL *url = text ? [NSURL URLWithString:text] : nil;
+    NSString *scheme = url.scheme.lowercaseString;
+    return url.host.length && ([scheme isEqual:@"https"] || [scheme isEqual:@"http"]) ? url : nil;
+}
+
+static NSArray *encodeLinks(NSArray<SGLyricsLink *> *links) {
+    if (![links isKindOfClass:NSArray.class] || !links.count || links.count > kCreditLinkCount) return nil;
+    NSMutableArray *encoded = [NSMutableArray array];
+    NSUInteger bytes = 0;
+    for (SGLyricsLink *link in links) {
+        if (![link isKindOfClass:SGLyricsLink.class] || ![link.url isKindOfClass:NSURL.class]) return nil;
+        NSString *title = optionalText(link.title), *url = link.url.absoluteString;
+        if (!title || !creditURL(url)) return nil;
+        bytes += [title lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + [url lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+        if (bytes > kOptionalTextBytes) return nil;
+        [encoded addObject:@{@"title": title, @"url": url}];
+    }
+    return encoded;
+}
+
+static NSArray<SGLyricsLink *> *decodeLinks(id records) {
+    if (![records isKindOfClass:NSArray.class] || ![records count] || [records count] > kCreditLinkCount) return nil;
+    NSMutableArray *links = [NSMutableArray array];
+    NSUInteger bytes = 0;
+    for (id item in records) {
+        if (![item isKindOfClass:NSDictionary.class]) return nil;
+        NSString *title = optionalText(item[@"title"]);
+        NSURL *url = creditURL(item[@"url"]);
+        if (!title || !url) return nil;
+        bytes += [title lengthOfBytesUsingEncoding:NSUTF8StringEncoding] + [item[@"url"] lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
+        if (bytes > kOptionalTextBytes) return nil;
+        SGLyricsLink *link = [SGLyricsLink new];
+        link.title = title; link.url = url;
+        [links addObject:link];
+    }
+    return links;
+}
 
 static NSDictionary *encodeLine(SGKaraokeLine *line, NSUInteger depth) {
     if (![line isKindOfClass:SGKaraokeLine.class] || depth > kStoreDepth) return nil;
@@ -19,6 +70,8 @@ static NSDictionary *encodeLine(SGKaraokeLine *line, NSUInteger depth) {
         @"align": @(line.align), @"timing": @(line.timing), @"pronunciationMade": @(line.pronunciationMade)} mutableCopy];
     if (line.voice) record[@"voice"] = line.voice;
     if (line.note) record[@"note"] = line.note;
+    NSString *translation = line.translationMade ? nil : optionalText(line.translation);
+    if (translation) record[@"translation"] = translation;
     if (line.backing) {
         NSDictionary *backing = encodeLine(line.backing, depth + 1);
         if (!backing) return nil;
@@ -76,6 +129,7 @@ static SGKaraokeLine *decodeLine(id record, NSUInteger depth) {
     line.words = words; line.start = [record[@"start"] integerValue]; line.end = [record[@"end"] integerValue];
     line.align = [record[@"align"] unsignedIntegerValue]; line.timing = [record[@"timing"] unsignedIntegerValue];
     line.voice = record[@"voice"]; line.note = record[@"note"];
+    line.translation = optionalText(record[@"translation"]);
     line.pronunciationMade = [record[@"pronunciationMade"] boolValue];
     if (record[@"backing"]) {
         line.backing = decodeLine(record[@"backing"], depth + 1);
@@ -164,14 +218,48 @@ static void prune(NSArray<NSDictionary *> *files, unsigned long long bytes) {
     SGLog(@"lyrics store: pruned %lu files", (unsigned long)removed);
 }
 
+// Only needed when optional metadata pushes a record over the whole-store byte cap.
+// Remove the largest optional field first, retaining the old-format payload and other fields.
+static void translationFields(NSMutableDictionary *line, NSMutableArray *fields) {
+    if (line[@"translation"]) [fields addObject:@{@"parent": line, @"key": @"translation",
+        @"bytes": @([line[@"translation"] lengthOfBytesUsingEncoding:NSUTF8StringEncoding])}];
+    if (line[@"backing"]) translationFields(line[@"backing"], fields);
+    if (line[@"pronunciation"]) translationFields(line[@"pronunciation"], fields);
+}
+
+static NSData *dataForRecord(NSMutableDictionary *record, NSError **error) {
+    NSData *data = [NSPropertyListSerialization dataWithPropertyList:record format:NSPropertyListBinaryFormat_v1_0 options:0 error:error];
+    if (!data || data.length <= sg_byteCap) return data;
+    NSMutableArray *fields = [NSMutableArray array];
+    for (NSMutableDictionary *line in record[@"lines"]) translationFields(line, fields);
+    if (record[@"creditLinks"]) {
+        NSData *links = [NSPropertyListSerialization dataWithPropertyList:record[@"creditLinks"]
+            format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+        [fields addObject:@{@"parent": record, @"key": @"creditLinks", @"bytes": @(links.length)}];
+    }
+    if (record[@"creditRequired"]) [fields addObject:@{@"parent": record, @"key": @"creditRequired", @"bytes": @1}];
+    [fields sortUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"bytes"] compare:a[@"bytes"]];
+    }];
+    for (NSDictionary *field in fields) {
+        [field[@"parent"] removeObjectForKey:field[@"key"]];
+        data = [NSPropertyListSerialization dataWithPropertyList:record format:NSPropertyListBinaryFormat_v1_0 options:0 error:error];
+        if (!data || data.length <= sg_byteCap) break;
+    }
+    return data;
+}
+
 void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *credit) {
     if (!track.length || !lines.count) return;
-    // Snapshot the model before it leaves its caller's queue; translations and generated
-    // pronunciation may subsequently be attached to those same lines.
-    NSDictionary *record = SGLyricsStoreEncode(lines, credit);
+    // The keeper calls on main, where the provider credit registry lives. Snapshot before
+    // generated translations/pronunciation can be attached; serialization and I/O stay off main.
+    NSMutableDictionary *record = [SGLyricsStoreEncode(lines, credit) mutableCopy];
+    NSArray *links = encodeLinks(SGLyricsCreditLinks(credit));
+    if (links) record[@"creditLinks"] = links;
+    if (SGLyricsCreditRequired(credit)) record[@"creditRequired"] = @YES;
     dispatch_async(storeQueue(), ^{
-        NSError *error;
-        NSData *data = record ? [NSPropertyListSerialization dataWithPropertyList:record format:NSPropertyListBinaryFormat_v1_0 options:0 error:&error] : nil;
+        NSError *error = nil;
+        NSData *data = record ? dataForRecord(record, &error) : nil;
         if (!data) { SGLog(@"lyrics store: write failed (encode): %@", error); return; }
         // A single oversized track cannot be kept, even in an empty store.
         if (data.length > sg_byteCap || !sg_countCap) return;
@@ -196,7 +284,7 @@ void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSStrin
     });
 }
 
-void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *, NSString *)) {
+void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *, NSString *, SGLyricsResult *)) {
     dispatch_async(storeQueue(), ^{
         NSURL *url = track.length ? fileFor(track) : nil;
         // Bound corrupt files before parsing them.
@@ -206,8 +294,17 @@ void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *,
         id record = data ? [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:nil error:nil] : nil;
         NSString *credit;
         NSArray *lines = SGLyricsStoreDecode(record, &credit);
+        SGLyricsResult *metadata;
+        if (lines && credit.length) {
+            metadata = [SGLyricsResult new];
+            metadata.provider = credit;
+            metadata.creditLinks = decodeLinks(record[@"creditLinks"]);
+            metadata.creditRequired = integer(record[@"creditRequired"], 0, 1) && [record[@"creditRequired"] boolValue];
+        }
         if (lines) [NSFileManager.defaultManager setAttributes:@{NSFileModificationDate: NSDate.date} ofItemAtPath:url.path error:nil];
-        dispatch_async(dispatch_get_main_queue(), ^{ done(lines, credit); });
+        dispatch_async(dispatch_get_main_queue(), ^{
+            done(lines, credit, metadata);
+        });
     });
 }
 

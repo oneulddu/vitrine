@@ -128,7 +128,9 @@ Shared:
                   provider in binary versioned plists under Library/Application Support/Vitrine/Lyrics, keyed by
                   SHA-256 of the track ID and excluded from iCloud backup. The default-on “Keep lyrics for offline
                   listening” reads these before asking any source, across relaunches and without a connection;
-                  translations and AI pronunciation stay with their own sources/stores. File work runs on one
+                  a provider's own translation lines and its credit links are kept with them (registered only once a
+                  restored answer is accepted), while generated translations and AI pronunciation stay with their own
+                  stores. File work runs on one
                   utility queue. The store caps at 1000 tracks / 30 MiB, pruning oldest-modified entries to 90%
                   of both caps at most once a minute (hits touch the date; over-budget writes during that minute
                   are skipped). Pin changes and Reload lyrics delete the old file. Turning the switch off leaves

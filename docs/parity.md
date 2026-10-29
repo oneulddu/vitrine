@@ -247,7 +247,6 @@ Judged equal, already there, or not taken, from the same round:
 
 Debt from this round:
 
-- The offline lyric store drops provider translations and credit links.
 - Kit preview parts do not mirror right to left.
 - `LibrarySettings.m` repeats the Kit title row's sizes.
 
