@@ -3,11 +3,13 @@
 #import <Foundation/Foundation.h>
 @class SGKaraokeLine, SGLyricsResult;
 
+// The codec preserves each translation's own language provenance, independently of preferences.
 NSDictionary *SGLyricsStoreEncode(NSArray<SGKaraokeLine *> *lines, NSString *credit);
 NSArray<SGKaraokeLine *> *SGLyricsStoreDecode(id record, NSString **credit);
 // Save is called on main to snapshot the provider's credit registry along with its lines.
 void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSString *credit);
 // Loading does not register credits. The caller registers metadata only after accepting the lines.
+// A specific selection at delivery discards unknown or mismatched translation languages; Any keeps them.
 void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *lines, NSString *credit, SGLyricsResult *metadata));
 void SGLyricsStoreDelete(NSString *track);
 void SGLyricsStoreSize(void (^done)(unsigned long long bytes));

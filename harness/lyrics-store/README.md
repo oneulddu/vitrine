@@ -5,6 +5,8 @@ Run from the Project root:
 ```sh
 HARNESS_BUILD_DIR=$(mktemp -d /tmp/fix-offline-lyrics.XXXXXX) sh harness/lyrics-store/build.sh
 python3 -B harness/lyrics-store/mutation-check.py
+python3 -B harness/lyrics-store/keeper-mutation-check.py
+VITRINE_STORE_ONLY=1 sh harness/lyrics-sources/state-build.sh
 ```
 
 The Mac Catalyst command-line harness runs without a simulator or network. It links
@@ -19,7 +21,18 @@ malformed/oversized optional fields, byte accounting, single-record overflow,
 oldest-first eviction, main-queue completion and binary plist storage.
 Rejected asynchronous loads leave the live credit untouched, including when the
 stored link field is malformed; accepted loads explicitly register returned metadata.
+Each translation carries its own production-time language tag, never the save-time
+preference. Unknown/Any translations stay untagged. Delivery checks each line, including
+backing/pronunciation lines, against the current selection: a specific language drops
+mismatched or unknown translations, while Any accepts them, as providers do.
+Tests cover cached English results saved under Korean, mixed per-line tags, a selection
+changed during a read and previous-format records (whose root tag is ignored).
+The raw Decode codec does not apply preferences.
+The focused keeper integration uses the actual TTML parser and its regional-language
+matching, verifies that an English saved answer permits a Korean community lookup,
+and checks Musixmatch copies stamped with the captured request language.
 The mutation check compiles isolated store copies with translation or credit-link
-persistence removed, or premature credit registration restored; each must fail at
+persistence removed, save-time relabeling restored, language filtering removed, or premature credit registration restored; each must fail at
 its corresponding behavior assertion.
+The keeper mutation separately removes Musixmatch's provenance stamping.
 Spotify's actual offline presentation and link opening remain device checks.

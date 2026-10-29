@@ -11,12 +11,25 @@
 
 static void (^sg_pinnedReply)(SGLyricsResult *);
 static NSNumber *sg_askedPin;
+static BOOL sg_observePickPreparation;
+static SGLyricsResult *observedRecordResult(NSDictionary *record) {
+    if (sg_observePickPreparation) CHECK(!NSThread.isMainThread);
+    return SGLrcLibRecordResult(record);
+}
 void HarnessGetID(NSNumber *identifier, void (^done)(SGLyricsResult *)) { sg_askedPin = identifier; sg_pinnedReply = done; }
 #define SGLrcLibGetID HarnessGetID
+#define SGLrcLibRecordResult observedRecordResult
 #define kKeptTracks kWalkKeptTracks
 #import "Shared/LyricsSources/LyricsSources.m"
 #undef kKeptTracks
 #undef SGLrcLibGetID
+#undef SGLrcLibRecordResult
+// Existing keeper tests supply prepared fixtures directly; the asynchronous selection contract is
+// exercised separately below with the real long Lyricsfile parser.
+static BOOL SGLyricsPin(NSString *track, NSDictionary *record) {
+    NSDictionary *raw = [record[@"record"] isKindOfClass:NSDictionary.class] ? record[@"record"] : record;
+    return pinResult(track, raw, SGLrcLibRecordResult(raw));
+}
 // Hold only the keeper/watcher clocks during the background-skip check. Other checks use real time.
 static NSMutableArray<dispatch_block_t> *sg_heldClocks;
 static void holdableAfter(dispatch_time_t when, dispatch_queue_t queue, dispatch_block_t block) {
@@ -26,8 +39,7 @@ static void holdableAfter(dispatch_time_t when, dispatch_queue_t queue, dispatch
 #define dispatch_after holdableAfter
 static BOOL sg_aheadAllowed = YES;
 static BOOL optionalForWatcher(BOOL expensive) {
-    id enabled = [NSUserDefaults.standardUserDefaults objectForKey:SGKeyLoadAhead];
-    return sg_aheadAllowed && (!enabled || [enabled boolValue]);
+    return sg_aheadAllowed && SGEnabled(SGKeyLoadAhead);
 }
 static NSMutableArray<NSString *> *sg_prefetched;
 static void observedPrefetch(NSString *track) {
@@ -92,8 +104,12 @@ NSString *SGLyricsLeadArtist(NSString *artist) { return artist; }
 static BOOL sg_testTranslations;
 static void (^sg_translationReply)(NSDictionary *);
 static NSArray *sg_translatedLines;
+static NSString *sg_translationRequestedLanguage;
 void SGMusixmatchTranslations(NSString *track, NSString *language, void (^done)(NSDictionary *)) {
-    if (sg_testTranslations) sg_translationReply = done;
+    if (sg_testTranslations) {
+        sg_translationRequestedLanguage = language;
+        sg_translationReply = done;
+    }
     else done(nil);
 }
 NSArray *SGMusixmatchTranslatedLines(NSArray *lines, NSDictionary *byLine) { return sg_translatedLines; }
@@ -1484,6 +1500,104 @@ static void checkTranslationDelivery(void) {
     puts("translation delivery: late provider reply kept, existing translation suppresses another request");
 }
 
+static void checkTTMLTranslationProvenance(void) {
+    NSString *xml = @"<tt><head><metadata><iTunesMetadata><translations>"
+        "<translation xml:lang=\"en-US\"><text for=\"L1\">Hello</text></translation>"
+        "<translation xml:lang=\"ko-KR\"><text for=\"L1\">안녕</text></translation>"
+        "</translations></iTunesMetadata></metadata></head><body><div>"
+        "<p key=\"L1\" begin=\"1s\" end=\"2s\">Bonjour</p></div></body></tt>";
+    // The stored field is the requested filter (en), not the matched document tag (en-US).
+    for (NSArray *fixture in @[@[@7, @"Hello", @"en"], @[@18, @"안녕", @"ko"],
+                              @[@0, @"Hello", NSNull.null], @[@10, NSNull.null, NSNull.null]]) {
+        SGSetInt(SGKeyLyricsTranslationLanguage, [fixture[0] integerValue]);
+        __block BOOL finished = NO;
+        SGLyricsTransform(^id {
+            CHECK(!NSThread.isMainThread);
+            return SGTTMLResult(xml, NO);
+        }, ^(SGLyricsResult *result) {
+            CHECK(NSThread.isMainThread);
+            SGKaraokeLine *line = result.karaokeLines.firstObject;
+            CHECK(line && [(line.translation ?: NSNull.null) isEqual:fixture[1]]);
+            CHECK([(line.translationLanguage ?: NSNull.null) isEqual:fixture[2]]);
+            if ([fixture[0] isEqual:@7]) {
+                SGSetInt(SGKeyLyricsTranslationLanguage, 18);
+                SGKaraokeLine *copy = [line copy];
+                CHECK([copy.translationLanguage isEqual:@"en"]);
+            }
+            finished = YES;
+        });
+        pumpUntil(^BOOL { return finished; });
+    }
+    [sg_testDefaults removeObjectForKey:SGKeyLyricsTranslationLanguage];
+    SGPrefsChanged();
+    puts("TTML provenance: worker reads, regional filter tags, Any/unknown and copied origin passed");
+}
+
+static void checkCommunityTranslationProvenance(void) {
+    SGSetInt(SGKeyLyricsTranslationLanguage, 7);
+    sg_testTranslations = YES;
+    NSArray<SGKaraokeLine *> *lines = SGKaraokeStaticLines(@[@"Original", @"Unmatched"]);
+    sg_translationReply = nil;
+    SGKaraokeKeepLines(@"community-provenance", lines);
+    CHECK(sg_translationReply != nil);
+    SGKaraokeLine *translated = [lines.firstObject copy]; translated.translation = @"Translated";
+    sg_translatedLines = @[translated, lines[1]];
+    SGSetInt(SGKeyLyricsTranslationLanguage, 18);
+    sg_translationReply(@{@"Original": @"Translated"});
+    NSArray<SGKaraokeLine *> *communityLines = SGKaraokeLinesForTrack(@"community-provenance");
+    CHECK([communityLines.firstObject.translationLanguage isEqual:@"en"]);
+    CHECK(!lines.firstObject.translationLanguage && !communityLines[1].translationLanguage);
+    sg_testTranslations = NO; sg_translationReply = nil; sg_translatedLines = nil;
+    SGKaraokeForgetLyrics(@"community-provenance");
+    [sg_testDefaults removeObjectForKey:SGKeyLyricsTranslationLanguage];
+    SGPrefsChanged();
+    puts("Musixmatch provenance: new copies keep the requested language after a preference change");
+}
+
+static void checkStoredTranslationLanguage(void) {
+    checkCommunityTranslationProvenance();
+    checkTTMLTranslationProvenance();
+    NSString *xml = @"<tt><head><metadata><iTunesMetadata><translations>"
+        "<translation xml:lang=\"en-US\"><text for=\"L1\">Hello</text></translation>"
+        "<translation xml:lang=\"ko-KR\"><text for=\"L1\">안녕</text></translation>"
+        "</translations></iTunesMetadata></metadata></head><body><div>"
+        "<p key=\"L1\" begin=\"1s\" end=\"2s\">Bonjour</p></div></body></tt>";
+    [sg_testDefaults setBool:YES forKey:SGKeyLyricsOffline];
+    sg_testTranslations = YES;
+    for (NSNumber *selection in @[@7, @18]) { // persisted English and Korean selections
+        [sg_testDefaults setInteger:7 forKey:SGKeyLyricsTranslationLanguage];
+        NSArray<SGKaraokeLine *> *lines = SGTTMLLines(xml);
+        CHECK([lines.firstObject.translation isEqual:@"Hello"]);
+        NSString *track = NSUUID.UUID.UUIDString;
+        // Cached English lines may be reused under Korean before the store ever sees them.
+        SGSetInt(SGKeyLyricsTranslationLanguage, selection.integerValue);
+        SGLyricsStoreSave(track, lines, @"TTML fixture");
+        sg_translationReply = nil; sg_translationRequestedLanguage = nil;
+        SGKaraokeRequestLyrics(track);
+        pumpUntil(^BOOL { return SGKaraokeLinesForTrack(track) != nil; });
+        SGKaraokeLine *kept = SGKaraokeLinesForTrack(track).firstObject;
+        CHECK([SGKaraokeLineText(kept) isEqual:@"Bonjour"] && kept.start == 1000 && kept.end == 2000);
+        if (selection.integerValue == 7) {
+            CHECK([kept.translation isEqual:@"Hello"] && !sg_translationReply);
+        } else {
+            CHECK(!kept.translation && [sg_translationRequestedLanguage isEqual:@"ko"] && sg_translationReply);
+            CHECK([SGTTMLLines(xml).firstObject.translation isEqual:@"안녕"]);
+            SGKaraokeLine *translated = [kept copy]; translated.translation = @"안녕";
+            sg_translatedLines = @[translated];
+            sg_translationReply(@{@"Bonjour": @"안녕"});
+            CHECK([SGKaraokeLinesForTrack(track).firstObject.translation isEqual:@"안녕"]);
+            CHECK([SGKaraokeLinesForTrack(track).firstObject.translationLanguage isEqual:@"ko"]);
+        }
+        SGKaraokeForgetLyrics(track);
+        SGLyricsStoreDelete(track);
+    }
+    sg_testTranslations = NO; sg_translationReply = nil; sg_translatedLines = nil;
+    sg_translationRequestedLanguage = nil;
+    [sg_testDefaults removeObjectForKey:SGKeyLyricsTranslationLanguage];
+    [sg_testDefaults setBool:NO forKey:SGKeyLyricsOffline];
+    puts("stored translation language: TTML regional tags, matching cache and Korean community lookup passed");
+}
+
 static void checkTTMLResult(void) {
     NSString *xml = @"<tt><body><div>"
         "<p begin=\"5s\" end=\"6s\"><span begin=\"5s\" end=\"6s\">Later</span></p>"
@@ -1528,6 +1642,80 @@ static void checkLRCProjectionPaths(void) {
         CHECK(!SGLrcLibRecordResult(@{@"hasWordSync": @YES, @"lyricsfile": empty}));
     }
     puts("LRCLIB projection: line timing, literal word tags, mixed Lyricsfile timing and empty inputs passed");
+}
+
+static void checkAsyncLRCLIBPick(void) {
+    NSMutableString *file = [NSMutableString stringWithString:@"version: '1.0'\nlines:\n"];
+    for (NSUInteger i = 0; i < 1500; i++) {
+        [file appendFormat:@"- text: Word\n  start_ms: %lu\n  end_ms: %lu\n  words:\n  - text: Word\n    start_ms: %lu\n    end_ms: %lu\n",
+            i * 1000, i * 1000 + 500, i * 1000, i * 1000 + 500];
+    }
+    NSDictionary *longRecord = @{@"id": @8801, @"hasWordSync": @YES, @"lyricsfile": [file copy]};
+    NSString *track = @"async-lrclib-pick";
+    sg_observePickPreparation = YES;
+    __block NSUInteger replies = 0, notifications = 0;
+    id observer = [NSNotificationCenter.defaultCenter addObserverForName:SGLyricsPinDidChangeNotification object:track queue:nil usingBlock:^(NSNotification *note) {
+        CHECK(NSThread.isMainThread);
+        notifications++;
+    }];
+    SGLyricsPickRecord(track, longRecord, nil, ^(BOOL pinned) {
+        CHECK(NSThread.isMainThread && pinned);
+        NSArray<SGKaraokeLine *> *lines = SGKaraokeLinesForTrack(track);
+        CHECK(lines.count == 1500 && lines.firstObject.timing == SGKaraokeTimingWords);
+        CHECK(lines.lastObject.words.firstObject.start == 1499000);
+        CHECK([SGKaraokeLineText(lines.firstObject) isEqual:@"Word"]);
+        replies++;
+    });
+    CHECK(!SGLyricsPinnedID(track));
+    pumpUntil(^BOOL { return replies == 1; });
+    CHECK(notifications == 1);
+    // Both requests start before main can receive either completion; only the second may pin.
+    SGLyricsPickRecord(track, longRecord, nil, ^(BOOL pinned) {
+        CHECK(NSThread.isMainThread && !pinned);
+        replies++;
+    });
+    SGLyricsPickRecord(track, @{@"id": @8802, @"syncedLyrics": @"[00:01]Newest"}, nil, ^(BOOL pinned) {
+        CHECK(NSThread.isMainThread && pinned);
+        replies++;
+    });
+    pumpUntil(^BOOL { return replies == 3; });
+    CHECK(notifications == 2 && [SGLyricsPinnedID(track) isEqual:@8802]);
+    CHECK([SGKaraokeLineText(SGKaraokeLinesForTrack(track).firstObject) isEqual:@"Newest"]);
+    // Dismissing/searching away from the picker must also reject a still-latest selection.
+    SGLyricsPickRecord(track, longRecord, ^BOOL { CHECK(NSThread.isMainThread); return NO; }, ^(BOOL pinned) {
+        CHECK(NSThread.isMainThread && !pinned);
+        replies++;
+    });
+    pumpUntil(^BOOL { return replies == 4; });
+    CHECK(notifications == 2 && [SGLyricsPinnedID(track) isEqual:@8802]);
+    sg_observePickPreparation = NO;
+    [NSNotificationCenter.defaultCenter removeObserver:observer];
+    // Remove only this fixture, without starting a fresh source walk through Unpin.
+    SGKaraokeForgetLyrics(track);
+    [sg_kept removeObjectForKey:track];
+    @synchronized (sg_pins) { [sg_pins removeObjectForKey:track]; }
+    puts("LRCLIB picks: long worker preparation, main delivery, superseded and dismissed selections passed");
+}
+
+static void checkStockPreferences(void) {
+    NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
+    NSArray *order = [defaults arrayForKey:SGKeyLyricsProviders];
+    [defaults removeObjectForKey:SGKeyLyricsProviders];
+    for (NSArray *fixture in @[@[@YES, @NO], @[@NO, @YES], @[@"1", @NO], @[@"0", @YES], @[@[], @YES], @[@{}, @YES]]) {
+        [defaults setObject:fixture[0] forKey:SGKeyStock];
+        [defaults removeObjectForKey:SGKeyLoadAhead];
+        SGPrefsChanged();
+        CHECK((SGLyricsOrder().count > 0) == [fixture[1] boolValue]);
+        CHECK(optionalForWatcher(NO) == [fixture[1] boolValue]);
+    }
+    [defaults removeObjectForKey:SGKeyStock];
+    [defaults setObject:@[] forKey:SGKeyLoadAhead];
+    SGPrefsChanged();
+    CHECK(optionalForWatcher(NO));
+    [defaults removeObjectForKey:SGKeyLoadAhead];
+    if (order) [defaults setObject:order forKey:SGKeyLyricsProviders];
+    SGPrefsChanged();
+    puts("source defaults: stock marker and Load ahead share typed preference accessors");
 }
 
 static void checkHeaderOrigin(void) {
@@ -1578,10 +1766,10 @@ static void checkUpNext(void) {
     StateUpcomingTrack *a = track(@"ahead-current"), *b = track(@"ahead-old"), *c = track(@"ahead-new");
     state.track = (id)a; state.future = @[b];
     sg_fixtureState = (id)state;
-    [NSUserDefaults.standardUserDefaults setBool:NO forKey:SGKeyLoadAhead];
+    SGSetEnabled(SGKeyLoadAhead, NO);
     [watcher playerStateDidChange:(id)state];
     CHECK(([sg_prefetched isEqual:@[@"ahead-current"]]));
-    [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGKeyLoadAhead];
+    SGSetEnabled(SGKeyLoadAhead, YES);
     [watcher playerUpNextDidChange:(id)state];
     CHECK(([sg_prefetched isEqual:@[@"ahead-current", @"ahead-old"]]));
     state.future = @[c];
@@ -1646,6 +1834,7 @@ int main(void) {
         if (!aheadOnly) {
             checkLanguageStore();
             checkAskModeMigration();
+            checkStockPreferences();
         }
         [defaults setObject:@[@"musixmatch"] forKey:SGKeyLyricsProviders];
         [defaults setInteger:250 forKey:SGKeyLyricsDelay];
@@ -1654,9 +1843,12 @@ int main(void) {
         sg_requested = [NSMutableSet set]; sg_asking = [NSMutableSet set]; sg_looking = [NSMutableSet set];
         sg_losses = [NSMutableDictionary dictionary]; sg_ownSources = YES;
         sg_lastSeenID = @"song";
+        if (getenv("VITRINE_STORE_ONLY")) { checkStoredTranslationLanguage(); return 0; }
+        checkAsyncLRCLIBPick();
         checkUpNext();
         if (aheadOnly) { puts("lyrics up-next: replacement, coalescing, stale result and foreground gate passed"); return 0; }
         checkTranslationDelivery();
+        checkStoredTranslationLanguage();
         checkMissingRecovery();
         checkSpicyCancellation();
         checkCompletedBounds();

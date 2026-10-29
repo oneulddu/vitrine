@@ -72,6 +72,8 @@ static NSDictionary *encodeLine(SGKaraokeLine *line, NSUInteger depth) {
     if (line.note) record[@"note"] = line.note;
     NSString *translation = line.translationMade ? nil : optionalText(line.translation);
     if (translation) record[@"translation"] = translation;
+    NSString *language = translation ? optionalText(line.translationLanguage) : nil;
+    if (language) record[@"translationLanguage"] = language;
     if (line.backing) {
         NSDictionary *backing = encodeLine(line.backing, depth + 1);
         if (!backing) return nil;
@@ -130,6 +132,7 @@ static SGKaraokeLine *decodeLine(id record, NSUInteger depth) {
     line.align = [record[@"align"] unsignedIntegerValue]; line.timing = [record[@"timing"] unsignedIntegerValue];
     line.voice = record[@"voice"]; line.note = record[@"note"];
     line.translation = optionalText(record[@"translation"]);
+    line.translationLanguage = line.translation ? optionalText(record[@"translationLanguage"]) : nil;
     line.pronunciationMade = [record[@"pronunciationMade"] boolValue];
     if (record[@"backing"]) {
         line.backing = decodeLine(record[@"backing"], depth + 1);
@@ -222,7 +225,8 @@ static void prune(NSArray<NSDictionary *> *files, unsigned long long bytes) {
 // Remove the largest optional field first, retaining the old-format payload and other fields.
 static void translationFields(NSMutableDictionary *line, NSMutableArray *fields) {
     if (line[@"translation"]) [fields addObject:@{@"parent": line, @"key": @"translation",
-        @"bytes": @([line[@"translation"] lengthOfBytesUsingEncoding:NSUTF8StringEncoding])}];
+        @"bytes": @([line[@"translation"] lengthOfBytesUsingEncoding:NSUTF8StringEncoding]
+            + [line[@"translationLanguage"] lengthOfBytesUsingEncoding:NSUTF8StringEncoding])}];
     if (line[@"backing"]) translationFields(line[@"backing"], fields);
     if (line[@"pronunciation"]) translationFields(line[@"pronunciation"], fields);
 }
@@ -243,6 +247,7 @@ static NSData *dataForRecord(NSMutableDictionary *record, NSError **error) {
     }];
     for (NSDictionary *field in fields) {
         [field[@"parent"] removeObjectForKey:field[@"key"]];
+        if ([field[@"key"] isEqual:@"translation"]) [field[@"parent"] removeObjectForKey:@"translationLanguage"];
         data = [NSPropertyListSerialization dataWithPropertyList:record format:NSPropertyListBinaryFormat_v1_0 options:0 error:error];
         if (!data || data.length <= sg_byteCap) break;
     }
@@ -284,6 +289,17 @@ void SGLyricsStoreSave(NSString *track, NSArray<SGKaraokeLine *> *lines, NSStrin
     });
 }
 
+static void filterTranslations(SGKaraokeLine *line, NSString *wanted) {
+    // Any accepts whatever the provider supplied, including an unknown language.
+    if (wanted.length && (!line.translationLanguage.length
+        || [line.translationLanguage caseInsensitiveCompare:wanted] != NSOrderedSame)) {
+        line.translation = nil;
+        line.translationLanguage = nil;
+    }
+    if (line.backing) filterTranslations(line.backing, wanted);
+    if (line.pronunciation) filterTranslations(line.pronunciation, wanted);
+}
+
 void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *, NSString *, SGLyricsResult *)) {
     dispatch_async(storeQueue(), ^{
         NSURL *url = track.length ? fileFor(track) : nil;
@@ -303,6 +319,9 @@ void SGLyricsStoreLoad(NSString *track, void (^done)(NSArray<SGKaraokeLine *> *,
         }
         if (lines) [NSFileManager.defaultManager setAttributes:@{NSFileModificationDate: NSDate.date} ofItemAtPath:url.path error:nil];
         dispatch_async(dispatch_get_main_queue(), ^{
+            // Check at delivery, not on the I/O queue: the selection may change during a read.
+            NSString *wanted = SGLyricsTranslationLanguage();
+            for (SGKaraokeLine *line in lines) filterTranslations(line, wanted);
             done(lines, credit, metadata);
         });
     });

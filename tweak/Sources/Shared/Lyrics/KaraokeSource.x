@@ -220,6 +220,10 @@ static void translate(NSString *track) {
         NSArray<SGKaraokeLine *> *kept = sg_lyrics[track];
         if (!byLine || SGLyricsHasTranslations(kept)) return;
         NSArray<SGKaraokeLine *> *translated = SGMusixmatchTranslatedLines(kept, byLine);
+        for (NSUInteger i = 0; i < translated.count; i++) {
+            SGKaraokeLine *line = translated[i];
+            if (line != kept[i]) line.translationLanguage = language;
+        }
         if (translated) sg_lyrics[track] = translated;
     });
 }

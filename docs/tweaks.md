@@ -129,7 +129,10 @@ Shared:
                   SHA-256 of the track ID and excluded from iCloud backup. The default-on “Keep lyrics for offline
                   listening” reads these before asking any source, across relaunches and without a connection;
                   a provider's own translation lines and its credit links are kept with them (registered only once a
-                  restored answer is accepted), while generated translations and AI pronunciation stay with their own
+                  restored answer is accepted). Each translation line keeps the language it was picked under
+                  (SGKaraokeLine.translationLanguage); when a specific Translation language is chosen, restored lines
+                  whose language differs or is unknown lose their translation and keep the lyrics, so the source
+                  for the chosen language is still asked. Under Any they are all kept. Generated translations and AI pronunciation stay with their own
                   stores. File work runs on one
                   utility queue. The store caps at 1000 tracks / 30 MiB, pruning oldest-modified entries to 90%
                   of both caps at most once a minute (hits touch the date; over-budget writes during that minute
@@ -819,7 +822,9 @@ Shared:
 
     ListeningStats/ listening stats kept on the phone (ListeningStats.h lists its files): each music track timed while
                   it plays through PlayerState's observer and written to a text log in Application Support once it ran 30 s
-                  or half the track (ListeningStats.x), Spotify's data export read in, either shape, loose, zipped or from a
+                  or half the track (ListeningStats.x; a track repeated on repeat one or queued twice in a row keeps its
+                  URI but gets a new playbackId, which starts a new play, so each lap counts and a seek does not split one),
+                  Spotify's data export read in, either shape, loose, zipped or from a
                   selected folder, and Vitrine's own versioned JSON history imported or exported without an account. Plays
                   already there are skipped (SGPlayLog.m); input is bounded to 64 MiB per JSON, 256 MiB total and one million
                   plays. Its page leads with the current and best day streak and their dates, then a calendar week, month or

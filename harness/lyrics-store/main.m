@@ -6,6 +6,9 @@
 #import "../sha256-fixture.h"
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAILED line %d: %s\n", __LINE__, #c); exit(1); } } while (0)
 
+static NSString *sg_translationLanguage;
+NSString *SGLyricsTranslationLanguage(void) { return sg_translationLanguage; }
+
 static SGKaraokeLine *line(NSString *text, NSInteger start) {
     SGKaraokeWord *a = [SGKaraokeWord new], *b = [SGKaraokeWord new];
     a.text = text; a.start = start; a.end = start + 300;
@@ -60,8 +63,94 @@ static void ageAll(NSURL *dir, NSTimeInterval time) {
         ofItemAtPath:url.path error:nil]);
 }
 
+static void checkTranslationLanguage(void) {
+    NSURL *dir = temp();
+    SGLyricsStoreConfigureForTests(dir, 1000, 30 * 1024 * 1024);
+    SGKaraokeLine *source = line(@"Bonjour", 1000);
+    source.translation = @"Hello"; source.translationLanguage = @"en";
+    source.backing = line(@"Salut", 1100); source.backing.translation = @"Hi"; source.backing.translationLanguage = @"en";
+    source.pronunciation = line(@"Bon-zhoor", 1000); source.pronunciation.translation = @"Reading translation";
+    source.pronunciation.translationLanguage = @"en";
+    // Reuse an English provider answer after changing the preference: saving cannot relabel it.
+    sg_translationLanguage = @"ko";
+    SGLyricsStoreSave(@"language", @[source], @"Language provider");
+    size();
+    NSURL *file = files(dir).firstObject;
+    NSDictionary *record = [NSPropertyListSerialization propertyListWithData:[NSData dataWithContentsOfURL:file]
+        options:0 format:nil error:nil];
+    CHECK([record[@"lines"][0][@"translationLanguage"] isEqual:@"en"]);
+    SGKaraokeLine *reused = load(@"language", NULL).firstObject;
+    CHECK(reused && !reused.translation && !reused.backing.translation && !reused.pronunciation.translation);
+    sg_translationLanguage = @"en";
+    SGKaraokeLine *matched = load(@"language", NULL).firstObject;
+    CHECK([matched.translation isEqual:@"Hello"] && [matched.backing.translation isEqual:@"Hi"]);
+    CHECK([matched.pronunciation.translation isEqual:@"Reading translation"]);
+    CHECK([matched.translationLanguage isEqual:@"en"] && [matched.backing.translationLanguage isEqual:@"en"]);
+
+    // The selection changes while the read is pending, before its main-queue delivery.
+    __block BOOL delivered = NO;
+    SGLyricsStoreLoad(@"language", ^(NSArray<SGKaraokeLine *> *lines, NSString *credit, SGLyricsResult *metadata) {
+        SGKaraokeLine *changed = lines.firstObject;
+        CHECK(!changed.translation && !changed.backing.translation && !changed.pronunciation.translation);
+        CHECK([changed.words.firstObject.text isEqual:@"Bonjour"] && changed.start == 1000 && changed.end == 1500);
+        CHECK([changed.pronunciation.words.firstObject.text isEqual:@"Bon-zhoor"]);
+        CHECK([credit isEqual:@"Language provider"] && [metadata.provider isEqual:@"Language provider"]);
+        delivered = YES;
+    });
+    sg_translationLanguage = @"ko";
+    pump(^BOOL { return delivered; });
+
+    // Each nested line is filtered by its own provenance, not the lead line's language.
+    source.backing.translation = @"안녕"; source.backing.translationLanguage = @"ko";
+    SGLyricsStoreSave(@"language", @[source], @"Language provider");
+    SGKaraokeLine *mixed = load(@"language", NULL).firstObject;
+    CHECK(!mixed.translation && [mixed.backing.translation isEqual:@"안녕"] && !mixed.pronunciation.translation);
+    source.backing.translation = @"Hi"; source.backing.translationLanguage = @"en";
+
+    // Missing tags are the previous format; malformed/oversized tags also lose only translations.
+    sg_translationLanguage = @"en";
+    NSString *oversized = [@"x" stringByPaddingToLength:65537 withString:@"x" startingAtIndex:0];
+    for (id language in @[NSNull.null, @42, @[], oversized]) {
+        NSData *data = [NSPropertyListSerialization dataWithPropertyList:record format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+        NSMutableDictionary *unknown = [NSPropertyListSerialization propertyListWithData:data
+            options:NSPropertyListMutableContainers format:nil error:nil];
+        NSMutableDictionary *lead = unknown[@"lines"][0];
+        for (NSMutableDictionary *item in @[lead, lead[@"backing"], lead[@"pronunciation"]]) {
+            if (language == NSNull.null) [item removeObjectForKey:@"translationLanguage"];
+            else item[@"translationLanguage"] = language;
+        }
+        // The obsolete root field was a save-time preference, not trustworthy provenance.
+        unknown[@"translationLanguage"] = @"en";
+        CHECK([[NSPropertyListSerialization dataWithPropertyList:unknown format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil]
+            writeToURL:file atomically:YES]);
+        SGKaraokeLine *restored = load(@"language", NULL).firstObject;
+        CHECK(restored && !restored.translation && !restored.backing.translation && !restored.pronunciation.translation);
+        CHECK([restored.words.firstObject.text isEqual:@"Bonjour"] && restored.words.firstObject.start == 1000);
+        sg_translationLanguage = nil;
+        CHECK([load(@"language", NULL).firstObject.translation isEqual:@"Hello"]);
+        sg_translationLanguage = @"en";
+    }
+    // Any/unknown provider answers stay untagged even when saved under a specific preference.
+    source.translationLanguage = nil; source.backing.translationLanguage = nil; source.pronunciation.translationLanguage = nil;
+    sg_translationLanguage = @"ko";
+    SGLyricsStoreSave(@"language", @[source], @"Language provider");
+    size();
+    NSDictionary *untagged = [NSPropertyListSerialization propertyListWithData:[NSData dataWithContentsOfURL:file] options:0 format:nil error:nil];
+    CHECK(!untagged[@"lines"][0][@"translationLanguage"]);
+    sg_translationLanguage = nil;
+    CHECK([load(@"language", NULL).firstObject.translation isEqual:@"Hello"]);
+    sg_translationLanguage = @"ko";
+    CHECK(!load(@"language", NULL).firstObject.translation);
+    sg_translationLanguage = nil;
+    __block BOOL cleared = NO;
+    SGLyricsStoreDeleteAll(^(unsigned long long remaining) { CHECK(remaining == 0); cleared = YES; });
+    pump(^BOOL { return cleared; });
+    puts("translation language: cached provenance, per-line filtering, changed selection, legacy and Any records passed");
+}
+
 int main(void) {
     @autoreleasepool {
+        checkTranslationLanguage();
         SGKaraokeLine *lead = line(@"Hello", 1000);
         lead.backing = line(@"Oh", 1100); lead.pronunciation = line(@"Hel-lo", 1000);
         lead.note = @"A reference"; lead.translation = @"안녕"; lead.translationMade = YES;
@@ -223,6 +312,7 @@ int main(void) {
         NSUInteger baseBytes = [NSPropertyListSerialization dataWithPropertyList:SGLyricsStoreEncode(budgetLines, nil)
             format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil].length;
         ((SGKaraokeLine *)budgetLines.firstObject).translation = @"Provider translation exceeding the available bytes";
+        ((SGKaraokeLine *)budgetLines.firstObject).translationLanguage = @"en";
         SGLyricsStoreConfigureForTests(dir, 1000, baseBytes);
         SGLyricsStoreSave(@"budget", budgetLines, nil); CHECK(size() == baseBytes);
         CHECK(load(@"budget", NULL).count == 1 && !load(@"budget", NULL).firstObject.translation);

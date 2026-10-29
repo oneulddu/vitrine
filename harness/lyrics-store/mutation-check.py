@@ -8,12 +8,18 @@ root = pathlib.Path(__file__).resolve().parents[2]
 source = (root / "tweak/Sources/Shared/Lyrics/LyricsStore.m").read_text()
 mutations = [
     ("translations", 'if (translation) record[@"translation"] = translation;',
-     '(void)translation;', 'record[@"lines"][0][@"backing"][@"translation"]'),
+     '(void)translation;', '[matched.translation isEqual:@"Hello"]'),
     ("credit-links", 'if (links) record[@"creditLinks"] = links;',
      '(void)links;', 'providerRecord[@"creditLinks"][0][@"url"]'),
     ("rejected-load-credit", 'done(lines, credit, metadata);',
      'if (metadata) SGLyricsNoteCredit(metadata);\n            done(lines, credit, metadata);',
      'SGLyricsCreditLinks(@"Linked provider").firstObject.url.absoluteString'),
+    ("translation-language", 'if (wanted.length && (!line.translationLanguage.length',
+     'if (NO && (!line.translationLanguage.length',
+     'reused && !reused.translation && !reused.backing.translation && !reused.pronunciation.translation'),
+    ("cached-provenance", 'optionalText(line.translationLanguage)',
+     'optionalText(SGLyricsTranslationLanguage())',
+     'record[@"lines"][0][@"translationLanguage"]'),
 ]
 for name, old, new, assertion in mutations:
     if source.count(old) != 1:
