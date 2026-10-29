@@ -19,6 +19,9 @@
 //     motion   Animated artwork: a clip (HARNESS_CANVAS_FILE, an mp4) that comes in before the player has
 //              laid out, then the field, the lyrics, a field built again, the menu's switch and the player
 //              closed, each step checked; the log ends with motion checks n of m right -- PASS or FAIL
+//     still    Animated's full-screen cover for a track with no clip: off first, then on, the 300 px rule, a late
+//              cover, two quick skips, a late clip, black, the photo, the Visualizer and Low Power Mode; the log ends
+//              with still checks n of m right -- PASS or FAIL
 //     catalog  Apple Music's catalog behind a stub: the search term without the edition, the album of the same
 //              name first, and the pause after a 429; the log says PASS or FAIL
 //     settings the redesign's Player page (PlayerSettings.m) over the player with the clip of `motion`: the
@@ -707,6 +710,7 @@ static void loadLyrics(void) {
     else if ([scenario() isEqualToString:@"controls"]) [self runControlsChecks];
     else if ([scenario() isEqualToString:@"landscape"]) [self runLandscape];
     else if ([scenario() isEqualToString:@"motion"]) [self runMotionChecks];
+    else if ([scenario() isEqualToString:@"still"]) [self runStillChecks];
     else if ([scenario() isEqualToString:@"catalog"]) [self runCatalogChecks];
     else if ([scenario() isEqualToString:@"badge"]) [self runBadgeChecks];
     else if ([scenario() isEqualToString:@"cover"]) [self runCoverChecks];
@@ -1267,6 +1271,213 @@ static BOOL motionFootHasMeanColor(NSURL *file, NSString **detail) {
               self->_failures ? @"FAIL" : @"PASS");
         exit(self->_failures ? 1 : 0);
     });
+}
+
+#pragma mark - the cover's still
+
+// A picture of one color, `pixels` wide and tall at scale 1, so its pixel width is exactly that.
+static UIImage *solidPixels(UIColor *color, CGFloat pixels) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat preferredFormat];
+    format.scale = 1;
+    return [[[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(pixels, pixels) format:format] imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+        [color setFill];
+        UIRectFill(CGRectMake(0, 0, pixels, pixels));
+    }];
+}
+
+// The still behind the player: the full-screen view with no video, or nil while a clip or nothing is there.
+static UIView *stillView(void) {
+    UIView *view = motionView();
+    return view && ![view valueForKey:@"_player"] && SGRPlayerMotionShowing() ? view : nil;
+}
+
+static CGImageRef stillPicture(void) {
+    return (__bridge CGImageRef)((CALayer *)[stillView() valueForKey:@"_still"]).contents;
+}
+
+// The scrim any motion view draws over the status bar and the header's controls: its top opacity and height, or
+// nil where none shows.
+static NSString *scrimShown(void) {
+    for (UIView *view in SGRPlayerField().subviews) {
+        if (![NSStringFromClass(view.class) isEqualToString:@"SGRPlayerMotionView"]) continue;
+        [view layoutIfNeeded];
+        CALayer *scrim = [view valueForKey:@"_scrim"];
+        if (!scrim.hidden && scrim.opacity > 0) return [NSString stringWithFormat:@"%.2f to %.0f pt", scrim.opacity, scrim.frame.size.height];
+    }
+    return nil;
+}
+
+static NSString *stillName(void) {
+    CGImageRef picture = stillPicture();
+    return picture ? [NSString stringWithFormat:@"%@ %zu px", colorName([UIImage imageWithCGImage:picture]), CGImageGetWidth(picture)] : @"no still";
+}
+
+// Animated with the full-screen cover switch: off first (the ordinary cover, as before), then on for a track with no
+// clip, and every rule the still follows. HARNESS_CANVAS_FILE is the clip a later Canvas brings.
+- (void)runStillChecks {
+    NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+    void (^setStill)(BOOL) = ^(BOOL on) {
+        [store setBool:on forKey:SGRKeyPlayerAnimatedStill];
+        SGRPlayerStillChanged();
+    };
+    void (^background)(SGRPlayerBackgroundKind) = ^(SGRPlayerBackgroundKind kind) {
+        SGRSetPlayerBackground(kind);
+        SGRPlayerBackgroundDidChange();
+        [self layOut];
+    };
+    BOOL (^ordinary)(void) = ^BOOL { return !SGRPlayerMotionShowing() && !self->_covers.layer.mask; };
+    __block UIView *first = nil;
+    __block BOOL lowPower = NO;
+    UIImage *green = solidPixels(UIColor.greenColor, 600), *blue = solidPixels(UIColor.blueColor, 600),
+            *yellow = solidPixels(UIColor.yellowColor, 299), *thumb = solidPixels(UIColor.magentaColor, 120),
+            *magenta = solidPixels(UIColor.magentaColor, 300), *cyan = solidPixels(UIColor.cyanColor, 600);
+    runScript(@[
+        @[@3, ^{
+            [self expect:ordinary() && !SGRPlayerStillOn() && !scrimShown() step:@"switched off, a track with no clip"
+                  detail:[NSString stringWithFormat:@"%@, scrim %@", ordinary() ? @"the ordinary cover over Fluid" : @"something over the cover",
+                          scrimShown() ?: @"none"]];
+            NSLog(@"[harness] still: screenshot the ordinary cover now");
+        }],
+        @[@2, ^{
+            setStill(YES);
+            UIView *still = stillView();
+            [still layoutIfNeeded];
+            CALayer *picture = [still valueForKey:@"_still"];
+            BOOL own = stillPicture() && stillPicture() == SGRNowPlayingArtwork(NULL, NULL).CGImage;
+            CGFloat width = picture.bounds.size.width, tall = picture.bounds.size.height;
+            [self expect:still && own && self->_covers.layer.mask && fabs(tall - round(width * 4 / 3)) < 1 && [still valueForKey:@"_dim"]
+                    step:@"switched on: the cover as the still"
+                  detail:[NSString stringWithFormat:@"%@, the Kit's cover %@, cover %@, picture %.0fx%.0f", stillName(), own ? @"yes" : @"no",
+                          self->_covers.layer.mask ? @"hidden" : @"shown", width, tall]];
+            CGPoint middle = [self.window convertPoint:CGPointMake(CGRectGetMidX(self->_tilt.bounds), CGRectGetMidY(self->_tilt.bounds)) fromView:self->_tilt];
+            UIView *hit = [self.window hitTest:middle withEvent:nil];
+            [self expect:[hit isDescendantOfView:self->_tilt] step:@"a tap on the hidden cover"
+                  detail:[NSString stringWithFormat:@"lands on %@", NSStringFromClass(hit.class)]];
+            // 45% black at the top, gone 76 pt under the safe area's top (the design review's numbers).
+            NSString *want = [NSString stringWithFormat:@"0.45 to %.0f pt", self.window.safeAreaInsets.top + 76];
+            [self expect:[scrimShown() isEqualToString:want] step:@"the still's scrim"
+                  detail:[NSString stringWithFormat:@"%@, want %@", scrimShown() ?: @"none", want]];
+            first = still;
+        }],
+        @[@2, ^{
+            UIVisualEffectView *seam = [stillView() valueForKey:@"_seamBlur"];
+            [self expect:stillView() && fieldCovered() && seam.effect step:@"faded in" detail:[NSString stringWithFormat:@"field %@, seam blur %@",
+                  fieldCovered() ? @"covered" : @"drawn", seam.effect ? @"on" : @"off"]];
+            NSLog(@"[harness] still: screenshot the still now");
+        }],
+        // Time for the screenshot before the lyrics open.
+        @[@4, ^{ SGRPlayerToggleLyrics(); }],
+        @[@1.5, ^{
+            BOOL blurred = ((UIView *)[stillView() valueForKey:@"_picture"]).layer.filters.count > 0;
+            [self expect:SGRPlayerLyricsOpen() && blurred step:@"behind the lyrics" detail:blurred ? @"the still blurred" : @"the still sharp"];
+            SGRPlayerToggleLyrics();
+        }],
+        @[@1.5, ^{
+            // The same track and cover told again: the still is kept, not made again.
+            SGRHarnessSetTrack(@"spotify:track:harnessA", imageURI(@"aaaa"), NO);
+            SGRPlayerStillChanged();
+            // A still made again would leave the first fading out beside a new one.
+            NSUInteger views = [SGRPlayerField().subviews indexesOfObjectsPassingTest:^BOOL(UIView *view, NSUInteger i, BOOL *stop) {
+                return [NSStringFromClass(view.class) isEqualToString:@"SGRPlayerMotionView"];
+            }].count;
+            [self expect:stillView() == first && views == 1 step:@"the same cover again"
+                  detail:[NSString stringWithFormat:@"%@, %lu views", stillView() == first ? @"the same still" : @"another still", (unsigned long)views]];
+            // Two skips in a row, each cover answering late, the first one's last.
+            serve(imageURI(@"bbbb"), green, 1.0, NO);
+            serve(imageURI(@"cccc"), blue, 1.5, NO);
+            [self playTrack:@"spotify:track:harnessB" image:imageURI(@"bbbb")];
+        }],
+        @[@0.1, ^{ [self playTrack:@"spotify:track:harnessC" image:imageURI(@"cccc")]; }],
+        @[@0.8, ^{
+            [self expect:ordinary() step:@"skipped twice, the cover not in" detail:stillPicture() ? stillName() : @"the ordinary cover"];
+        }],
+        @[@1.6, ^{
+            [self expect:[stillName() isEqualToString:@"blue 600 px"] step:@"the last track's cover in" detail:stillName()];
+            serve(imageURI(@"dddd"), yellow, 0.2, NO);
+            [self playTrack:@"spotify:track:harnessD" image:imageURI(@"dddd")];
+            [self showOnScreen:yellow];
+        }],
+        @[@1.5, ^{
+            [self expect:ordinary() && [colorName(SGRNowPlayingArtwork(NULL, NULL)) isEqualToString:@"yellow"] step:@"a cover 299 px wide"
+                  detail:ordinary() ? @"the ordinary cover" : stillName()];
+            // The screens' small cover first, the 300 px one late.
+            serve(imageURI(@"eeee"), magenta, 2.0, NO);
+            [self playTrack:@"spotify:track:harnessE" image:imageURI(@"eeee")];
+            [self showOnScreen:thumb];
+        }],
+        @[@1, ^{
+            UIImage *kit = SGRNowPlayingArtwork(NULL, NULL);
+            [self expect:ordinary() && kit.size.width * kit.scale == 120 step:@"the 120 px thumbnail only"
+                  detail:[NSString stringWithFormat:@"%@, the Kit's cover %.0f px", ordinary() ? @"the ordinary cover" : stillName(), kit.size.width * kit.scale]];
+        }],
+        @[@2, ^{
+            [self expect:[stillName() isEqualToString:@"magenta 300 px"] step:@"the 300 px cover came late" detail:stillName()];
+            // Its Canvas turns up: the clip replaces the still.
+            setenv("HARNESS_CANVAS", [NSString stringWithFormat:@"https://canvas.harness/still-%d.mp4", getpid()].UTF8String, 1);
+            SGRHarnessSetTrack(@"spotify:track:harnessE", imageURI(@"eeee"), NO);
+        }],
+        @[@2.5, ^{
+            UIView *motion = motionView();
+            BOOL clip = SGRPlayerMotionShowing() && motion && [motion valueForKey:@"_player"] && !stillView();
+            [self expect:clip step:@"a clip came late" detail:clip ? @"the clip over the still's place" : stillName()];
+            [self expect:clip && !scrimShown() step:@"no scrim over the clip" detail:scrimShown() ?: @"none"];
+            unsetenv("HARNESS_CANVAS");
+            serve(imageURI(@"ffff"), cyan, 0.2, NO);
+            [self playTrack:@"spotify:track:harnessF" image:imageURI(@"ffff")];
+        }],
+        @[@1.5, ^{
+            [self expect:[stillName() isEqualToString:@"cyan 600 px"] step:@"the next track without a clip" detail:stillName()];
+            background(SGRPlayerBackgroundBlack);
+        }],
+        @[@1.5, ^{
+            [self expect:!SGRPlayerMotionShowing() && SGRPlayerBackdropShowing() step:@"black wins"
+                  detail:[NSString stringWithFormat:@"%@, black %@", stillName(), SGRPlayerBackdropShowing() ? @"over the field" : @"missing"]];
+            background(SGRPlayerBackgroundPhoto);
+        }],
+        @[@1.5, ^{
+            [self expect:!SGRPlayerMotionShowing() && SGRPlayerBackdropShowing() step:@"the photo wins" detail:stillName()];
+            background(SGRPlayerBackgroundAnimated);
+        }],
+        @[@1.5, ^{
+            [self expect:[stillName() isEqualToString:@"cyan 600 px"] step:@"Animated again" detail:stillName()];
+            SGRPlayerMenuSetBackground(SGRPlayerBackgroundVisualiser);
+        }],
+        @[@1.5, ^{
+            [self expect:!SGRPlayerMotionShowing() && SGRPlayerVisualiserShowing() step:@"the Visualizer, no still" detail:stillName()];
+            SGRPlayerMenuSetBackground(SGRPlayerBackgroundAnimated);
+        }],
+        @[@1.5, ^{
+            [self expect:[stillName() isEqualToString:@"cyan 600 px"] step:@"back from the Visualizer" detail:stillName()];
+            // Low Power Mode, which the process is made to report (Reduce Motion takes the same path, motionAllowed).
+            Class info = object_getClass(NSProcessInfo.processInfo);
+            for (NSString *name in @[@"isLowPowerModeEnabled", @"lowPowerModeEnabled"]) {
+                Method method = class_getInstanceMethod(info, NSSelectorFromString(name));
+                if (method) method_setImplementation(method, imp_implementationWithBlock(^BOOL(id process) { return lowPower; }));
+            }
+            lowPower = YES;
+            [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+        }],
+        @[@1.5, ^{
+            [self expect:ordinary() step:@"Low Power Mode keeps the cover" detail:ordinary() ? @"the ordinary cover" : stillName()];
+            // The Kit telling of a cover meanwhile does not bring the still back either.
+            [NSNotificationCenter.defaultCenter postNotificationName:SGRNowPlayingArtworkDidChangeNotification object:nil];
+            [self expect:ordinary() step:@"a cover in under Low Power Mode" detail:ordinary() ? @"the ordinary cover" : stillName()];
+            lowPower = NO;
+            [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+        }],
+        @[@1.5, ^{
+            [self expect:[stillName() hasPrefix:@"cyan"] step:@"Low Power Mode off" detail:stillName()];
+            setStill(NO);
+        }],
+        @[@1.5, ^{
+            // Faded out with the still.
+            [self expect:ordinary() && !scrimShown() step:@"switched off again"
+                  detail:[NSString stringWithFormat:@"%@, scrim %@", ordinary() ? @"the ordinary cover" : stillName(), scrimShown() ?: @"none"]];
+            NSLog(@"[harness] still checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
+                  self->_failures ? @"FAIL" : @"PASS");
+            exit(self->_failures ? 1 : 0);
+        }],
+    ], 0);
 }
 
 #pragma mark - Apple Music's catalog
@@ -2402,6 +2613,14 @@ __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
     }
     // The shared session the catalog asks with.
     if ([scenario() isEqualToString:@"catalog"]) [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
+    // still: Animated with the full-screen cover off, and no Canvas until the scenario names one.
+    if ([scenario() isEqualToString:@"still"]) {
+        [NSUserDefaults.standardUserDefaults setInteger:SGRPlayerBackgroundAnimated forKey:@"spotifyglass.redesign.player.background"];
+        [NSUserDefaults.standardUserDefaults setInteger:SGRPlayerBackgroundAnimated forKey:SGRKeyPlayerArtworkBackground];
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:SGRKeyPlayerAnimatedStill];
+        unsetenv("HARNESS_CANVAS");
+        [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
+    }
     if ([scenario() isEqualToString:@"motion"] || [scenario() isEqualToString:@"settings"]) {
         [NSUserDefaults.standardUserDefaults setInteger:3 forKey:@"spotifyglass.redesign.player.background"];
         setenv("HARNESS_CANVAS", "https://canvas.harness/clip.mp4", 1);

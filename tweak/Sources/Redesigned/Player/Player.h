@@ -205,6 +205,12 @@ void SGRPlayerShowLandscape(BOOL show);
 // The playing track's lines came in, or turned out to be none: the landscape screen lays out for it.
 void SGRPlayerLandscapeLinesChanged(void);
 
+// Animated's full-screen cover (PlayerMotion.x): a track with no clip shows its cover behind the player the way a clip
+// is shown, as a still, in place of the ordinary cover. Off until switched on; the open player follows the switch at
+// once (SGRPlayerStillChanged, from the Player page).
+#define SGRKeyPlayerAnimatedStill @"spotifyglass.redesign.player.animatedStill"
+BOOL SGRPlayerStillOn(void);
+void SGRPlayerStillChanged(void);
 // The animated artwork follows the lyrics: blurred behind them (PlayerMotion.x).
 void SGRPlayerMotionLyricsChanged(void);
 // The field was laid out (PlayerField.x): the clip goes onto it, and the cover is hidden or shown again.

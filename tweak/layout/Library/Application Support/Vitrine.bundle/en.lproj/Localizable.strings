@@ -1789,6 +1789,8 @@
 "settings.pixie.transport.request_unanswered" = "Spotify did not answer the request";
 "settings.pixie.vitrine.send_log.subtitle" = "Report, actions, download history and Vitrine diagnostics";
 
+"settings.player.animated_still.subtitle" = "A song with no clip shows its cover art. With this on, the cover fills the screen the way a clip does. Low Power Mode and Reduce Motion keep the cover art.";
+"settings.player.animated_still.title" = "Full-screen cover without a clip";
 "settings.player.artwork.header" = "Artwork";
 "settings.player.artwork_background.title" = "Artwork background";
 "settings.player.background.a11y" = "Background";

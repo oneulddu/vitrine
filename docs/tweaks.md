@@ -1508,7 +1508,12 @@ applies at the player's next layout, no restart; while Visualizer is chosen, its
 mirrored Bars with a waveform, a bass-driven Nebula and an artwork Halo. The selection is stored under the existing
 `spotifyglass.visualizer.shader` key, with invalid or absent values falling back to Hills, and the preview and player update at
 once. Visualizer motion pauses while hidden, backgrounded, in Low Power Mode, under serious heat or during player transitions,
-and is restrained by Reduce Motion. Artwork sources and Download in Low Data Mode appear while Animated is chosen,
+and is restrained by Reduce Motion. Artwork sources, Full-screen cover without a clip and Download in Low Data Mode
+appear while Animated is chosen (the second, `spotifyglass.redesign.player.animatedStill`, off: a track with no clip
+shows the cover Spotify already drew, 300 px wide or more, where the clip would be, cropped to 4:3 at most, dimmed and
+blurred behind the lyrics as a clip is, under a black scrim of 45 % at the top fading out 76 pt below the safe area;
+a later clip replaces it, Black and Your Photo win, and Low Power Mode and Reduce Motion keep the ordinary cover;
+PlayerMotion.x, harness/player/ `still`),
 while Fluid is chosen a Style menu, Light or Smooth (spotifyglass.redesign.fluid.renderer, offered where Metal exists),
 its six sliders and a red Reset (Redesigned/Kit/SGRFluid.h, spotifyglass.redesign.fluid.*). Light is the four turning
 copies below; Smooth (Redesigned/Kit/SGRFluidGPU.m) draws the same blurred cover on the GPU, bent along a slowly

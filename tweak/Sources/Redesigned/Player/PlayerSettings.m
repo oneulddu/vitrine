@@ -17,7 +17,8 @@
 // width, and every choice stays one tap away with the card showing it at once. A note under the control says what the
 // choice does; it is given the room of the longest note, so the rows under it hold still as it changes.
 //
-// Under the header: the rows that follow the choice (Animated's sources and its Low Data Mode switch; Fluid's
+// Under the header: the rows that follow the choice (Animated's sources, its full-screen cover switch, which the open
+// player follows at once, SGRPlayerStillChanged, and its Low Data Mode switch; Fluid's
 // sliders and their Reset, which the card and the player follow as they move, SGRFluid.h, Grain among them only
 // while Smooth draws), the Controls section, whose Header glass and Music app icons switches the open player follows
 // at once (SGRPlayerLookChanged), the Mini player section (Redesigned/NowPlayingBar/NowPlayingBarSettings.m), then the
@@ -421,6 +422,12 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
     lowData.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundAnimated; };
     SGModRow *sources = SGMotionSourcesRow();
     sources.visible = lowData.visible;
+    SGModRow *still = SGWithNew(SGOptionRow(SGL(@"settings.player.animated_still.title", @"Full-screen cover without a clip"),
+                                            SGL(@"settings.player.animated_still.subtitle", @"A song with no clip shows its cover art. With this on, the "
+                                                @"cover fills the screen the way a clip does. Low Power Mode and Reduce Motion keep the cover art."),
+                                            SGRKeyPlayerAnimatedStill), @"playerAnimatedStill");
+    still.visible = lowData.visible;
+    still.changed = ^(BOOL on) { SGRPlayerStillChanged(); };
     SGModRow *visualiserStyle = SGRVisualiserStyleRow();
     visualiserStyle.visible = ^BOOL { return SGRPlayerBackground() == SGRPlayerBackgroundVisualiser; };
 
@@ -491,7 +498,7 @@ UIViewController *SGRPlayerSettingsPage(NSArray *more) {
 
     NSMutableArray<SGModSection *> *sections = [NSMutableArray arrayWithObjects:
         SGSection(nil, @[behind, choosePhoto]),
-        SGSection(nil, @[sources, lowData]),
+        SGSection(nil, @[sources, still, lowData]),
         SGSection(nil, @[visualiserStyle]),
         SGNotedSection(nil, fluid, SGL(@"settings.player.fluid.footer", @"Smooth lets the cover flow and carries the next song's cover in through it, "
                                    @"using a little more battery. Brightness above 100% can make white text harder to read. A paused song holds the "

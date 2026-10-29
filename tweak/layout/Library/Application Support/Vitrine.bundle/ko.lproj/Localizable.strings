@@ -1787,6 +1787,8 @@
 
 "settings.player.artwork.header" = "아트워크";
 "settings.player.artwork_background.title" = "아트워크 배경";
+"settings.player.animated_still.subtitle" = "클립이 없는 노래는 커버 아트를 표시합니다. 이 설정을 켜면 클립처럼 커버가 화면을 가득 채웁니다. 저전력 모드와 동작 줄이기에서는 커버 아트를 유지합니다.";
+"settings.player.animated_still.title" = "클립이 없을 때 전체 화면 커버";
 "settings.player.background.a11y" = "배경";
 "settings.player.background.animated" = "움직임";
 "settings.player.background.colors" = "색상";

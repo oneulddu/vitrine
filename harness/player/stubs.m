@@ -18,6 +18,17 @@ __weak UIView *sgr_nowPlayingRoot = nil;
 NSHashTable<UIView *> *sgr_nowPlayingPainted = nil;
 __weak UIView *sgr_lyricsPageRoot = nil;
 __weak UIView *sgr_playlistRoot = nil;
+// The accent's provenance (SGRAccent.m), which Follow the cover reads: no color here is the accent's.
+@class SGRAccentToken;
+NSNotificationName const SGRAccentDidChangeNotification = @"harness.accentDidChange";
+BOOL SGRAccentIsToken(UIColor *color) { return NO; }
+SGRAccentToken *SGRAccentSource(UIColor *color) { return nil; }
+SGRAccentToken *SGRAccentImageSource(UIImage *image) { return nil; }
+SGRAccentToken *SGRAccentLayerSource(CAShapeLayer *layer, BOOL stroke) { return nil; }
+UIImage *SGRAccentTintedImage(UIImage *image, UIColor *override) { return image; }
+void SGRAccentSetLayerOverride(CALayer *layer, UIColor *override) {}
+// NowPlayingBar.x: no now playing bar follows the tab bar here.
+void SGRNowPlayingBarFollowTabBar(void) {}
 
 #pragma mark - Shared/Player/PlayerEvents.x
 
@@ -152,6 +163,14 @@ NSString *SGLyricsTranslationTarget(void) { return @"en"; }
 void SGLyricsTranslateWithAI(NSString *trackID, NSArray<SGKaraokeLine *> *lines, NSString *languageTag,
                              void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
 NSString *SGAITranslatorName(void) { return @"Gemini"; }
+BOOL SGLyricsTranslateTextsAvailable(void) { return NO; }
+void SGLyricsTranslateTexts(NSArray<NSString *> *texts, NSString *languageTag, UIView *presentingView,
+                            void (^done)(NSArray<NSString *> *translations, NSString *error)) { done(nil, @"harness"); }
+// AIServices.m's prose helpers, which the translators linked here reach: no prose is translated in the harness.
+NSString *SGLyricsProseTooLong(void) { return @"harness"; }
+void SGLyricsTranslateSegments(NSArray<NSString *> *texts, NSUInteger maxSize, NSInteger unit,
+                               void (^send)(NSArray<NSString *> *, void (^)(NSArray<NSString *> *, NSString *)),
+                               void (^done)(NSArray<NSString *> *, NSString *)) { done(nil, @"harness"); }
 NSString *SGAITranslatorRecipient(void) { return @"Google"; }
 @interface SGTranslationSource : NSObject
 @property (nonatomic, copy, readonly) NSString *by, *model;
@@ -198,6 +217,9 @@ void SGLyricsSourceRequest(NSURL *url, NSDictionary<NSString *, NSString *> *hea
 BOOL SGLyricsPin(NSString *trackID, NSDictionary *record) { return NO; }
 void SGLyricsUnpin(NSString *trackID) {}
 NSNumber *SGLyricsPinnedID(NSString *trackID) { return nil; }
+void SGLyricsPickRecord(NSString *trackID, NSDictionary *record, BOOL (^current)(void), void (^done)(BOOL pinned)) {
+    if (done) done(NO);
+}
 UIViewController *SGLyricsSourcesPage(void) { return nil; }
 SGModRow *SGDeezerARLRow(void) { return nil; }
 SGModRow *SGSpicyLyricsKeyRow(void) { return nil; }
