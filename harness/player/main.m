@@ -24,10 +24,12 @@
 //              with still checks n of m right -- PASS or FAIL
 //     catalog  Apple Music's catalog behind a stub: the search term without the edition, the album of the same
 //              name first, and the pause after a 429; the log says PASS or FAIL
-//     settings the redesign's Player page (PlayerSettings.m) over the player with the clip of `motion`: the
-//              card over Animated, then Fluid, Colors, Still and Visualizer as the segmented control picks
-//              them, and Animated again, the note under it changing and the rows under the header holding
-//              still; each step checked, the log ends with settings checks n of m right -- PASS or FAIL
+//     settings the redesign's Player page (PlayerSettings.m) over the player with the clip of `motion`: Song
+//              without a clip read from its two switches and each choice leaving the other off, the card pinned
+//              and shrinking as the rows scroll, its demo, the card refreshed for another track with late clips
+//              dropped, paused while covered and stopped once closed, the Buttons chips, the card and the chips
+//              whole at narrow widths and the largest text, and no command sent to the player; the log ends
+//              with settings checks n of m right -- PASS or FAIL, and the app exits with it
 //     preview  the Player page's card picking Animated while the player has no clip (the background Still at
 //              launch): the card looks the track's clip up itself, shows Fluid until it comes in 2 s late, then
 //              the clip; the clip is in the store for the player, and asked for only while the page shows;
@@ -63,11 +65,16 @@
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Redesigned/Kit/SGRBridges.h"
 #import "Redesigned/Kit/SGRField.h"
+#import "Redesigned/Kit/SGRPalette.h"
 #import "Redesigned/Lyrics/MeaningSheet.h"
 #import "Redesigned/Lyrics/SGRKaraokeView.h"
 #import "Core/SGPrefs.h"
 #import "Redesigned/Kit/SGRFluid.h"
 #import "Settings/SGModPage.h"
+#import "Shared/Player/PlayerSettings.h"
+#import "Shared/Player/PlayerState.h"
+#import "Shared/Player/SGLastTrack.h"
+#import "Redesigned/Kit/SGRRefinements.h"
 
 @interface SGRPlayerMotionView : UIView
 - (void)playFile:(NSURL *)file poster:(UIImage *)poster;
@@ -77,8 +84,15 @@ void SGRHarnessPlayFrom(NSInteger ms);
 void SGRHarnessSetTrack(NSString *uri, NSString *imageURI, BOOL paused);
 // stubs.m: every clip lookup answers this many seconds late (0, the default, at once).
 void SGRHarnessSetLookupDelay(NSTimeInterval seconds);
+void SGRHarnessClearTrack(void);
 // ../tabbar/touch.m: a finger's touches, through UIKit's own recognizers.
 extern void SGHarnessHold(UIWindow *window, CGPoint point, NSTimeInterval seconds);
+extern void SGHarnessTap(UIWindow *window, CGPoint point);
+// stubs.m: the commands sent to the player.
+NSUInteger SGRHarnessPlayerCommands(void);
+// Low Power Mode as the process reports it, once reportPower has made it report this.
+static BOOL sg_lowPower;
+static void reportPower(void);
 
 static NSString *scenario(void) {
     const char *value = getenv("HARNESS_SCENARIO");
@@ -229,6 +243,25 @@ static NSString *colorName(UIImage *image) {
     int r = px[0] > 128, g = px[1] > 128, b = px[2] > 128;
     NSArray *names = @[@"black", @"blue", @"green", @"cyan", @"red", @"magenta", @"yellow", @"white"];
     return names[r << 2 | g << 1 | b];
+}
+
+// Sample the actual composed table, not a one-pixel render target that UIKit can cull or a half-pixel image.
+static NSString *pixelAtPoint(UIView *view, CGPoint point) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
+    format.scale = 1;
+    UIImage *snapshot = [[[UIGraphicsImageRenderer alloc] initWithSize:view.bounds.size format:format] imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+        [view drawViewHierarchyInRect:(CGRect){CGPointZero, view.bounds.size} afterScreenUpdates:YES];
+    }];
+    CGImageRef pixel = CGImageCreateWithImageInRect(snapshot.CGImage, CGRectMake(point.x - view.bounds.origin.x, point.y - view.bounds.origin.y, 1, 1));
+    // Exact bytes matter: a darkened magenta row (38,0,38) is still visible, not an opaque black shield.
+    uint8_t rgba[4] = {0};
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef bitmap = CGBitmapContextCreate(rgba, 1, 1, 8, 4, space, kCGImageAlphaPremultipliedLast);
+    CGContextDrawImage(bitmap, CGRectMake(0, 0, 1, 1), pixel);
+    CGContextRelease(bitmap);
+    CGColorSpaceRelease(space);
+    CGImageRelease(pixel);
+    return [NSString stringWithFormat:@"%u,%u,%u,%u", rgba[0], rgba[1], rgba[2], rgba[3]];
 }
 
 #pragma mark - Spotify's classes, by name
@@ -812,7 +845,7 @@ static void after(NSTimeInterval seconds, dispatch_block_t block) {
             nav.modalPresentationStyle = UIModalPresentationFullScreen;
             [self.window.rootViewController presentViewController:nav animated:NO completion:nil];
             after(2, ^{
-                UIView *card = firstOfClass(((UITableViewController *)nav.topViewController).tableView.tableHeaderView, @"SGRPlayerShowcase");
+                UIView *card = firstOfClass(((UITableViewController *)nav.topViewController).tableView, @"SGRPlayerPreview");
                 UIImageView *cover = [card valueForKey:@"_cover"];
                 NSLog(@"[harness] card: \"%@\", \"%@\", cover %.0fx%.0f", [[card valueForKey:@"_title"] text], [[card valueForKey:@"_artist"] text],
                       cover.image.size.width, cover.image.size.height);
@@ -1574,83 +1607,654 @@ static UIView *firstOfClass(UIView *root, NSString *name) {
     return nil;
 }
 
-// The Player page over the player, its card checked for each background the segmented control picks.
+// What the Player page's card (PlayerSettings.m, SGRPlayerPreview) draws that is cut off or in another part's room at its
+// size: nil when the header, the cover and the words, the progress, the times and the transport row each sit whole in
+// their own band, inside the card.
+static NSString *cardClipping(UIView *card) {
+    [card layoutIfNeeded];
+    CGRect bounds = CGRectInset(card.bounds, -0.5, -0.5);
+    NSMutableArray<NSString *> *wrong = [NSMutableArray array];
+    NSMutableDictionary<NSString *, NSValue *> *frames = [NSMutableDictionary dictionary];
+    for (NSString *name in @[@"_close", @"_more", @"_cover", @"_chip", @"_title", @"_artist", @"_add", @"_progress", @"_elapsed", @"_remaining",
+                             @"_shuffle", @"_previous", @"_play", @"_next", @"_repeat", @"_demoButton"]) {
+        UIView *view = [card valueForKey:name];
+        if (view.hidden || view.alpha < 0.01) continue;
+        CGRect frame = [view.superview convertRect:view.frame toView:card];
+        frames[name] = [NSValue valueWithCGRect:frame];
+        if (!CGRectContainsRect(bounds, frame) || frame.size.width < 1 || frame.size.height < 1)
+            [wrong addObject:[NSString stringWithFormat:@"%@ %@ not whole in the card", name, NSStringFromCGRect(frame)]];
+    }
+    CGRect (^at)(NSString *) = ^CGRect(NSString *name) { return frames[name] ? frames[name].CGRectValue : CGRectNull; };
+    CGRect words = CGRectUnion(at(@"_chip"), CGRectUnion(at(@"_title"), at(@"_artist")));
+    CGRect upper = CGRectUnion(words, at(@"_cover"));
+    CGRect transport = CGRectNull;
+    for (NSString *name in @[@"_shuffle", @"_previous", @"_play", @"_next", @"_repeat"]) transport = CGRectUnion(transport, at(name));
+    if (CGRectGetMinY(upper) < CGRectGetMaxY(at(@"_close")) - 0.5) [wrong addObject:@"the cover or the words under the header"];
+    if (CGRectGetMaxY(upper) > CGRectGetMinY(at(@"_progress")) + 0.5) [wrong addObject:@"the cover or the words over the progress"];
+    if (CGRectGetMaxY(CGRectUnion(at(@"_elapsed"), at(@"_remaining"))) > CGRectGetMinY(transport) + 0.5) [wrong addObject:@"the times over the transport row"];
+    if (CGRectGetMaxX(words) > CGRectGetMinX(at(@"_add")) + 0.5) [wrong addObject:@"the words under the add button"];
+    if (CGRectIntersectsRect(CGRectInset(at(@"_cover"), 0.5, 0.5), words)) [wrong addObject:@"the cover over the words"];
+    NSArray<NSString *> *row = @[@"_shuffle", @"_previous", @"_play", @"_next", @"_repeat"];
+    for (NSUInteger i = 0; i + 1 < row.count; i++) {
+        if (frames[row[i]] && frames[row[i + 1]] && CGRectIntersectsRect(at(row[i]), at(row[i + 1]))) [wrong addObject:[NSString stringWithFormat:@"%@ over %@", row[i], row[i + 1]]];
+    }
+    UILabel *chipLabel = [card valueForKey:@"_chipLabel"];
+    if (frames[@"_chip"] && chipLabel.intrinsicContentSize.width > chipLabel.bounds.size.width + 0.5) [wrong addObject:@"Switch to video cut short"];
+    return wrong.count ? [wrong componentsJoinedByString:@"; "] : nil;
+}
+
+// The track the player has and whether it is paused: what the card must never change.
+static NSString *playerNow(void) {
+    SPTPlayerState *state = SGPlayerState();
+    return [NSString stringWithFormat:@"%@ %@", SGURIString(state.track.URI), state.isPaused ? @"paused" : @"playing"];
+}
+
+// The mod's stored settings, to tell which ones a step changed.
+static NSDictionary<NSString *, id> *storedSettings(void) {
+    NSMutableDictionary<NSString *, id> *settings = [NSMutableDictionary dictionary];
+    [NSUserDefaults.standardUserDefaults.dictionaryRepresentation enumerateKeysAndObjectsUsingBlock:^(NSString *key, id value, BOOL *stop) {
+        if ([key hasPrefix:@"spotifyglass."] && ![key isEqualToString:@"spotifyglass.lastTrack"] && ![key isEqualToString:@"spotifyglass.settings.seenNew"]) settings[key] = value;
+    }];
+    return settings;
+}
+
+static NSArray<NSString *> *changedSettings(NSDictionary *before, NSDictionary *after) {
+    NSMutableSet<NSString *> *keys = [NSMutableSet setWithArray:before.allKeys];
+    [keys addObjectsFromArray:after.allKeys];
+    NSMutableArray<NSString *> *changed = [NSMutableArray array];
+    for (NSString *key in keys) if (![before[key] isEqual:after[key]]) [changed addObject:key];
+    return [changed sortedArrayUsingSelector:@selector(compare:)];
+}
+
+// Moments both Song without a clip switches were stored on, counted as each write lands.
+static NSUInteger sg_bothOn;
+
+// Performance/lifetime probes at UIKit's layout/geometry and the palette service boundaries.
+static BOOL sg_watchPreviewWork, sg_watchPreviewPalette, sg_insidePreviewArtwork;
+static __weak UIView *sg_watchedPreview;
+static NSHashTable<UIView *> *sg_watchedBackgrounds;
+static NSHashTable<UIView *> *sg_watchedTextSizeViews;
+static NSUInteger sg_previewLayouts, sg_backgroundResizes, sg_previewMeasurements, sg_previewPaletteRequests;
+
+static void installSettingsWorkProbes(void) {
+    Class preview = NSClassFromString(@"SGRPlayerPreview");
+    Method layout = class_getInstanceMethod(preview, @selector(layoutSubviews));
+    IMP oldLayout = method_getImplementation(layout);
+    method_setImplementation(layout, imp_implementationWithBlock(^(UIView *view) {
+        if (sg_watchPreviewWork && view == sg_watchedPreview) sg_previewLayouts++;
+        ((void (*)(id, SEL))oldLayout)(view, @selector(layoutSubviews));
+    }));
+    for (NSString *name in @[@"setFrame:", @"setBounds:"]) {
+        SEL selector = NSSelectorFromString(name);
+        Method method = class_getInstanceMethod(UIView.class, selector);
+        IMP original = method_getImplementation(method);
+        method_setImplementation(method, imp_implementationWithBlock(^(UIView *view, CGRect rect) {
+            CGSize before = view.bounds.size;
+            ((void (*)(id, SEL, CGRect))original)(view, selector, rect);
+            if (sg_watchPreviewWork && [sg_watchedBackgrounds containsObject:view] && !CGSizeEqualToSize(before, view.bounds.size))
+                sg_backgroundResizes++;
+        }));
+    }
+    for (Class type in @[UIButton.class, UILabel.class]) {
+        SEL selector = @selector(sizeThatFits:);
+        Method method = class_getInstanceMethod(type, selector);
+        IMP original = method_getImplementation(method);
+        IMP probe = imp_implementationWithBlock(^CGSize(UIView *view, CGSize size) {
+            if (sg_watchPreviewWork && [sg_watchedTextSizeViews containsObject:view]) sg_previewMeasurements++;
+            return ((CGSize (*)(id, SEL, CGSize))original)(view, selector, size);
+        });
+        if (!class_addMethod(type, selector, probe, method_getTypeEncoding(method))) method_setImplementation(method, probe);
+    }
+    Method artwork = class_getInstanceMethod(NSClassFromString(@"SGRVisualiserView"), @selector(artworkChanged));
+    IMP oldArtwork = method_getImplementation(artwork);
+    method_setImplementation(artwork, imp_implementationWithBlock(^(UIView *view) {
+        BOOL previous = sg_insidePreviewArtwork;
+        sg_insidePreviewArtwork = [[view valueForKey:@"sample"] boolValue];
+        ((void (*)(id, SEL))oldArtwork)(view, @selector(artworkChanged));
+        sg_insidePreviewArtwork = previous;
+    }));
+    SEL selector = @selector(paletteForImage:request:completion:);
+    Method palette = class_getClassMethod(SGRPalette.class, selector);
+    IMP oldPalette = method_getImplementation(palette);
+    method_setImplementation(palette, imp_implementationWithBlock(^(id owner, UIImage *image, SGRPaletteRequest request, void (^done)(SGRPalette *)) {
+        if (sg_watchPreviewPalette && sg_insidePreviewArtwork) sg_previewPaletteRequests++;
+        ((void (*)(id, SEL, UIImage *, SGRPaletteRequest, void (^)(SGRPalette *)))oldPalette)(owner, selector, image, request, done);
+    }));
+}
+
+// The redesign's Player page over the player, with the clip of `motion` in. Song without a clip: what it reads from
+// the two switches, and each choice leaving the other off at every write; the pinned card, its demo, and that neither
+// sends the player anything; the card refreshed for another track with late answers dropped, paused while the page
+// is covered, stopped once it is closed; the Buttons chips; and the card and the chips laid out whole at narrow widths
+// and the largest text. Each state a screenshot is asked for (`settings: screenshot <name> now`) holds two seconds.
 - (void)runSettingsChecks {
+    installSettingsWorkProbes();
     __block UINavigationController *nav;
-    __block CGFloat headerHeight = 0;
-    UITableView *(^table)(void) = ^{ return ((UITableViewController *)nav.topViewController).tableView; };
-    UIView *(^showcase)(void) = ^{ return firstOfClass(table().tableHeaderView, @"SGRPlayerShowcase"); };
-    UISegmentedControl *(^control)(void) = ^{ return (UISegmentedControl *)firstOfClass(table().tableHeaderView, @"UISegmentedControl"); };
-    // A segment picked as a tap on it does.
+    __block __weak UIView *closedCard;
+    __block __weak UIView *closedDecoder;
+    __block __weak UIView *closedVisualiser;
+    __block NSUInteger latePreviewCallbacks = 0;
+    SGModPage *(^page)(void) = ^{ return (SGModPage *)nav.viewControllers.firstObject; };
+    UITableView *(^table)(void) = ^{ return page().tableView; };
+    UIView *(^card)(void) = ^{ return firstOfClass(table(), @"SGRPlayerPreview"); };
+    UISegmentedControl *(^segments)(void) = ^{ return (UISegmentedControl *)firstOfClass(table().tableHeaderView, @"UISegmentedControl"); };
     void (^pick)(NSUInteger) = ^(NSUInteger index) {
-        UISegmentedControl *segments = control();
-        segments.selectedSegmentIndex = (NSInteger)index;
-        [segments sendActionsForControlEvents:UIControlEventValueChanged];
+        segments().selectedSegmentIndex = (NSInteger)index;
+        [segments() sendActionsForControlEvents:UIControlEventValueChanged];
     };
-    void (^expectBackground)(NSString *, BOOL, BOOL, BOOL, BOOL) = ^(NSString *step, BOOL fluid, BOOL flows, BOOL clip, BOOL hills) {
-        UIView *view = showcase();
-        SGRArtworkField *field = (SGRArtworkField *)firstOfClass(view, @"SGRArtworkField");
-        UIView *motion = firstOfClass(view, @"SGRPlayerMotionView"), *visualiser = firstOfClass(view, @"SGRVisualiserView");
-        UIView *cover = [view valueForKey:@"_cover"];
-        UILabel *note = [nav.topViewController valueForKey:@"_note"];
-        NSInteger rows = [table() numberOfRowsInSection:0];
-        CGFloat height = table().tableHeaderView.bounds.size.height;
-        BOOL ok = field && field.fluid == fluid && field.flows == flows && (motion != nil) == clip && (visualiser != nil) == hills
-                  && field.motionHeld == (clip || hills) && !cover.hidden && rows == (clip ? 2 : 0)
-                  && note.text.length && (headerHeight == 0 || fabs(height - headerHeight) < 0.5);
-        headerHeight = height;
-        [self expect:ok step:step detail:[NSString stringWithFormat:@"field %@ fluid %d flows %d held %d, clip %@, hills %@, cover %@, %ld rows over the Mini player (%@), header %.0f, note \"%@\"",
-                                          field ? @"in" : @"missing", field.fluid, field.flows, field.motionHeld, motion ? @"on" : @"off", visualiser ? @"on" : @"off", cover.hidden ? @"hidden" : @"shown",
-                                          (long)rows, view.accessibilityValue, height, note.text]];
+    SGModRow *(^rowTitled)(NSString *) = ^SGModRow *(NSString *title) {
+        for (SGModSection *section in page().sections) for (SGModRow *row in section.rows) if ([row.title isEqualToString:title]) return row;
+        return nil;
     };
-    // The clip is in by 3 s (the motion scenario's first step), and the page opens over the player then.
-    after(3, ^{
-        nav = [[UINavigationController alloc] initWithRootViewController:SGRPlayerSettingsPage(@[])];
-        nav.modalPresentationStyle = UIModalPresentationFullScreen;
+    NSIndexPath *(^pathOf)(SGModRow *) = ^NSIndexPath *(SGModRow *row) {
+        NSArray<NSArray *> *shown = [page() valueForKey:@"_shown"];
+        for (NSUInteger s = 0; s < shown.count; s++) {
+            NSUInteger r = [shown[s] indexOfObjectIdenticalTo:row];
+            if (r != NSNotFound) return [NSIndexPath indexPathForRow:(NSInteger)r inSection:(NSInteger)s];
+        }
+        return nil;
+    };
+    UITableViewCell *(^cellOf)(SGModRow *) = ^UITableViewCell *(SGModRow *row) {
+        NSIndexPath *path = pathOf(row);
+        if (!path) return nil;
+        [table() scrollToRowAtIndexPath:path atScrollPosition:UITableViewScrollPositionBottom animated:NO];
+        [table() layoutIfNeeded];
+        return [table() cellForRowAtIndexPath:path];
+    };
+    SGModRow *(^noClip)(void) = ^{ return rowTitled(@"Song without a clip"); };
+    // A choice of Song without a clip as its menu makes it: the row's block, then the page read again.
+    void (^choose)(NSInteger) = ^(NSInteger index) {
+        noClip().chosen(index);
+        [table() reloadData];
+    };
+    void (^checkScrollWork)(void) = ^{
+        sg_watchedPreview = card();
+        sg_watchedBackgrounds = [NSHashTable weakObjectsHashTable];
+        sg_watchedTextSizeViews = [NSHashTable weakObjectsHashTable];
+        [sg_watchedTextSizeViews addObject:[card() valueForKey:@"_demoButton"]];
+        [sg_watchedTextSizeViews addObject:[card() valueForKey:@"_chipLabel"]];
+        for (NSString *type in @[@"SGRArtworkField", @"SGRPlayerMotionView", @"SGRVisualiserView"]) {
+            UIView *view = firstOfClass(card(), type);
+            if (view) [sg_watchedBackgrounds addObject:view];
+        }
+        [table() setContentOffset:CGPointMake(0, -table().adjustedContentInset.top) animated:NO];
+        [page().view layoutIfNeeded];
+        [card() layoutIfNeeded];
+        sg_previewLayouts = sg_backgroundResizes = sg_previewMeasurements = 0;
+        sg_watchPreviewWork = YES;
+        for (NSInteger y = 0; y <= 280; y += 20) {
+            [table() setContentOffset:CGPointMake(0, y - table().adjustedContentInset.top) animated:NO];
+            [page().view setNeedsLayout];
+            [page().view layoutIfNeeded];
+            [card() layoutIfNeeded];
+        }
+        sg_watchPreviewWork = NO;
+        [self expect:card().bounds.size.height == 236 && sg_backgroundResizes == 0 && sg_previewMeasurements == 0
+                step:@"collapsing does no background resize or text measurement"
+              detail:[NSString stringWithFormat:@"%lu resizes, %lu measurements", (unsigned long)sg_backgroundResizes, (unsigned long)sg_previewMeasurements]];
+        sg_previewLayouts = sg_backgroundResizes = sg_previewMeasurements = 0;
+        sg_watchPreviewWork = YES;
+        for (NSInteger y = 300; y <= 600; y += 20) {
+            [table() setContentOffset:CGPointMake(0, y - table().adjustedContentInset.top) animated:NO];
+            [page().view setNeedsLayout];
+            [page().view layoutIfNeeded];
+            [card() layoutIfNeeded];
+        }
+        sg_watchPreviewWork = NO;
+        [self expect:sg_previewLayouts == 0 && sg_backgroundResizes == 0 && sg_previewMeasurements == 0
+                step:@"compact scrolling does no preview layout or background resize"
+              detail:[NSString stringWithFormat:@"%lu layouts, %lu resizes, %lu measurements", (unsigned long)sg_previewLayouts,
+                      (unsigned long)sg_backgroundResizes, (unsigned long)sg_previewMeasurements]];
+        sg_watchedPreview = nil;
+        sg_watchedBackgrounds = nil;
+        sg_watchedTextSizeViews = nil;
+    };
+    SGModRow *(^buttonsRow)(void) = ^{ return rowTitled(@"Buttons"); };
+    NSArray<UIButton *> *(^chips)(void) = ^NSArray<UIButton *> *{
+        NSMutableArray<UIButton *> *found = [NSMutableArray array];
+        for (UIView *view in cellOf(buttonsRow()).contentView.subviews) if ([view isKindOfClass:UIButton.class]) [found addObject:(UIButton *)view];
+        return found;
+    };
+    UIView *(^motionOn)(void) = ^{ return firstOfClass(card(), @"SGRPlayerMotionView"); };
+    UIView *(^hillsOn)(void) = ^{ return firstOfClass(card(), @"SGRVisualiserView"); };
+    BOOL (^stillShown)(void) = ^BOOL { return ![[card() valueForKey:@"_still"] isHidden] && [[card() valueForKey:@"_cover"] alpha] < 0.01; };
+    BOOL (^demo)(void) = ^BOOL { return [[card() valueForKey:@"demo"] boolValue]; };
+    NSString *(^cardState)(void) = ^{
+        SGRArtworkField *field = (SGRArtworkField *)firstOfClass(card(), @"SGRArtworkField");
+        return [NSString stringWithFormat:@"card %@, demo %d, clip %@, hills %@, full-screen cover %@, field held %d; player %@, %lu commands; \"%@\"",
+                NSStringFromCGRect(card().frame), demo(), motionOn() ? @"on" : @"off", hillsOn() ? @"on" : @"off", stillShown() ? @"on" : @"off",
+                field.motionHeld, playerNow(), (unsigned long)SGRHarnessPlayerCommands(), [[card() valueForKey:@"_canvas"] accessibilityValue]];
+    };
+    BOOL (^stored)(NSString *) = ^BOOL(NSString *key) { return [NSUserDefaults.standardUserDefaults boolForKey:key]; };
+    NSString *(^switches)(void) = ^{
+        return [NSString stringWithFormat:@"full-screen cover %@, Visualizer %@", [NSUserDefaults.standardUserDefaults objectForKey:SGRKeyPlayerAnimatedStill] ?: @"unset",
+                [NSUserDefaults.standardUserDefaults objectForKey:SGRKeyPlayerAnimatedVisualiser] ?: @"unset"];
+    };
+    void (^reread)(void) = ^{
+        [page() viewWillAppear:NO];
+        [table() layoutIfNeeded];
+    };
+    void (^open)(void) = ^{
+        nav = [[UINavigationController alloc] initWithRootViewController:SGRPlayerSettingsPage(@[SGRPlayerButtonsSection()])];
+        // Keep the real player in its window: its intentional old-clip handover must not reach the preview.
+        nav.modalPresentationStyle = UIModalPresentationOverFullScreen;
         [self.window.rootViewController presentViewController:nav animated:NO completion:nil];
+    };
+    // Asked for once the state's crossfades are over.
+    void (^shot)(NSString *) = ^(NSString *name) { after(1, ^{ NSLog(@"[harness] settings: screenshot %@ now", name); }); };
+    // The card's height in the window, and its top against the navigation bar's foot.
+    NSString *(^pinned)(void) = ^{
+        CGRect frame = [card() convertRect:card().bounds toView:self.window];
+        return [NSString stringWithFormat:@"card %@ in the window, bar's foot %.0f, offset %.0f", NSStringFromCGRect(frame),
+                CGRectGetMaxY([nav.navigationBar convertRect:nav.navigationBar.bounds toView:self.window]), table().contentOffset.y];
+    };
+    CGFloat (^cardTop)(void) = ^CGFloat { return CGRectGetMinY([card() convertRect:card().bounds toView:self.window]); };
+    CGFloat (^barFoot)(void) = ^CGFloat { return CGRectGetMaxY([nav.navigationBar convertRect:nav.navigationBar.bounds toView:self.window]); };
+    __block NSString *playerBefore;
+    __block NSDictionary *settingsBefore;
+    __block NSURL *fileC;
+
+    [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        if (stored(SGRKeyPlayerAnimatedStill) && stored(SGRKeyPlayerAnimatedVisualiser)) sg_bothOn++;
+    }];
+
+    NSMutableArray<NSArray *> *script = [NSMutableArray array];
+    void (^step)(NSTimeInterval, dispatch_block_t) = ^(NSTimeInterval delay, dispatch_block_t block) { [script addObject:@[@(delay), block]]; };
+
+    // The clip is in by 3 s (the motion scenario's first step), and the page opens over the player then.
+    step(3, ^{ open(); });
+    step(1.5, ^{
+        playerBefore = playerNow();
+        CGFloat height = card().frame.size.height;
+        BOOL inTable = card().window && card().superview.superview == table() && fabs(cardTop() - barFoot() - 8) < 1;
+        BOOL under = CGRectGetMinY([segments() convertRect:segments().bounds toView:self.window]) > CGRectGetMaxY([card() convertRect:card().bounds toView:self.window]);
+        [self expect:inTable && under && fabs(height - 480) < 1 && segments().numberOfSegments == 5 step:@"the card pinned over the rows, expanded, the backgrounds under it"
+              detail:[NSString stringWithFormat:@"%@, height %.0f, segments %@", pinned(), height, NSStringFromCGRect(segments().frame)]];
+        [self expect:motionOn() && !demo() && [[[card() valueForKey:@"_canvas"] accessibilityValue] isEqualToString:@"Animated background"]
+                step:@"Animated: the player's clip on the card" detail:cardState()];
+        [self expect:[[[card() valueForKey:@"_title"] text] isEqualToString:@"Loose Canon"]
+                     && [[[card() valueForKey:@"_artist"] text] isEqualToString:@"Vitrine harness"]
+                     && [[[card() valueForKey:@"_elapsed"] text] isEqualToString:@"1:15"]
+                     && [[[card() valueForKey:@"_remaining"] text] isEqualToString:@"-2:45"]
+                step:@"the actual current song, artist, elapsed and remaining time" detail:cardState()];
+        NSString *clipping = cardClipping(card());
+        [self expect:!clipping step:@"the expanded card whole" detail:clipping ?: @"every part in its band"];
+        UIButton *toggle = [card() valueForKey:@"_demoButton"];
+        [self expect:!toggle.hidden && (toggle.accessibilityTraits & UIAccessibilityTraitButton) && [toggle.accessibilityLabel isEqualToString:@"Preview without a clip"]
+                     && [[card() valueForKey:@"_canvas"] isAccessibilityElement] && [[[card() valueForKey:@"_canvas"] accessibilityLabel] isEqualToString:@"Player preview"]
+                step:@"VoiceOver: the card one element, the demo a button" detail:[NSString stringWithFormat:@"button \"%@\" traits %llu", toggle.accessibilityLabel, toggle.accessibilityTraits]];
+        [self expect:[noClip().value() isEqualToString:@"Cover art"] && noClip().menu.count == 3 && pathOf(noClip()) && !rowTitled(@"Full-screen cover without a clip") && !rowTitled(@"Visualizer when there's no clip")
+                step:@"one Song without a clip choice, Cover art with both switches unset" detail:[NSString stringWithFormat:@"reads %@ of %@; %@", noClip().value(), noClip().menu, switches()]];
+        shot(@"expanded");
     });
-    after(4, ^{
-        UIView *view = showcase();
-        UISegmentedControl *segments = control();
-        CGRect card = view.frame, header = table().tableHeaderView.frame;
-        BOOL shaped = view.window && card.size.width > card.size.height && card.size.width > header.size.width - 48;
-        // Every segment's title whole: the widest, Visualizer's, is not cut short.
-        BOOL whole = YES;
-        for (UILabel *label in [self labelsIn:segments]) whole = whole && label.intrinsicContentSize.width <= label.bounds.size.width + 0.5;
-        [self expect:shaped && segments.numberOfSegments == 5 && whole && CGRectGetMinY(segments.frame) > CGRectGetMaxY(card)
-                step:@"the card leads the page, the five backgrounds under it, their names whole"
-              detail:[NSString stringWithFormat:@"card %@ in a header of %@, control %@ with %ld segments", NSStringFromCGRect(card),
-                      NSStringFromCGRect(header), NSStringFromCGRect(segments.frame), (long)segments.numberOfSegments]];
-        NSInteger sections = table().numberOfSections;
-        [self expect:sections == 2 && [table() numberOfRowsInSection:1] == 3 step:@"the Mini player section on the page"
-              detail:[NSString stringWithFormat:@"%ld sections, %ld rows in the second", (long)sections, (long)[table() numberOfRowsInSection:1]]];
-        expectBackground(@"Animated", YES, NO, YES, NO);
-        pick(2);
+    // Covered by another page, the card does nothing; the background's switches changed meanwhile, as elsewhere.
+    step(2.5, ^{
+        closedDecoder = motionOn();
+        [nav pushViewController:[UIViewController new] animated:NO];
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGRKeyPlayerAnimatedStill];
     });
-    after(5, ^{ expectBackground(@"Fluid", YES, NO, NO, NO); pick(1); });
-    after(6, ^{ expectBackground(@"Colors", NO, YES, NO, NO); pick(0); });
-    after(7, ^{ expectBackground(@"Still", NO, NO, NO, NO); pick(4); });
-    after(8, ^{
-        expectBackground(@"Visualizer", YES, NO, NO, YES);
-        NSLog(@"[harness] settings: screenshot the Visualizer card now");
+    step(0.5, ^{
+        [self expect:![[card() valueForKey:@"_active"] boolValue] && !motionOn() && !hillsOn() step:@"covered: no clip or hills on the card" detail:cardState()];
+        [self expect:!closedDecoder step:@"covered: the preview decoder is released" detail:closedDecoder ? @"still retained" : @"released"];
+        [nav popViewControllerAnimated:NO];
     });
-    // Held a little longer, so the screenshot catches it.
-    after(10, ^{ pick(3); });
-    after(11, ^{
-        expectBackground(@"Animated again", YES, NO, YES, NO);
+    step(0.5, ^{
+        UIButton *menu = (UIButton *)cellOf(noClip()).accessoryView;
+        [self expect:[noClip().value() isEqualToString:@"Full-screen cover"] && [menu.accessibilityValue isEqualToString:@"Full-screen cover"] && motionOn()
+                step:@"back on the page: Full-screen cover from the switch stored meanwhile, the clip back" detail:[NSString stringWithFormat:@"row \"%@\", menu \"%@\"; %@", noClip().value(), menu.accessibilityValue, cardState()]];
+        // Both on, as an older build could leave them: shown as the full-screen cover, and left stored as they are.
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:SGRKeyPlayerAnimatedVisualiser];
+        reread();
+        [self expect:[noClip().value() isEqualToString:@"Full-screen cover"] && stored(SGRKeyPlayerAnimatedStill) && stored(SGRKeyPlayerAnimatedVisualiser)
+                step:@"both stored on: Full-screen cover, nothing rewritten" detail:switches()];
+        [NSUserDefaults.standardUserDefaults setBool:NO forKey:SGRKeyPlayerAnimatedStill];
+        reread();
+        [self expect:[noClip().value() isEqualToString:@"Visualizer"] step:@"the Visualizer's switch alone: Visualizer" detail:switches()];
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:SGRKeyPlayerAnimatedVisualiser];
+        [NSUserDefaults.standardUserDefaults removeObjectForKey:SGRKeyPlayerAnimatedStill];
+        reread();
+        sg_bothOn = 0;
+    });
+    // Each choice through the menu's own block: the other switch off at every write, and the card shows it.
+    step(0.5, ^{
+        choose(1);
+        [self expect:stored(SGRKeyPlayerAnimatedStill) && !stored(SGRKeyPlayerAnimatedVisualiser) && demo() && stillShown() && !motionOn() && !hillsOn()
+                     && [playerNow() isEqualToString:playerBefore] && SGRHarnessPlayerCommands() == 0
+                step:@"Full-screen cover chosen: its switch alone on, the card shows it" detail:[NSString stringWithFormat:@"%@; %@", switches(), cardState()]];
+        shot(@"demo-on");
+    });
+    step(2.5, ^{
+        choose(2);
+        [self expect:!stored(SGRKeyPlayerAnimatedStill) && stored(SGRKeyPlayerAnimatedVisualiser) && demo() && hillsOn() && !stillShown() && !motionOn()
+                step:@"Visualizer chosen: its switch alone on, the hills on the card" detail:[NSString stringWithFormat:@"%@; %@", switches(), cardState()]];
+        shot(@"demo-visualizer");
+    });
+    step(2.5, ^{
+        choose(1);
+        BOOL fullScreen = stored(SGRKeyPlayerAnimatedStill) && !stored(SGRKeyPlayerAnimatedVisualiser);
+        choose(0);
+        [self expect:fullScreen && !stored(SGRKeyPlayerAnimatedStill) && !stored(SGRKeyPlayerAnimatedVisualiser) && demo() && !hillsOn() && !stillShown() && !motionOn()
+                step:@"Visualizer to Full-screen cover to Cover art: one switch on at most, then none" detail:[NSString stringWithFormat:@"%@; %@", switches(), cardState()]];
+        choose(2);
+        [self expect:sg_bothOn == 0 step:@"the two switches never stored on together" detail:[NSString stringWithFormat:@"%lu writes left both on", (unsigned long)sg_bothOn]];
+    });
+    // A tap on the card shows the song as it is again; its button shows it without a clip.
+    step(0.5, ^{
+        CGRect frame = [card() convertRect:card().bounds toView:self.window];
+        SGHarnessTap(self.window, CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame)));
+    });
+    step(0.8, ^{
+        [self expect:!demo() && motionOn() && !hillsOn() && [playerNow() isEqualToString:playerBefore] && SGRHarnessPlayerCommands() == 0
+                step:@"a tap on the card: the clip again, the player untouched" detail:cardState()];
+        shot(@"demo-off");
+    });
+    step(2.5, ^{
+        UIView *toggle = [card() valueForKey:@"_demoButton"];
+        CGRect frame = [toggle convertRect:toggle.bounds toView:self.window];
+        SGHarnessTap(self.window, CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame)));
+    });
+    step(0.8, ^{
+        UIButton *toggle = [card() valueForKey:@"_demoButton"];
+        [self expect:demo() && hillsOn() && !motionOn() && (toggle.accessibilityTraits & UIAccessibilityTraitSelected)
+                     && [[[card() valueForKey:@"_canvas"] accessibilityValue] isEqualToString:@"Animated background, without a clip: Visualizer"]
+                     && [playerNow() isEqualToString:playerBefore] && SGRHarnessPlayerCommands() == 0
+                step:@"the Without a clip button: the Visualizer, said as such, the player untouched" detail:cardState()];
+        sg_lowPower = YES;
+        reportPower();
+        [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+    });
+    step(0.8, ^{
+        SGRArtworkField *field = (SGRArtworkField *)firstOfClass(card(), @"SGRArtworkField");
+        [self expect:demo() && !hillsOn() && !stillShown() && !motionOn() && field.motionHeld step:@"Low Power Mode: the cover art held still, as the player shows" detail:cardState()];
+        sg_lowPower = NO;
+        [NSNotificationCenter.defaultCenter postNotificationName:NSProcessInfoPowerStateDidChangeNotification object:nil];
+    });
+    step(0.8, ^{
+        BOOL back = demo() && hillsOn();
+        pick(SGRPlayerBackgroundFluid);
+        BOOL ended = !demo() && !hillsOn() && !motionOn();
+        pick(SGRPlayerBackgroundAnimated);
+        [self expect:back && ended && !demo() && [playerNow() isEqualToString:playerBefore] && SGRHarnessPlayerCommands() == 0
+                step:@"Fluid ends the demo, and Animated again does not bring it back" detail:cardState()];
+    });
+    // Scrolled: compact, still under the bar, whole; the rows go under it.
+    step(1, ^{
+        // Half of the way the card shrinks: 122 pt of the 244 between 480 and 236.
+        [table() setContentOffset:CGPointMake(0, 122 - table().adjustedContentInset.top) animated:NO];
+        [table() layoutIfNeeded];
+        NSString *halfway = cardClipping(card());
+        CGFloat half = card().frame.size.height;
+        [table() setContentOffset:CGPointMake(0, 600 - table().adjustedContentInset.top) animated:NO];
+        [table() layoutIfNeeded];
+        NSString *clipping = cardClipping(card());
+        CGFloat height = card().frame.size.height;
+        [self expect:card().window && fabs(half - 358) < 1 && !halfway && fabs(height - 236) < 1 && fabs(cardTop() - barFoot() - 8) < 1 && !clipping
+                step:@"scrolled: the card shrinking whole, then compact under the bar" detail:[NSString stringWithFormat:@"halfway %.0f (%@); %@, height %.0f; %@", half,
+                                                       halfway ?: @"whole", pinned(), height, clipping ?: @"every part in its band"]];
+        CGPoint savedOffset = table().contentOffset;
+        SGModRow *row = rowTitled(@"Header glass");
+        UITableViewCell *cell = cellOf(row);
+        CGRect rowFrame = [table() rectForRowAtIndexPath:pathOf(row)];
+        // A visible-color marker on an actual row, scrolled under the status/navigation region.
+        UIView *marker = [[UIView alloc] initWithFrame:CGRectMake(20, 0, 80, cell.contentView.bounds.size.height)];
+        marker.backgroundColor = UIColor.magentaColor;
+        [cell.contentView addSubview:marker];
+        CGFloat belowPreview = CGRectGetMaxY([card() convertRect:card().bounds toView:table()]) - table().bounds.origin.y + 40;
+        [table() setContentOffset:CGPointMake(0, CGRectGetMidY(rowFrame) - belowPreview) animated:NO];
+        [table() layoutIfNeeded];
+        CGPoint exposedPoint = [marker convertPoint:CGPointMake(40, marker.bounds.size.height / 2) toView:table()];
+        NSString *exposed = pixelAtPoint(table(), exposedPoint);
+        [table() setContentOffset:CGPointMake(0, CGRectGetMidY(rowFrame) - 50) animated:NO];
+        [table() layoutIfNeeded];
+        CGPoint point = [marker convertPoint:CGPointMake(40, marker.bounds.size.height / 2) toView:table()];
+        UIView *hit = [table() hitTest:point withEvent:nil];
+        CGFloat screenY = point.y - table().bounds.origin.y;
+        NSString *color = pixelAtPoint(table(), point);
+        [self expect:cell.window && screenY > 0 && screenY < 116 && [exposed isEqualToString:@"255,0,255,255"]
+                     && [color isEqualToString:@"0,0,0,255"] && ![hit isDescendantOfView:cell]
+                step:@"scrolled rows above the preview bottom are neither visible nor hit-testable"
+              detail:[NSString stringWithFormat:@"row y %.0f, exposed %@, covered %@, hit %@", screenY, exposed, color, NSStringFromClass(hit.class)]];
+        [marker removeFromSuperview];
+        [table() setContentOffset:savedOffset animated:NO];
+        [table() layoutIfNeeded];
+        shot(@"compact");
+    });
+    // Song without a clip's menu opened by a finger, for the screenshot, and closed by a tap on the bar.
+    step(2.5, ^{
+        UIView *menu = cellOf(noClip()).accessoryView;
+        CGRect frame = [menu convertRect:menu.bounds toView:self.window];
+        SGHarnessTap(self.window, CGPointMake(CGRectGetMidX(frame), CGRectGetMidY(frame)));
+    });
+    step(1, ^{ shot(@"no-clip"); });
+    step(2.5, ^{
+        CGRect bar = [nav.navigationBar convertRect:nav.navigationBar.bounds toView:self.window];
+        SGHarnessTap(self.window, CGPointMake(CGRectGetMidX(bar), CGRectGetMaxY(bar) - 10));
+    });
+    // The Buttons chips: each one its key alone, the card at once, kept when the page opens again.
+    step(2.5, ^{
+        NSArray<UIButton *> *found = chips();
+        BOOL whole = found.count == 3;
+        for (UIButton *chip in found) {
+            whole = whole && chip.selected && chip.frame.size.height >= 44 && (chip.accessibilityTraits & UIAccessibilityTraitButton)
+                    && (chip.accessibilityTraits & UIAccessibilityTraitSelected);
+        }
+        NSArray *labels = [found valueForKey:@"accessibilityLabel"];
+        [self expect:whole && [labels isEqualToArray:@[@"Shuffle", @"Repeat", @"Video"]] && !rowTitled(@"Switch to video") && !rowTitled(@"Shuffle")
+                step:@"three chips in the Buttons card, all selected, 44 pt, buttons" detail:[NSString stringWithFormat:@"%@ %@", labels, [found valueForKey:@"frame"]]];
+        shot(@"chips");
+    });
+    step(2.5, ^{
+        NSArray<NSString *> *keys = @[SGRKeyPlayerHideShuffle, SGRKeyPlayerHideRepeat, SGKeyHideVideoSwitch];
+        BOOL alone = YES;
+        NSMutableArray<NSString *> *seen = [NSMutableArray array];
+        for (NSUInteger i = 0; i < 3; i++) {
+            settingsBefore = storedSettings();
+            [chips()[i] sendActionsForControlEvents:UIControlEventTouchUpInside];
+            NSArray<NSString *> *changed = changedSettings(settingsBefore, storedSettings());
+            alone = alone && [changed isEqualToArray:@[keys[i]]] && stored(keys[i]);
+            [seen addObject:[changed componentsJoinedByString:@","]];
+        }
+        // Each chip's name whole once it is drawn unselected, its glyph changed.
+        for (UIButton *chip in chips()) {
+            if (chip.titleLabel.intrinsicContentSize.width > chip.titleLabel.bounds.size.width + 0.5 || chip.frame.size.height < 44) alone = NO;
+            [seen addObject:[NSString stringWithFormat:@"%@ %@", chip.accessibilityLabel, NSStringFromCGRect(chip.frame)]];
+        }
+        UIView *preview = card();
+        [preview layoutIfNeeded];
+        CGFloat play = [[preview valueForKey:@"_play"] center].x, previous = [[preview valueForKey:@"_previous"] center].x;
+        CGFloat slot = ([preview bounds].size.width - 2 * 16) / 5;
+        BOOL drawn = [[preview valueForKey:@"_shuffle"] alpha] == 0 && [[preview valueForKey:@"_repeat"] alpha] == 0 && [[preview valueForKey:@"_chip"] isHidden]
+                     && play - previous > slot + 1;
+        [self expect:alone && drawn step:@"each chip its key alone, the card without the three, previous and next spread"
+              detail:[NSString stringWithFormat:@"changed %@; previous %.0f pt from play, a slot %.0f", seen, play - previous, slot]];
+        shot(@"chips-off");
+    });
+    step(2.5, ^{
+        [self.window.rootViewController dismissViewControllerAnimated:NO completion:nil];
+        open();
+    });
+    step(1, ^{
+        NSArray<UIButton *> *found = chips();
+        BOOL kept = found.count == 3;
+        for (UIButton *chip in found) kept = kept && !chip.selected && !(chip.accessibilityTraits & UIAccessibilityTraitSelected);
+        [self expect:kept && [[card() valueForKey:@"_shuffle"] alpha] == 0 step:@"opened again: the three chips as left" detail:[[found valueForKey:@"selected"] description]];
+        for (UIButton *chip in found) [chip sendActionsForControlEvents:UIControlEventTouchUpInside];
+        [self expect:!stored(SGRKeyPlayerHideShuffle) && !stored(SGRKeyPlayerHideRepeat) && !stored(SGKeyHideVideoSwitch)
+                step:@"the three chips selected again, the keys off" detail:[[chips() valueForKey:@"selected"] description]];
+        [table() setContentOffset:CGPointMake(0, -table().adjustedContentInset.top) animated:NO];
+        [table() layoutIfNeeded];
+    });
+    // Another track whose clip comes 1 s late, and before it comes a third whose clip comes 3 s late: the card drops the
+    // first one's clip at once, never shows the second's, and shows the third's once it is in.
+    step(1, ^{
+        SGRHarnessSetLookupDelay(1);
+        setenv("HARNESS_CANVAS", [NSString stringWithFormat:@"https://canvas.harness/b-%d.mp4", getpid()].UTF8String, 1);
+        serve(imageURI(@"bbbb"), solid(UIColor.blueColor), 2, NO);
+        [self playTrack:@"spotify:track:harnessB" image:imageURI(@"bbbb")];
+    });
+    step(0.3, ^{
+        [self expect:!motionOn() && SGRPlayerMotionShowing() && [[card() valueForKey:@"_track"] isEqualToString:@"spotify:track:harnessB"]
+                step:@"handover: no old preview clip while the real player keeps its clip" detail:cardState()];
+        SGRHarnessSetLookupDelay(3);
+        setenv("HARNESS_CANVAS", [NSString stringWithFormat:@"https://canvas.harness/c-%d.mp4", getpid()].UTF8String, 1);
+        serve(imageURI(@"cccc"), solid(UIColor.greenColor), 0.2, NO);
+        [self playTrack:@"spotify:track:harnessC" image:imageURI(@"cccc")];
+    });
+    step(1.5, ^{
+        [self expect:!motionOn() && [[card() valueForKey:@"_track"] isEqualToString:@"spotify:track:harnessC"] step:@"the track before's clip, come after the next track, not shown" detail:cardState()];
+        SGMotionFile([NSURL URLWithString:@(getenv("HARNESS_CANVAS"))], ^(NSURL *file) { fileC = file; });
+    });
+    step(3, ^{
+        NSURL *playing = [motionOn() valueForKey:@"_file"];
+        [self expect:playing && fileC && [playing isEqual:fileC] step:@"the track's own clip on the card once it is in"
+              detail:[NSString stringWithFormat:@"card plays %@, the track's is %@", playing.lastPathComponent, fileC.lastPathComponent]];
+        NSString *color = colorName([(UIImageView *)[card() valueForKey:@"_cover"] image]);
+        [self expect:[color isEqualToString:@"green"] step:@"the current song's cover, not the preceding song's late blue image" detail:color];
+        SGRHarnessSetLookupDelay(0);
+    });
+    step(0.5, ^{
+        checkScrollWork();
+        pick(SGRPlayerBackgroundVisualiser);
+    });
+    step(0.8, ^{
+        checkScrollWork();
+        pick(SGRPlayerBackgroundAnimated);
+        choose(2); // the preview's hills only; the real player still has its clip
+    });
+    step(0.8, ^{
+        closedVisualiser = hillsOn();
+        [self expect:closedVisualiser != nil step:@"the visualizer preview is present before dismissal" detail:cardState()];
+        [self.window.rootViewController dismissViewControllerAnimated:NO completion:nil];
+        nav = nil;
+    });
+    step(0.8, ^{
+        sg_previewPaletteRequests = 0;
+        sg_watchPreviewPalette = YES;
+        [NSNotificationCenter.defaultCenter postNotificationName:SGRNowPlayingArtworkDidChangeNotification object:nil];
+        sg_watchPreviewPalette = NO;
+        [self expect:!closedVisualiser && sg_previewPaletteRequests == 0
+                step:@"dismissed visualizer is deallocated and artwork requests no preview palette"
+              detail:[NSString stringWithFormat:@"view %@, %lu requests", closedVisualiser ? @"retained" : @"released", (unsigned long)sg_previewPaletteRequests]];
+        open();
+    });
+    // The card and the chips at an iPhone SE's width and this one's, at the default text size and the largest.
+    step(0.5, ^{
+        NSMutableArray<NSString *> *wrong = [NSMutableArray array];
+        for (NSNumber *width in @[@288, @370]) {
+            for (UIContentSizeCategory category in @[UIContentSizeCategoryLarge, UIContentSizeCategoryAccessibilityExtraExtraExtraLarge]) {
+                UIView *probe = [[NSClassFromString(@"SGRPlayerPreview") alloc] initWithFrame:CGRectMake(-2000, 0, width.doubleValue, 236)];
+                [self.window addSubview:probe];
+                probe.traitOverrides.preferredContentSizeCategory = category;
+                [probe updateTraitsIfNeeded];
+                CGFloat least = [[probe valueForKey:@"minimumHeight"] doubleValue], compact = MAX(least, 236);
+                // Include shorter screens' expanded heights as well as the full 480 pt preview.
+                NSMutableArray<NSNumber *> *sizes = [NSMutableArray arrayWithObject:@(least)];
+                for (NSNumber *expanded in @[@320, @400, @480])
+                    for (NSUInteger step = 0; step <= 10; step++)
+                        [sizes addObject:@(round(compact + (expanded.doubleValue - compact) * step / 10.0))];
+                for (NSNumber *height in sizes) {
+                    probe.frame = CGRectMake(-2000, 0, width.doubleValue, height.doubleValue);
+                    NSString *clipping = cardClipping(probe);
+                    if (clipping) [wrong addObject:[NSString stringWithFormat:@"card %@x%@ at %@: %@", width, height, category, clipping]];
+                }
+                if (least > 236) [wrong addObject:[NSString stringWithFormat:@"card %@ %@ needs %.0f compact", width, category, least]];
+                [probe removeFromSuperview];
+
+                UITableViewCell *cell = [[NSClassFromString(@"SGRPlayerButtonsCell") alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+                cell.frame = CGRectMake(-2000, 0, width.doubleValue, 44);
+                [self.window addSubview:cell];
+                cell.traitOverrides.preferredContentSizeCategory = category;
+                [cell updateTraitsIfNeeded];
+                [cell performSelector:@selector(readKeys)];
+                CGFloat height = [cell systemLayoutSizeFittingSize:CGSizeMake(width.doubleValue, 0) withHorizontalFittingPriority:UILayoutPriorityRequired
+                                                verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
+                cell.frame = CGRectMake(-2000, 0, width.doubleValue, height);
+                [cell layoutIfNeeded];
+                CGRect inside = CGRectInset(cell.contentView.bounds, -0.5, -0.5);
+                NSMutableArray<NSValue *> *placed = [NSMutableArray array];
+                for (UIView *view in cell.contentView.subviews) {
+                    if (![view isKindOfClass:UIButton.class]) continue;
+                    UIButton *chip = (UIButton *)view;
+                    BOOL whole = chip.titleLabel.intrinsicContentSize.width <= chip.titleLabel.bounds.size.width + 0.5;
+                    if (!CGRectContainsRect(inside, chip.frame) || chip.frame.size.height < 44 || !whole)
+                        [wrong addObject:[NSString stringWithFormat:@"chip %@ %@ at %@ %@ in %@", chip.accessibilityLabel, NSStringFromCGRect(chip.frame), width, category, NSStringFromCGRect(inside)]];
+                    for (NSValue *other in placed) if (CGRectIntersectsRect(other.CGRectValue, chip.frame)) [wrong addObject:[NSString stringWithFormat:@"chip %@ over another", chip.accessibilityLabel]];
+                    [placed addObject:[NSValue valueWithCGRect:chip.frame]];
+                }
+                [cell removeFromSuperview];
+            }
+        }
+        [self expect:wrong.count == 0 step:@"the card at every height and the chips whole, 288 and 370 pt wide, default and largest text"
+              detail:wrong.count ? [wrong componentsJoinedByString:@" | "] : @"all whole"];
+    });
+    // No playback: the actual last song, including its asynchronous image, still belongs in the preview.
+    step(0.5, ^{
+        pick(SGRPlayerBackgroundStill);
+        serve(imageURI(@"dddd"), solid(UIColor.magentaColor), 0.4, NO);
+        NSString *url = [@"https://i.scdn.co/image/" stringByAppendingString:[imageURI(@"dddd") substringFromIndex:14]];
+        [NSUserDefaults.standardUserDefaults setObject:@{@"uri": @"spotify:track:lastD", @"title": @"Last song D", @"artwork": url}
+                                               forKey:SGKeyLastTrack];
+        SGRHarnessClearTrack();
+    });
+    step(1, ^{
+        NSString *color = colorName([(UIImageView *)[card() valueForKey:@"_cover"] image]);
+        [self expect:[color isEqualToString:@"magenta"] && [[[card() valueForKey:@"_title"] text] isEqualToString:@"Last song D"]
+                step:@"no playback: the last song's title and delayed cover" detail:color];
+        serve(imageURI(@"eeee"), solid(UIColor.blueColor), 1, NO);
+        NSString *url = [@"https://i.scdn.co/image/" stringByAppendingString:[imageURI(@"eeee") substringFromIndex:14]];
+        [NSUserDefaults.standardUserDefaults setObject:@{@"uri": @"spotify:track:lastE", @"title": @"Last song E", @"artwork": url}
+                                               forKey:SGKeyLastTrack];
+        SGRHarnessClearTrack();
+    });
+    step(0.1, ^{
+        NSString *url = [@"https://i.scdn.co/image/" stringByAppendingString:[imageURI(@"dddd") substringFromIndex:14]];
+        [NSUserDefaults.standardUserDefaults setObject:@{@"uri": @"spotify:track:lastF", @"title": @"Last song F", @"artwork": url}
+                                               forKey:SGKeyLastTrack];
+        SGRHarnessClearTrack();
+    });
+    step(1.5, ^{
+        NSString *color = colorName([(UIImageView *)[card() valueForKey:@"_cover"] image]);
+        [self expect:[color isEqualToString:@"magenta"] && [[[card() valueForKey:@"_title"] text] isEqualToString:@"Last song F"]
+                step:@"a late last-song image cannot replace the song now shown" detail:color];
+        // A last-song lookup belongs only to the preview, not the real player.
+        SGRHarnessSetLookupDelay(1);
+        NSString *canvas = [NSString stringWithFormat:@"https://canvas.harness/closed-%d.mp4", getpid()];
+        [NSUserDefaults.standardUserDefaults setObject:@{@"uri": @"spotify:track:lastG", @"title": @"Last song G", @"canvas": canvas}
+                                               forKey:SGKeyLastTrack];
+        SGRHarnessClearTrack();
+        pick(SGRPlayerBackgroundAnimated);
+        SGRPlayerMotionPreview(^{ latePreviewCallbacks++; });
+    });
+    // Closed: the card does nothing more, whatever the player does.
+    step(0.5, ^{
+        closedCard = card();
+        [self.window.rootViewController dismissViewControllerAnimated:NO completion:nil];
+        nav = nil;
+    });
+    step(1.5, ^{
+        UIView *left = closedCard;
+        BOOL stopped = !left || (![[left valueForKey:@"_active"] boolValue] && !firstOfClass(left, @"SGRPlayerMotionView") && !firstOfClass(left, @"SGRVisualiserView")
+                                 && ![[left valueForKey:@"_track"] isEqualToString:@"spotify:track:harnessD"]);
+        [self expect:stopped step:@"closed: the card stopped, not following the player"
+              detail:left ? [NSString stringWithFormat:@"card kept, active %@, track %@", [left valueForKey:@"_active"], [left valueForKey:@"_track"]] : @"card gone"];
+        [self expect:latePreviewCallbacks == 0 && SGRPlayerMotionPreview(nil) == nil
+                step:@"dismissal cancels the pending preview result" detail:[NSString stringWithFormat:@"%lu late callbacks", (unsigned long)latePreviewCallbacks]];
+        [self expect:SGRHarnessPlayerCommands() == 0 step:@"no command sent to the player" detail:[NSString stringWithFormat:@"%lu commands", (unsigned long)SGRHarnessPlayerCommands()]];
         NSLog(@"[harness] settings checks: %lu of %lu right -- %@", (unsigned long)(self->_checks - self->_failures), (unsigned long)self->_checks,
               self->_failures ? @"FAIL" : @"PASS");
+        exit(self->_failures ? 1 : 0);
     });
+    runScript(script, 0);
 }
 
 // The Player page opened with the player showing no clip, Animated picked on it: the card looks the clip up.
 - (void)runPreviewChecks {
     __block UINavigationController *nav;
     UIView *(^showcase)(void) = ^{
-        return firstOfClass(((UITableViewController *)nav.topViewController).tableView.tableHeaderView, @"SGRPlayerShowcase");
+        return firstOfClass(((UITableViewController *)nav.topViewController).tableView, @"SGRPlayerPreview");
     };
     void (^pick)(NSUInteger) = ^(NSUInteger index) {
-        UISegmentedControl *segments = (UISegmentedControl *)firstOfClass(showcase().superview, @"UISegmentedControl");
+        UISegmentedControl *segments = (UISegmentedControl *)firstOfClass(((UITableViewController *)nav.topViewController).tableView.tableHeaderView, @"UISegmentedControl");
         segments.selectedSegmentIndex = (NSInteger)index;
         [segments sendActionsForControlEvents:UIControlEventValueChanged];
     };
@@ -3029,6 +3633,14 @@ __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
         unsetenv("HARNESS_CANVAS");
         if (animated) SGRHarnessSetLookupDelay(1.5);
         [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
+    }
+    // settings: Animated, Song without a clip, the Buttons chips and the look switches at their standard (the app's defaults
+    // outlive a run).
+    if ([scenario() isEqualToString:@"settings"]) {
+        NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+        [store setInteger:SGRPlayerBackgroundAnimated forKey:SGRKeyPlayerArtworkBackground];
+        for (NSString *key in @[SGRKeyPlayerAnimatedStill, SGRKeyPlayerAnimatedVisualiser, SGRKeyPlayerHideShuffle, SGRKeyPlayerHideRepeat,
+                                SGKeyHideVideoSwitch, SGRKeyPlayerHeaderGlass, SGRKeyPlayerStarAdd]) [store removeObjectForKey:key];
     }
     if ([scenario() isEqualToString:@"motion"] || [scenario() isEqualToString:@"settings"]) {
         [NSUserDefaults.standardUserDefaults setInteger:3 forKey:@"spotifyglass.redesign.player.background"];

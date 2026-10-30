@@ -910,37 +910,59 @@ static NSString *sg_previewTrack;
 static NSURL *sg_previewFile;
 static UIImage *sg_previewPoster;
 static void (^sg_previewArrived)(void);
+static SGMotionTicket *sg_previewTicket;
+static BOOL sg_previewLooking;
+static NSUInteger sg_previewGeneration;
+
+void SGRPlayerMotionPreviewStop(void) {
+    sg_previewGeneration++;
+    [sg_previewTicket cancel];
+    sg_previewTicket = nil;
+    sg_previewLooking = NO;
+    sg_previewArrived = nil;
+    sg_previewTrack = nil;
+    sg_previewFile = nil;
+    sg_previewPoster = nil;
+    [sg_previewView stop];
+    [sg_previewView removeFromSuperview];
+    sg_previewView = nil;
+    sg_previewViewFile = nil;
+}
 
 UIView *SGRPlayerMotionPreview(void (^arrived)(void)) {
-    if (sg_motionFile) return previewOf(sg_motionFile, sg_motionPoster);
     SGShownTrack *shown = SGShownTrackNow();
     NSString *track = shown.uri;
+    if (![track isEqualToString:sg_previewTrack]) {
+        SGRPlayerMotionPreviewStop();
+        sg_previewTrack = track;
+    }
     if (!track) return nil;
-    BOOL asked = [track isEqualToString:sg_previewTrack];
-    if (asked && sg_previewFile) return previewOf(sg_previewFile, sg_previewPoster);
+    // The real player deliberately retains the previous clip during handover. The preview must not borrow it.
+    if (sg_motionFile && [track isEqualToString:sg_shown]) return previewOf(sg_motionFile, sg_motionPoster);
+    if (sg_previewFile) return previewOf(sg_previewFile, sg_previewPoster);
     if (!arrived) return nil;
     // The newest page's to be told; a walk already out for this track is waited on rather than asked again.
     sg_previewArrived = [arrived copy];
-    if (asked) return nil;
-    sg_previewTrack = track;
-    sg_previewFile = nil;
-    sg_previewPoster = nil;
+    if (sg_previewLooking) return nil;
+    sg_previewLooking = YES;
+    NSUInteger generation = sg_previewGeneration;
     SGLog(@"redesign player: the Player page looks up the clip of %@%@", track, shown.current ? @"" : @", the last played");
-    SGMotionClipFor(track, shown.canvasURL, shown.artist, shown.album, SGMotionPixels(),
+    sg_previewTicket = SGMotionRequestClip(track, shown.canvasURL, shown.artist, shown.album, SGMotionPixels(),
                     ^(NSURL *file, NSString *source) {
-        if (![track isEqualToString:sg_previewTrack]) return;
+        if (generation != sg_previewGeneration) return;
         // Nothing found is not kept: the page asks again the next time it shows Animated.
         if (!file) {
-            sg_previewTrack = nil;
+            sg_previewLooking = NO;
             sg_previewArrived = nil;
             return;
         }
         SGMotionPoster(file, ^(UIImage *poster) {
-            if (![track isEqualToString:sg_previewTrack]) return;
+            if (generation != sg_previewGeneration) return;
+            sg_previewLooking = NO;
+            sg_previewTicket = nil;
             void (^done)(void) = sg_previewArrived;
             sg_previewArrived = nil;
             if (!poster || poster.size.width <= 0) {
-                sg_previewTrack = nil;
                 return;
             }
             sg_previewFile = file;

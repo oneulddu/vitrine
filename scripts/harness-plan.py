@@ -156,6 +156,8 @@ HARNESSES = [
      "run": "sh harness/player-refinements/check.sh"},
     {"name": "Player upcoming tracks", "dir": "player",
      "run": "sh harness/player/upcoming-tracks-check.sh"},
+    {"name": "Player settings", "dir": "player", "theos": True,
+     "run": "sh harness/player/settings-check.sh && python3 harness/player/settings-mutation-check.py"},
     {"name": "Preferences and counters", "dir": "prefs",
      "run": "sh harness/prefs/check.sh"},
     {"name": "Radio modes", "dir": "radio-modes",

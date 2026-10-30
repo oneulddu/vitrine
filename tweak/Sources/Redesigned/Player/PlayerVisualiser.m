@@ -202,6 +202,7 @@ static NSDictionary *noActions(void) {
 - (void)setBlurred:(BOOL)blurred animated:(BOOL)animated;
 - (void)appear:(BOOL)animated;
 - (void)disappear:(void (^)(void))done;
+- (void)stopPreview;
 @end
 
 @implementation SGRVisualiserView {
@@ -212,7 +213,7 @@ static NSDictionary *noActions(void) {
     UIVisualEffectView *_lyricsBlur;
     CADisplayLink *_link;
     NSTimer *_wakeTimer; // no display link while silent; only checks for newly published sound
-    BOOL _reading, _idle, _inactive;
+    BOOL _reading, _idle, _inactive, _previewStopped;
     float _front[kBands], _back[kBands], _peak, _pulse;
     uint64_t _generation;
     CFTimeInterval _fresh, _last;
@@ -357,6 +358,18 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
     if (_reading) needReader(NO);
 }
 
+- (void)stopPreview {
+    _previewStopped = YES;
+    _palette++; // invalidate a palette already being computed off the main thread
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self];
+    [self setReading:NO];
+    [self setMoving:NO];
+    [_wakeTimer invalidate];
+    _wakeTimer = nil;
+    [self removeFromSuperview];
+}
+
 #pragma mark - color
 
 // Bottom left, the whole cover and bottom right in front, the top two behind, so the hills read as the cover's
@@ -377,6 +390,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 }
 
 - (void)artworkChanged {
+    if (_previewStopped) return;
     NSUInteger generation = ++_palette; // nil/new-track artwork invalidates an outstanding palette too
     NSString *uri = nil, *identity = nil;
     UIImage *image = SGRNowPlayingArtwork(&uri, &identity);
@@ -756,6 +770,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 #pragma mark - moving
 
 - (void)playerStateDidChange:(SPTPlayerState *)state {
+    if (_previewStopped) return;
     NSString *uri = SGURIString(state.track.URI);
     if (![_trackURI isEqualToString:uri]) {
         _trackURI = [uri copy];
@@ -824,6 +839,7 @@ static UIColor *lit(UIColor *color, CGFloat luminance) {
 // stopped. While the player animates, it comes back once the animation is expected to be over.
 - (void)updateMotion {
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(updateMotion) object:nil];
+    if (_previewStopped) return;
     BOOL front = !_inactive && UIApplication.sharedApplication.applicationState == UIApplicationStateActive;
     BOOL may = self.window && !self.hidden && front && !NSProcessInfo.processInfo.lowPowerModeEnabled
         && !SGRVisualiserStandsDownFor(NSProcessInfo.processInfo.thermalState);
@@ -1227,6 +1243,11 @@ static SGRVisualiserShuffle *sg_shuffle;
 // is the same one, with its link and the palette read it started let alone, where a new one a tap raced the old
 // one's teardown.
 static SGRVisualiserView *sg_preview;
+
+void SGRPlayerVisualiserPreviewStop(void) {
+    [sg_preview stopPreview];
+    sg_preview = nil;
+}
 
 UIView *SGRPlayerVisualiserPreview(void) {
     if (sg_preview) {

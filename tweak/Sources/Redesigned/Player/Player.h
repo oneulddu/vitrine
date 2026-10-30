@@ -248,6 +248,9 @@ BOOL SGRPlayerCoverHidden(void);
 // `arrived` runs once on the main queue when a call would return it (never when nothing is found, or the
 // track changed). Without `arrived` it only answers with a clip already in.
 UIView *SGRPlayerMotionPreview(void (^arrived)(void));
+// End the page's preview only: cancel its lookup, invalidate late posters, and release its decoder.
+// Shared transfers still needed by the real player are not cancelled.
+void SGRPlayerMotionPreviewStop(void);
 // How dark the clip is drawn (the dim's opacity, where its gradient is whole) for white text over it to keep
 // 4.5:1, or 7:1 with `contrast` (Increase Contrast), when `luminance` is the clip's bright end, its 75th
 // percentile of linear luminance; between 0.10 and 0.80, 0.15 more while the lyrics are up.
@@ -319,6 +322,8 @@ BOOL SGRPlayerVisualiserShowing(void);
 void SGRPlayerVisualiserUpdate(void);
 // A view of its own drawing the same hills, for the Player page's showcase. It moves only in a window.
 UIView *SGRPlayerVisualiserPreview(void);
+// Release only the page's cached visualizer and stop its observers, timers and pending palette application.
+void SGRPlayerVisualiserPreviewStop(void);
 // Switches the background to `kind` from the ⋯ menu, at once: Fluid, Animated or Visualizer, while it is one of
 // them (SGPlayerMenuOffersAnimatedArtwork); nothing otherwise.
 void SGRPlayerMenuSetBackground(SGRPlayerBackgroundKind kind);
@@ -329,6 +334,11 @@ void SGRPlayerMenuSetBackground(SGRPlayerBackgroundKind kind);
 // it, the background's rows and the Mini player section under it, then `more`, the sections either look
 // shares (App/Pages.m).
 UIViewController *SGRPlayerSettingsPage(NSArray *more);
+// The redesign's Buttons card for the Player page's shared sections (App/Pages.m): Shuffle, Repeat and Video as toggle
+// chips, each selected while its hide key (SGRKeyPlayerHideShuffle, SGRKeyPlayerHideRepeat, SGKeyHideVideoSwitch) is
+// off. Only SGRPlayerSettingsPage's page draws the chips.
+@class SGModSection;
+SGModSection *SGRPlayerButtonsSection(void);
 
 // The play glyph over the play button in `host`, a controls unit's view: the ordinary player's
 // (PlayerControls.x) and the AI DJ's (DJPlayer.x) share it, with its state, spinner and tap handling.

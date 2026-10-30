@@ -1,10 +1,13 @@
 // MotionSources.m's cancellable walk, for sources whose animated artwork store hands out tickets (SGMotionTicket.m);
-// build.sh compiles this only where that file exists. The walk is stubs.m's SGMotionClipFor, and its ticket cancels
-// nothing: the harness never cancels a walk.
-#import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+// build.sh compiles this only where that file exists. Its delayed lookup uses the production ticket's cancellation
+// contract; a cancelled consumer is not called when the shared lookup finishes.
+#import "Shared/AnimatedArtwork/SGMotionTicket.h"
 
 SGMotionTicket *SGMotionRequestClip(NSString *uri, NSURL *canvas, NSString *artist, NSString *album, CGFloat pixels,
                                    void (^done)(NSURL *file, NSString *source)) {
-    SGMotionClipFor(uri, canvas, artist, album, pixels, done);
-    return [SGMotionTicket new];
+    SGMotionTicket *ticket = [SGMotionTicket new];
+    SGMotionClipFor(uri, canvas, artist, album, pixels, ^(NSURL *file, NSString *source) {
+        if (!ticket.cancelled) done(file, source);
+    });
+    return ticket;
 }
