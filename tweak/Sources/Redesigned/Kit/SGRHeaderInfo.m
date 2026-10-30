@@ -32,6 +32,20 @@ static BOOL playInPageColour(void) {
     return on;
 }
 
+static BOOL cutOutPlay(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGFlag(SGRKeyArtistCutOutPlay, NO); });
+    return on;
+}
+
+static BOOL accentPlay(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGFlag(SGRKeyAccentPlay, NO); });
+    return on;
+}
+
 // The text kSide in from the edges; Play at least kPlayWidth wide, the Music app's; the gaps between.
 static const CGFloat kSide = 20, kPlayWidth = 148, kRowSpacing = 16, kRowAbove = 16, kAboutAbove = 14;
 // Round Play: the row as tall as the circle, and the round buttons either side this far off it.
@@ -125,7 +139,7 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     _shuffle.glyphColor = SGRPrimary();
     _shuffle.onGlyphColor = SGRAccent();
     _play = [[SGRPlayCapsule alloc] initWithFrame:CGRectZero];
-    _play.fillColor = UIColor.whiteColor;
+    [self sgr_fillPlay];
     _trailing = [[SGRMirrorButton alloc] initWithFrame:CGRectZero];
     for (UIView *button in @[_shuffle, _play, _trailing]) {
         button.hidden = YES;
@@ -273,6 +287,8 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     if (shuffle) [_shuffle feedFrom:shuffle];
     if (play) {
         if (playColor && playInPageColour()) _play.contentColor = playColor;
+        // The accent as it is now: Automatic moves it with the page.
+        if (_play.cutOut) [self sgr_fillPlay];
         [_play feedFrom:play];
     }
     // Another of Spotify's buttons in the trailing place (save becoming download once the playlist is saved) is
@@ -304,8 +320,15 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     if (_roundPlay == roundPlay) return;
     _roundPlay = roundPlay;
     _play.round = roundPlay;
+    _play.cutOut = roundPlay && cutOutPlay();
+    [self sgr_fillPlay];
     _measuredWidth = -1;
     [self setNeedsLayout];
+}
+
+// Play's fill: white, or the accent for a cut-out Play while SGRKeyAccentPlay is on.
+- (void)sgr_fillPlay {
+    _play.fillColor = _play.cutOut && accentPlay() ? SGRAccent() : UIColor.whiteColor;
 }
 
 - (CGFloat)sgr_rowHeight {

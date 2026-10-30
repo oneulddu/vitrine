@@ -6,7 +6,11 @@ rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/ArtistHarness.app"
 
 for f in Redesigned/Artist/ArtistField.x Redesigned/Artist/ArtistHeader.x Redesigned/Artist/ArtistSections.x Redesigned/Artist/ArtistFollow.x; do
     name=$(basename "$f" .x)
-    "$THEOS/bin/logos.pl" -c generator=internal "$SRC/$f" > "$OUT/gen/$name.m"
+    source="$SRC/$f"
+    if [ "$name" = ArtistSections ] && [ -n "${HARNESS_ARTIST_SECTIONS_SOURCE:-}" ]; then
+        source="$HARNESS_ARTIST_SECTIONS_SOURCE"
+    fi
+    "$THEOS/bin/logos.pl" -c generator=internal "$source" > "$OUT/gen/$name.m"
 done
 
 SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)

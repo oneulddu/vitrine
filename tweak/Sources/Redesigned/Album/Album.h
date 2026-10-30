@@ -27,6 +27,10 @@
 
 // Apple Music's animated cover at the top of an album; on until switched off (AlbumSettings.m).
 #define SGRKeyAlbumMotion @"spotifyglass.redesign.album.motion"
+// The picture-aware cover (AlbumHeader.x): with the Full screen cover, the page's color is read off what the cover is
+// (Kit/SGRCoverRead.h) and the cover stays sharp down through the title, then blurs into that color. Off until
+// switched on (AlbumSettings.m), read at launch.
+#define SGRKeyAlbumAdaptiveCover @"spotifyglass.redesign.album.adaptiveCover"
 UIViewController *SGRAlbumSettingsPage(void);
 
 // AlbumSections.x. The sections under the tracks, one switch each, all dropped until switched off; the last
@@ -98,6 +102,9 @@ void SGRAlbumSetArtwork(UIView *view, UIImage *image);
 // The color Spotify picked for the album, read off the wash it paints behind the header: the field shows it
 // until the cover's own main color has been read, and not after.
 void SGRAlbumSetSpotifyColor(UIView *view, UIColor *color);
+// The color the picture-aware cover read off the cover (AlbumHeader.x), shown by the field instead of the cover's main
+// color; nil goes back to that.
+void SGRAlbumSetCoverColor(UIView *view, UIColor *color);
 // The page comes in whole once its cover has been read (Kit/SGRField.h). Called from the album header's pass
 // only, so a podcast's episode page, the same template with no cover for the field to read, is never held.
 void SGRAlbumHoldPage(UIView *page);

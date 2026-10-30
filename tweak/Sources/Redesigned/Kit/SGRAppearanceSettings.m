@@ -70,8 +70,6 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) {
         SGWithSymbol(SGSwitchRow(SGL(@"settings.appearance.play_page_color.title", @"Play in the page's color"),
             SGL(@"settings.appearance.play_page_color.subtitle", @"The Play button's symbol and word take the page's color. Off, they take the accent color"),
             SGRKeyPlayInPageColour), @"play.fill"),
-        SGWithSymbol(SGOptionRow(SGL(@"settings.appearance.round_artist_play.title", @"Round artist Play"),
-            SGL(@"settings.appearance.round_artist_play.subtitle", @"On artist pages, Play is a round button with its symbol alone"),
-            SGRKeyArtistRoundPlay), @"play.circle.fill"),
+        // Round artist Play lives on the Artists page with its cut-out (Artist/ArtistSettings.m).
     ];
 }

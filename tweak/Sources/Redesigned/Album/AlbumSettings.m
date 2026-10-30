@@ -101,6 +101,10 @@ UIViewController *SGRAlbumSettingsPage(void) {
     SGModRow *cover = SGChoiceRow(SGL(@"settings.album.cover_layout", @"Cover layout"), nil, SGRKeyAlbumFullCover,
         @[SGL(@"settings.cover_layout.card", @"Card"), SGL(@"settings.cover_layout.full_screen", @"Full screen")],
         SGRPageFullCover(SGRKeyAlbumFullCover));
+    // Only the Full screen cover has a picture to read for the page and to keep sharp under the title. In a section of
+    // its own, so its footer goes with it.
+    SGModRow *adaptive = SGOptionRow(SGL(@"settings.album.adaptive_cover.title", @"Picture-aware cover"), nil, SGRKeyAlbumAdaptiveCover);
+    adaptive.visible = ^BOOL { return SGRPageFullCover(SGRKeyAlbumFullCover); };
     SGModRow *motion = SGSwitchRow(SGL(@"settings.album.animated_covers.title", @"Animated covers"), SGL(@"settings.album.animated_covers.subtitle", @"At the top of an album that has one, about 5 MB each"), SGRKeyAlbumMotion);
     SGModRow *notes = SGChoiceRow(SGL(@"settings.album.notes.title", @"Album notes"), nil, SGRKeyAlbumNotesPlace,
         @[SGL(@"settings.album.notes.under_play", @"Under Play"), SGL(@"settings.album.notes.under_tracks", @"Under tracks"),
@@ -128,6 +132,8 @@ UIViewController *SGRAlbumSettingsPage(void) {
 
     return SGRPagePreviewPage(SGL(@"settings.album.title", @"Albums"), albumPreview(names), SGRestartNote, @[
         SGSection(SGL(@"settings.album.cover.header", @"Cover"), @[cover]),
+        SGNotedSection(nil, @[adaptive], SGL(@"settings.album.adaptive_cover.footer",
+                                             @"Picks the page colour from the cover and keeps it sharp under the title.")),
         SGNotedSection(SGL(@"settings.album.apple_music.header", @"Apple Music"), @[
             motion,
             notes,

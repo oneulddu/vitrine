@@ -25,8 +25,10 @@
 // trailing corner outside the scroll (01.txt:1431, :1436): they are concealed where they are, and the row
 // draws them and fires them all the same.
 #import <AVFoundation/AVFoundation.h>
+#import <CoreImage/CoreImage.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRCoverRead.h"
 #import "Redesigned/Kit/SGRCoverViewer.h"
 #import "Redesigned/Kit/SGRHeroVeil.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
@@ -43,6 +45,38 @@ static const CGFloat kMinHero = 120, kMinCover = 80;
 // The square cover's corners with Full bleed covers off: Spotify's own (its ImageViewHolder, r=4), so the album's
 // square is the playlist's, which is Spotify's square left in place.
 static const CGFloat kSquareRadius = 4;
+
+// The picture-aware cover (SGRKeyAlbumAdaptiveCover, with the Full screen cover). The cover is read (Kit/SGRCoverRead.h)
+// and stays sharp, itself, down to kSharpRise above the hero's bottom unless the read moves that; from there down a
+// picture drawn off the main thread lies over it, blurred up to the read's radius over kBlurRamp on the quintic ramp
+// and mixed in OKLab into the page's color, all of it by the hero's bottom. Under the cover its bottom edge is reflected, at
+// least kFootMin past the hero's bottom, so the blur there takes in picture rather than an edge. The title's area,
+// SGRHeaderInfoTitleRise up from the bottom, is kept to kTitleL of lightness (kTitleLContrast with Increase Contrast)
+// over kTitleShare of it by the dissolve, drawn as a scrim fading in over kScrimLead above it. Under an animated cover
+// the dissolve stays, beginning where the clip's first frame stops being sharp, between kStillFadeMin and
+// kStillFadeMax of the hero's height.
+// 80pt left a 19/255 row step at a scanned sleeve's pale border, only 16pt below the sharp end.
+// Reach the same maximum in 40pt so that border is softened before it crosses the title.
+static const CGFloat kSharpRise = 30, kBlurRamp = 40, kFootMin = 24, kScrimLead = 24;
+static const CGFloat kTitleL = 0.58, kTitleLContrast = 0.50, kTitleShare = 0.9, kTitleBlendMargin = 0.005;
+static const size_t kTitleStride = 2;   // pixels and rows of the title's area measured, in pixels
+static const CGFloat kStillFadeMin = 0.4384, kStillFadeMax = 0.70;
+// Only the transition band is capped at 2x; the sharp UIImageView above it keeps the display's native scale.
+// At 3x a cold simulator render spent 342ms in CI blur alone. 2x bounds that pixel work to four ninths.
+// Over the cover (0) and under an animated cover (0.5).
+static const CGFloat kRenderMaxScale = 2, kRenderZ = 0.25;
+// How long a render waits, once, for the page's color to arrive before it draws into the color there is.
+static const NSTimeInterval kColorWait = 0.6;
+// Rendered pictures kept, by bytes: three heroes across a 3x phone.
+static const NSUInteger kRenderCacheBytes = 20 * 1024 * 1024;
+static const NSUInteger kLoggedRenders = 6;
+
+static BOOL adaptiveCoverOn(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGFlag(SGRKeyAlbumAdaptiveCover, NO); });
+    return on;
+}
 
 static char kHeaderKey, kCoverKey, kTitleKey, kParentKey, kMetaKey, kAddKey, kDownloadKey, kPlayKey, kShuffleKey;
 static char kHeroKey, kHeroHeightKey, kHeaderHeightKey, kInfoKey, kHeaderWatchedKey, kRetryKey;
@@ -93,6 +127,268 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
     SGRObserveLayout(view, laidOut);
 }
 
+#pragma mark - the picture-aware cover, drawn
+
+// What a picture-aware cover is drawn from, every length in the hero's points.
+typedef struct {
+    CGSize size;            // the hero
+    CGRect place;           // where the cover is laid out in it
+    CGFloat scale;
+    CGFloat sharpEnd;       // where it stops being sharp
+    CGFloat blurRadius;     // the most the blur below that reaches
+    CGFloat mixStart;       // where the mix into the page's color begins; it ends at the bottom
+    SGRLab page;
+    CGFloat titleL;         // the most the title's area may be
+} SGRCoverDrawing;
+
+// The drawn picture, where in the hero it goes from down to the bottom, and the scrim's alpha the title's area needs.
+@interface SGRCoverRender : NSObject
+@property (nonatomic) UIImage *image;
+// A pointer in the cache key is only an index. Zeroing weak identity rejects recycled source addresses.
+@property (nonatomic, weak) UIImage *source;
+@property (nonatomic) CGFloat top;
+@property (nonatomic) CGFloat scrimAlpha;
+@end
+
+@implementation SGRCoverRender
+@end
+
+static dispatch_queue_t renderQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create("spotifyglass.redesign.album.cover", dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
+    });
+    return queue;
+}
+
+static NSCache<NSString *, SGRCoverRender *> *renderCache(void) {
+    static NSCache *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        cache = [NSCache new];
+        cache.totalCostLimit = kRenderCacheBytes;
+    });
+    return cache;
+}
+
+static CGColorSpaceRef renderSpace(void) {
+    static CGColorSpaceRef space;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB); });
+    return space;
+}
+
+// Render queue only.
+static CIContext *renderContext(void) {
+    static CIContext *context;
+    if (!context) context = [CIContext contextWithOptions:@{kCIContextCacheIntermediates: @NO}];
+    return context;
+}
+
+static CGContextRef newRenderBitmap(size_t width, size_t height) {
+    return CGBitmapContextCreate(NULL, width, height, 8, width * 4, renderSpace(), (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+}
+
+static CGRect aspectFill(CGSize image, CGRect into) {
+    CGFloat scale = MAX(into.size.width / image.width, into.size.height / image.height);
+    CGSize drawn = CGSizeMake(image.width * scale, image.height * scale);
+    return CGRectMake(CGRectGetMidX(into) - drawn.width / 2, CGRectGetMidY(into) - drawn.height / 2, drawn.width, drawn.height);
+}
+
+// The cover as the hero lays it out, over the page's color, with its bottom edge reflected down to `height` points.
+static CGContextRef newSharpCanvas(UIImage *cover, const SGRCoverDrawing *d, CGFloat height, size_t pixelsWide, size_t pixelsHigh) {
+    CGContextRef context = newRenderBitmap(pixelsWide, pixelsHigh);
+    if (!context) return NULL;
+    CGContextTranslateCTM(context, 0, pixelsHigh);
+    CGContextScaleCTM(context, d->scale, -d->scale);
+    CGFloat r, g, b;
+    SGRLabToRGB(d->page, &r, &g, &b);
+    CGContextSetRGBFillColor(context, r, g, b, 1);
+    CGContextFillRect(context, CGRectMake(0, 0, d->size.width, height));
+    UIGraphicsPushContext(context);
+    CGRect drawn = aspectFill(cover.size, d->place);
+    CGContextSaveGState(context);
+    CGContextClipToRect(context, d->place);
+    [cover drawInRect:drawn];
+    CGContextRestoreGState(context);
+    CGFloat bottom = CGRectGetMaxY(d->place);
+    if (bottom < height) {
+        CGContextSaveGState(context);
+        CGContextClipToRect(context, CGRectMake(0, bottom, d->size.width, height - bottom));
+        CGContextTranslateCTM(context, 0, 2 * bottom);
+        CGContextScaleCTM(context, 1, -1);
+        CGContextClipToRect(context, d->place);
+        [cover drawInRect:drawn];
+        CGContextRestoreGState(context);
+    }
+    UIGraphicsPopContext();
+    return context;
+}
+
+// Every kTitleStride-th pixel of every kTitleStride-th row of `context` from `from` up to `to`, as RGB.
+static void appendSamples(NSMutableData *samples, CGContextRef context, size_t from, size_t to) {
+    const uint8_t *pixels = CGBitmapContextGetData(context);
+    size_t rowBytes = CGBitmapContextGetBytesPerRow(context), wide = CGBitmapContextGetWidth(context);
+    for (size_t row = from; row < to; row += kTitleStride) {
+        for (size_t x = 0; x < wide; x += kTitleStride) [samples appendBytes:pixels + row * rowBytes + x * 4 length:3];
+    }
+}
+
+// The blur's radius, in points, at a row of the canvas: none above the sharp end, then up to the most over kBlurRamp.
+static CGFloat blurAt(const SGRCoverDrawing *d, size_t row) {
+    CGFloat y = (row + 0.5) / d->scale;
+    return d->blurRadius * SGRHeroVeilRamp((y - d->sharpEnd) / kBlurRamp);
+}
+
+// Interpolate Gaussian-blurred pictures at neighbouring radii, never the sharp source (except below half a point).
+// A fractional variable-blur mask retains sharp edges; an all-white mask pays for a variable blur without using
+// its mask. Radius bands keep Gaussian work bounded.
+static const CGFloat kFinestBlur = 0.5;
+static CGFloat blurOctave(const SGRCoverDrawing *d, CGFloat radius) {
+    CGFloat octave = d->blurRadius;
+    while (octave / 2 >= radius && octave / 2 >= kFinestBlur) octave /= 2;
+    return octave;
+}
+
+static CIImage *blurredCover(CIImage *source, CGFloat radiusPixels) {
+    if (radiusPixels == 0) return source;
+    return [source imageByApplyingGaussianBlurWithSigma:radiusPixels];
+}
+
+// The rows from `start` down mixed into the page's color, all of it by the last row.
+static void mixRows(CGContextRef context, size_t start, size_t pixelsWide, size_t pixelsHigh, SGRLab page) {
+    uint8_t *pixels = CGBitmapContextGetData(context);
+    size_t rowBytes = CGBitmapContextGetBytesPerRow(context), span = pixelsHigh - start;
+    for (size_t row = start; row < pixelsHigh; row++) {
+        CGFloat weight = SGRHeroVeilRamp((CGFloat)(row + 1 - start) / span);
+        if (weight <= 0) continue;
+        uint8_t *pixel = pixels + row * rowBytes;
+        for (size_t x = 0; x < pixelsWide; x++, pixel += 4) {
+            SGRLab lab = SGRLabFromRGB8(pixel);
+            lab = (SGRLab){lab.L + (page.L - lab.L) * weight, lab.a + (page.a - lab.a) * weight, lab.b + (page.b - lab.b) * weight};
+            SGRLabToRGB8(lab, pixel);
+        }
+    }
+}
+
+// The alpha of the page's color over the title's area, as Core Animation blends it, that holds kTitleShare of its
+// pixels to the cap: 0 when they already are.
+static CGFloat scrimAlpha(NSData *samples, const SGRCoverDrawing *d) {
+    const uint8_t *sample = samples.bytes;
+    size_t count = samples.length / 3, allowed = (size_t)floor(count * (1 - kTitleShare));
+    CGFloat r, g, b, cap = d->titleL - kTitleBlendMargin;
+    SGRLabToRGB(d->page, &r, &g, &b);
+    // How many are over the cap, by a margin for the 8-bit blend, with the page's color over them at `alpha`.
+    size_t (^over)(CGFloat) = ^size_t(CGFloat alpha) {
+        size_t lighter = 0;
+        for (size_t i = 0; i < count; i++) {
+            const uint8_t *s = sample + i * 3;
+            lighter += SGRLabFromRGB(s[0] / 255.0 * (1 - alpha) + r * alpha, s[1] / 255.0 * (1 - alpha) + g * alpha,
+                                     s[2] / 255.0 * (1 - alpha) + b * alpha).L > cap;
+        }
+        return lighter;
+    };
+    if (!count || over(0) <= allowed) return 0;
+    CGFloat low = 0, high = 1;
+    for (int i = 0; i < 10; i++) {
+        CGFloat alpha = (low + high) / 2;
+        if (over(alpha) > allowed) low = alpha;
+        else high = alpha;
+    }
+    return ceil(high * 100) / 100;
+}
+
+// The picture-aware cover from the sharp end down to the hero's bottom, where it is drawn over the cover: blurred
+// below the sharp end, mixed into the page's color from the mix's start to the bottom. Above it the cover itself
+// shows, the very pixels the drawing starts from. Render queue.
+static SGRCoverRender *renderCover(UIImage *cover, SGRCoverDrawing d) {
+    CFTimeInterval began = CACurrentMediaTime();
+    size_t wide = (size_t)lround(d.size.width * d.scale), high = (size_t)lround(d.size.height * d.scale);
+    CGFloat canvasHeight = d.size.height + kFootMin;
+    size_t canvasHigh = (size_t)lround(canvasHeight * d.scale);
+    size_t sharpRows = (size_t)MIN(high - 1, MAX(0, lround(d.sharpEnd * d.scale))), rows = high - sharpRows;
+    CGContextRef canvas = newSharpCanvas(cover, &d, canvasHeight, wide, canvasHigh);
+    CGImageRef canvasImage = canvas ? CGBitmapContextCreateImage(canvas) : NULL;
+    CGContextRef context = canvasImage ? newRenderBitmap(wide, rows) : NULL;
+    if (!context) {
+        CGImageRelease(canvasImage);
+        CGContextRelease(canvas);
+        return nil;
+    }
+    // The canvas's rows from the sharp end as they are, its row sharpRows on the drawing's first.
+    CGContextDrawImage(context, CGRectMake(0, (CGFloat)rows + sharpRows - canvasHigh, wide, canvasHigh), canvasImage);
+    CFTimeInterval canvasDone = CACurrentMediaTime();
+    CIImage *source = d.blurRadius > 0 ? [[CIImage imageWithCGImage:canvasImage] imageByClampingToExtent] : nil;
+    for (size_t row = sharpRows; source && row < high;) {
+        CGFloat radius = blurAt(&d, row);
+        if (radius <= 0) {
+            row++;
+            continue;
+        }
+        // The band of rows in this octave, the radius only growing down the canvas.
+        CGFloat octave = blurOctave(&d, radius);
+        size_t end = row + 1;
+        while (end < high && blurOctave(&d, blurAt(&d, end)) == octave) end++;
+        // Core Image counts up from the bottom of the canvas, the drawing from the bottom of the hero.
+        CGRect band = CGRectMake(0, canvasHigh - end, wide, end - row);
+        CGFloat lower = octave / 2 < kFinestBlur ? 0 : octave / 2;
+        CGContextRef bands[2] = {newRenderBitmap(wide, end - row), newRenderBitmap(wide, end - row)};
+        BOOL complete = bands[0] && bands[1];
+        for (int i = 0; complete && i < 2; i++) {
+            CIImage *blur = blurredCover(source, (i ? octave : lower) * d.scale);
+            CGImageRef image = [renderContext() createCGImage:blur fromRect:band format:kCIFormatRGBA8 colorSpace:renderSpace()];
+            complete = image != NULL;
+            if (image) CGContextDrawImage(bands[i], CGRectMake(0, 0, wide, end - row), image);
+            CGImageRelease(image);
+        }
+        if (complete) {
+            uint8_t *target = CGBitmapContextGetData(context);
+            const uint8_t *a = CGBitmapContextGetData(bands[0]), *b = CGBitmapContextGetData(bands[1]);
+            for (size_t y = row; y < end; y++) {
+                CGFloat t = (blurAt(&d, y) - lower) / (octave - lower);
+                size_t offset = (y - row) * wide * 4, dest = (y - sharpRows) * wide * 4;
+                for (size_t x = 0; x < wide * 4; x++)
+                    target[dest + x] = (uint8_t)lround(a[offset + x] + (b[offset + x] - a[offset + x]) * t);
+            }
+        }
+        CGContextRelease(bands[0]);
+        CGContextRelease(bands[1]);
+        if (!complete) {
+            CGImageRelease(canvasImage);
+            CGContextRelease(canvas);
+            CGContextRelease(context);
+            return nil;
+        }
+        row = end;
+    }
+    CGImageRelease(canvasImage);
+    CFTimeInterval blurDone = CACurrentMediaTime();
+    size_t mixRow = (size_t)MIN(high - 1, MAX(sharpRows, lround(d.mixStart * d.scale)));
+    mixRows(context, mixRow - sharpRows, wide, rows, d.page);
+    CFTimeInterval mixDone = CACurrentMediaTime();
+    // The title's area as it shows: the cover above the drawing, the drawing below.
+    size_t titleRow = (size_t)MIN(high - 1, MAX(0, lround((d.size.height - SGRHeaderInfoTitleRise) * d.scale)));
+    NSMutableData *title = [NSMutableData data];
+    if (titleRow < sharpRows) appendSamples(title, canvas, titleRow, sharpRows);
+    appendSamples(title, context, titleRow > sharpRows ? titleRow - sharpRows : 0, rows);
+    CGContextRelease(canvas);
+    SGRCoverRender *render = [SGRCoverRender new];
+    render.source = cover;
+    render.scrimAlpha = scrimAlpha(title, &d);
+    render.top = sharpRows / d.scale;
+    CGImageRef image = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    render.image = [UIImage imageWithCGImage:image scale:d.scale orientation:UIImageOrientationUp];
+    CGImageRelease(image);
+    static NSUInteger profiled;
+    if (profiled++ < kLoggedRenders)
+        SGLog(@"redesign album: cover stages canvas %.1f, blur %.1f, mix %.1f, title %.1f ms; main thread %d; sharp %.1f, mix %.1f pt",
+              (canvasDone - began) * 1000, (blurDone - canvasDone) * 1000, (mixDone - blurDone) * 1000,
+              (CACurrentMediaTime() - mixDone) * 1000, NSThread.isMainThread, d.sharpEnd, d.mixStart);
+    return render;
+}
+
 #pragma mark - the cover, full bleed
 
 // The picture across the top of the page with the field showing through the bottom of it. Two gradients
@@ -127,9 +423,20 @@ static void watch(UIView *view, const void *key, void (^laidOut)(UIView *view)) 
     __weak UIImageView *_cover;
     UIView *_extension;   // iOS 26's UIBackgroundExtensionView around the picture, nil before it
     NSString *_motionAlbum;
+    NSUInteger _motionGeneration;
     AVPlayerLayer *_motion;
     AVQueuePlayer *_player;
     AVPlayerLooper *_looper;
+    // The picture-aware cover, on with the Full screen cover only; none of the below is used otherwise.
+    BOOL _adaptive;
+    SGRCoverReading *_coverReading, *_stillReading;   // the cover's, and its animated cover's first frame's
+    NSURL *_stillFile;                                // the animated cover _stillReading is (being) read from
+    CALayer *_render;                                 // the drawn picture over the cover, nil until one is drawn
+    CGFloat _renderTop;                               // where it begins, down to the hero's bottom
+    NSString *_renderKey;                             // what _render shows or is being drawn with
+    NSUInteger _renderGeneration;
+    CGFloat _scrimAlpha;                              // the dissolve's over the title's area, with _render shown
+    BOOL _colorWaitBegun, _colorWaitOver;
 }
 
 static void *kReadyContext = &kReadyContext;
@@ -173,6 +480,7 @@ static void *kReadyContext = &kReadyContext;
     _dissolve = [CAGradientLayer layer];
     _dissolve.zPosition = 2;
     [self.layer addSublayer:_dissolve];
+    _adaptive = adaptiveCoverOn() && SGRPageFullCover(SGRKeyAlbumFullCover);
     if (SGRHeroScrollVeilOn()) {
         _veil = [[SGRHeroVeil alloc] initWithHero:self];
         [self sgr_fitVeil];
@@ -203,8 +511,17 @@ static void *kReadyContext = &kReadyContext;
 - (void)sgr_fitVeil {
     BOOL square = !SGRPageFullCover(SGRKeyAlbumFullCover) && _motion.opacity != 1;
     CALayer *picture = (_extension ?: _picture).layer;
-    _veil.art = square ? @[] : _motion ? @[picture, _motion] : @[picture];
+    NSArray<CALayer *> *art = _motion ? @[picture, _motion] : @[picture];
+    if (_render) art = [art arrayByAddingObject:_render];
+    _veil.art = square ? @[] : art;
     _veil.surface = square ? _picture : nil;
+}
+
+// Where the cover is laid out full screen: on iOS 26 the top square of the hero, the system carrying its bottom edge
+// down the rest; before, filling the whole hero.
+- (CGRect)sgr_fullPicture {
+    CGRect bounds = self.bounds;
+    return _extension ? CGRectMake(0, 0, bounds.size.width, MIN(bounds.size.width, bounds.size.height)) : bounds;
 }
 
 // The part of the picture over no text: the title and the artist start SGRHeaderInfoTitleRise above its bottom.
@@ -236,6 +553,12 @@ static void *kReadyContext = &kReadyContext;
 - (void)setFieldColor:(UIColor *)color {
     if (!color || [_fieldColor isEqual:color]) return;
     _fieldColor = [color copy];
+    if (_adaptive) {
+        [self sgr_fitDissolve];
+        _veil.color = color;
+        [self sgr_render];
+        return;
+    }
     // The clear end is the same color with no alpha rather than +clearColor, so the fade keeps its hue
     // instead of going through gray.
     [CATransaction begin];
@@ -269,8 +592,7 @@ static void *kReadyContext = &kReadyContext;
     if (SGRPageFullCover(SGRKeyAlbumFullCover)) {
         if (_extension) {
             _extension.frame = bounds;
-            CGFloat side = MIN(bounds.size.width, bounds.size.height);
-            _picture.frame = CGRectMake(0, 0, bounds.size.width, side);
+            _picture.frame = [self sgr_fullPicture];
         }
     } else {
         // Stays square under an animated cover too: the clip covers the whole hero, so nothing moves under its fade.
@@ -289,15 +611,227 @@ static void *kReadyContext = &kReadyContext;
     _scrim.frame = CGRectMake(0, 0, bounds.size.width, MIN(kTopScrim, bounds.size.height));
     CGFloat fade = round(bounds.size.height * kDissolve);
     _dissolve.frame = CGRectMake(0, bounds.size.height - fade, bounds.size.width, fade);
+    if (_adaptive) {
+        [self sgr_placeRender];
+        [self sgr_fitDissolve];
+    }
     [self sgr_fitVeil];
     [_veil artDidLayOut];
+    [CATransaction commit];
+    // A new size draws the picture again; the same one is a no-op.
+    if (_adaptive) [self sgr_render];
+}
+
+#pragma mark - the picture-aware cover
+
+// The reading the page goes by: the animated cover's first frame's while the clip shows, else the cover's.
+- (SGRCoverReading *)sgr_reading {
+    return _motion.opacity == 1 && _stillReading ? _stillReading : _coverReading;
+}
+
+// The reading's color to the page's field (nil gives it back the cover's main color), which hands it back to the hero
+// through -setFieldColor:, and the picture drawn for it.
+- (void)sgr_showReading {
+    SGRAlbumSetCoverColor(self, [self sgr_reading].pageColor);
+    [self sgr_render];
+    [self sgr_fitDissolve];
+}
+
+- (void)sgr_readCover:(UIImage *)image {
+    _coverReading = nil;
+    [self sgr_showReading];
+    __weak SGRAlbumHero *weakSelf = self;
+    SGRCoverRead(image, ^(SGRCoverReading *reading) {
+        SGRAlbumHero *hero = weakSelf;
+        // Read off a cover the hero no longer shows: another album's, or a copy of this one replaced since.
+        if (!hero || hero->_picture.image != image) return;
+        hero->_coverReading = reading;
+        [hero sgr_showReading];
+    });
+}
+
+// The animated cover's first frame, read for the page's color and the dissolve while the clip shows.
+- (void)sgr_readStill:(NSURL *)file {
+    _stillFile = file;
+    _stillReading = nil;
+    NSUInteger generation = _motionGeneration;
+    __weak SGRAlbumHero *weakSelf = self;
+    SGMotionPoster(file, ^(UIImage *poster) {
+        SGRAlbumHero *hero = weakSelf;
+        if (!hero || hero->_motionGeneration != generation || hero->_stillFile != file) return;
+        SGRCoverRead(poster, ^(SGRCoverReading *reading) {
+            SGRAlbumHero *again = weakSelf;
+            // Album ownership also changes on A -> B -> A, even if the clip URL is the same object again.
+            if (!again || again->_motionGeneration != generation || again->_stillFile != file) return;
+            again->_stillReading = reading;
+            [again sgr_showReading];
+        });
+    });
+}
+
+// By bounds and position, which a transform the veil gives it leaves alone.
+- (void)sgr_placeRender {
+    CGRect bounds = self.bounds;
+    CGFloat height = MAX(0, bounds.size.height - _renderTop);
+    _render.bounds = CGRectMake(0, 0, bounds.size.width, height);
+    _render.position = CGPointMake(CGRectGetMidX(bounds), _renderTop + height / 2);
+}
+
+// With a drawn picture shown, the dissolve is a scrim over the title's area where the picture is too light there,
+// and nothing where it is not; under an animated cover, or before a picture is drawn, it is the dissolve as it always
+// was, under a clip beginning where its first frame stops being sharp.
+- (void)sgr_fitDissolve {
+    if (!_adaptive) return;
+    CGRect bounds = self.bounds;
+    CGFloat width = bounds.size.width, height = bounds.size.height;
+    UIColor *color = _fieldColor;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (_render && _motion.opacity != 1) {
+        CGFloat top = MAX(0, height - SGRHeaderInfoTitleRise - kScrimLead);
+        _dissolve.frame = CGRectMake(0, top, width, height - top);
+        _dissolve.colors = @[(id)[color colorWithAlphaComponent:0].CGColor, (id)[color colorWithAlphaComponent:_scrimAlpha].CGColor,
+                             (id)[color colorWithAlphaComponent:_scrimAlpha].CGColor];
+        _dissolve.locations = @[@0, @(MIN(1, kScrimLead / MAX(1, height - top))), @1];
+        _dissolve.hidden = _scrimAlpha <= 0;
+    } else {
+        CGFloat start = round(height * (1 - kDissolve));
+        if (_motion.opacity == 1 && _stillReading && height > 0) {
+            CGFloat sharp = SGRCoverSharpnessFor(_stillReading, (height - kSharpRise) / height).sharpEnd;
+            start = round(height * MIN(MAX(sharp, kStillFadeMin), kStillFadeMax));
+        }
+        _dissolve.frame = CGRectMake(0, start, width, height - start);
+        _dissolve.colors = @[(id)[color colorWithAlphaComponent:0].CGColor, (id)[color colorWithAlphaComponent:0.72].CGColor,
+                             (id)color.CGColor];
+        _dissolve.locations = @[@0, @0.62, @1];
+        _dissolve.hidden = NO;
+    }
+    [CATransaction commit];
+}
+
+- (void)sgr_dropRender {
+    _renderKey = nil;
+    _renderGeneration++;
+    if (!_render) return;
+    [_render removeFromSuperlayer];
+    _render = nil;
+    [self sgr_fitVeil];
+    [self sgr_fitDissolve];
+}
+
+// Draws the picture off the main thread for the cover's reading, the hero's size and the page's color, unless that is
+// what is shown or being drawn; nothing under an animated cover, which keeps what is there. A color the field has not
+// shown yet is waited for once, kColorWait at most.
+- (void)sgr_render {
+    if (!_adaptive) return;
+    SGRCoverReading *reading = _coverReading;
+    UIImage *image = _picture.image;
+    CGRect bounds = self.bounds;
+    if (!reading || !image || bounds.size.height < kMinHero || bounds.size.width < kMinCover) {
+        [self sgr_dropRender];
+        return;
+    }
+    if (_motion.opacity == 1) return;
+    UIColor *color = _fieldColor;
+    if (!_colorWaitOver && ![color isEqual:reading.pageColor]) {
+        if (_colorWaitBegun) return;
+        _colorWaitBegun = YES;
+        __weak SGRAlbumHero *weakSelf = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(kColorWait * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            SGRAlbumHero *hero = weakSelf;
+            if (!hero) return;
+            hero->_colorWaitOver = YES;
+            [hero sgr_render];
+        });
+        return;
+    }
+    _colorWaitOver = YES;
+
+    SGRCoverDrawing d = {.size = bounds.size, .place = [self sgr_fullPicture]};
+    CGFloat screen = self.traitCollection.displayScale > 0 ? self.traitCollection.displayScale : UIScreen.mainScreen.scale;
+    d.scale = MIN(screen, kRenderMaxScale);
+    CGFloat placed = MAX(1, d.place.size.height);
+    SGRCoverSharpness sharpness = SGRCoverSharpnessFor(reading, (bounds.size.height - kSharpRise - d.place.origin.y) / placed);
+    d.sharpEnd = MIN(bounds.size.height, d.place.origin.y + sharpness.sharpEnd * placed);
+    d.blurRadius = sharpness.blurRadius;
+    d.mixStart = sharpness.mixLength > 0 ? MAX(d.sharpEnd, bounds.size.height - sharpness.mixLength) : d.sharpEnd;
+    CGFloat r = 0, g = 0, b = 0, a = 1;
+    [color getRed:&r green:&g blue:&b alpha:&a];
+    d.page = SGRLabFromRGB(r, g, b);
+    d.titleL = SGRIncreaseContrast() ? kTitleLContrast : kTitleL;
+    NSString *key = [NSString stringWithFormat:@"%p %.0fx%.0f@%.0f %@ %@ %.2f %.4f %.4f %.4f %.2f %.2f %.2f %.2f", image,
+                     image.size.width, image.size.height, image.scale, NSStringFromCGSize(d.size), NSStringFromCGRect(d.place),
+                     d.scale, r, g, b, d.sharpEnd, d.blurRadius, d.mixStart, d.titleL];
+    if ([key isEqualToString:_renderKey]) return;
+    _renderKey = key;
+    NSUInteger generation = ++_renderGeneration;
+    SGRCoverRender *cached = [renderCache() objectForKey:key];
+    if (cached && cached.source == image) {
+        [self sgr_installRender:cached];
+        return;
+    }
+    __weak SGRAlbumHero *weakSelf = self;
+    CFTimeInterval started = CACurrentMediaTime();
+    dispatch_async(renderQueue(), ^{
+        CFTimeInterval renderingStarted = CACurrentMediaTime();
+        SGRCoverRender *render;
+        @autoreleasepool {
+            render = renderCover(image, d);
+        }
+        CFTimeInterval took = CACurrentMediaTime() - renderingStarted;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!render) return;
+            CGImageRef drawn = render.image.CGImage;
+            [renderCache() setObject:render forKey:key cost:CGImageGetBytesPerRow(drawn) * CGImageGetHeight(drawn)];
+            static NSUInteger logged;
+            if (logged++ < kLoggedRenders)
+                SGLog(@"redesign album: picture-aware cover %zux%zu px in %.0f ms (queue %.0f ms), sharp to %.0f of %.0fpt, blur %.0f, scrim %.2f",
+                      CGImageGetWidth(drawn), CGImageGetHeight(drawn), took * 1000, (renderingStarted - started) * 1000,
+                      d.sharpEnd, d.size.height, d.blurRadius, render.scrimAlpha);
+            SGRAlbumHero *hero = weakSelf;
+            // Drawn for what the hero no longer shows.
+            if (!hero || generation != hero->_renderGeneration || hero->_picture.image != image) return;
+            [hero sgr_installRender:render];
+        });
+    });
+}
+
+- (void)sgr_installRender:(SGRCoverRender *)render {
+    if (!_render) {
+        _render = [CALayer layer];
+        _render.name = @"SGRAlbumHero.render";
+        _render.zPosition = kRenderZ;
+        _render.contentsGravity = kCAGravityResize;
+        // Under the scrim in the order of the layers too, which a snapshot of the hero goes by.
+        [self.layer insertSublayer:_render below:_scrim];
+    }
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (self.window) {
+        CATransition *fade = [CATransition animation];
+        fade.type = kCATransitionFade;
+        fade.duration = SGRCrossfade;
+        [_render addAnimation:fade forKey:@"contents"];
+        [_dissolve addAnimation:fade forKey:@"contents"];
+    }
+    _renderTop = render.top;
+    [self sgr_placeRender];
+    _render.contents = (__bridge id)render.image.CGImage;
+    _render.contentsScale = render.image.scale;
+    _scrimAlpha = render.scrimAlpha;
+    [self sgr_fitVeil];
+    [self sgr_fitDissolve];
     [CATransaction commit];
 }
 
 - (void)playMotionForArtist:(NSString *)artist album:(NSString *)album {
     NSString *key = artist.length && album.length ? [NSString stringWithFormat:@"%@\n%@", artist, album] : nil;
-    if (!key || [key isEqualToString:_motionAlbum] || !SGEnabled(SGRKeyAlbumMotion) || !SGMotionAppleMusicOn()) return;
-    _motionAlbum = key;
+    if (_motionAlbum == key || [key isEqualToString:_motionAlbum]) return;
+    NSUInteger generation = ++_motionGeneration;
+    _motionAlbum = [key copy];
+    // Stop owning A immediately, not only when B supplies a replacement clip.
+    [self sgr_dropMotion];
+    if (!key || !SGEnabled(SGRKeyAlbumMotion) || !SGMotionAppleMusicOn()) return;
     // The player's size: at the screen's full width a square cover ran to the 1920 stream, tens of MB.
     CGFloat pixels = SGMotionPixels();
     __weak SGRAlbumHero *weakSelf = self;
@@ -305,7 +839,7 @@ static void *kReadyContext = &kReadyContext;
     // filled into it lost its sides. An album with only a square clip gets that one.
     SGMotionAlbumCover(artist, album, pixels, ^(NSURL *file) {
         SGRAlbumHero *hero = weakSelf;
-        if (hero && file && [hero->_motionAlbum isEqualToString:key]) [hero showMotion:file];
+        if (hero && file && hero->_motionGeneration == generation) [hero showMotion:file];
     });
 }
 
@@ -313,6 +847,7 @@ static void *kReadyContext = &kReadyContext;
 // first frame is decoded, and only then does the clip fade in: a fade started at once was spent on a layer
 // with nothing in it, and the clip cut in after it.
 - (void)showMotion:(NSURL *)file {
+    [self sgr_dropMotion];
     AVPlayerItem *item = [AVPlayerItem playerItemWithURL:file];
     _player = [AVQueuePlayer new];
     _player.muted = YES;
@@ -320,7 +855,6 @@ static void *kReadyContext = &kReadyContext;
     // A file on the phone: nothing to buffer against, so it starts as soon as it can.
     _player.automaticallyWaitsToMinimizeStalling = NO;
     _looper = [AVPlayerLooper playerLooperWithPlayer:_player templateItem:item];
-    [self sgr_dropMotion];
     _motion = [AVPlayerLayer playerLayerWithPlayer:_player];
     _motion.videoGravity = AVLayerVideoGravityResizeAspectFill;
     _motion.zPosition = 0.5;
@@ -330,14 +864,25 @@ static void *kReadyContext = &kReadyContext;
     [self sgr_fitVeil];
     [_motion addObserver:self forKeyPath:@"readyForDisplay" options:NSKeyValueObservingOptionInitial context:kReadyContext];
     [self sgr_updateMotion];
+    if (_adaptive) [self sgr_readStill:file];
     SGLog(@"redesign album: animated cover %@", file.lastPathComponent);
 }
 
 - (void)sgr_dropMotion {
+    [_player pause];
+    [_looper disableLooping];
+    _looper = nil;
+    _player = nil;
     [_motion removeObserver:self forKeyPath:@"readyForDisplay" context:kReadyContext];
     [_motion removeFromSuperlayer];
     _motion = nil;
+    _stillFile = nil;
+    _stillReading = nil;
     [self sgr_fitVeil];
+    // The page goes back to the cover's reading. Not from -dealloc, out of the page by then.
+    if (_adaptive && self.superview) {
+        [self sgr_showReading];
+    }
     // A square cover's gradients and shadow follow whether a clip covers it.
     if (!SGRPageFullCover(SGRKeyAlbumFullCover)) [self setNeedsLayout];
 }
@@ -372,6 +917,8 @@ static void *kReadyContext = &kReadyContext;
         for (CALayer *each in fading) [each addAnimation:fade forKey:@"fade"];
     }
     [CATransaction commit];
+    // The clip's first frame now gives the page its color and the dissolve its start.
+    if (_adaptive) [self sgr_showReading];
 }
 
 // The power state is reported off the main thread.
@@ -432,6 +979,7 @@ static void *kReadyContext = &kReadyContext;
     _picture.image = image;
     // The page's field takes its color from the same picture.
     SGRAlbumSetArtwork(self, image);
+    if (_adaptive) [self sgr_readCover:image];
     static BOOL logged;
     if (late && !logged) {
         logged = YES;

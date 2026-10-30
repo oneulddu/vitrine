@@ -88,5 +88,47 @@ setting, checks that none of it is drawn. Each holds d = 0, 190 and 400 (with th
 under the bar) for screenshots first, then exits 0 or logs a FAIL and exits 1. `veil-check.sh <UDID> [OUT]` builds this, the playlist and the artist harness and runs all of
 it, the artist's Play checks too (`../artist/README.md`), with the screenshots in OUT.
 
+`cover-check.sh` checks the picture-aware cover (`-spotifyglass.redesign.album.adaptiveCover`, Full screen only;
+`Redesigned/Kit/SGRCoverRead.h`, the hero in `Redesigned/Album/AlbumHeader.x`) as Mac Catalyst programs, no simulator
+(`python3 scripts/harness-plan.py run --names "Album cover"`). The covers are drawn in code (`cover-fixtures.h`).
+`cover-read-check.m` reads each: solid dark, light and red sleeves with centred art, the same sleeve broken along 8% of
+its border (still solid) and with art over 72% of it (not), a tiny logo on black, a dark cover with a large orange
+accent, the old rectangle portrait (confirmed to produce zero real Vision faces) with an injected face box through
+the foot to check exclusion, a softened drawn face detected by real Vision with a sharp boundary below it,
+colourful bands, Vision failing, a transparent
+and a too narrow cover, the same picture twice (the cache's reading), and page colours brought into sRGB by chroma
+alone. `cover-hero-check.m` draws five of them in the album's hero on a page with its field: the field in the read
+colour, the cover itself down to where the spec lets it stop being sharp, the drawing over it from there continuous with
+it and ending in the page's colour, and the title's area held to L 0.58 over 90% of it. The scanned sleeve checks the
+pale border and reflected square edge, including the actual layer composition: adjacent-row mean absolute linear
+sRGB luminance difference must not exceed 0.02 within 24pt of the edge. The layer composition also checks
+24pt above the scanned sleeve's stripe at 94% through the square's extension; the drawing must be opaque.
+The runner reintroduces a one-pixel bright row in a generated-source copy and requires the edge assertion to reject it.
+`still-swap` reuses a hero from A with a clip to B without one: both an installed still and late poster/read replies
+must leave B blue. A -> B -> A reuses the identical clip URL and checks both delayed stages against the new album
+lifetime, then accepts its current still. Media lookup, poster delivery and player readiness are test doubles;
+the field and hero are real. `cache-reuse` aliases only the address prefix of cache keys after the first source
+deallocates; a mirrored cover with identical size, page colour and geometry must draw blue, not the old magenta.
+Generated-source mutations remove album-change invalidation, both still-generation guards, or cache source
+validation, and each must fail at the corresponding colour/pixel assertion. `Kit/SGRCoverRead` is not modified.
+The blur reaches its maximum over 40pt rather than 80pt: 80pt left a measured 19/255 step at the scanner border.
+Also checked: a cover replaced mid read whose
+colour never reaches the page; and, with the setting off, the hero written to a PNG. `BASELINE=<rev>` draws that
+revision's off hero too and requires the same bytes.
+
+`-coverFixture colourful|portrait|darkAccent|solidLight|solidDark` on this harness's launch line shows one of those
+covers instead of the scanned sleeve (`portrait` uses the real-Vision drawn face), and `cover-stats` logs the process's memory footprint and its peak at 6 s with a
+`[harness] SHOT album-cover-<cover>-<on|off>` line; the hero's own log says how long the read and the drawing took.
+The drawing log separates queue wait from rendering and reports canvas, blur, colour mix and title measurement
+times on the utility queue. The transition image is capped at 2x; the sharp cover stays at native display scale.
+The radius bands use Gaussian blur rather than an all-white variable-blur mask: the latter did no spatial
+masking but consumed 2249ms of a measured 2404ms warm dark-accent render.
+`cover-stats` also writes the unmodified fixture to the app's Documents/cover-fixture.png for pixel comparisons.
+`cover-profile -spotifyglass.redesign.album.adaptiveCover YES -spotifyglass.redesign.album.motion NO` changes
+through the five fixtures in one process, so stage timings include the normal reused CIContext, not only cold
+application launches. It exits after the final cover; timings are in the unified log.
+Use `-spotifyglass.redesign.album.motion NO` for fixture screenshots, otherwise the album's fetched animated
+artwork can replace the fixture before the screenshot marker.
+
 `stubs.m` also stands in for `SGRegisterCustomFont`, which `Shared/Fonts/Fonts.x` calls and which lives in a file
 that pulls in the settings rows.

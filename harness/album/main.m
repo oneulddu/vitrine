@@ -6,8 +6,10 @@
 #import "../download-mock.h"
 #import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Redesigned/Kit/SGRActionRow.h"
+#import <mach/mach.h>
 #import "../harness-fail.h"
 #import "hero-veil-check.h"
+#import "cover-fixtures.h"
 
 // Download and ⋯ as one glass capsule: adjacent, level, one 88x44 shape (radius 22) under both, carried by
 // download, ⋯ drawing none, its trailing edge 16pt in from the page's.
@@ -271,22 +273,35 @@ static UIView *byIdentifier(UIView *root, NSString *identifier) {
 
 static UIImage *artwork(void) {
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(300, 300)];
-    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
-        CGContextRef c = ctx.CGContext;
-        CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
-        CGFloat components[] = {0.16, 0.34, 0.62, 1, 0.07, 0.10, 0.22, 1};
-        CGGradientRef gradient = CGGradientCreateWithColorComponents(space, components, NULL, 2);
-        CGContextDrawLinearGradient(c, gradient, CGPointZero, CGPointMake(300, 300), 0);
-        CGGradientRelease(gradient);
-        CGColorSpaceRelease(space);
-        [[UIColor colorWithWhite:1 alpha:0.30] setFill];
-        for (int i = 0; i < 4; i++) {
-            [[UIBezierPath bezierPathWithRect:CGRectMake(24 + i * 62, 60 + (i % 2) * 90, 48, 150)] fill];
-        }
-        // A scanned sleeve: the scanner's pale border along the bottom, which is all the Kit's palette reads.
-        [[UIColor colorWithWhite:0.82 alpha:1] setFill];
-        UIRectFill(CGRectMake(0, 282, 300, 18));
-    }];
+    // The scanner's pale border along the bottom is all the Kit's palette reads.
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *ctx) { drawScannedSleeve(ctx.CGContext, 300); }];
+}
+
+// `-coverFixture <name>` on the launch line: one of cover-fixtures.h's covers instead of the scanned sleeve.
+static UIImage *harnessCover(void) {
+    NSString *name = [NSUserDefaults.standardUserDefaults stringForKey:@"coverFixture"];
+    if (!name) return artwork();
+    UIImage *(*make)(void) = NULL;
+    if ([name isEqualToString:@"colourful"]) make = colourfulCover;
+    else if ([name isEqualToString:@"portrait"]) make = faceCover;
+    else if ([name isEqualToString:@"darkAccent"]) make = darkAccentCover;
+    else if ([name isEqualToString:@"solidLight"]) make = solidLightCover;
+    else if ([name isEqualToString:@"solidDark"]) make = solidDarkCover;
+    if (!make) HARNESS_FAIL(@"no cover fixture %@", name);
+    return make();
+}
+
+// `cover-stats`: at 6 s the process's memory, its footprint now and at its peak, and a SHOT line for a screenshot.
+static void logCoverStats(void) {
+    NSString *raw = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject
+                     stringByAppendingPathComponent:@"cover-fixture.png"];
+    HARNESS_CHECK([UIImagePNGRepresentation(harnessCover()) writeToFile:raw atomically:YES]);
+    task_vm_info_data_t info;
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) HARNESS_FAIL(@"no task info");
+    NSLog(@"[harness] cover memory: footprint %.1f MB, peak %.1f MB", info.phys_footprint / 1048576.0, info.ledger_phys_footprint_peak / 1048576.0);
+    NSLog(@"[harness] SHOT album-cover-%@-%@", [NSUserDefaults.standardUserDefaults stringForKey:@"coverFixture"] ?: @"sleeve",
+          [NSUserDefaults.standardUserDefaults boolForKey:@"spotifyglass.redesign.album.adaptiveCover"] ? @"on" : @"off");
 }
 
 static UIImage *playGlyph(void) {
@@ -454,7 +469,7 @@ static NSString *trailingLabel(UIView *root) {
     UIView *coverElement = box(artRow, UIView.class, CGRectMake(round((W - 248) / 2), 0, 248, 248), nil);
     UIView *cover = box(coverElement, UIView.class, coverElement.bounds, @"CreativeWorkPlatform.Components.UI.ArtWorkElement.WithCoverArt");
     UIImageView *coverPicture = [[UIImageView alloc] initWithFrame:cover.bounds];
-    coverPicture.image = artwork();
+    coverPicture.image = harnessCover();
     coverPicture.contentMode = UIViewContentModeScaleAspectFill;
     coverPicture.clipsToBounds = YES;
     coverPicture.accessibilityIdentifier = @"Encore.ImageView";
@@ -948,6 +963,19 @@ static NSString *trailingLabel(UIView *root) {
         NSLog(@"[harness] Spotify's own frames put back; the redesign answered with title stack %@, action row %@",
               NSStringFromCGRect(self->_titleStack.frame), NSStringFromCGRect(self->_actionRow.frame));
     });
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"cover-stats"]) at(6, ^{ logCoverStats(); });
+    // Successive albums in one app process: the renderer's CIContext is reused as it is in Spotify.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"cover-profile"]) {
+        NSArray *names = @[@"portrait", @"colourful", @"darkAccent", @"solidLight", @"solidDark"];
+        NSArray *covers = @[faceCover(), colourfulCover(), darkAccentCover(), solidLightCover(), solidDarkCover()];
+        for (NSUInteger i = 0; i < covers.count; i++) {
+            at(2 + 3 * i, ^{
+                NSLog(@"[harness] cover profile %@", names[i]);
+                coverPicture.image = covers[i];
+            });
+        }
+        at(2 + 3 * covers.count, ^{ NSLog(@"[harness] cover profile complete"); exit(0); });
+    }
     if([NSProcessInfo.processInfo.arguments containsObject:@"verify-actions"])
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW,4200*NSEC_PER_MSEC),dispatch_get_main_queue(),^{verifyAlbumActions(root.view);});
     // `veil` / `veil-card` / `veil-off` (hero-veil-check.h): the page scrolled by its own scroll view, the header in it.

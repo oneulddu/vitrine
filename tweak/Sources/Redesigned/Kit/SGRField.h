@@ -15,6 +15,8 @@
 // Posted on the main thread by a field whose color changed, with the field as the object and the
 // new color under "color".
 extern NSNotificationName const SGRFieldColorDidChangeNotification;
+// Posted on the main thread by a field that has read its artwork's palette (-paletteColor), with the field as the object.
+extern NSNotificationName const SGRFieldPaletteDidChangeNotification;
 
 @interface SGRArtworkField : UIView
 // Set by SGRPageFieldIn, not by the player. Only an actually resolved color is published.
@@ -52,6 +54,13 @@ extern NSNotificationName const SGRFieldColorDidChangeNotification;
 // A color Spotify already has for the page (the player's background color, the album's wash), made fit
 // to be a field and shown until the first artwork has been read; ignored after that.
 - (void)setProvisionalColor:(UIColor *)color;
+// A color the page's owner read itself (the album's picture-aware cover, Album/AlbumHeader.x): shown as given, not
+// made fit as the palette's is, instead of the palette's while it is set, and a page held for its artwork is shown
+// with it. nil goes back to the palette's color.
+@property (nonatomic, copy) UIColor *overrideColor;
+// The palette's color for the artwork last given, whether or not overrideColor is shown over it; nil until that artwork
+// has been read. SGRFieldPaletteDidChangeNotification is posted, with the field as the object, each time one is read.
+@property (nonatomic, readonly) UIColor *paletteColor;
 // Reads the artwork off the main thread and crossfades the result in (without animation when
 // `animated` is NO or the field is not in a window). The same image, or the same non-nil identity,
 // as the last call is a no-op, and a result that lands after a newer call is dropped. nil keeps

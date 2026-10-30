@@ -41,6 +41,16 @@ void SGRArtistSetArtwork(UIView *view, UIImage *image) {
     if (image) [SGRPageFieldOn(view, &kFieldKey) setArtwork:image identity:nil animated:YES];
 }
 
+// The colour the picture-aware photo picked (ArtistHeader.x), in place of the palette's; nil gives the palette's back.
+void SGRArtistSetPhotoColor(UIView *view, UIColor *color) {
+    SGRPageFieldOn(view, &kFieldKey).overrideColor = color;
+}
+
+// The palette's colour for the photo the field was last given, nil until it has been read (SGRArtworkField's).
+UIColor *SGRArtistPaletteColor(UIView *view) {
+    return SGRPageFieldOn(view, &kFieldKey).paletteColor;
+}
+
 %hook _TtC32CreativeWorkPlatform_TemplateKit12TemplateView
 - (void)layoutSubviews {
     %orig;

@@ -13,7 +13,8 @@
 //     ArtistSections.x  the sections the Music list carries that are not the artist's music: its videos, and
 //                       the Artist pick, the Release Countdown and About when asked
 //     ArtistFollow.x    whether the artist is followed, from Spotify's collection, for Follow's glyph
-//     ArtistSettings.m  the Artists page of Mod Settings: the switches below
+//     ArtistSettings.m  the Artists page of Mod Settings: the switches below, and round Play's cut-out and its
+//                       accent fill (SGRKeyArtistCutOutPlay, SGRKeyAccentPlay in Kit/SGRHeaderInfo.h)
 //
 // Every hook installs only while Redesigned UI is on (SGRedesignedUI); the native look's do not then.
 // Threading: main thread only.
@@ -33,6 +34,12 @@
 #define SGRKeyArtistHidePick @"spotifyglass.redesign.artist.hide.pick"
 #define SGRKeyArtistHideCountdown @"spotifyglass.redesign.artist.hide.countdown"
 #define SGRKeyArtistHideAbout @"spotifyglass.redesign.artist.hide.about"
+// Off until switched on: the monthly listeners leave the header once the page's About is known to be there and shown
+// (ArtistSections.x), Spotify's About carrying them; without About they stay under the name.
+#define SGRKeyArtistListenersInAbout @"spotifyglass.redesign.artist.listenersInAbout"
+// Off until switched on: the picture-aware photo, the page's colour picked from the photo's foot with its faces left
+// out; the photo itself drawn as it is without it (ArtistHeader.x, Kit/SGRCoverRead.h).
+#define SGRKeyArtistAdaptivePhoto @"spotifyglass.redesign.artist.adaptivePhoto"
 UIViewController *SGRArtistSettingsPage(void);
 
 // The artist page `view` is on, or nil: the TemplateView with the identifier creator-page.

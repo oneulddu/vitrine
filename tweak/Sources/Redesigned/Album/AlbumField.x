@@ -105,6 +105,10 @@ void SGRAlbumSetSpotifyColor(UIView *view, UIColor *color) {
     if (color) [SGRPageFieldOn(view, &kFieldKey) setProvisionalColor:color];
 }
 
+void SGRAlbumSetCoverColor(UIView *view, UIColor *color) {
+    SGRPageFieldOn(view, &kFieldKey).overrideColor = color;
+}
+
 void SGRAlbumHoldPage(UIView *page) {
     [SGRPageFieldOn(page, &kFieldKey) holdPage:page];
 }

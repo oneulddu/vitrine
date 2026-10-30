@@ -70,6 +70,7 @@ void SGMotionArtistArtwork(NSString *name, NSArray *titles, CGFloat pixels, BOOL
 @end
 @interface SGRArtistHero (ImageBoundary)
 - (void)takeArtwork:(UIImageView *)source late:(BOOL)late;
+- (void)sgr_showPhoto:(UIImage *)image;
 @end
 
 // Compile the production orchestration method, not a second implementation of
@@ -79,6 +80,7 @@ void SGMotionArtistArtwork(NSString *name, NSArray *titles, CGFloat pixels, BOOL
 
 @implementation SGRArtistHero (ImageBoundary)
 - (void)takeArtwork:(UIImageView *)source late:(BOOL)late { _picture.image = _applePhoto ?: source.image; }
+- (void)sgr_showPhoto:(UIImage *)image { _picture.image = image; }
 @end
 
 static void release(UIView *page, NSString *title) {

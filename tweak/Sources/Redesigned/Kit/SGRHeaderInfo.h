@@ -32,6 +32,11 @@ BOOL SGRPageFullCover(NSString *key);
 #define SGRKeyPlayInPageColour @"spotifyglass.redesign.playInPageColour"
 // The artist page's Play round, its glyph alone (off unless switched on): Artist/ArtistHeader.x sets roundPlay.
 #define SGRKeyArtistRoundPlay @"spotifyglass.redesign.artist.roundPlay"
+// Read at launch, off unless switched on, and only for round Play (roundPlay): the circle with its glyph cut out of it
+// (SGRPlayCapsule's cutOut), white, or in the accent with SGRKeyAccentPlay. Every other Play keeps
+// SGRKeyPlayInPageColour.
+#define SGRKeyArtistCutOutPlay @"spotifyglass.redesign.artist.cutOutPlay"
+#define SGRKeyAccentPlay @"spotifyglass.redesign.accentPlay"
 
 @interface SGRHeaderInfo : UIView
 // YES when anything shown changed. nil or empty hides that line.
@@ -68,7 +73,7 @@ BOOL SGRPageFullCover(NSString *key);
 @property (nonatomic) CGFloat pinnedTop;
 // Play a circle 64pt across with its glyph alone, its word only what VoiceOver reads, in a 64pt row, and the buttons
 // either side 44pt across, 20pt off it (the artist's, SGRKeyArtistRoundPlay). NO is the capsule in its 48pt row.
-// Set before the first -showShuffle:....
+// Round, Play is cut out while SGRKeyArtistCutOutPlay is on. Set before the first -showShuffle:....
 @property (nonatomic) BOOL roundPlay;
 // With the scroll veil (SGRHeroVeil.h), on every step of the scroll: what of the content has gone under the pinned
 // top bar -- the window's top safe area and 44pt under it -- is clipped there, once it is half a point past it,

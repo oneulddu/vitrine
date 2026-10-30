@@ -24,7 +24,8 @@ xcrun -sdk iphonesimulator clang -target arm64-apple-ios17.0-simulator -fobjc-ar
     "$SRC"/Redesigned/Album/AlbumPlays.m "$SRC"/Redesigned/Album/AlbumPlaysText.m "$SRC"/Redesigned/Album/AlbumSpotifyCounts.m "$SRC"/Redesigned/Kit/SGRCoverViewer.m "$SRC"/Shared/ListeningStats/SGPlayLog.m \
     "$SRC"/Redesigned/Album/AlbumNotes.m "$SRC"/Shared/AnimatedArtwork/SGMotionClip.m "$SRC"/Shared/AdBlock/Protobuf.m \
     "$SRC"/Redesigned/Album/AlbumPlaysPlace.m "$SRC"/Redesigned/Kit/SGRRollingDigits.m "$SRC"/Redesigned/Kit/SGRRefinements.m \
-    -framework UIKit -framework QuartzCore -framework Metal -framework CoreGraphics -framework CoreImage -framework Foundation -framework Symbols -framework CoreText -framework AVFoundation -framework CoreMedia -framework CoreVideo \
+    "$SRC"/Redesigned/Kit/SGRCoverRead.m \
+    -framework UIKit -framework QuartzCore -framework Metal -framework CoreGraphics -framework CoreImage -framework Foundation -framework Symbols -framework CoreText -framework AVFoundation -framework CoreMedia -framework CoreVideo -framework Vision \
     -o "$OUT/AlbumHarness.app/AlbumHarness"
 
 cat > "$OUT/AlbumHarness.app/Info.plist" <<'PLIST'

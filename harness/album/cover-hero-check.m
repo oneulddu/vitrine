@@ -1,0 +1,516 @@
+// The album's hero (Redesigned/Album/AlbumHeader.x) on a page with its field (AlbumField.x), drawing covers from
+// cover-fixtures.h. The first argument says what is checked:
+//
+//   on    (-spotifyglass.redesign.album.adaptiveCover YES) each cover drawn picture-aware: the page's field in the
+//         cover's read colour, the cover itself shown down to where the spec lets it stop being sharp and drawn over
+//         from there, the drawing's first row the cover's own, no jump from row to row below, the page's colour along
+//         the bottom, and the title's area no lighter than L 0.58 over 90% of it, scrim and all
+//   swap  (the same) a cover replaced by another while it is read: the first one's colour never reaches the page and
+//         its picture is never drawn
+//   off   <png> the setting off: no drawn picture, and the hero as drawn written to <png> for cover-check.sh to compare
+//         with an earlier revision's
+//
+// Logs PASS or FAIL lines and exits 1 on the first failure (../harness-fail.h).
+#import <UIKit/UIKit.h>
+#import <AVFoundation/AVFoundation.h>
+#import "Shared/AnimatedArtwork/AnimatedArtwork.h"
+#import "cover-seams.h"
+#import "Redesigned/Kit/SGRField.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
+#import "../harness-fail.h"
+#import "cover-fixtures.h"
+#if __has_include("Redesigned/Kit/SGRCoverRead.h")
+#import "Redesigned/Kit/SGRCoverRead.h"
+#endif
+
+@interface _TtC28CreativeWorkPlatform_PageKit24CreativeWorkTemplateView : UIView @end
+@implementation _TtC28CreativeWorkPlatform_PageKit24CreativeWorkTemplateView @end
+@interface _TtC32CreativeWorkPlatform_TemplateKit28CreativeWorkTemplateListView : UIView @end
+@implementation _TtC32CreativeWorkPlatform_TemplateKit28CreativeWorkTemplateListView @end
+@interface _TtC28EncoreConsumerMobile_BaseKit14PlayButtonView : UIView @end
+@implementation _TtC28EncoreConsumerMobile_BaseKit14PlayButtonView @end
+@interface _TtC12Element_List18CollectionViewCell : UICollectionViewCell @end
+@implementation _TtC12Element_List18CollectionViewCell @end
+
+static const CGFloat kWidth = 402, kHeroHeight = 430;
+
+@interface UIView (SGRAlbumHero)
+- (void)followCover:(UIImageView *)source;
+- (void)playMotionForArtist:(NSString *)artist album:(NSString *)album;
+@end
+
+static void spin(NSTimeInterval seconds) {
+    [NSRunLoop.mainRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:seconds]];
+}
+
+static BOOL waitUntil(NSTimeInterval seconds, BOOL (^done)(void)) {
+    NSDate *limit = [NSDate dateWithTimeIntervalSinceNow:seconds];
+    while (!done() && [limit timeIntervalSinceNow] > 0) spin(0.02);
+    return done();
+}
+
+typedef struct {
+    UIView *page, *hero;
+    UIImageView *source;
+} Page;
+
+// A page with its field, and the hero over its top following an image view the way the header's pass has it follow
+// Spotify's cover.
+static Page makePage(UIImage *cover) {
+    Page p;
+    p.page = [[_TtC28CreativeWorkPlatform_PageKit24CreativeWorkTemplateView alloc] initWithFrame:CGRectMake(0, 0, kWidth, 874)];
+    p.page.accessibilityIdentifier = @"CreativeWorkPlatform.CreativeWorkTemplateView";
+    [p.page layoutIfNeeded];
+    HARNESS_CHECK([p.page.subviews.firstObject isKindOfClass:SGRArtworkField.class]);
+    p.hero = [[NSClassFromString(@"SGRAlbumHero") alloc] initWithFrame:CGRectMake(0, 0, kWidth, kHeroHeight)];
+    HARNESS_CHECK(p.hero);
+    [p.page addSubview:p.hero];
+    p.source = [[UIImageView alloc] initWithFrame:CGRectMake(0, 0, 248, 248)];
+    p.source.image = cover;
+    [p.hero followCover:p.source];
+    [p.hero layoutIfNeeded];
+    return p;
+}
+
+static SGRArtworkField *fieldOf(Page p) {
+    return (SGRArtworkField *)p.page.subviews.firstObject;
+}
+
+static CALayer *renderOf(UIView *hero) {
+    for (CALayer *layer in hero.layer.sublayers) {
+        if ([layer.name isEqualToString:@"SGRAlbumHero.render"]) return layer;
+    }
+    return nil;
+}
+
+static CGColorSpaceRef sRGB(void) {
+    static CGColorSpaceRef space;
+    if (!space) space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    return space;
+}
+
+// RGBA8 rows from the top, `wide` x `high`, drawn by `draw` in points from the top left at `scale`.
+static NSMutableData *pixels(size_t wide, size_t high, CGFloat scale, void (^draw)(CGContextRef c)) {
+    NSMutableData *data = [NSMutableData dataWithLength:wide * high * 4];
+    CGContextRef c = CGBitmapContextCreate(data.mutableBytes, wide, high, 8, wide * 4, sRGB(), (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGContextTranslateCTM(c, 0, high);
+    CGContextScaleCTM(c, scale, -scale);
+    UIGraphicsPushContext(c);
+    draw(c);
+    UIGraphicsPopContext();
+    CGContextRelease(c);
+    return data;
+}
+
+static NSMutableData *pixelsOfImage(CGImageRef image) {
+    size_t wide = CGImageGetWidth(image), high = CGImageGetHeight(image);
+    NSMutableData *data = [NSMutableData dataWithLength:wide * high * 4];
+    CGContextRef c = CGBitmapContextCreate(data.mutableBytes, wide, high, 8, wide * 4, sRGB(), (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGContextDrawImage(c, CGRectMake(0, 0, wide, high), image);
+    CGContextRelease(c);
+    return data;
+}
+
+// The most any channel of row `row` differs between the two.
+static int rowDifference(NSData *one, NSData *other, size_t wide, size_t row) {
+    const uint8_t *a = (const uint8_t *)one.bytes + row * wide * 4, *b = (const uint8_t *)other.bytes + row * wide * 4;
+    int most = 0;
+    for (size_t i = 0; i < wide * 4; i++) {
+        if (i % 4 == 3) continue;
+        most = MAX(most, abs((int)a[i] - (int)b[i]));
+    }
+    return most;
+}
+
+// The mean channel difference between two rows of the same picture.
+static double rowStep(NSData *data, size_t wide, size_t row) {
+    const uint8_t *a = (const uint8_t *)data.bytes + (row - 1) * wide * 4, *b = (const uint8_t *)data.bytes + row * wide * 4;
+    double sum = 0;
+    for (size_t i = 0; i < wide * 4; i++) {
+        if (i % 4 != 3) sum += abs((int)a[i] - (int)b[i]);
+    }
+    return sum / (wide * 3);
+}
+
+// Linear sRGB luminance, independent of the renderer's OKLab implementation.
+static double luminance(const uint8_t *rgb) {
+    double c[3];
+    for (int i = 0; i < 3; i++) {
+        double v = rgb[i] / 255.0;
+        c[i] = v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4);
+    }
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+
+static double luminanceStep(NSData *data, size_t wide, size_t row) {
+    const uint8_t *a = (const uint8_t *)data.bytes + (row - 1) * wide * 4, *b = a + wide * 4;
+    double step = 0;
+    for (size_t x = 0; x < wide; x++) step += fabs(luminance(a + x * 4) - luminance(b + x * 4));
+    return step / wide;
+}
+
+static UIColor *fieldColorOf(Page p) {
+    return fieldOf(p).fieldColor;
+}
+
+// A top-to-bottom gradient layer over the pixels, its colours between its stops straight, blended in sRGB.
+static void compositeGradient(CAGradientLayer *layer, NSMutableData *data, size_t wide, size_t high, CGFloat scale) {
+    NSArray *colors = layer.colors;
+    NSArray<NSNumber *> *stops = layer.locations;
+    if (!stops) {
+        NSMutableArray *even = [NSMutableArray array];
+        for (NSUInteger i = 0; i < colors.count; i++) [even addObject:@((CGFloat)i / MAX(1, colors.count - 1))];
+        stops = even;
+    }
+    HARNESS_CHECK(colors.count >= 2 && stops.count == colors.count && layer.opacity == 1);
+    CGRect frame = layer.frame;
+    uint8_t *bytes = data.mutableBytes;
+    for (size_t row = 0; row < high; row++) {
+        CGFloat y = (row + 0.5) / scale;
+        if (y < CGRectGetMinY(frame) || y >= CGRectGetMaxY(frame)) continue;
+        CGFloat at = (y - CGRectGetMinY(frame)) / frame.size.height;
+        NSUInteger next = 1;
+        while (next < stops.count - 1 && stops[next].doubleValue < at) next++;
+        CGFloat from = stops[next - 1].doubleValue, to = stops[next].doubleValue;
+        CGFloat t = to > from ? MIN(MAX((at - from) / (to - from), 0), 1) : 1;
+        const CGFloat *a = CGColorGetComponents((__bridge CGColorRef)colors[next - 1]), *b = CGColorGetComponents((__bridge CGColorRef)colors[next]);
+        CGFloat colour[4];
+        for (int c = 0; c < 4; c++) colour[c] = a[c] + (b[c] - a[c]) * t;
+        uint8_t *pixel = bytes + row * wide * 4;
+        for (size_t x = 0; x < wide; x++, pixel += 4) {
+            for (int c = 0; c < 3; c++) pixel[c] = (uint8_t)lround(pixel[c] * (1 - colour[3]) + colour[c] * 255 * colour[3]);
+        }
+    }
+}
+
+#if __has_include("Redesigned/Kit/SGRCoverRead.h")
+static SGRCoverReading *readingOf(UIImage *cover) {
+    __block SGRCoverReading *final = nil;
+    SGRCoverRead(cover, ^(SGRCoverReading *reading) {
+        if (reading.final) final = reading;
+    });
+    HARNESS_CHECK(waitUntil(30, ^BOOL { return final != nil; }));
+    return final;
+}
+
+// Only the still test controls these boundaries. Normal hero checks continue through the real providers.
+static BOOL stillTest(void) {
+    return [NSProcessInfo.processInfo.arguments containsObject:@"still-swap"];
+}
+static NSMutableArray *posters, *stillReplies;
+static BOOL holdStillReading;
+static NSURL *clipFile;
+static UIImage *redPoster;
+static SGRCoverReading *redReading;
+
+@interface CoverReadyPlayerLayer : AVPlayerLayer @end
+@implementation CoverReadyPlayerLayer
+- (BOOL)isReadyForDisplay { return YES; }
+@end
+
+AVPlayerLayer *SGRAlbumTestPlayerLayer(AVPlayer *player) {
+    if (!stillTest()) return [AVPlayerLayer playerLayerWithPlayer:player];
+    CoverReadyPlayerLayer *layer = [CoverReadyPlayerLayer layer];
+    layer.player = player;
+    return layer;
+}
+
+void SGRAlbumTestAlbumCover(NSString *artist, NSString *album, CGFloat pixels, void (^done)(NSURL *)) {
+    if (!stillTest()) { SGMotionAlbumCover(artist, album, pixels, done); return; }
+    HARNESS_CHECK([album isEqualToString:@"A"] || [album isEqualToString:@"B"]);
+    done([album isEqualToString:@"A"] ? clipFile : nil);
+}
+
+void SGRAlbumTestPoster(NSURL *file, void (^done)(UIImage *)) {
+    if (!stillTest()) { SGMotionPoster(file, done); return; }
+    [posters addObject:[done copy]];
+}
+
+BOOL SGRAlbumTestStillRead(UIImage *image, void (^done)(SGRCoverReading *)) {
+    if (!stillTest()) return SGRCoverRead(image, done);
+    // A real reading of the red fixture, delivered now or held across an album change.
+    SGRCoverReading *reading = redReading;
+    void (^reply)(void) = ^{ done(reading); };
+    if (holdStillReading) [stillReplies addObject:[reply copy]];
+    else reply();
+    return YES;
+}
+
+// Model address reuse without relying on malloc: discard only the address prefix, keep every other draw-key input.
+@interface CoverReusedAddressCache : NSCache @end
+@implementation CoverReusedAddressCache
+- (id)reusedKey:(NSString *)key {
+    if (![NSProcessInfo.processInfo.arguments containsObject:@"cache-reuse"]) return key;
+    NSRange space = [key rangeOfString:@" "];
+    HARNESS_CHECK(space.location != NSNotFound);
+    return [key substringFromIndex:space.location];
+}
+- (id)objectForKey:(id)key { return [super objectForKey:[self reusedKey:key]]; }
+- (void)setObject:(id)object forKey:(id)key cost:(NSUInteger)cost {
+    [super setObject:object forKey:[self reusedKey:key] cost:cost];
+}
+@end
+
+NSCache *SGRAlbumTestRenderCache(void) { return [CoverReusedAddressCache new]; }
+
+static BOOL fieldIsBlue(Page p) {
+    CGFloat r, g, b, a;
+    [fieldColorOf(p) getRed:&r green:&g blue:&b alpha:&a];
+    return b > r + 0.15 && b > g + 0.15;
+}
+
+static BOOL fieldIsRed(Page p) {
+    CGFloat r, g, b, a;
+    [fieldColorOf(p) getRed:&r green:&g blue:&b alpha:&a];
+    return r > b + 0.15 && r > g + 0.15;
+}
+
+static void startAlbumA(Page p) {
+    [p.hero playMotionForArtist:@"Fixture" album:@"A"];
+    HARNESS_CHECK(waitUntil(5, ^BOOL {
+        for (CALayer *layer in p.hero.layer.sublayers)
+            if ([layer isKindOfClass:AVPlayerLayer.class] && layer.opacity == 1) return YES;
+        return NO;
+    }));
+}
+
+static void startAlbumB(Page p) {
+    p.source.image = flatSleeve(0.10, 0.20, 0.85, 0.6);
+    [p.hero playMotionForArtist:@"Fixture" album:@"B"];
+    if (!waitUntil(5, ^BOOL { return fieldIsBlue(p); }))
+        HARNESS_FAIL(@"still ownership: B without a clip did not receive its blue cover colour");
+}
+
+static id takeReply(NSMutableArray *pending) {
+    HARNESS_CHECK(pending.count > 0);
+    id reply = pending.firstObject;
+    [pending removeObjectAtIndex:0];
+    return reply;
+}
+
+static void checkStillOwnership(void) {
+    clipFile = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:@"album-cover-test-A.mov"]];
+    redPoster = solidRedCover();
+    redReading = readingOf(redPoster);
+    posters = [NSMutableArray new];
+    stillReplies = [NSMutableArray new];
+    // Already-installed A still must stop colouring the page when B has no replacement clip.
+    Page p = makePage(solidDarkCover());
+    startAlbumA(p);
+    void (^poster)(UIImage *) = takeReply(posters);
+    poster(redPoster);
+    HARNESS_CHECK(waitUntil(5, ^BOOL { return fieldIsRed(p); }));
+    startAlbumB(p);
+
+    // Each async boundary, first A -> B (no clip), then A -> B -> A with the very same URL object.
+    // The latter distinguishes album ownership from URL identity.
+    for (NSNumber *readStage in @[@NO, @YES]) {
+        for (NSNumber *returnToA in @[@NO, @YES]) {
+            [posters removeAllObjects];
+            [stillReplies removeAllObjects];
+            holdStillReading = readStage.boolValue;
+            p = makePage(solidDarkCover());
+            startAlbumA(p);
+            poster = takeReply(posters);
+            void (^oldReply)(void);
+            if (holdStillReading) {
+                poster(redPoster);
+                oldReply = takeReply(stillReplies);
+            } else {
+                oldReply = ^{ poster(redPoster); };
+            }
+            startAlbumB(p);
+            if (returnToA.boolValue) startAlbumA(p);
+            oldReply();
+            if (!fieldIsBlue(p))
+                HARNESS_FAIL(@"still ownership: late %@ from A recoloured %@ red",
+                             readStage.boolValue ? @"reading" : @"poster", returnToA.boolValue ? @"a later A lifetime" : @"B without a clip");
+            if (returnToA.boolValue) {
+                // The current request is still accepted; rejecting all stills would not pass.
+                holdStillReading = NO;
+                void (^current)(UIImage *) = takeReply(posters);
+                current(redPoster);
+                HARNESS_CHECK(waitUntil(5, ^BOOL { return fieldIsRed(p); }));
+            }
+        }
+    }
+    NSLog(@"[harness] PASS still ownership: installed and late A stills cannot colour B without a clip; both async stages reject a prior A lifetime and accept the current one");
+}
+
+static void checkRenderCacheReuse(void) {
+    UIImage *second = fixture(^(CGContextRef c, CGFloat side) {
+        CGContextTranslateCTM(c, side, 0);
+        CGContextScaleCTM(c, -1, 1);
+        [colourfulCover() drawInRect:CGRectMake(0, 0, side, side)];
+    });
+    __weak UIImage *expired;
+    Page p;
+    @autoreleasepool {
+        UIImage *first = colourfulCover();
+        expired = first;
+        p = makePage(first);
+        (void)readingOf(first);
+        HARNESS_CHECK(waitUntil(10, ^BOOL { return renderOf(p.hero).contents != nil; }));
+        // Same dimensions, page colour and geometry, different pixels at the sharp boundary.
+        HARNESS_CHECK([readingOf(first).pageColor isEqual:readingOf(second).pageColor]);
+        p.source.image = second;
+    }
+    (void)readingOf(second);
+    HARNESS_CHECK(waitUntil(10, ^BOOL { return !expired && renderOf(p.hero).contents != nil; }));
+    NSData *drawn = pixelsOfImage((__bridge CGImageRef)renderOf(p.hero).contents);
+    const uint8_t *corner = drawn.bytes;
+    // The mirrored fixture starts blue (0.15, 0.20, 0.85), not the expired fixture's magenta.
+    if (corner[0] > 80 || corner[1] > 80 || corner[2] < 180)
+        HARNESS_FAIL(@"render cache reuse: new cover received expired magenta pixels %d,%d,%d", corner[0], corner[1], corner[2]);
+    NSLog(@"[harness] PASS render cache reuse: expired source address and identical draw inputs cannot return its transition to a different cover");
+}
+
+// The hero's picture checked against the cover drawn where the hero lays it out, the top square of the hero.
+static void checkCover(NSString *name, UIImage *cover, CGFloat sharpFrom, CGFloat sharpTo, CGFloat edgeFraction) {
+    Page p = makePage(cover);
+    SGRCoverReading *reading = readingOf(cover);
+    UIColor *page = reading.pageColor;
+    if (!waitUntil(30, ^BOOL { return renderOf(p.hero).contents && [fieldColorOf(p) isEqual:page]; }))
+        HARNESS_FAIL(@"%@: no picture drawn (%@) or the field not in the read colour (%@, read %@)", name,
+                     renderOf(p.hero).contents ? @"drawn" : @"none", fieldColorOf(p), page);
+    // The last of the pixel reading's and the final reading's pictures.
+    spin(1);
+    CALayer *render = renderOf(p.hero);
+    CGImageRef drawn = (__bridge CGImageRef)render.contents;
+    size_t wide = CGImageGetWidth(drawn);
+    CGFloat scale = wide / kWidth, top = CGRectGetMinY(render.frame), side = MIN(kWidth, kHeroHeight);
+    size_t high = (size_t)lround(kHeroHeight * scale), topRow = (size_t)lround(top * scale);
+    if (fabs(CGRectGetMaxY(render.frame) - kHeroHeight) > 0.01 || CGImageGetHeight(drawn) != high - topRow)
+        HARNESS_FAIL(@"%@: drawn %zux%zu over %@ of a %.0fx%.0f hero", name, wide, CGImageGetHeight(drawn), NSStringFromCGRect(render.frame), kWidth, kHeroHeight);
+    // Above the drawing the hero shows the cover itself: the drawing begins where the spec lets the cover stop being sharp.
+    if (top < sharpFrom * side - 0.5 || top > sharpTo * side + 0.5)
+        HARNESS_FAIL(@"%@: the cover is drawn over from %.1fpt, not from %.1f to %.1f", name, top, sharpFrom * side, sharpTo * side);
+    // The hero as it shows, from the top: the cover where the hero lays it out, the top square, then the drawing.
+    NSMutableData *source = pixels(wide, high, scale, ^(CGContextRef c) {
+        CGContextClipToRect(c, CGRectMake(0, 0, kWidth, side));
+        [cover drawInRect:CGRectMake(0, 0, side, side)];
+    });
+    NSMutableData *shown = [source mutableCopy];
+    NSData *drawing = pixelsOfImage(drawn);
+    memcpy((uint8_t *)shown.mutableBytes + topRow * wide * 4, drawing.bytes, drawing.length);
+    // At the drawing's top the cover's own pixels, and below no step from row to row of more than 10 levels on average,
+    // and the page's colour along the bottom.
+    if (rowDifference(shown, source, wide, topRow) > 2) HARNESS_FAIL(@"%@: the drawing's first row is not the cover's", name);
+    double steepest = 0;
+    for (size_t row = MAX(topRow, 1); row < high; row++) steepest = MAX(steepest, rowStep(shown, wide, row));
+    // Opaque everywhere, so nothing under it (the system's extension of the cover, the field) shows through a gap, and
+    // across the cover's bottom edge, kEdgeSpan either side of it, no step over kEdgeStep: no line where it ends.
+    const uint8_t *drawnPixels = drawing.bytes;
+    for (size_t i = 3; i < drawing.length; i += 4)
+        if (drawnPixels[i] != 255) HARNESS_FAIL(@"%@: the drawing is not opaque at row %zu", name, topRow + i / 4 / wide);
+    static const CGFloat kEdgeSpan = 24, kEdgeStep = 0.02;
+    size_t edgeRow = (size_t)lround(side * scale), edgeFrom = MAX(topRow + 1, (size_t)lround((side - kEdgeSpan) * scale));
+    double edgeSteepest = 0;
+    for (size_t row = edgeFrom; row < MIN(high, edgeRow + (size_t)lround(kEdgeSpan * scale)); row++)
+        edgeSteepest = MAX(edgeSteepest, luminanceStep(shown, wide, row));
+    if (edgeSteepest > kEdgeStep) HARNESS_FAIL(@"%@: luminance step %.4f across the cover's bottom edge (limit 0.02)", name, edgeSteepest);
+    // Measure the actual layer composition around the fixture's edge through the square's extension.
+    // The scanned sleeve's hard edge is at 94%, not at the square's bottom; include its blurred lead-in too.
+    // Other fixtures test the square bottom. The earlier title scrim is not a cover-edge discontinuity.
+    NSData *composite = pixels(wide, high, scale, ^(CGContextRef c) { [p.hero.layer renderInContext:c]; });
+    double compositeStep = 0;
+    for (size_t row = MAX(topRow + 1, (size_t)lround((side * edgeFraction - kEdgeSpan) * scale)); row < high; row++)
+        compositeStep = MAX(compositeStep, luminanceStep(composite, wide, row));
+    if (compositeStep > kEdgeStep) HARNESS_FAIL(@"%@: composited edge luminance step %.4f (limit 0.02)", name, compositeStep);
+    if (steepest > 10) HARNESS_FAIL(@"%@: a step of %.1f levels between rows under the sharp end", name, steepest);
+    CGFloat r, g, b, a;
+    [page getRed:&r green:&g blue:&b alpha:&a];
+    const uint8_t *bottom = (const uint8_t *)shown.bytes + (high - 1) * wide * 4;
+    for (size_t x = 0; x < wide; x += 7) {
+        if (abs(bottom[x * 4] - (int)lround(r * 255)) > 2 || abs(bottom[x * 4 + 1] - (int)lround(g * 255)) > 2
+            || abs(bottom[x * 4 + 2] - (int)lround(b * 255)) > 2)
+            HARNESS_FAIL(@"%@: the bottom row at %zu is %d,%d,%d, not the page's colour", name, x, bottom[x * 4], bottom[x * 4 + 1], bottom[x * 4 + 2]);
+    }
+    // The title's area as the hero draws it: the picture with every gradient over it composited in sRGB as Core
+    // Animation blends a layer's alpha (a snapshot on the Mac draws a gradient's colours through another colour space).
+    size_t titleRow = (size_t)lround((kHeroHeight - SGRHeaderInfoTitleRise) * scale), count = 0, light = 0;
+    for (CALayer *layer in p.hero.layer.sublayers) {
+        if (![layer isKindOfClass:CAGradientLayer.class] || layer.hidden || layer.zPosition < renderOf(p.hero).zPosition) continue;
+        compositeGradient((CAGradientLayer *)layer, shown, wide, high, scale);
+    }
+    for (size_t row = titleRow; row < high; row++) {
+        const uint8_t *pixel = (const uint8_t *)shown.bytes + row * wide * 4;
+        for (size_t x = 0; x < wide; x++, pixel += 4, count++) light += SGRLabFromRGB8(pixel).L > 0.58;
+    }
+    if (light > count / 10) HARNESS_FAIL(@"%@: %.0f%% of the title's area over L 0.58", name, 100.0 * light / count);
+    NSLog(@"[harness] %@: sharp to %.1fpt (%.0f%%), row step %.1f/255; edge luminance step %.4f, composited %.4f (limit 0.02); %.1f%% of title over L 0.58",
+          name, top, 100 * top / side, steepest, edgeSteepest, compositeStep, 100.0 * light / count);
+}
+#endif
+
+int main(int argc, char *argv[]) {
+    @autoreleasepool {
+        NSString *mode = argc > 1 ? @(argv[1]) : @"";
+        if ([mode isEqualToString:@"off"]) {
+            HARNESS_CHECK(argc > 2);
+            Page p = makePage(colourfulCover());
+            // The field's palette, and nothing else, landing.
+            spin(1.5);
+            HARNESS_CHECK(!renderOf(p.hero));
+            size_t wide = (size_t)(kWidth * 2), high = (size_t)(kHeroHeight * 2);
+            NSMutableData *hero = pixels(wide, high, 2, ^(CGContextRef c) { [p.hero.layer renderInContext:c]; });
+            CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)hero);
+            CGImageRef image = CGImageCreate(wide, high, 8, 32, wide * 4, sRGB(), (CGBitmapInfo)kCGImageAlphaPremultipliedLast, provider, NULL, NO,
+                                             kCGRenderingIntentDefault);
+            CGDataProviderRelease(provider);
+            HARNESS_CHECK([UIImagePNGRepresentation([UIImage imageWithCGImage:image]) writeToFile:@(argv[2]) atomically:YES]);
+            CGImageRelease(image);
+            NSLog(@"[harness] PASS setting off: no picture drawn over the cover; the hero, in %@, written to %s", fieldColorOf(p), argv[2]);
+            return 0;
+        }
+#if __has_include("Redesigned/Kit/SGRCoverRead.h")
+        if ([mode isEqualToString:@"still-swap"]) { checkStillOwnership(); return 0; }
+        if ([mode isEqualToString:@"cache-reuse"]) { checkRenderCacheReuse(); return 0; }
+        if ([mode isEqualToString:@"on"]) {
+            // Sharp from and to, as shares of the cover's side: any picture that is not solid between 60% and 90%; a
+            // solid one from its art's bottom (80%) to 86%, and a solid dark one, mixed into its own colour, over the
+            // last 120pt at most.
+            checkCover(@"colourful", colourfulCover(), 0.60, 0.90, 1);
+            checkCover(@"dark accent", darkAccentCover(), 0.60, 0.90, 1);
+            // A hard pale edge 6% above the cover's bottom, under the sharp end where the blur has hardly begun.
+            checkCover(@"scanned sleeve", scannedSleeveCover(), 0.60, 0.90, 0.94);
+            checkCover(@"drawn face", faceCover(), 0.60, 0.90, 1);
+            checkCover(@"solid light", solidLightCover(), 0.80, 0.86, 1);
+            checkCover(@"solid red", solidRedCover(), 0.80, 0.86, 1);
+            checkCover(@"solid dark", solidDarkCover(), 0.80, 0.86, 1);
+            NSLog(@"[harness] PASS picture-aware hero: colourful, dark accent, a scanned sleeve, a drawn face, solid light, red and dark");
+            return 0;
+        }
+        if ([mode isEqualToString:@"swap"]) {
+            UIImage *first = colourfulCover(), *second = solidRedCover();
+            NSMutableArray<UIColor *> *shown = [NSMutableArray array];
+            [NSNotificationCenter.defaultCenter addObserverForName:SGRFieldColorDidChangeNotification object:nil queue:nil
+                                                        usingBlock:^(NSNotification *note) { [shown addObject:note.userInfo[@"color"]]; }];
+            Page p = makePage(first);
+            // Replaced before its read is back: the album changed.
+            p.source.image = second;
+            UIColor *secondColor = readingOf(second).pageColor;
+            HARNESS_CHECK(waitUntil(30, ^BOOL { return renderOf(p.hero).contents && [fieldColorOf(p) isEqual:secondColor]; }));
+            // Every read of the first cover back by now, pixel and final.
+            UIColor *firstColor = readingOf(first).pageColor;
+            spin(1);
+            for (UIColor *color in shown) {
+                if ([color isEqual:firstColor]) HARNESS_FAIL(@"the replaced cover's colour %@ reached the page", firstColor);
+            }
+            // The picture drawn is the second cover's: its red border at the top left.
+            NSMutableData *drawn = pixelsOfImage((__bridge CGImageRef)renderOf(p.hero).contents);
+            const uint8_t *corner = drawn.bytes;
+            if (corner[0] < 150 || corner[1] > 60 || corner[2] > 60) HARNESS_FAIL(@"the picture drawn is not the second cover's: %d,%d,%d", corner[0], corner[1], corner[2]);
+            NSLog(@"[harness] PASS cover swapped mid read: %lu colours reached the page, none the replaced cover's; the picture is the new cover's",
+                  (unsigned long)shown.count);
+            return 0;
+        }
+#endif
+        HARNESS_FAIL(@"no such check: %@", mode);
+    }
+}
+
+// Before every %ctor, so the redesign's gate reads on.
+__attribute__((constructor(101))) static void harnessDefaults(void) {
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"spotifyglass.redesign"];
+}

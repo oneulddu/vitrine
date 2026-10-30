@@ -61,11 +61,16 @@ static UIFont *capsuleFont(void) {
 // pass here and a mirror that cannot be tapped could never hear that the source is back. Every tap reads the
 // source (feedFrom:) before it fires, which is what clears the dim.
 static const CGFloat kDisabledAlpha = 0.4;
+// What a mirror draws is this opaque: dimmed while it says it is not enabled.
+static CGFloat enabledAlpha(UIControl *mirror) {
+    return mirror.accessibilityTraits & UIAccessibilityTraitNotEnabled ? kDisabledAlpha : 1;
+}
+// `drawn` nil: the caller dims what it draws itself, from enabledAlpha.
 static void takeEnabled(UIControl *mirror, UIView *source, NSArray<UIView *> *drawn) {
     BOOL enabled = SGRSourceEnabled(source);
     if (!(mirror.accessibilityTraits & UIAccessibilityTraitNotEnabled) == enabled) return;
     mirror.accessibilityTraits = enabled ? UIAccessibilityTraitButton : UIAccessibilityTraitButton | UIAccessibilityTraitNotEnabled;
-    for (UIView *view in drawn) view.alpha = enabled ? 1 : kDisabledAlpha;
+    for (UIView *view in drawn) view.alpha = enabledAlpha(mirror);
 }
 
 #pragma mark - the Play capsule
@@ -75,6 +80,16 @@ static void takeEnabled(UIControl *mirror, UIView *source, NSArray<UIView *> *dr
     UILabel *_title;
     __weak UIImageView *_watchedGlyph;
     UIImage *_takenGlyph;
+    // The cut-out's mask (cutOut), and what it was last drawn from: a pass that changes none of these draws nothing.
+    CALayer *_cutMask;
+    CGSize _cutSize;
+    CGFloat _cutScale;
+    UIImage *_cutGlyph;
+    CGRect _cutGlyphFrame;
+    UIViewContentMode _cutGlyphMode;
+    NSString *_cutWord;
+    UIFont *_cutFont;
+    CGRect _cutWordFrame;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -122,17 +137,87 @@ static void takeEnabled(UIControl *mirror, UIView *source, NSArray<UIView *> *dr
     UIViewContentMode mode = image.width <= kGlyphSide && image.height <= kGlyphSide ? UIViewContentModeCenter : UIViewContentModeScaleAspectFit;
     if (_glyph.contentMode != mode) _glyph.contentMode = mode;
     if (_title.hidden != self.round) _title.hidden = self.round;
-    if (self.round) return;
-    [_title sizeToFit];
-    CGSize text = _title.bounds.size;
-    _title.frame = CGRectMake(CGRectGetMaxX(_glyph.frame), round((bounds.size.height - text.height) / 2),
-                              MAX(0, bounds.size.width - kCapsuleTrail - CGRectGetMaxX(_glyph.frame)), text.height);
+    if (!self.round) {
+        [_title sizeToFit];
+        CGSize text = _title.bounds.size;
+        _title.frame = CGRectMake(CGRectGetMaxX(_glyph.frame), round((bounds.size.height - text.height) / 2),
+                                  MAX(0, bounds.size.width - kCapsuleTrail - CGRectGetMaxX(_glyph.frame)), text.height);
+    }
+    [self sgr_cut];
+}
+
+- (void)setFillColor:(UIColor *)fillColor {
+    if (fillColor == _fillColor || [fillColor isEqual:_fillColor]) return;
+    _fillColor = [fillColor copy];
+    [self setNeedsLayout];
+}
+
+- (void)setCutOut:(BOOL)cutOut {
+    if (_cutOut == cutOut) return;
+    _cutOut = cutOut;
+    [self setNeedsLayout];
+}
+
+// Into a window of another scale (the first one, from none): the mask is drawn again at it.
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    [super traitCollectionDidChange:previous];
+    if (_cutMask && previous.displayScale != self.traitCollection.displayScale) [self setNeedsLayout];
+}
+
+// The mask that cuts the glyph and the word out of the fill, drawn again only when something it is drawn from changed
+// (the fill's color is not one: the mask is alpha alone); with cutOut off or no fill, the mask goes and they are painted.
+- (void)sgr_cut {
+    if (!self.cutOut || !self.fillColor) {
+        if (!_cutMask) return;
+        if (self.layer.mask == _cutMask) self.layer.mask = nil;
+        _cutMask = nil;
+        [self sgr_paintDrawn];
+        return;
+    }
+    CGSize size = self.bounds.size;
+    CGFloat scale = self.traitCollection.displayScale;
+    NSString *word = _title.hidden ? nil : _title.text;
+    BOOL wordSame = word ? [word isEqualToString:_cutWord] && [_title.font isEqual:_cutFont] && CGRectEqualToRect(_title.frame, _cutWordFrame)
+                         : !_cutWord;
+    if (_cutMask && wordSame && CGSizeEqualToSize(size, _cutSize) && scale == _cutScale && _glyph.image == _cutGlyph
+        && CGRectEqualToRect(_glyph.frame, _cutGlyphFrame) && _glyph.contentMode == _cutGlyphMode) return;
+    _cutSize = size;
+    _cutScale = scale;
+    _cutGlyph = _glyph.image;
+    _cutGlyphFrame = _glyph.frame;
+    _cutGlyphMode = _glyph.contentMode;
+    _cutWord = word;
+    _cutFont = _title.font;
+    _cutWordFrame = _title.frame;
+    UIImage *mask = SGRCutOutMask(self, self.bounds, _glyph, _title);
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (!_cutMask) _cutMask = [CALayer layer];
+    _cutMask.frame = self.bounds;
+    _cutMask.contents = (__bridge id)mask.CGImage;
+    _cutMask.contentsScale = mask.scale;
+    if (self.layer.mask != _cutMask) self.layer.mask = _cutMask;
+    [CATransaction commit];
+    [self sgr_paintDrawn];
+}
+
+// The glyph and the word painted, as enabled as the source; cut out, they paint nothing and the cut fill takes the dim.
+- (void)sgr_paintDrawn {
+    CGFloat alpha = enabledAlpha(self), painted = _cutMask ? 0 : alpha;
+    if (_glyph.alpha != painted) _glyph.alpha = painted;
+    if (_title.alpha != painted) _title.alpha = painted;
+    if (!_cutMask || _cutMask.opacity == alpha) return;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    _cutMask.opacity = alpha;
+    [CATransaction commit];
 }
 
 - (void)feedFrom:(UIView *)source {
     if (!source) return;
     _source = source;
-    takeEnabled(self, source, @[_glyph, _title]);
+    takeEnabled(self, source, nil);
+    [self sgr_paintDrawn];
 
     NSString *word = wordIn(source);
     // The disc is as tall as the button, not always as wide: Liked Songs' is 80x48 with the 48pt disc at
@@ -141,7 +226,11 @@ static void takeEnabled(UIControl *mirror, UIView *source, NSArray<UIView *> *dr
     UIImageView *glyph = glyphIn(source, MIN(size.width, size.height));
 
     UIFont *font = capsuleFont();
-    if (![_title.font isEqual:font]) _title.font = font;
+    if (![_title.font isEqual:font]) {
+        _title.font = font;
+        // The word cut out at its new size.
+        if (self.cutOut) [self setNeedsLayout];
+    }
     UIColor *content = self.contentColor ?: SGRAccent();
     if (![_title.textColor isEqual:content]) _title.textColor = content;
     if (word && ![_title.text isEqualToString:word]) {
@@ -156,6 +245,8 @@ static void takeEnabled(UIControl *mirror, UIView *source, NSArray<UIView *> *dr
     if (glyph.image && _takenGlyph != glyph.image) {
         _takenGlyph = glyph.image;
         _glyph.image = [glyph.image imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+        // Play turned pause: the cut follows, its content mode with it.
+        if (self.cutOut) [self setNeedsLayout];
         static dispatch_once_t once;
         dispatch_once(&once, ^{
             SGLog(@"redesign kit: play glyph %@ from %@, word \"%@\"", NSStringFromCGSize(glyph.image.size),

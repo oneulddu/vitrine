@@ -247,6 +247,8 @@ static NSArray<NSArray *> *musicList(void) {
 
 #pragma mark - the row's Play
 
+#import "listeners-check.h"
+
 static BOOL sameColor(UIColor *a, UIColor *b) {
     CGFloat ar, ag, ab, aa, br, bg, bb, ba;
     if (![a getRed:&ar green:&ag blue:&ab alpha:&aa] || ![b getRed:&br green:&bg blue:&bb alpha:&ba]) return NO;
@@ -258,7 +260,9 @@ static BOOL sameColor(UIColor *a, UIColor *b) {
 // either side of it, 20pt off and level with its middle. Unset: the capsule, 48pt tall and at least 148 wide, the
 // buttons 48pt and 16pt off. White either way; the glyph and the word in the page's color, or with
 // -spotifyglass.redesign.playInPageColour NO in the accent -- Spotify's green #1ED760 here, the harness having no
-// accent of its own -- three colors none of which is another.
+// accent of its own -- three colors none of which is another. Round with -spotifyglass.redesign.artist.cutOutPlay YES
+// too: the glyph unpainted, cut out of the circle by its mask, which is white, or with -spotifyglass.redesign.accentPlay
+// YES the accent.
 static void verifyPlay(UIView *root) {
     // A pass of the header after the photo's color has landed, as the phone has once the page lays out again.
     UIView *header = veilFind(root, @"_TtC35CreativeWorkPlatform_ImageHeaderKit15ImageHeaderView");
@@ -278,6 +282,8 @@ static void verifyPlay(UIView *root) {
     NSUserDefaults *defaults = NSUserDefaults.standardUserDefaults;
     BOOL round = [defaults boolForKey:@"spotifyglass.redesign.artist.roundPlay"];
     BOOL pageColor = ![defaults objectForKey:@"spotifyglass.redesign.playInPageColour"] || [defaults boolForKey:@"spotifyglass.redesign.playInPageColour"];
+    BOOL cut = round && [defaults boolForKey:@"spotifyglass.redesign.artist.cutOutPlay"];
+    BOOL accentFill = cut && [defaults boolForKey:@"spotifyglass.redesign.accentPlay"];
     CGFloat width = info.bounds.size.width, side = round ? 44 : 48, gap = round ? 20 : 16;
     HARNESS_CHECK(fabs(CGRectGetMidX(play.frame) - width / 2) < 0.5);
     HARNESS_CHECK(CGSizeEqualToSize(shuffle.bounds.size, CGSizeMake(side, side)) && CGSizeEqualToSize(follow.bounds.size, CGSizeMake(side, side)));
@@ -298,7 +304,15 @@ static void verifyPlay(UIView *root) {
     UIColor *white = UIColor.whiteColor, *accent = [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
     UIColor *page = [hero valueForKey:@"fieldColor"];
     HARNESS_CHECK(page && !sameColor(page, white) && !sameColor(page, accent) && !sameColor(white, accent));
-    HARNESS_CHECK(sameColor(play.backgroundColor, white));
+    HARNESS_CHECK(sameColor(play.backgroundColor, accentFill ? accent : white));
+    // Cut out: the glyph drawn by the hole in the capsule's own mask, not painted (cutout-check.sh reads the pixels).
+    HARNESS_CHECK(cut == (play.layer.mask != nil) && glyph.alpha == (cut ? 0 : 1));
+    if (cut) {
+        NSLog(@"[harness] PASS artist play round cut out of %@: %@", accentFill ? @"the accent" : @"white", NSStringFromCGRect(play.frame));
+        NSLog(@"[harness] SHOT artist-play-cutout-%@", accentFill ? @"accent" : @"white");
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ exit(0); });
+        return;
+    }
     UIColor *content = pageColor ? page : accent;
     if (!sameColor(glyph.tintColor, content) || (!round && !sameColor(word.textColor, content)))
         HARNESS_FAIL(@"Play's glyph %@ and word %@, not %@", glyph.tintColor, word.textColor, content);
@@ -313,6 +327,7 @@ static void verifyPlay(UIView *root) {
 @interface SGRHarnessDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) SGRListSource *source;
+@property (nonatomic, strong) UICollectionViewDiffableDataSource *listenersSource;
 @end
 
 @implementation SGRHarnessDelegate
@@ -413,18 +428,46 @@ static void verifyPlay(UIView *root) {
     list.scrollEnabled = NO;
     [list registerClass:_TtC12Element_List18CollectionViewCell.class forCellWithReuseIdentifier:@"cell"];
     self.source = [SGRListSource new];
+    BOOL checkListeners = [NSProcessInfo.processInfo.arguments containsObject:@"verify-listeners"];
     BOOL reloadSections = [NSProcessInfo.processInfo.arguments containsObject:@"reload-sections"];
     self.source.items = reloadSections ? @[
         @[@"", @16],
         @[@"Components.UI.SectionHeadingHome", @36, @"Videos"],
         @[@"Components.UI.MusicVideoShelfHeader", @224]
-    ] : musicList();
-    list.dataSource = self.source;
+    ] : checkListeners ? listenersItems(NO) : musicList();
+    if (checkListeners) {
+        CGRect frame = list.frame;
+        frame.size.height = 180;
+        list.frame = frame;
+    }
     [listView addSubview:list];
+    if (checkListeners) {
+        // Match Element_List's real data-source boundary, including UIKit's
+        // retained-cell reconfiguration (which does not call prepareForReuse).
+        self.listenersSource = [[UICollectionViewDiffableDataSource alloc] initWithCollectionView:list
+            cellProvider:^UICollectionViewCell *(UICollectionView *view, NSIndexPath *path, id item) {
+                return [self.source collectionView:view cellForItemAtIndexPath:path];
+            }];
+        NSDiffableDataSourceSnapshot *snapshot = [NSDiffableDataSourceSnapshot new];
+        [snapshot appendSectionsWithIdentifiers:@[@0]];
+        NSMutableArray *items = [NSMutableArray array];
+        for (NSUInteger item = 0; item < self.source.items.count; item++) [items addObject:@(item)];
+        [snapshot appendItemsWithIdentifiers:items];
+        [self.listenersSource applySnapshotUsingReloadData:snapshot completion:nil];
+    } else {
+        list.dataSource = self.source;
+    }
     scroll.contentSize = CGSizeMake(W, 3000);
     if (collapsed) scroll.contentOffset = CGPointMake(0, 468);
 
     [self.window makeKeyAndVisible];
+
+    if (checkListeners) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{
+            verifyListeners(root, header, list, self.source);
+        });
+        return YES;
+    }
 
     if (reloadSections) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC), dispatch_get_main_queue(), ^{

@@ -17,17 +17,60 @@
 // Spotify's play button, the one the capsule reads and fires. Set by -feedFrom:.
 @property (nonatomic, weak, readonly) UIView *source;
 // A solid capsule of this color instead of the prominent glass, the Music app's white Play (the playlist).
-// nil, the default, is the glass. Set before the capsule is first laid out.
+// nil, the default, is the glass. Set before the capsule is first laid out; another color later repaints it.
 @property (nonatomic, copy) UIColor *fillColor;
 // The glyph's and the word's color; nil is the accent.
 @property (nonatomic, copy) UIColor *contentColor;
 // A circle as wide as it is tall with the glyph alone in its middle; the word is then only its accessibility label.
 @property (nonatomic) BOOL round;
+// With a fillColor, the glyph and any word shown are cut out of the fill instead of painted on it, so whatever is
+// behind the capsule shows through them (the artist's round Play, SGRKeyArtistCutOutPlay): the capsule's layer takes
+// an alpha mask of its own (SGRCutOutMask), drawn again only when the shape, the glyph or the word changes, and
+// dimmed with the source. NO, the default, paints them in contentColor; turned off, the mask goes.
+@property (nonatomic) BOOL cutOut;
 // Takes the glyph, the word and the language from `source`, and follows the glyph as Spotify swaps it
 // (play becoming pause) without the header laying out again. Cheap to call again on every pass.
 - (void)feedFrom:(UIView *)source;
 - (CGFloat)sgr_width;
 @end
+
+// The alpha mask that cuts a button out of its fill, `view`'s bounds in size at `view`'s display scale: `shape` (in
+// `view`'s bounds) filled as a capsule, a circle when it is square, with the image `glyph` shows taken out of it where
+// and as the image view shows it, and the text `word` shows the same way. A glyph view without an image and a hidden
+// or empty word take nothing out. Inline so the Artists page's preview (Artist/ArtistSettings.m), which links none of
+// this file's classes, draws the same cut as the capsule.
+static inline UIImage *SGRCutOutMask(UIView *view, CGRect shape, UIImageView *glyph, UILabel *word) {
+    UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat formatForTraitCollection:view.traitCollection];
+    format.opaque = NO;
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:view.bounds.size format:format];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
+        [UIColor.blackColor setFill];
+        [[UIBezierPath bezierPathWithRoundedRect:shape cornerRadius:MIN(shape.size.width, shape.size.height) / 2] fill];
+        UIImage *image = glyph.image;
+        CGSize size = image.size;
+        if (image && size.width > 0 && size.height > 0) {
+            CGRect frame = [glyph convertRect:glyph.bounds toView:view], drawn = frame;
+            // At its own size or fitted, centered, as UIImageView draws those two modes; stretched over the view otherwise.
+            CGFloat scale = glyph.contentMode == UIViewContentModeCenter ? 1
+                          : glyph.contentMode == UIViewContentModeScaleAspectFit ? MIN(frame.size.width / size.width, frame.size.height / size.height)
+                          : 0;
+            if (scale > 0) {
+                drawn.size = CGSizeMake(size.width * scale, size.height * scale);
+                drawn.origin = CGPointMake(CGRectGetMidX(frame) - drawn.size.width / 2, CGRectGetMidY(frame) - drawn.size.height / 2);
+            }
+            [image drawInRect:drawn blendMode:kCGBlendModeDestinationOut alpha:1];
+        }
+        if (word && !word.hidden && word.text.length) {
+            CGContextRef c = context.CGContext;
+            CGContextSaveGState(c);
+            CGContextSetBlendMode(c, kCGBlendModeDestinationOut);
+            CGRect frame = [word convertRect:word.bounds toView:view];
+            CGContextTranslateCTM(c, frame.origin.x, frame.origin.y);
+            [word drawTextInRect:word.bounds];
+            CGContextRestoreGState(c);
+        }
+    }];
+}
 
 // A round glass button SGRActionHeight across showing the glyph of one of Spotify's round buttons and
 // firing it, for a control the row cannot reach: the album page's shuffle floats over the page rather

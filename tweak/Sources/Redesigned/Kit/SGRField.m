@@ -7,6 +7,7 @@
 #import "SGRTokens.h"
 
 NSNotificationName const SGRFieldColorDidChangeNotification = @"spotifyglass.redesign.fieldColorDidChange";
+NSNotificationName const SGRFieldPaletteDidChangeNotification = @"spotifyglass.redesign.fieldPaletteDidChange";
 
 static const UIEdgeInsets kPageBleed = {600, 0, 600, 0};
 
@@ -97,6 +98,8 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
     SGRFluidLayer *_fluidLayer;
     BOOL _watching;
     UIColor *_color;
+    UIColor *_paletteColor;   // the last palette's field color, shown again when the override goes
+    BOOL _paletteCurrent;     // _paletteColor is the one of _image
     UIImage *_image;
     NSString *_identity;
     NSUInteger _generation;
@@ -291,6 +294,7 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
     if (!image || image == _image || (identity && [identity isEqualToString:_identity])) return;
     _image = image;
     _identity = [identity copy];
+    _paletteCurrent = NO;
     if (_fluid) [_fluidLayer setArtwork:image animated:animated && self.window != nil];
     [self readPaletteAnimated:animated];
 }
@@ -378,8 +382,28 @@ const NSTimeInterval SGRFieldHoldLimit = 0.5;
         _backdrop.hidden = NO;
         [CATransaction commit];
     }
-    [self applyColor:palette.fieldColor animated:animated];
+    _paletteColor = palette.fieldColor;
+    _paletteCurrent = YES;
+    if (!_overrideColor) [self applyColor:palette.fieldColor animated:animated];
     [self sgr_showPage:@"its artwork was read"];
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRFieldPaletteDidChangeNotification object:self];
+}
+
+- (UIColor *)paletteColor {
+    return _paletteCurrent ? _paletteColor : nil;
+}
+
+- (void)setOverrideColor:(UIColor *)color {
+    if (color == _overrideColor || [color isEqual:_overrideColor]) return;
+    _overrideColor = [color copy];
+    BOOL animated = self.window != nil && !_veil;
+    if (color) {
+        _read = YES;
+        [self applyColor:color animated:animated];
+        [self sgr_showPage:@"its owner gave it its color"];
+    } else if (_paletteColor) {
+        [self applyColor:_paletteColor animated:animated];
+    }
 }
 
 @end

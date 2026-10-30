@@ -30,6 +30,7 @@
 #import <objc/runtime.h>
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRCoverRead.h"
 #import "Redesigned/Kit/SGRHeroVeil.h"
 #import "Shared/AnimatedArtwork/AnimatedArtwork.h"
 #import "Redesigned/Album/Album.h"
@@ -106,6 +107,23 @@ static BOOL roundPlay(void) {
     dispatch_once(&once, ^{ on = SGFlag(SGRKeyArtistRoundPlay, NO); });
     return on;
 }
+
+#pragma mark - the picture-aware photo
+
+// The picture-aware photo (SGRKeyArtistAdaptivePhoto): the photo shown is drawn as it always is, and read once
+// (Kit/SGRCoverRead.h, SGRPhotoRead) for the page's colour, which goes to the page's field in place of the palette's
+// (SGRPhotoPageColor, against the field's own palette colour for the same photo) once both are in. Off, nothing is read.
+static BOOL adaptivePhotoOn(void) {
+    static BOOL on;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ on = SGFlag(SGRKeyArtistAdaptivePhoto, NO); });
+    return on;
+}
+
+// ArtistField.x: the colour picked for the page, in place of the palette's (nil gives the palette's back), and the
+// palette's colour for the photo the field was last given, nil until it has been read.
+extern void SGRArtistSetPhotoColor(UIView *view, UIColor *color);
+extern UIColor *SGRArtistPaletteColor(UIView *view);
 #endif
 
 @implementation SGRArtistHero
@@ -117,6 +135,10 @@ static BOOL roundPlay(void) {
     NSString *_artistIdentity;
     SGRArtistArtworkRequest *_request;
     SGRArtistMotionView *_motion;
+    // The picture-aware photo, on with its setting only; neither is used otherwise.
+    BOOL _adaptive;
+    UIImage *_photoImage;              // the photo read, or being read
+    SGRPhotoReading *_photoReading;    // its reading, nil until it is in
 }
 
 - (instancetype)initWithFrame:(CGRect)frame {
@@ -147,10 +169,15 @@ static BOOL roundPlay(void) {
         _veil = [[SGRHeroVeil alloc] initWithHero:self];
         _veil.art = @[_picture.layer, _motion.layer];
     }
+    _adaptive = adaptivePhotoOn();
     self.fieldColor = SGRNeutralField();
     // The color is read off the main thread, so it can land after the last layout pass of the page.
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sgr_fieldColorDidChange)
                                                name:SGRFieldColorDidChangeNotification object:nil];
+    // The picture-aware colour waits on the field's palette for the same photo, which can land after the read.
+    if (_adaptive)
+        [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(sgr_showPhotoColor)
+                                                   name:SGRFieldPaletteDidChangeNotification object:nil];
     return self;
 }
 
@@ -214,14 +241,40 @@ static BOOL roundPlay(void) {
     if (_artwork && source != _artwork) return;
     UIImage *image = _applePhoto ?: source.image;
     if (!image || _picture.image == image) return;
-    _picture.image = image;
-    // The page's field takes its color from the same picture.
-    SGRArtistSetArtwork(self, image);
+    [self sgr_showPhoto:image];
     static BOOL logged;
     if (late && !logged) {
         logged = YES;
         SGLog(@"redesign artist: the photo landed after the header had laid out; the hero took it");
     }
+}
+
+// The photo shown, the page's field taking its colour from it, and read while the photo is picture-aware.
+- (void)sgr_showPhoto:(UIImage *)image {
+    _picture.image = image;
+    if (image) SGRArtistSetArtwork(self, image);
+    if (_adaptive) [self sgr_readPhoto:image];
+}
+
+// The photo read; until its reading and the field's palette colour for it are both in, the field shows the palette's
+// colour, as it does for a photo that cannot be read. The reading is taken only while the hero still shows its photo.
+- (void)sgr_readPhoto:(UIImage *)image {
+    if (image == _photoImage) return;
+    _photoImage = image;
+    _photoReading = nil;
+    SGRArtistSetPhotoColor(self, nil);
+    __weak SGRArtistHero *weakSelf = self;
+    SGRPhotoRead(image, ^(SGRPhotoReading *read) {
+        SGRArtistHero *hero = weakSelf;
+        if (!hero || hero->_picture.image != image) return;
+        hero->_photoReading = read;
+        [hero sgr_showPhotoColor];
+    });
+}
+
+- (void)sgr_showPhotoColor {
+    UIColor *palette = SGRArtistPaletteColor(self);
+    if (_photoReading && palette) SGRArtistSetPhotoColor(self, SGRPhotoPageColor(_photoReading, palette));
 }
 
 #endif
@@ -238,8 +291,7 @@ static BOOL roundPlay(void) {
         _artistIdentity = [identity copy];
         _applePhoto = nil;
         [_motion showFile:nil];
-        _picture.image = _artwork.image;
-        if (_picture.image) SGRArtistSetArtwork(self, _picture.image);
+        [self sgr_showPhoto:_artwork.image];
     }
     static NSMutableSet<NSString *> *logged;
     NSString *gateKey = [NSString stringWithFormat:@"%@-%@", name, identity ?: @"missing-identity"];
@@ -299,6 +351,8 @@ static void applyHero(UIView *container, UIView *artwork, CGFloat bottom, UIColo
 
 static void applyHeader(UIView *header, BOOL full);
 static void applyContent(UIView *header, UIView *container, SGRHeaderInfo *info, NSString *name, UIView *listeners, UIColor *fieldColor);
+// ArtistSections.x owns About's membership and invalidation, not its visibility.
+extern BOOL SGRArtistListenersInAbout(UIView *header, UIView *metadata, UIView *more);
 
 // Spotify's navigation bar, the one part of the header kept: collapsed, it is where the name is. Its gradient
 // is a flat dark band over the field, as the album's was (Album/AlbumHeader.x); the soft top edge every
@@ -362,7 +416,9 @@ static void applyHeader(UIView *header, BOOL full) {
     UIView *title = SGRFindByIdentifier(header, @"Encore.AdaptiveTitle", &kTitleKey);
     UIView *listeners = SGRFindByIdentifier(header, @"Components.Header.UI.Metadata", &kMetaKey);
     NSString *name = SGRFirstLabelText(title) ?: SGRFirstLabelText(bar);
-    full |= [info showTitle:name creator:nil length:SGRFirstLabelText(listeners) about:nil];
+    UIView *listenersIdentity = SGRFindByIdentifier(header, @"Components.UI.ContextMenuButton*", &kMoreKey);
+    BOOL inAbout = SGRArtistListenersInAbout(header, listeners, listenersIdentity);
+    full |= [info showTitle:name creator:nil length:inAbout ? nil : SGRFirstLabelText(listeners) about:nil];
     // Play's glyph and word are drawn in the field's color, which lands whenever the photo's has been read.
     UIColor *fieldColor = SGRArtistFieldColor(container);
     full |= ![fieldColor isEqual:info.handedPlayColor];
