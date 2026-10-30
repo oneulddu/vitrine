@@ -263,6 +263,20 @@ What beta.5 adds over beta.4, compared with Vitrine's code and built from behavi
 | The Music app's player close | Done, off by default (Redesigned/Player/PlayerMorph.x): `spotifyglass.redesign.player.musicClose` stages the close inside 9.1.90's own CompactOverlayTransition animator (traced on a phone: tap, drag and cancel), lands on the measured mini player, shapes a release by its velocity and leaves cancellation to Spotify; an owner without those parts keeps Spotify's timing and the old path; harness/morph/check.sh |
 | Ambient sounds | Not taken: the recordings come from upstream's server, and the user chose to leave the feature out |
 
+### Upstream 1.0.0-beta.6 (described by behavior)
+
+What beta.6 adds over beta.5, compared with Vitrine's code and built from behavior specs only. Every new switch is off.
+
+| Item | Where Vitrine stands |
+|---|---|
+| Album pages coloured from what the cover is, the cover sharp under the title | Done (Redesigned/Kit/SGRCoverRead.m, Album/AlbumHeader.x): Picture-aware cover, `spotifyglass.redesign.album.adaptiveCover`; harness/album/cover-check.sh |
+| Artist pages coloured from the photo with faces left out | Done for the colour (Kit/SGRCoverRead.m, Artist/ArtistHeader.x): `spotifyglass.redesign.artist.adaptivePhoto`. Upstream's extension under the photo is not taken: Vitrine's photo fills the hero |
+| Round artist Play with its triangle cut out, white or in the accent | Done (Kit/SGRActionRow.m, SGRHeaderInfo.m): `spotifyglass.redesign.artist.cutOutPlay`, `spotifyglass.redesign.accentPlay`; Play in the page's color is kept for every other Play; Round artist Play moved to the Artists page; harness/artist/cutout-check.sh |
+| Monthly listeners in About | Done (Artist/ArtistSections.x): `spotifyglass.redesign.artist.listenersInAbout` only takes the line off the header, since Spotify's About card and page already show the count (seen on a 9.1.90 phone); harness/artist/listeners-check.py |
+| A pinned whole-player preview, one Song without a clip choice, Buttons chips | Done (Redesigned/Player/PlayerSettings.m): over the existing keys; the preview shows the current song, not demo songs; harness/player/settings-check.sh |
+| Music app icons folded into Music app style | Not taken: Vitrine keeps the two switches apart |
+| Visualizer shaders, motion presets | Not taken: paid upstream |
+
 ### Upstream Plus features, Vitrine's own versions (described by behavior)
 
 Vitrine has no paid tier, so where a Plus feature could be built from its behavior alone it now has one of its own,
@@ -318,6 +332,9 @@ with no gate and nothing from upstream's code, server or content.
   Downloaded Covers, the Home chips, the full-screen cover and its scrim, the page veils and round Play, the Visualizer
   fallback and shuffle, the hold speeds, Messages and Vinyl on the lock screen, Find Info against the real iTunes
   Search, a preset following AirPods and the speaker, a runaway Liveprog script).
+- From beta.6, on a phone: Picture-aware cover and photo on real albums and artists, the cut-out Play through
+  Play/Pause and Increase Contrast, the listeners line on an artist with and without About, the pinned Player preview
+  and its Without a clip pill.
 - From the second round, on a phone: Keep for This Song across a relaunch, the line under the cover with Spotify's own
   lyric preview on, the album notes' two placements and their sheet, an artist's photo and animated artwork, and the
   rolling digits and star. The Queue and Connect sheets' glass is not checkable until UIKit hands the sheet a

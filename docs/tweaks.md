@@ -960,6 +960,14 @@ Redesigned:
                   The first read of either carries the global switch of before (spotifyglass.redesign.fullBleedCovers) into both
                   where they have no value of their own and sets spotifyglass.redesign.fullBleedCovers.migrated; the old key is
                   left alone for a downgrade and never read again. In Card an album's animated cover still fills the hero.
+                  Picture-aware cover (spotifyglass.redesign.album.adaptiveCover, off, read at launch, shown with Full
+                  screen) reads the cover once off main (Kit/SGRCoverRead.m: a 64 px OKLab sample, solid, dark-with-accent,
+                  portrait, colourful or edge, Vision faces and saliency for the non-solid ones, 64 readings cached) and hands
+                  the field its colour (SGRField's overrideColor); the hero keeps the cover sharp down to a boundary below the
+                  title and faces, then blurs it into that colour in an image drawn off main at 2× at most
+                  (harness/album/cover-check.sh). Picture-aware photo (spotifyglass.redesign.artist.adaptivePhoto, off) gives
+                  an artist page the colour under the shown photo with its faces left out, the photo itself drawn as before
+                  (harness/artist-artwork/photo-check.sh).
                   Two of the player controls' own refinements live here too (SGRRefinements.h, whose decisions are
                   plain functions the views follow): a label SGRRollDigits marks is monospaced and has each change of
                   its text shown by SGRDigitsChangeFor's rules — the characters that differ roll up into place over
@@ -1038,7 +1046,7 @@ Redesigned:
                   to (PlayerMenu.m), and a hold on either side of the
                   cover plays at the Gestures page's hold speed (2× unless changed) until the finger lifts
                   (PlayerArtwork.x), higher in pitch while Pitch follows speed is on (an octave at 2×). Hide on the player's Shuffle and Repeat (spotifyglass.redesign.player.hideShuffle,
-                  .hideRepeat, read at launch) take those buttons off the controls by alpha in their slots, as the
+                  .hideRepeat, read at launch; the Player page's Buttons chips, selected = shown) take those buttons off the controls by alpha in their slots, as the
                   Music app keeps them off its own (PlayerControls.x). With both hidden in portrait, previous and next
                   move outward so each is min(row width / 3, 140 pt) from play's center, less where that would take a
                   button past the row's edge and not at all where it is already farther out; play stays centered and
@@ -1519,8 +1527,7 @@ album, playlist and artist pictures blur (radius 0 to 24 between 60 and 320 pt o
 (alpha up to 0.45 between 80 and 400 pt) as the page scrolls, with the full-screen art drifting at a quarter of the
 scroll and zooming on a pull, the Card-mode square blurred and dimmed in place, and the header text faded out over
 14 pt under the top bar (SGRHeaderInfo.m's -clipUnderTopBar, a mask sized once per header size and only moved on
-scroll); Round artist Play (`spotifyglass.redesign.artist.roundPlay`, off: a 64 pt white circle with the glyph alone,
-Shuffle and Follow at 44 pt beside it); and Play in the page's color (`spotifyglass.redesign.playInPageColour`, on:
+scroll); and Play in the page's color (`spotifyglass.redesign.playInPageColour`, on:
 off, the Play glyph and word take the accent). Checked in the simulator against harness/album/veil-check.sh. The redesign has no
 global Full bleed covers row: the Albums and Playlists pages each have a Cover layout. Last come the Font, under either look and on any
 iOS, below 26 too, a page of its own with each choice drawn in itself: Default (Spotify's), San Francisco, SF
@@ -1548,8 +1555,20 @@ over local placeholder art and following the switches as they are flipped, in th
 intro note under it, as the Lyrics page keeps its preview), described under Redesigned/Kit/. The Albums page's
 Album notes row picks Under Play, Under tracks or Off for Apple's editorial notes; a Cover layout row (Card or Full
 screen, here and on the Playlists page) leads it, and Play counts take a place and a Count source. Its Artists counterpart adds
-Animated artist artwork and Apple Music artist photo under Artist logos. The Player page's Controls section has
-Lyrics Line, Rolling time digits, Star add button and Music app icons beside Header glass, Volume and Follow the cover. Libraries & presets collects Vitrine's existing local and open libraries: audio presets,
+Animated artist artwork and Apple Music artist photo under Artist logos, then Play: Round artist Play
+(`spotifyglass.redesign.artist.roundPlay`, off: a 64 pt white circle with the glyph alone, Shuffle and Follow at 44 pt
+beside it), Cut-out Play (`spotifyglass.redesign.artist.cutOutPlay`, off, only with round Play: the circle filled white,
+or in the accent with Accent Play button, `spotifyglass.redesign.accentPlay`, off, its glyph cut out by an alpha mask
+redrawn only when the glyph, bounds or font change; Kit/SGRActionRow.m, harness/artist/cutout-check.sh), and Header:
+Picture-aware photo and Monthly listeners in About (`spotifyglass.redesign.artist.listenersInAbout`, off: the line
+under the name goes once the page's own diffable data source has configured Spotify's About card for this artist,
+which carries the count itself; without About, or with About hidden, it stays; ArtistSections.x,
+harness/artist/listeners-check.py). The Player page leads with a pinned miniature of the whole player showing the
+current or last song (480 pt, shrinking to 236 pt as the page scrolls, opaque above the rows), whose Without a clip
+pill shows, for Animated and Auto, what a song without a clip would show, never sending a playback command
+(PlayerSettings.m; preview lookups are tied to the shown track and torn down with the page, SGRPlayerMotionPreviewStop,
+SGRPlayerVisualiserPreviewStop; harness/player/settings-check.sh). Its Buttons card has Shuffle, Repeat and Video chips.
+The Controls section has Lyrics Line, Rolling time digits, Star add button and Music app icons beside Header glass, Volume and Follow the cover. Libraries & presets collects Vitrine's existing local and open libraries: audio presets,
 shared as files, public AutoEq headphone corrections, free fonts to download and on-device custom fonts
 under either look, plus visualizer styles when Redesigned UI is selected. Lyrics looks stay on Lyrics. Tab bar: the tab editor of the stored look, each with
 its own list of tabs. Lyrics, on the main page of its own: in the redesign a live preview of the lyrics first, with the presets of their look
@@ -1615,9 +1634,9 @@ for each new track while the Visualizer is on screen with the app in front and n
 kept under `spotifyglass.visualizer.shuffle.home` and comes back when shuffle is switched off. Visualizer motion pauses
 while hidden, backgrounded, in Low Power Mode, under serious heat (unless Ignore heat warnings,
 `spotifyglass.visualizer.ignoreHeat`, off) or during player transitions,
-and is restrained by Reduce Motion (harness/player/ `shuffle`, `heat`). Artwork sources, Full-screen cover without a
-clip, Visualizer when there's no clip and Download in Low Data Mode appear while Animated is chosen (Visualizer when
-there's no clip, `spotifyglass.redesign.player.animatedVisualizer`, off: once the track's clip lookup has answered
+and is restrained by Reduce Motion (harness/player/ `shuffle`, `heat`). Artwork sources, Song without a clip (one
+choice: Cover art, Full-screen cover or Visualizer, written through the two keys below) and Download in Low Data Mode
+appear while Animated is chosen (Visualizer when there's no clip, `spotifyglass.redesign.player.animatedVisualizer`, off: once the track's clip lookup has answered
 none, the Visualizer stands where the clip would be, taken down by a later clip or a new track, the ordinary cover
 under Low Power Mode, Reduce Motion or the heat stand-down; it and the full-screen cover turn each other off, the
 full-screen cover kept when both are found on; harness/player/ `autoviz`. The full-screen cover,

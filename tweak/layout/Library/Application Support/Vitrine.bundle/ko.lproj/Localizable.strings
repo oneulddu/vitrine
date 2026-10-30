@@ -79,6 +79,8 @@
 "settings.addtab.symbols_loading.footer" = "SF Symbols 목록을 읽는 중…";
 "settings.addtab.this_tab.default_name" = "이 탭";
 
+"settings.album.adaptive_cover.footer" = "커버에서 페이지 색상을 가져오고 제목 아래까지 선명하게 유지합니다.";
+"settings.album.adaptive_cover.title" = "이미지 인식 커버";
 "settings.album.animated_covers.subtitle" = "해당 기능이 있는 앨범 상단에 표시되며 각 약 5MB입니다";
 "settings.album.animated_covers.title" = "움직이는 커버";
 "settings.album.apple_music.header" = "Apple Music";
@@ -161,10 +163,16 @@
 "settings.appicon.error.alert.title" = "아이콘이 변경되지 않음";
 "settings.appicon.title" = "앱 아이콘";
 
+"settings.artist.accent_play.title" = "강조 색상 재생 버튼";
+"settings.artist.adaptive_photo.subtitle" = "사진에서 얼굴을 제외하고 페이지 색상을 가져옵니다";
+"settings.artist.adaptive_photo.title" = "이미지 인식 사진";
 "settings.artist.apple_music.header" = "Apple Music";
 "settings.artist.apple_music.note" = "아티스트 이름만 Apple Music으로 전송됩니다.";
 "settings.artist.apple_photo.title" = "Apple Music 아티스트 사진";
 "settings.artist.artist_facts.title" = "아티스트 관련 정보";
+"settings.artist.cut_out_play.footer" = "재생 기호 모양으로 버튼을 뚫어 뒤 배경이 비칩니다.";
+"settings.artist.cut_out_play.title" = "뚫린 재생 버튼";
+"settings.artist.header.header" = "헤더";
 "settings.artist.hide.about.title" = "정보";
 "settings.artist.hide.appears_on.title" = "수록 앨범";
 "settings.artist.hide.countdown.subtitle" = "예정된 발매작의 프리세이브";
@@ -191,6 +199,8 @@
 "settings.artist.hide_in_header.header" = "헤더에서 숨기기";
 "settings.artist.hide_on_page.header" = "아티스트 페이지에서 숨기기";
 "settings.artist.hide_on_page.note" = "Spotify가 영어로 설정되어 있을 때만 작동합니다.";
+"settings.artist.listeners_in_about.subtitle" = "아티스트에게 정보 섹션이 있으면 이름 아래에 표시하지 않습니다";
+"settings.artist.listeners_in_about.title" = "월별 청취자는 정보에";
 "settings.artist.logos.subtitle" = "아티스트 페이지에서 이름 대신 표시";
 "settings.artist.logos.title" = "아티스트 로고";
 "settings.artist.more_in_nav.title" = "내비게이션 막대의 추가 옵션";
@@ -200,6 +210,7 @@
 "settings.artist.native.title" = "아티스트";
 "settings.artist.photo.header" = "사진";
 "settings.artist.photo_fade.title" = "흐림 효과로 페이드";
+"settings.artist.play.header" = "재생";
 "settings.artist.preview.a11y" = "아티스트 미리보기";
 "settings.artist.share_in_header.title" = "헤더의 공유 버튼";
 "settings.artist.spotify_own.header" = "Spotify 자체 기능";
@@ -1841,10 +1852,6 @@
 
 "settings.player.artwork.header" = "아트워크";
 "settings.player.artwork_background.title" = "아트워크 배경";
-"settings.player.animated_still.subtitle" = "클립이 없는 노래는 커버 아트를 표시합니다. 이 설정을 켜면 클립처럼 커버가 화면을 가득 채웁니다. 저전력 모드와 동작 줄이기에서는 커버 아트를 유지합니다.";
-"settings.player.animated_still.title" = "클립이 없을 때 전체 화면 커버";
-"settings.player.animated_visualizer.subtitle" = "클립이 없는 노래는 비주얼라이저를 표시합니다. 저전력 모드와 동작 줄이기에서는 커버 아트를 유지합니다.";
-"settings.player.animated_visualizer.title" = "클립이 없을 때 비주얼라이저";
 "settings.player.background.a11y" = "배경";
 "settings.player.background.animated" = "움직임";
 "settings.player.background.colors" = "색상";
@@ -1866,6 +1873,9 @@
 "settings.player.bg_visualizer.format" = "비주얼라이저 배경, %@";
 "settings.player.blocked_artists.title" = "차단한 아티스트";
 "settings.player.bottom_sheets.header" = "하단 시트";
+"settings.player.buttons.footer" = "선택한 버튼이 플레이어에 표시됩니다. Spotify를 다시 시작한 후에 적용됩니다.";
+"settings.player.buttons.header" = "버튼";
+"settings.player.buttons.video" = "비디오";
 "settings.player.connect_bottom_sheet.title" = "하단 시트 형태의 연결";
 "settings.player.connect_sheet_switcher.title" = "비디오 전환기에서 연결 시트 열기";
 "settings.player.controls.footer" = "음량은 이 iPhone용 슬라이더를 컨트롤 아래에 추가하거나, 다른 기기에서 재생 중일 때 스피커용 슬라이더를 추가합니다. 커버 색상 따르기는 좋아요, 셔플, 반복 버튼을 재생 중인 노래의 색상으로 칠합니다.";
@@ -1883,7 +1893,7 @@
 "settings.player.fluid.speed" = "속도";
 "settings.player.fluid.warp" = "왜곡";
 "settings.player.follows_cover.title" = "커버 색상 따르기";
-"settings.player.footer" = "플루이드, 움직임, 비주얼라이저는 다음 노래부터 바뀝니다. 정지, 색상, 플레이어에서 숨기기는 Spotify를 다시 시작한 후에 적용됩니다.";
+"settings.player.footer.v2" = "플루이드, 움직임, 비주얼라이저는 다음 노래부터 바뀝니다. 정지와 색상은 Spotify를 다시 시작한 후에 적용됩니다.";
 "settings.player.gestures.title" = "제스처";
 "settings.player.glass_header_buttons.title" = "글래스 헤더 버튼";
 "settings.player.glass_lyrics.title" = "글래스 가사";
@@ -1894,7 +1904,6 @@
 "settings.player.hide.connect.title" = "기기에 연결";
 "settings.player.hide.credits.title" = "크레딧";
 "settings.player.hide.explore_artist.title" = "아티스트 둘러보기";
-"settings.player.hide.header" = "플레이어에서 숨기기";
 "settings.player.hide.live_events.title" = "라이브 이벤트";
 "settings.player.hide.lyrics.title" = "가사";
 "settings.player.hide.lyrics_preview.title" = "가사 미리보기";
@@ -1930,12 +1939,19 @@
 "settings.player.music_icons.subtitle" = "컨트롤 아래에 Spotify 아이콘 대신 음악 앱 스타일의 AirPlay 및 대기열 아이콘을 표시합니다.";
 "settings.player.music_icons.title" = "음악 앱 아이콘";
 "settings.player.new_slider.title" = "새로운 진행 슬라이더";
+"settings.player.no_clip.cover" = "커버 아트";
+"settings.player.no_clip.footer" = "전체 화면 커버는 클립처럼 커버가 화면을 가득 채웁니다. 저전력 모드와 동작 줄이기에서는 커버 아트를 유지합니다.";
+"settings.player.no_clip.full_screen" = "전체 화면 커버";
+"settings.player.no_clip.title" = "클립이 없는 노래";
 "settings.player.not_playing" = "재생 중이 아님";
 "settings.player.now_playing_bar.title" = "재생 중 막대";
 "settings.player.photo.choose" = "사진 선택";
 "settings.player.play_next_menu.title" = "컨텍스트 메뉴의 다음에 재생";
 "settings.player.player_screen.header" = "플레이어 화면";
 "settings.player.preview.a11y" = "플레이어 미리보기";
+"settings.player.preview.demo" = "클립 없을 때";
+"settings.player.preview.demo.a11y" = "클립 없을 때 미리보기";
+"settings.player.preview.demo_value.format" = "%@, 클립 없을 때: %@";
 "settings.player.queue.empty" = "다음에 재생할 항목이 없습니다.";
 "settings.player.queue.header" = "대기열";
 "settings.player.queue.menu" = "다음 재생";
