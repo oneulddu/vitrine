@@ -25,6 +25,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>Check</string>
 <key>CFBundleIdentifier</key><string>com.vitrine.settings-bars-check</string>
 <key>CFBundleVersion</key><string>1</string>
+<key>UIApplicationSceneManifest</key><dict>
+<key>UIApplicationSupportsMultipleScenes</key><false/>
+<key>UISceneConfigurations</key><dict>
+<key>UIWindowSceneSessionRoleApplication</key><array><dict>
+<key>UISceneConfigurationName</key><string>Default</string>
+<key>UISceneDelegateClassName</key><string>SGRHarnessScene</string>
+</dict></array></dict></dict>
 </dict></plist>
 PLIST
 codesign -f -s - "$APP" >/dev/null 2>&1

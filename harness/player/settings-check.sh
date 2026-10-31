@@ -11,7 +11,10 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/player-settings.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 OUT="$WORK/build" sh "$HERE/build.sh" > "$WORK/build.log" 2>&1 || { cat "$WORK/build.log"; exit 1; }
 # A clip taller than wide, as a Canvas is.
-ffmpeg -loglevel error -f lavfi -i "color=c=0x3060c0:s=360x640:d=4" -c:v libx264 -pix_fmt yuv420p "$WORK/clip.mp4"
+xcrun --sdk macosx clang -fobjc-arc "$HERE/settings-clip.m" \
+    -framework Foundation -framework AVFoundation -framework CoreMedia -framework CoreVideo \
+    -o "$WORK/settings-clip"
+"$WORK/settings-clip" "$WORK/clip.mp4"
 
 TYPE=$(xcrun simctl list devicetypes | sed -n 's/.*(\(com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro\))$/\1/p' | head -1)
 RUNTIME=$(xcrun simctl list runtimes available | sed -n 's/.* - \(com.apple.CoreSimulator.SimRuntime.iOS-[0-9-]*\)$/\1/p' | tail -1)
