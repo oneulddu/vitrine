@@ -5,6 +5,7 @@
 #import "Shared/Player/PlayerState.h"
 #import "Shared/SpotifyPrefs/SpotifyPrefs.h"
 #import "AutoMix.h"
+#import "SGTransitionFactsInternal.h"
 
 @interface SPTCoreProductState : NSObject
 - (NSString *)stringForKey:(NSString *)key;
@@ -86,6 +87,7 @@ void SGAutoMixApply(BOOL on) {
 void SGAutoMixReconcile(void) {
     BOOL on = SGFlag(SGKeyAutoMix, NO);
     if (on != ([NSUserDefaults.standardUserDefaults arrayForKey:SGKeyAutoMixSaved].count == 3)) SGAutoMixApply(on);
+    SGAutoMixRefreshTransition();
 }
 
 SGAutoMixStyle SGAutoMixCurrentStyle(void) {
@@ -203,6 +205,33 @@ static void startProbe(void) {
 
 #pragma mark - driver
 
+NSNotificationName const SGTransitionSettingsDidChangeNotification = @"SGTransitionSettingsDidChangeNotification";
+
+// Read after the setter batch: the facts, then whoever shows the settings.
+static void settingsChanged(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SGAutoMixRefreshTransition();
+        [NSNotificationCenter.defaultCenter postNotificationName:SGTransitionSettingsDidChangeNotification object:nil];
+    });
+}
+
+// Observe Spotify's own Playback page as well as the mod's writes. None of the facts machinery writes preferences,
+// changes the queue, or drives playback.
+%hook _TtC31Preferences_CorePreferencesImpl28SPTPreferencesImplementation
+- (void)setAudioAutomix:(BOOL)on {
+    %orig;
+    settingsChanged();
+}
+- (void)setAudioCrossfade:(BOOL)on {
+    %orig;
+    settingsChanged();
+}
+- (void)setAudioCrossfadeTime:(NSInteger)milliseconds {
+    %orig;
+    settingsChanged();
+}
+%end
+
 #if SG_DRIVER
 #import "Diagnostics/Diagnostics.h"
 // automix: Spotify's three settings and the product state; --automix, --crossfade and --ms write Spotify's.
@@ -217,7 +246,16 @@ NSDictionary *SGAutoMixProbeCommand(NSDictionary *p, NSString **error) {
         if (p[@"automix"] || p[@"crossfade"] || p[@"ms"]) SGTransitionSettingsWrite(s);
         SGTransitionSettingsRead(&s);
         id next = SGPlayerState().future.firstObject;
+        SGTransitionFacts *facts = SGAutoMixCurrentTransition();
         result = @{
+            @"localPlayback" : @(SGPlayerPlaybackIsLocal()),
+            @"transition" : facts ? @{
+                @"fromURI": facts.fromURI, @"fromUID": facts.fromUID ?: NSNull.null,
+                @"toURI": facts.toURI, @"toUID": facts.toUID ?: NSNull.null,
+                @"kind": @(facts.kind), @"timesKnown": @(facts.timesKnown),
+                @"outStart": @(facts.outStart), @"outEnd": @(facts.outEnd),
+                @"inStart": @(facts.inStart), @"inEnd": @(facts.inEnd),
+            } : (id)NSNull.null,
             @"automix" : @(s.automix), @"crossfade" : @(s.crossfade), @"ms" : @(s.milliseconds),
             @"type" : [sg_productState stringForKey:@"type"] ?: @"unknown",
             @"catalogue" : [sg_productState stringForKey:@"catalogue"] ?: @"unknown",
@@ -238,4 +276,5 @@ NSDictionary *SGAutoMixProbeCommand(NSDictionary *p, NSString **error) {
     %init;
     SGRequireClasses(@[@"SPTCoreProductState"]);
     if (SGFlag(SGKeyAutoMix, NO)) startProbe();
+    dispatch_async(dispatch_get_main_queue(), ^{ SGAutoMixStartTransitionObserver(); });
 }

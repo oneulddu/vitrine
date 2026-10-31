@@ -154,3 +154,65 @@ id SGPlayer(void) {
     %init;
     SGRequireClasses(@[@"_TtC23NowPlaying_PlatformImpl28StatefulPlayerImplementation", @"SPTEsperantoPlayer", @"SPTPlayerState"]);
 }
+
+// SPTPlayerState has no device/locality field. Connect's own state observer supplies it.
+// These selectors and the BOOL getter are present in Spotify 9.1.90's Objective-C metadata.
+@protocol SGPlayerConnectLocation <NSObject>
+- (BOOL)isPlayingLocally;
+- (void)addStateObserver:(id)observer;
+@end
+
+NSNotificationName const SGPlayerPlaybackLocationDidChangeNotification = @"SGPlayerPlaybackLocationDidChangeNotification";
+static BOOL sg_localPlayback;
+static __weak id<SGPlayerConnectLocation> sg_connectManager;
+
+BOOL SGPlayerPlaybackIsLocal(void) {
+    return sg_localPlayback;
+}
+
+static void updateLocation(id<SGPlayerConnectLocation> manager) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (manager != sg_connectManager) return;
+        BOOL local = [manager isPlayingLocally];
+        if (local == sg_localPlayback) return;
+        sg_localPlayback = local;
+        [NSNotificationCenter.defaultCenter postNotificationName:SGPlayerPlaybackLocationDidChangeNotification object:nil];
+    });
+}
+
+@interface SGPlayerConnectObserver : NSObject
+@end
+@implementation SGPlayerConnectObserver
+- (void)aggregator:(id<SGPlayerConnectLocation>)aggregator didUpdateAggregatorState:(id)state {
+    updateLocation(aggregator);
+}
+@end
+
+static SGPlayerConnectObserver *sg_connectObserver;
+%group SGPlayerConnectLocationHooks
+%hook _TtC22Connect_AggregatorImpl24ConnectAggregatorManager
+- (void)addStateObserver:(id)observer {
+    %orig;
+    if (observer == sg_connectObserver) return;
+    id<SGPlayerConnectLocation> manager = (id)self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (sg_connectManager == manager) return;
+        sg_connectManager = manager;
+        if (!sg_connectObserver) sg_connectObserver = [SGPlayerConnectObserver new];
+        [manager addStateObserver:sg_connectObserver];
+        updateLocation(manager);
+    });
+}
+%end
+%end
+
+%ctor {
+    Class cls = NSClassFromString(@"_TtC22Connect_AggregatorImpl24ConnectAggregatorManager");
+    Method local = class_getInstanceMethod(cls, @selector(isPlayingLocally));
+    Method add = class_getInstanceMethod(cls, @selector(addStateObserver:));
+    char type[16] = {0};
+    if (local) method_getReturnType(local, type, sizeof(type));
+    if (!local || !add || strcmp(type, @encode(BOOL)) ||
+        method_getNumberOfArguments(local) != 2 || method_getNumberOfArguments(add) != 3) return;
+    %init(SGPlayerConnectLocationHooks);
+}

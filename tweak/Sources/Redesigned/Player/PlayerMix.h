@@ -1,0 +1,31 @@
+// Player redesign: AutoMix's transitions shown in the player, from the Shared facts about the coming blend
+// (Shared/AutoMix/SGTransitionFacts.h), each under its option on the AutoMix page (Shared/AutoMix/AutoMixPreview.h):
+//
+//     the progress bar  the outgoing window as a lighter band at the end of the song, and once the next song has
+//                       come, its incoming window at its start until playback passes it (PlayerControls.x hands
+//                       over the slider)
+//     the queue         the kind of the next blend over Playing Next's first row (PlayerQueue.m)
+//     the cover         both songs on one stage during the overlap, then the cover back (PlayerArtwork.x lends it)
+//
+// The band and the stage need the windows' times (`timesKnown`); the queue shows the kind whenever facts exist.
+// Only the playing -> next pair has facts, so only the first row is annotated.
+//
+// Threading: main thread only.
+#import <UIKit/UIKit.h>
+#import "Shared/AutoMix/AutoMix.h"
+#import "Shared/Player/PlayerState.h"
+
+// Whether `track` is the facts' song `uri`: the same URI and, where both carry one, the same queue UID.
+BOOL SGRMixTrackIs(SPTPlayerTrack *track, NSString *uri, NSString *uid);
+// Transitions in the queue, as the AutoMix page last stored it.
+BOOL SGRMixShowsQueue(void);
+// The progress bar's slider laid out (PlayerControls.x): its bands follow the facts and its bounds, and are made
+// again only when either changed.
+void SGRPlayerMixSliderLaidOut(UISlider *slider);
+
+#pragma mark - the cover's stage (PlayerArtwork.x)
+
+// Puts `stage` over the cover on screen, at its place and scale, and hides the cover while its shadow stays; nil
+// takes the stage away and hands the cover back. NO, with nothing changed, when no cover is on screen. A cover the
+// morph also hides (SGRPlayerSetCoverHidden) comes back only once neither holds it.
+BOOL SGRPlayerStageCover(UIView *stage);

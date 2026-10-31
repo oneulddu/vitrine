@@ -12,12 +12,16 @@
 // the frame the cover is drawn at, transform included (SGRPlayerCoverFrameIn), so it lands at the size it
 // stays at. Holding it at full size through the transition made it land large and spring down after, or
 // grow before a close.
+//
+// The cover has two holders besides Spotify: the morph hides it for the cover it flies (SGRPlayerSetCoverHidden), and
+// AutoMix's stage stands over it during a mix (SGRPlayerStageCover, PlayerMix.x). It shows once neither holds it.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/Gestures/GestureHold.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/Player/SpeedPitch.h"
 #import "Player.h"
+#import "PlayerMix.h"
 
 static const CGFloat kPausedScale = 0.84;
 // The bar's 40pt cover lives in a tilt view of its own; the player's is 354.
@@ -28,13 +32,15 @@ static NSHashTable<UIView *> *sg_tilts;
 // The cover of each tilt view once found. A frame Spotify sets on a scaled view becomes its scaled
 // size, leaving bounds that no longer match the tilt view's, so the cover is not looked for by size again.
 static NSMapTable<UIView *, UIView *> *sg_covers;
+// AutoMix's stage over the cover (SGRPlayerStageCover) and the cover it stands in for.
+static __weak UIView *sg_stage, *sg_stagedCover;
 
 // The child of the tilt view the size of the cover.
 static UIView *coverIn(UIView *tilt) {
     UIView *cover = [sg_covers objectForKey:tilt];
     if (cover.superview == tilt) return cover;
     for (UIView *sub in tilt.subviews) {
-        if (![sub isKindOfClass:SGRShadowPlate.class] && CGSizeEqualToSize(sub.bounds.size, tilt.bounds.size)) {
+        if (![sub isKindOfClass:SGRShadowPlate.class] && sub != sg_stage && CGSizeEqualToSize(sub.bounds.size, tilt.bounds.size)) {
             [sg_covers setObject:sub forKey:tilt];
             return sub;
         }
@@ -58,6 +64,7 @@ static void scaleCover(UIView *tilt, CGFloat scale) {
     CGAffineTransform transform = CGAffineTransformMakeScale(scale, scale);
     cover.transform = transform;
     plate.transform = transform;
+    if (sg_stage.superview == tilt) sg_stage.transform = transform;
 }
 
 #pragma mark - where the cover is
@@ -118,8 +125,13 @@ static __weak UIView *sg_hiddenCover, *sg_hiddenPlate;
 // so its first frame on screen is already hidden.
 static BOOL sg_coverKeptHidden;
 
+// The alpha of a cover no one hides: dimmed while paused under Reduce Motion, which keeps it from shrinking.
+static CGFloat restingAlpha(void) {
+    return SGRReduceMotion() && SGPlayerState().isPaused ? 0.75 : 1;
+}
+
 void SGRPlayerSetCoverHidden(BOOL hidden) {
-    sg_hiddenCover.alpha = SGRReduceMotion() && SGPlayerState().isPaused ? 0.75 : 1;
+    if (sg_hiddenCover != sg_stagedCover) sg_hiddenCover.alpha = restingAlpha();
     sg_hiddenPlate.alpha = 1;
     sg_hiddenCover = sg_hiddenPlate = nil;
     sg_coverKeptHidden = hidden;
@@ -134,6 +146,40 @@ void SGRPlayerSetCoverHidden(BOOL hidden) {
     sg_hiddenPlate = plate;
 }
 
+#pragma mark - AutoMix's stage
+
+// Over the cover in the tilt view, its bounds, center and scale, so it sits exactly where the cover is drawn.
+static void placeStage(UIView *tilt, UIView *cover) {
+    UIView *stage = sg_stage;
+    if (stage.superview != tilt) [tilt insertSubview:stage aboveSubview:cover];
+    if (!CGRectEqualToRect(stage.bounds, cover.bounds)) stage.bounds = cover.bounds;
+    if (!CGPointEqualToPoint(stage.center, cover.center)) stage.center = cover.center;
+    if (!CGAffineTransformEqualToTransform(stage.transform, cover.transform)) stage.transform = cover.transform;
+}
+
+// The stage leaves the cover it stood for, which shows again unless the morph hides it.
+static void releaseStagedCover(void) {
+    UIView *cover = sg_stagedCover;
+    sg_stagedCover = nil;
+    if (cover && cover != sg_hiddenCover) cover.alpha = restingAlpha();
+}
+
+BOOL SGRPlayerStageCover(UIView *stage) {
+    UIView *old = sg_stage;
+    sg_stage = nil;
+    [old removeFromSuperview];
+    releaseStagedCover();
+    if (!stage) return YES;
+    UIView *tilt = showingTilt();
+    UIView *cover = coverIn(tilt);
+    if (!cover) return NO;
+    sg_stage = stage;
+    sg_stagedCover = cover;
+    placeStage(tilt, cover);
+    cover.alpha = 0;
+    return YES;
+}
+
 #pragma mark - the paused shrink
 
 static void scaleEveryCover(BOOL animated) {
@@ -143,7 +189,7 @@ static void scaleEveryCover(BOOL animated) {
         for (UIView *tilt in tilts) {
             scaleCover(tilt, scale);
             UIView *cover = coverIn(tilt);
-            if (cover != sg_hiddenCover) cover.alpha = SGRReduceMotion() && SGPlayerState().isPaused ? 0.75 : 1;
+            if (cover != sg_hiddenCover && cover != sg_stagedCover) cover.alpha = restingAlpha();
         }
     };
     if (animated) SGRAnimate(SGRReduceMotion() ? SGRMotionRespond : SGRMotionLayout, apply, nil);
@@ -296,6 +342,13 @@ static void watchHold(UIView *tilt) {
     plate.center = cover.center;
     // The same value an animation in flight is heading to, so a layout pass never cuts one short.
     scaleCover(tilt, SGRPlayerCoverScale());
+    // The stage goes with the cover showing: a new song can scroll the list to another cell during the mix.
+    if (sg_stage && cover != sg_stagedCover && showingTilt() == tilt) {
+        releaseStagedCover();
+        sg_stagedCover = cover;
+        cover.alpha = 0;
+    }
+    if (sg_stage && cover == sg_stagedCover) placeStage(tilt, cover);
 
     static dispatch_once_t once;
     dispatch_once(&once, ^{ SGLog(@"redesign player: cover %@ rounded %.0f with a shadow plate, scale %.2f", NSStringFromClass(cover.class), SGRRadiusArtwork, SGRPlayerCoverScale()); });

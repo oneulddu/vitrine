@@ -42,5 +42,9 @@ id SGPlayerInstance(void);
 void SGAddPlayerStateObserver(id<SGPlayerStateObserver> observer);
 // The last state reported, nil before the player has reported one.
 SPTPlayerState *SGPlayerState(void);
+// Main thread. NO also before Connect has reported its playback location.
+BOOL SGPlayerPlaybackIsLocal(void);
+// Main thread, object/userInfo nil; emitted only when the local-playback fact changes.
+FOUNDATION_EXPORT NSNotificationName const SGPlayerPlaybackLocationDidChangeNotification;
 // The SPTEsperantoPlayer the mod observes, nil until the app has added its first observer.
 id SGPlayer(void);

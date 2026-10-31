@@ -9,15 +9,94 @@
 // that track (-[SPTPlayer skipToNextTrackWithOptions:track:], as the Live Activity's up next does) and closes the
 // sheet.
 //
+// With Transitions in the queue on (PlayerMix.h), a slim line over the first row says how the playing song blends
+// into it -- Crossfade with its length, or Spotify's AutoMix -- as the AutoMix facts know it. It is the
+// table's header, not a row: rows and their taps stay as they are, and a change of facts touches no row.
+//
 // Threading: main thread only.
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import "Shared/AutoMix/AutoMixPreview.h"
+#import "PlayerMix.h"
 #import "PlayerQueue.h"
 
 static const NSUInteger kMaxRows = 50;
+static const CGFloat kBlendPadding = 8, kBlendGap = 6;
+
+// The blend from the playing song into `next`; nil when the facts say nothing about that pair.
+static NSString *blendInto(SPTPlayerTrack *next) {
+    SGTransitionFacts *facts = SGAutoMixCurrentTransition();
+    if (!SGRMixShowsQueue() || !facts || !SGRMixTrackIs(SGPlayerState().track, facts.fromURI, facts.fromUID)
+        || !SGRMixTrackIs(next, facts.toURI, facts.toUID)) return nil;
+    if (facts.kind == SGTransitionKindSpotifyAutomix) return SGL(@"settings.player.queue.blend.spotify", @"Spotify AutoMix");
+    SGTransitionSettings settings;
+    if (facts.kind != SGTransitionKindCrossfade || !SGTransitionSettingsRead(&settings)) return nil;
+    return [NSString stringWithFormat:SGL(@"settings.player.queue.blend.crossfade", @"Crossfade, %ld s"), lround(settings.milliseconds / 1000.0)];
+}
+
+// The line over the first row: the merge glyph and the blend's name, read out as the name.
+@interface SGRQueueBlendView : UIView
+@property (nonatomic, readonly) UILabel *label;
+@end
+
+@implementation SGRQueueBlendView {
+    UIImageView *_glyph;
+}
+
+- (instancetype)init {
+    if (!(self = [super initWithFrame:CGRectZero])) return nil;
+    _glyph = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"arrow.triangle.merge"]];
+    _glyph.tintColor = SGRSecondary();
+    _glyph.contentMode = UIViewContentModeScaleAspectFit;
+    _label = [UILabel new];
+    _label.textColor = SGRSecondary();
+    _label.numberOfLines = 0;
+    [self addSubview:_glyph];
+    [self addSubview:_label];
+    self.isAccessibilityElement = YES;
+    self.accessibilityTraits = UIAccessibilityTraitStaticText;
+    [self takeFont];
+    return self;
+}
+
+- (void)takeFont {
+    _label.font = SGCategoryCappedFont(UIFontTextStyleFootnote, UIFontWeightRegular, UIContentSizeCategoryAccessibilityMedium);
+    _glyph.preferredSymbolConfiguration = [UIImageSymbolConfiguration configurationWithFont:_label.font];
+}
+
+- (void)setText:(NSString *)text {
+    _label.text = text;
+    self.accessibilityLabel = text;
+    [self setNeedsLayout];
+}
+
+- (CGFloat)glyphWidth {
+    return ceil(_glyph.intrinsicContentSize.width);
+}
+
+- (CGFloat)heightForWidth:(CGFloat)width {
+    CGFloat text = width - self.layoutMargins.left - self.layoutMargins.right - [self glyphWidth] - kBlendGap;
+    return ceil([_label sizeThatFits:CGSizeMake(text, CGFLOAT_MAX)].height) + 2 * kBlendPadding;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat x = self.layoutMargins.left, glyph = [self glyphWidth];
+    CGFloat width = self.bounds.size.width - x - self.layoutMargins.right - glyph - kBlendGap;
+    CGFloat height = ceil([_label sizeThatFits:CGSizeMake(width, CGFLOAT_MAX)].height);
+    _glyph.frame = CGRectMake(x, kBlendPadding, glyph, _label.font.lineHeight);
+    _label.frame = CGRectMake(x + glyph + kBlendGap, kBlendPadding, width, height);
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    [super traitCollectionDidChange:previous];
+    [self takeFont];
+}
+
+@end
 
 // What a row shows, so a report that changed nothing in the list leaves it alone.
 static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
@@ -35,6 +114,7 @@ static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
     NSArray<SPTPlayerTrack *> *_tracks;
     NSArray<NSString *> *_signature;
     UILabel *_empty;
+    SGRQueueBlendView *_blend;
 }
 
 - (instancetype)init {
@@ -55,8 +135,40 @@ static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
     _empty.textColor = SGRSecondary();
     _empty.textAlignment = NSTextAlignmentCenter;
     _empty.numberOfLines = 0;
+    _blend = [SGRQueueBlendView new];
     [self takeState:SGPlayerState()];
     SGAddPlayerStateObserver(self);
+    // Both are posted on the main thread.
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center addObserver:self selector:@selector(showBlend) name:SGAutoMixTransitionDidChangeNotification object:nil];
+    [center addObserver:self selector:@selector(showBlend) name:SGAutoMixPlayerOptionsDidChangeNotification object:nil];
+}
+
+// The line over the first row, or none, sized again only when it comes, goes or its width changes.
+- (void)showBlend {
+    NSString *text = blendInto(_tracks.firstObject);
+    UITableView *table = self.tableView;
+    if (!text) {
+        if (table.tableHeaderView) table.tableHeaderView = nil;
+        return;
+    }
+    if (![_blend.label.text isEqualToString:text]) [_blend setText:text];
+    [self fitBlend];
+}
+
+- (void)fitBlend {
+    UITableView *table = self.tableView;
+    CGFloat width = table.bounds.size.width;
+    _blend.layoutMargins = UIEdgeInsetsMake(0, table.layoutMargins.left + SGRGrid * 2, 0, table.layoutMargins.right);
+    CGSize size = CGSizeMake(width, [_blend heightForWidth:width]);
+    if (table.tableHeaderView == _blend && CGSizeEqualToSize(_blend.bounds.size, size)) return;
+    _blend.frame = (CGRect){CGPointZero, size};
+    table.tableHeaderView = _blend;
+}
+
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    if (self.tableView.tableHeaderView == _blend) [self fitBlend];
 }
 
 - (void)close {
@@ -78,6 +190,7 @@ static NSArray<NSString *> *signatureOf(NSArray<SPTPlayerTrack *> *tracks) {
     _signature = signature;
     self.tableView.backgroundView = tracks.count ? nil : _empty;
     [self.tableView reloadData];
+    [self showBlend];
 }
 
 - (void)playerStateDidReport:(SPTPlayerState *)state {

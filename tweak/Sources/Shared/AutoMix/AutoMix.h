@@ -9,7 +9,9 @@
 //     AutoMix.x           Spotify's product state, captured; the switch's writes, through Shared/SpotifyPrefs;
 //                         the probe, one log line per track change while the switch is on
 //     AutoMixSettings.m   its page
+//     SGTransitionFacts   cached, read-only facts about the playing -> next transition
 #import <UIKit/UIKit.h>
+#import "SGTransitionFacts.h"
 
 #define SGKeyAutoMix @"spotifyglass.automix"
 // SGAutoMixStyle, applied as the switch goes on and kept while it is off.
@@ -29,6 +31,8 @@ typedef struct {
 // NO until Spotify has read its user's settings, a few seconds into the launch (SGSpotifyPreferences).
 BOOL SGTransitionSettingsRead(SGTransitionSettings *settings);
 BOOL SGTransitionSettingsWrite(SGTransitionSettings settings);
+// Main thread, object nil: one of the three settings was set, by either page or by Spotify itself.
+FOUNDATION_EXPORT NSNotificationName const SGTransitionSettingsDidChangeNotification;
 
 // The switch's work: saves Spotify's settings and applies the style, or puts them back.
 void SGAutoMixApply(BOOL on);

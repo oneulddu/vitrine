@@ -34,6 +34,8 @@ TWEAK = "tweak/Sources"
 # name, run command and theos flag exactly as .github/workflows/harness.yml
 # had them.  ``dir`` is the harness directory the run command uses.
 HARNESSES = [
+    {"name": "AutoMix facts", "dir": "automix",
+     "run": "sh harness/automix/check.sh && python3 harness/automix/mutation-check.py"},
     {"name": "Album notes", "dir": "album-notes", "theos": True,
      "run": "bash harness/album-notes/build.sh"},
     {"name": "Album counts", "dir": "album-counts",
@@ -160,6 +162,8 @@ HARNESSES = [
      "run": "sh harness/player/upcoming-tracks-check.sh"},
     {"name": "Player settings", "dir": "player", "theos": True,
      "run": "sh harness/player/settings-check.sh && python3 harness/player/settings-mutation-check.py"},
+    {"name": "Player AutoMix UI", "dir": "player", "theos": True,
+     "run": "sh harness/player/automix-check.sh && python3 harness/player/automix-mutation-check.py"},
     {"name": "Preferences and counters", "dir": "prefs",
      "run": "sh harness/prefs/check.sh"},
     {"name": "Radio modes", "dir": "radio-modes",

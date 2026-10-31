@@ -35,7 +35,10 @@ void SGRNowPlayingBarFollowTabBar(void) {}
 
 NSString *const SGPlayerTransitionNotification = @"spotifyglass.playerTransition";
 NSString *const SGPlayerTransitionEndedNotification = @"spotifyglass.playerTransitionEnded";
-CFTimeInterval SGPlayerTransitionEnds(void) { return 0; }
+// No open or close runs, unless the automix scenario says one does until a time (SGRHarnessSetTransitionEnds).
+static CFTimeInterval sg_transitionEnds;
+CFTimeInterval SGPlayerTransitionEnds(void) { return sg_transitionEnds; }
+void SGRHarnessSetTransitionEnds(CFTimeInterval ends) { sg_transitionEnds = ends; }
 
 #pragma mark - Shared/Player/PlayerState.x
 
@@ -65,6 +68,15 @@ void SGAddPlayerStateObserver(id observer) {
     [sg_observers addObject:observer];
 }
 SPTPlayerState *SGPlayerState(void) { return sg_state; }
+
+// A state the harness made whole, reported as Spotify reports: every report, then the change.
+void SGRHarnessReport(SPTPlayerState *state) {
+    sg_state = state;
+    for (id<SGPlayerStateObserver> observer in sg_observers.allObjects) {
+        if ([observer respondsToSelector:@selector(playerStateDidReport:)]) [observer playerStateDidReport:state];
+        [observer playerStateDidChange:state];
+    }
+}
 
 void SGRHarnessClearTrack(void) {
     sg_state = nil;
@@ -170,10 +182,10 @@ void SGKaraokeKeepLines(NSString *trackID, NSArray<SGKaraokeLine *> *lines) { sg
 void SGKaraokeRequestLyrics(NSString *trackID) {}
 NSNotificationName const SGKaraokeLinesKeptNotification = @"harness.karaokeLinesKept";
 BOOL SGKaraokeLooking(NSString *trackID) { return NO; }
-// No player, but for the settings scenario, whose recorder counts the commands sent to it.
+// No player, but for the settings and automix scenarios, whose recorder counts the commands sent to it.
 id SGKaraokePlayer(void) {
     const char *scenario = getenv("HARNESS_SCENARIO");
-    return scenario && !strcmp(scenario, "settings") ? playerRecorder() : nil;
+    return scenario && (!strcmp(scenario, "settings") || !strcmp(scenario, "automix")) ? playerRecorder() : nil;
 }
 SPTPlayerTrack *SGKaraokeTrackFor(NSString *trackID) { return nil; }
 void SGKaraokeRememberTrack(SPTPlayerTrack *track, NSString *trackID) {}

@@ -52,6 +52,8 @@
 //              the AI DJ's, then Fluid's Grain at 0, 100 and 200% on Smooth and on Light; the log ends with options
 //              checks n of m right -- PASS or FAIL
 //     renderer the switch from Smooth to Light, read 0.2 to 4 s after it, five times; renderer checks n of m right
+//     automix  AutoMix's transitions in the progress bar, the queue and the cover, and the AutoMix page's preview
+//              (automix-scenario.m); automix checks n of m right -- PASS or FAIL, and the app exits with it
 // HARNESS_VOLUME=0 leaves out the volume row the phone has (trees/clean/player/01.txt has none).
 #import <AVFoundation/AVFoundation.h>
 #import <CoreImage/CoreImage.h>
@@ -129,6 +131,10 @@ static void serve(NSString *imageURI, UIImage *image, NSTimeInterval delay, BOOL
     picture.fails = fails;
     sg_pictures[[imageURI substringFromIndex:imageURI.length - 24]] = picture;
 }
+
+// For the automix scenario (automix-scenario.m).
+void SGRHarnessServe(NSString *imageURI, UIImage *image) { serve(imageURI, image, 0, NO); }
+void SGRHarnessRunAutoMix(UIWindow *window, UIViewController *durationUnit, UIView *tilt);
 
 @interface SGRHarnessPictureServer : NSURLProtocol
 @end
@@ -770,6 +776,7 @@ static void loadLyrics(void) {
     else if ([scenario() isEqualToString:@"header"]) [self runHeaderChecks];
     else if ([scenario() isEqualToString:@"options"]) [self runOptionsChecks];
     else if ([scenario() isEqualToString:@"renderer"]) [self runRendererChecks];
+    else if ([scenario() isEqualToString:@"automix"]) SGRHarnessRunAutoMix(self.window, _units[2], _tilt);
     // Opened, closed and opened again, so a screenshot can be taken of each state and of the move itself.
     else for (NSNumber *at in @[@2, @6, @10]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(at.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -3611,6 +3618,15 @@ __attribute__((constructor(101))) static void sgr_harnessDefaults(void) {
     }
     // The shared session the catalog asks with.
     if ([scenario() isEqualToString:@"catalog"]) [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
+    // automix: Fluid behind the player, AutoMix and its three player options at their standard (all off) until the
+    // scenario turns them on, so it starts from what a user who never opened the page has.
+    if ([scenario() isEqualToString:@"automix"]) {
+        NSUserDefaults *store = NSUserDefaults.standardUserDefaults;
+        [store setInteger:SGRPlayerBackgroundFluid forKey:@"spotifyglass.redesign.player.background"];
+        for (NSString *key in @[@"spotifyglass.automix", @"spotifyglass.automix.style", @"spotifyglass.automix.show-progress",
+                                @"spotifyglass.automix.show-queue", @"spotifyglass.automix.artwork"]) [store removeObjectForKey:key];
+        [NSURLProtocol registerClass:SGRHarnessPictureServer.class];
+    }
     // still: Animated with the full-screen cover off, and no Canvas until the scenario names one.
     if ([scenario() isEqualToString:@"still"]) {
         [NSUserDefaults.standardUserDefaults setInteger:SGRPlayerBackgroundAnimated forKey:@"spotifyglass.redesign.player.background"];
