@@ -85,6 +85,8 @@
 "settings.album.animated_covers.title" = "움직이는 커버";
 "settings.album.apple_music.header" = "Apple Music";
 "settings.album.apple_music.note" = "앨범 이름만 Apple Music으로 전송됩니다. 저전력 모드에서는 커버가 움직이지 않습니다.";
+"settings.album.artist_picture.subtitle" = "아티스트 이름 옆에 아티스트 사진을 표시합니다.";
+"settings.album.artist_picture.title" = "아티스트 사진";
 "settings.album.artwork_background.title" = "아트워크 배경";
 "settings.album.cover.header" = "커버";
 "settings.album.cover_layout" = "커버 레이아웃";
@@ -447,9 +449,20 @@
 "settings.audioeffects.viperddc.title" = "ViPER DDC";
 "settings.audioeffects.width.title" = "너비";
 
+"settings.automix.artwork.title" = "믹스에 맞춰 아트워크 이동";
 "settings.automix.blendlength.format" = "%ld초";
 "settings.automix.blendlength.title" = "블렌드 길이";
 "settings.automix.footer.note" = "AutoMix를 사용하려면 Premium이 필요합니다. 무료 계정은 '프리미엄, 광고 및 개인정보 보호'에서 'Premium 위장'을 켜십시오.";
+"settings.automix.player.footer" = "재설계 플레이어에서 적용됩니다.";
+"settings.automix.preview.accessibility" = "AutoMix, %@, %@";
+"settings.automix.preview.beatmatched.subtitle" = "%ld초 블렌드, 비트에 맞춤";
+"settings.automix.preview.beatmatched.title" = "비트 일치 믹스";
+"settings.automix.preview.crossfade.subtitle" = "단순 페이드, 양쪽 동일한 길이";
+"settings.automix.preview.crossfade.title" = "%ld초 크로스페이드";
+"settings.automix.preview.off.subtitle" = "AutoMix 꺼짐";
+"settings.automix.preview.off.title" = "모든 노래가 끝까지 재생됨";
+"settings.automix.showprogress.title" = "진행 막대에 전환 표시";
+"settings.automix.showqueue.title" = "대기열에 전환 표시";
 "settings.automix.style.choice.beatmatched" = "비트 일치";
 "settings.automix.style.choice.crossfade" = "크로스페이드";
 "settings.automix.style.title" = "스타일";
@@ -1952,6 +1965,8 @@
 "settings.player.preview.demo" = "클립 없을 때";
 "settings.player.preview.demo.a11y" = "클립 없을 때 미리보기";
 "settings.player.preview.demo_value.format" = "%@, 클립 없을 때: %@";
+"settings.player.queue.blend.crossfade" = "크로스페이드, %ld초";
+"settings.player.queue.blend.spotify" = "Spotify AutoMix";
 "settings.player.queue.empty" = "다음에 재생할 항목이 없습니다.";
 "settings.player.queue.header" = "대기열";
 "settings.player.queue.menu" = "다음 재생";

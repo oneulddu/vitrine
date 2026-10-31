@@ -707,7 +707,19 @@ Shared:
                   Spotify's three settings; turning it off puts them back, and so does Reset all settings. A switch
                   flipped before Spotify has read its settings takes effect once it has. While the switch
                   is on, one log line per track change (the probe) gives the current and next track's automix.* and md_*
-                  metadata and the settings
+                  metadata and the settings. SGTransitionFacts.h says, read-only and on main, whether the playing song
+                  blends into the next one and when: Crossfade from Spotify's crossfade length (nothing for an album
+                  played in order, where Spotify does not blend), Spotify's Automix from the pair's automix.* metadata,
+                  whose cue points (milliseconds, tempo in BPM) carry no window, so its times stay unknown; incomplete
+                  metadata gives nothing, never Crossfade; another device playing gives nothing. The facts are cached and
+                  remade on a track, queue, settings or metadata change, with SGAutoMixTransitionDidChangeNotification
+                  (harness/automix/). The page opens on a preview of the transition drawn from the switch, style and
+                  Blend length (AutoMixPreview.m), and holds the redesigned player's three switches, all off:
+                  spotifyglass.automix.show-progress (the outgoing window at the end of the progress bar),
+                  .show-queue (a line above Playing Next naming the blend into the next song) and .artwork (the two
+                  covers handed over during the window), all three in Redesigned/Player/PlayerMix.x, drawn only for
+                  known times (harness/player/automix-check.sh). Spotify keeps no transition fields written into its
+                  queue from outside (seen on a 9.1.90 phone), so Vitrine plans no transitions of its own
     SpotifyMetadata/ Spotify's metadata service for features that ask it themselves (SGSpotifyMetadata.h): the signed-in app's own
                   spclient headers, kept only from its requests to https spclient.wg.spotify.com (KaraokeSource.x's
                   rememberHeaders; any other host or http is never kept), sent only back to that host by an ephemeral session
@@ -967,7 +979,12 @@ Redesigned:
                   title and faces, then blurs it into that colour in an image drawn off main at 2× at most
                   (harness/album/cover-check.sh). Picture-aware photo (spotifyglass.redesign.artist.adaptivePhoto, off) gives
                   an artist page the colour under the shown photo with its faces left out, the photo itself drawn as before
-                  (harness/artist-artwork/photo-check.sh).
+                  (harness/artist-artwork/photo-check.sh). Artist picture on the Albums page
+                  (spotifyglass.redesign.album.artistPicture, on, live) shows up to three of the artists' faces from
+                  Spotify's own artist line, overlapping with a cut ring, or the name alone (SGRHeaderInfo.m's
+                  SGRCreatorFaces: only image views shown before a shown name); an album's track rows draw their ⋯ in a
+                  soft tint of the page color, through a layer masked by the glyph's own picture when its color is baked
+                  in (AlbumRows.x; harness/album/faces-more-check.sh).
                   Two of the player controls' own refinements live here too (SGRRefinements.h, whose decisions are
                   plain functions the views follow): a label SGRRollDigits marks is monospaced and has each change of
                   its text shown by SGRDigitsChangeFor's rules — the characters that differ roll up into place over

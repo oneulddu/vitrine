@@ -277,6 +277,23 @@ What beta.6 adds over beta.5, compared with Vitrine's code and built from behavi
 | Music app icons folded into Music app style | Not taken: Vitrine keeps the two switches apart |
 | Visualizer shaders, motion presets | Not taken: paid upstream |
 
+### Upstream 1.0.0 (described by behavior)
+
+What 1.0.0 adds over beta.6, compared with Vitrine's code and built from behavior specs only. Every new switch keeps
+today's look until it is changed.
+
+| Item | Where Vitrine stands |
+|---|---|
+| Album artist picture, a choice and up to three faces | Done (Redesigned/Kit/SGRHeaderInfo.m, Album/AlbumHeader.x): `spotifyglass.redesign.album.artistPicture`, on; the faces come from Spotify's own artist line, nothing fetched; harness/album/faces-more-check.sh |
+| Album track rows' ⋯ in the page color | Done (Redesigned/Album/AlbumRows.x): no switch; a glyph with its color baked in gets a layer masked by its own picture; harness/album/faces-more-check.sh |
+| Transitions in the progress bar and the queue, artwork that moves with the mix | Done for Spotify's own Crossfade and Automix (Shared/AutoMix/SGTransitionFacts.m, Redesigned/Player/PlayerMix.x, PlayerQueue.m): `spotifyglass.automix.show-progress`, `.show-queue`, `.artwork`, off. Spotify's Automix gives only its cue points, so its pairs are named in the queue but get no segment or artwork move; harness/automix/, harness/player/automix-check.sh |
+| A preview of the transition on the AutoMix page | Done (Shared/AutoMix/AutoMixPreview.m): drawn from the switch, style and Blend length |
+| Apple Music's AutoMix planning the transitions | Not taken: on a 9.1.90 phone Spotify accepted a queue write but dropped the transition fields written into it and played its own timing, so a plan has no way into the player |
+| Spotify's DJ loops, spinbacks and stops; Apple's curve effects | Not taken: both only reach the player through the same written transitions |
+| iPhone Duo layout | Not taken: no device or simulator to check it on, and it reworks the tab bar every phone uses |
+| The album blur running to the foot | Not taken: Vitrine's 40 pt ramp was measured against the scanner-border seam |
+| Shake to report | Not taken: upstream telemetry |
+
 ### Upstream Plus features, Vitrine's own versions (described by behavior)
 
 Vitrine has no paid tier, so where a Plus feature could be built from its behavior alone it now has one of its own,
@@ -335,6 +352,8 @@ with no gate and nothing from upstream's code, server or content.
 - From beta.6, on a phone: Picture-aware cover and photo on real albums and artists, the cut-out Play through
   Play/Pause and Increase Contrast, the listeners line on an artist with and without About, the pinned Player preview
   and its Without a clip pill.
+- From 1.0.0, on a phone: two and three artists' faces on a real album, the ⋯ glyph Spotify's rows ship, the
+  Crossfade segment and artwork during a real crossfade, and the queue line for Crossfade and Automix.
 - From the second round, on a phone: Keep for This Song across a relaunch, the line under the cover with Spotify's own
   lyric preview on, the album notes' two placements and their sheet, an artist's photo and animated artwork, and the
   rolling digits and star. The Queue and Connect sheets' glass is not checkable until UIKit hands the sheet a

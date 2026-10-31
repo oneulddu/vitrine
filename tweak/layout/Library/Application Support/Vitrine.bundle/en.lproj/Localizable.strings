@@ -85,6 +85,8 @@
 "settings.album.animated_covers.title" = "Animated covers";
 "settings.album.apple_music.header" = "Apple Music";
 "settings.album.apple_music.note" = "Only the album's name is sent to Apple Music. A cover stays still in Low Power Mode.";
+"settings.album.artist_picture.subtitle" = "Shows the artists' pictures beside their names.";
+"settings.album.artist_picture.title" = "Artist picture";
 "settings.album.artwork_background.title" = "Artwork background";
 "settings.album.cover.header" = "Cover";
 "settings.album.cover_layout" = "Cover layout";
@@ -448,9 +450,20 @@
 "settings.audioeffects.viperddc.title" = "ViPER DDC";
 "settings.audioeffects.width.title" = "Width";
 
+"settings.automix.artwork.title" = "Artwork moves with the mix";
 "settings.automix.blendlength.format" = "%ld s";
 "settings.automix.blendlength.title" = "Blend length";
 "settings.automix.footer.note" = "AutoMix needs Premium, or Spoof Premium under Premium, ads & privacy.";
+"settings.automix.player.footer" = "In the redesigned player.";
+"settings.automix.preview.accessibility" = "AutoMix, %@, %@";
+"settings.automix.preview.beatmatched.subtitle" = "%ld s blend, on the beat";
+"settings.automix.preview.beatmatched.title" = "Beat-matched mix";
+"settings.automix.preview.crossfade.subtitle" = "A plain fade, the same length both ways";
+"settings.automix.preview.crossfade.title" = "%ld s crossfade";
+"settings.automix.preview.off.subtitle" = "AutoMix is off";
+"settings.automix.preview.off.title" = "Every song plays to its end";
+"settings.automix.showprogress.title" = "Transitions in the progress bar";
+"settings.automix.showqueue.title" = "Transitions in the queue";
 "settings.automix.style.choice.beatmatched" = "Beat-matched";
 "settings.automix.style.choice.crossfade" = "Crossfade";
 "settings.automix.style.title" = "Style";
@@ -1956,6 +1969,8 @@
 "settings.player.preview.demo" = "Without a clip";
 "settings.player.preview.demo.a11y" = "Preview without a clip";
 "settings.player.preview.demo_value.format" = "%@, without a clip: %@";
+"settings.player.queue.blend.crossfade" = "Crossfade, %ld s";
+"settings.player.queue.blend.spotify" = "Spotify AutoMix";
 "settings.player.queue.empty" = "Nothing is playing next.";
 "settings.player.queue.header" = "Queue";
 "settings.player.queue.menu" = "Playing Next";
