@@ -40,6 +40,8 @@ HARNESSES = [
      "run": "bash harness/album-counts/check.sh"},
     {"name": "Album cover", "dir": "album", "theos": True,
      "run": "sh harness/album/cover-check.sh"},
+    {"name": "Album faces and row more", "dir": "album", "theos": True,
+     "run": "sh harness/album/build.sh && sh harness/album/faces-more-check.sh"},
     {"name": "Appearance accent", "dir": "appearance-accent", "theos": True,
      "run": "bash harness/appearance-accent/check.sh"},
     {"name": "Appearance rows", "dir": "appearance-page",

@@ -80,6 +80,20 @@ static const CGFloat kPictureGap = 8;
 
 // A face is at least this wide, and square give or take a point.
 static const CGFloat kMinFace = 16;
+// The creator's faces (-showCreatorFaces:from:): how many at most, the most a circle is across, how far on each next one
+// starts as a share of that, and the clear ring cut around the one before out of it.
+static const NSUInteger kMaxFaces = 3;
+static const CGFloat kMaxFaceSide = 22, kFaceStep = 0.85, kFaceRing = 1.5;
+
+static BOOL faceSized(UIView *v) {
+    CGSize size = v.bounds.size;
+    return [v isKindOfClass:UIImageView.class] && size.width >= kMinFace && fabs(size.width - size.height) <= 1;
+}
+
+// Where `v` starts in `root`, on the side a line in its direction starts from.
+static CGFloat leadingEdge(UIView *v, UIView *root, BOOL rtl) {
+    return [v convertPoint:CGPointMake(rtl ? v.bounds.size.width : 0, 0) toView:root].x;
+}
 
 UIImageView *SGRCreatorPicture(UIView *root) {
     if (!root) return nil;
@@ -88,12 +102,45 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     __block UIImageView *found = nil;
     __block CGFloat edge = 0;
     SGForEachView(root, ^(UIView *v) {
-        CGSize size = v.bounds.size;
-        if (![v isKindOfClass:UIImageView.class] || size.width < kMinFace || fabs(size.width - size.height) > 1) return;
-        CGFloat x = [v convertPoint:CGPointMake(rtl ? size.width : 0, 0) toView:root].x;
+        if (!faceSized(v)) return;
+        CGFloat x = leadingEdge(v, root, rtl);
         if (!found || (rtl ? x > edge : x < edge)) found = (UIImageView *)v, edge = x;
     });
     return found;
+}
+
+static BOOL shownIn(UIView *v, UIView *root) {
+    for (UIView *up = v; up; up = up.superview) {
+        if (up.hidden || up.alpha < 0.01) return NO;
+        if (up == root) return YES;
+    }
+    return NO;
+}
+
+NSArray<UIImageView *> *SGRCreatorFaces(UIView *root) {
+    if (!root) return @[];
+    BOOL rtl = root.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+    __block UILabel *name = nil;
+    SGForEachView(root, ^(UIView *v) {
+        if (name || ![v isKindOfClass:UILabel.class] || !shownIn(v, root)) return;
+        if ([((UILabel *)v).text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet].length) name = (UILabel *)v;
+    });
+    // With no name shown there is nothing to tell a face from a badge after it by: none.
+    if (!name) return @[];
+    CGFloat nameEdge = leadingEdge(name, root, rtl);
+    NSMutableArray<UIImageView *> *faces = [NSMutableArray array];
+    NSMapTable<UIView *, NSNumber *> *edges = [NSMapTable strongToStrongObjectsMapTable];
+    SGForEachView(root, ^(UIView *v) {
+        if (!faceSized(v) || !shownIn(v, root)) return;
+        CGFloat x = leadingEdge(v, root, rtl);
+        if (rtl ? x <= nameEdge : x >= nameEdge) return;
+        [faces addObject:(UIImageView *)v];
+        [edges setObject:@(x) forKey:v];
+    });
+    return [faces sortedArrayWithOptions:NSSortStable usingComparator:^NSComparisonResult(UIView *one, UIView *other) {
+        NSComparisonResult order = [[edges objectForKey:one] compare:[edges objectForKey:other]];
+        return rtl ? -order : order;
+    }];
 }
 
 @implementation SGRHeaderInfo {
@@ -101,6 +148,19 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     UIImageView *_logo;
     UIImageView *_picture;   // the creator's, round, before the name
     __weak UIImageView *_pictureSource;
+    // The creator's faces (-showCreatorFaces:from:), made with the first of them: the circles in a view of their own
+    // before the name, Spotify's image views they are read from (weakly), the line and the name they belong to, and the
+    // pictures they show. A rebuild is pending while facesPending is set.
+    UIView *_faces;
+    NSPointerArray *_faceSources;
+    __weak UIView *_faceParent;
+    NSString *_faceName;
+    NSArray<UIImage *> *_faceImages;
+    BOOL _facesPending;
+    // What the faces' circles and cut rings were last made for (-sgr_placeFaces:rtl:).
+    CGFloat _placedSide, _placedStep;
+    BOOL _placedRTL;
+    NSUInteger _placedCount;
     UIImage *_titleImage;   // what the title's place is laid out for; the logo keeps its picture while it fades out
     SGRMirrorButton *_shuffle, *_trailing;
     SGRPlayCapsule *_play;
@@ -268,11 +328,141 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     SGRAnimateLayout(self, ^{ [self layoutIfNeeded]; }, nil);
 }
 
+- (void)showCreatorFaces:(NSArray<UIImageView *> *)sources from:(UIView *)parent {
+    NSString *name = _creator.text ?: @"";
+    if (parent != _faceParent || ![name isEqualToString:_faceName]) {
+        // Another album's line, or the header reused for one: what was drawn is not its faces.
+        _faceParent = parent;
+        _faceName = name;
+        [self sgr_setFaces:@[]];
+    }
+    if (![_faceSources.allObjects isEqualToArray:sources ?: @[]]) {
+        _faceSources = [NSPointerArray weakObjectsPointerArray];
+        __weak SGRHeaderInfo *weakSelf = self;
+        for (UIImageView *source in sources) {
+            [_faceSources addPointer:(__bridge void *)source];
+            SGRObserveImage(source, ^(UIImageView *view) { [weakSelf sgr_faceChanged:view]; });
+        }
+    }
+    [self sgr_updateFaces];
+}
+
+// A picture set on one of the faces' image views, Spotify's: the faces are drawn again once for all that land together.
+- (void)sgr_faceChanged:(UIImageView *)view {
+    if (_facesPending || ![_faceSources.allObjects containsObject:view]) return;
+    _facesPending = YES;
+    __weak SGRHeaderInfo *weakSelf = self;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        SGRHeaderInfo *info = weakSelf;
+        if (!info) return;
+        info->_facesPending = NO;
+        [info sgr_updateFaces];
+    });
+}
+
+- (void)sgr_updateFaces {
+    // Shown as they are now, not as they were at the header's pass: a picture can land in a view hidden since.
+    UIView *parent = _faceParent;
+    NSMutableArray<UIImage *> *images = [NSMutableArray array];
+    NSUInteger shown = 0;
+    for (UIImageView *source in _faceSources.allObjects) {
+        if (!parent || !shownIn(source, parent)) continue;
+        shown++;
+        if (source.image && images.count < kMaxFaces) [images addObject:source.image];
+    }
+    // Spotify empties its image views before it fills them again: the faces drawn stay while shown ones wait for theirs.
+    if (!images.count && shown) return;
+    [self sgr_setFaces:images];
+}
+
+// The faces fade in where they land with the page on screen, the name making room for them in the same move.
+- (void)sgr_setFaces:(NSArray<UIImage *> *)images {
+    if ([_faceImages ?: @[] isEqualToArray:images]) return;
+    BOOL appears = images.count && !_faceImages.count;
+    _faceImages = images.count ? images : nil;
+    if (!_faces && images.count) {
+        _faces = [UIView new];
+        _faces.userInteractionEnabled = NO;
+        _faces.accessibilityElementsHidden = YES;
+        [self addSubview:_faces];
+    }
+    while (_faces.subviews.count < images.count) {
+        UIImageView *face = [UIImageView new];
+        face.contentMode = UIViewContentModeScaleAspectFill;
+        face.clipsToBounds = YES;
+        [_faces addSubview:face];
+    }
+    [_faces.subviews enumerateObjectsUsingBlock:^(UIView *view, NSUInteger i, BOOL *stop) {
+        UIImageView *face = (UIImageView *)view;
+        face.image = i < images.count ? images[i] : nil;
+        face.hidden = face.image == nil;
+    }];
+    _faces.hidden = !images.count;
+    [self setNeedsLayout];
+    if (!appears || !self.window) return;
+    _faces.alpha = 0;
+    SGRAnimate(SGRMotionFade, ^{ self->_faces.alpha = 1; }, nil);
+    SGRAnimateLayout(self, ^{ [self layoutIfNeeded]; }, nil);
+}
+
+// The circles a line's height and a point across, at most kMaxFaceSide.
+- (CGFloat)sgr_faceSide {
+    return MIN(ceil(_creator.font.lineHeight) + 1, kMaxFaceSide);
+}
+
+- (CGFloat)sgr_facesWidth {
+    CGFloat side = [self sgr_faceSide];
+    return side + (_faceImages.count - 1) * round(side * kFaceStep);
+}
+
+// The faces in `frame`, the leading one at the leading edge; each next one has the ring around the one before cut out.
+- (void)sgr_placeFaces:(CGRect)frame rtl:(BOOL)rtl {
+    _faces.frame = frame;
+    CGFloat side = frame.size.height, step = round(side * kFaceStep);
+    NSUInteger count = _faceImages.count;
+    for (NSUInteger i = 0; i < count; i++) {
+        UIImageView *face = _faces.subviews[i];
+        CGFloat x = rtl ? frame.size.width - side - i * step : i * step;
+        face.frame = CGRectMake(x, 0, side, side);
+    }
+    // The circles and their cut rings follow from these alone (kFaceRing is fixed): made again only when one changes.
+    if (side == _placedSide && step == _placedStep && rtl == _placedRTL && count == _placedCount) return;
+    _placedSide = side;
+    _placedStep = step;
+    _placedRTL = rtl;
+    _placedCount = count;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    for (NSUInteger i = 0; i < count; i++) {
+        UIImageView *face = _faces.subviews[i];
+        face.layer.cornerRadius = side / 2;
+        if (i == 0) {
+            face.layer.mask = nil;
+            continue;
+        }
+        // The one before, its centre in this one's bounds, rtl to the right of it.
+        CGPoint before = CGPointMake(side / 2 + (rtl ? step : -step), side / 2);
+        UIBezierPath *cut = [UIBezierPath bezierPathWithRect:CGRectMake(0, 0, side, side)];
+        CGFloat ring = side / 2 + kFaceRing;
+        [cut appendPath:[UIBezierPath bezierPathWithOvalInRect:CGRectMake(before.x - ring, before.y - ring, 2 * ring, 2 * ring)]];
+        CAShapeLayer *mask = [face.layer.mask isKindOfClass:CAShapeLayer.class] ? (CAShapeLayer *)face.layer.mask : nil;
+        if (!mask) {
+            mask = [CAShapeLayer layer];
+            mask.fillRule = kCAFillRuleEvenOdd;
+            face.layer.mask = mask;
+        }
+        mask.frame = CGRectMake(0, 0, side, side);
+        mask.path = cut.CGPath;
+    }
+    [CATransaction commit];
+}
+
 // The creator line takes a touch only where its text and its picture are; everything else of the view is the
 // page's. The label is laid out at the text's own width (-layoutSubviews).
 - (UIView *)sgr_creatorHit:(CGPoint)point {
     if (!_creator.userInteractionEnabled || _creator.hidden) return nil;
     CGRect line = _picture.hidden ? _creator.frame : CGRectUnion(_creator.frame, _picture.frame);
+    if (_faces && !_faces.hidden) line = CGRectUnion(line, _faces.frame);
     return CGRectContainsPoint(CGRectInset(line, -8, -6), point) ? _creator : nil;
 }
 
@@ -393,6 +583,8 @@ UIImageView *SGRCreatorPicture(UIView *root) {
     _contentTop = y;
     // No name, no picture: it belongs to the line.
     _picture.hidden = !_picture.image || _creator.hidden;
+    BOOL faces = _faceImages.count && !_creator.hidden;
+    _faces.hidden = !faces;
 
     UILabel *previous = nil;
     for (UILabel *label in @[_title, _creator, _length]) {
@@ -404,13 +596,21 @@ UIImageView *SGRCreatorPicture(UIView *root) {
         // The name at its own width, so a tap beside it is the page's (-sgr_creatorHit:), and before it the
         // picture, a line high so the line keeps its height, the two centered together. The picture leads, so it
         // is on the right in a right-to-left language.
+        // The faces, where the creator has them, take the picture's place: centred on the line, which keeps its height.
         if (label == _creator) {
-            CGFloat picture = _picture.hidden ? 0 : height + kPictureGap;
+            CGFloat lead = faces ? [self sgr_facesWidth] : height;
+            CGFloat picture = faces || !_picture.hidden ? lead + kPictureGap : 0;
             CGFloat named = MIN(ceil(size.width), MAX(0, text - picture));
             CGFloat x = round((width - picture - named) / 2);
             BOOL rtl = self.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
-            _picture.frame = CGRectMake(rtl ? x + named + kPictureGap : x, y, height, height);
-            _picture.layer.cornerRadius = height / 2;
+            CGFloat leadX = rtl ? x + named + kPictureGap : x;
+            if (faces) {
+                CGFloat side = [self sgr_faceSide], scale = self.traitCollection.displayScale ?: UIScreen.mainScreen.scale;
+                [self sgr_placeFaces:CGRectMake(leadX, y + round((height - side) / 2 * scale) / scale, lead, side) rtl:rtl];
+            } else {
+                _picture.frame = CGRectMake(leadX, y, height, height);
+                _picture.layer.cornerRadius = height / 2;
+            }
             label.frame = CGRectMake(rtl ? x : x + picture, y, named, height);
         }
         if (label == _title && _titleImage) {

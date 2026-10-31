@@ -1063,6 +1063,32 @@ static NSString *metadataText(UIView *metadata) {
 
 static void applyHeader(UIView *header, UIView *page);
 
+// The headers that have drawn an artist line, drawn again when Artist picture is flipped so the albums open follow it.
+// The defaults post their change on the writing thread: taken to main, where the headers are.
+static void followArtistPicture(UIView *header) {
+    static NSHashTable<UIView *> *headers;
+    static BOOL shown;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        headers = [NSHashTable weakObjectsHashTable];
+        shown = SGEnabled(SGRKeyAlbumArtistPicture);
+        [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:nil
+                                                    usingBlock:^(NSNotification *note) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                SGPrefsChanged();
+                BOOL on = SGEnabled(SGRKeyAlbumArtistPicture);
+                if (on == shown) return;
+                shown = on;
+                for (UIView *known in headers.allObjects) {
+                    UIView *page = SGRAlbumPageOf(known);
+                    if (page) applyHeader(known, page);
+                }
+            });
+        }];
+    });
+    [headers addObject:header];
+}
+
 // The Kit's view over the whole header, its content on the header's bottom edge; Spotify's own column goes.
 static SGRHeaderInfo *applyInfo(UIView *header, UIView *page, NSString **artist, NSString **album) {
     SGRHeaderInfo *info = objc_getAssociatedObject(header, &kInfoKey);
@@ -1113,8 +1139,10 @@ static SGRHeaderInfo *applyInfo(UIView *header, UIView *page, NSString **artist,
     // whole line however many artists are on the album, so several of them open Spotify's own picker
     // (issue #56).
     [info showCreatorLink:parent];
-    // And the artist's picture before the name, the one Spotify draws at the start of the row.
-    [info showCreatorPicture:SGRCreatorPicture(parent)];
+    // And the artists' faces before the names, the ones Spotify draws at the start of the row (several for several
+    // artists), while the Albums page's Artist picture is on.
+    [info showCreatorFaces:SGEnabled(SGRKeyAlbumArtistPicture) ? SGRCreatorFaces(parent) : nil from:parent];
+    followArtistPicture(header);
 
     // More, pinned over the page rather than left in the header, which is blanked and scrolls away.
     SGRPinnedMore(page, &kPinnedMoreKey, SGRFindByIdentifier(header, @"Components.UI.ContextMenuButton*", &kMoreKey));

@@ -35,9 +35,20 @@
 // Everything changed is put back at the start of the cell's next pass and when the cell is prepared for reuse,
 // which also asks for a pass: Spotify can show a cached row again at the same size without one, and the last
 // row's state would stay on it.
+//
+// **⋯ in the page's colour.** The row's ⋯ (Components.UI.ContextMenuButton, its glyph the image view inside it) is drawn
+// in a soft tint of the page's colour: OKLab lightness 0.80 (0.88 with Increase Contrast), the page's hue, chroma held
+// to 0.08 and to what sRGB holds there. A template glyph takes it as its tint. Spotify also ships the glyph with its colour baked into the picture,
+// which a tint does not reach: then a layer of the colour lies over the glyph in its superlayer, masked by the glyph's
+// own picture at its scale and gravity, and an empty mask of this file's hides the glyph's own paint -- only where the
+// glyph has no mask already; one someone else put there leaves the glyph alone. Unlike the rest this is kept from pass
+// to pass, each property set only when it differs, and taken off (the tint and the mask put back only where they are
+// still this file's) when the picture is replaced or gone, the row is laid out anywhere but an album's page, or a pass
+// runs while the app is not active. The button, its action, its menu and what VoiceOver reads are Spotify's.
 #import "Core/SGCore.h"
 #import "Settings/SGPageStyle.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRCoverRead.h"
 #import "Album.h"
 #import "AlbumSpotifyCounts.h"
 
@@ -518,12 +529,164 @@ static void applyCount(UIView *cell, UIView *row, UIView *page) {
     }
 }
 
+#pragma mark - the ⋯
+
+// The ⋯'s tint in OKLab: its lightness, with Increase Contrast too, and the most chroma it takes from the page.
+static const CGFloat kMoreLightness = 0.80, kMoreLightnessContrast = 0.88, kMoreMaxChroma = 0.08;
+
+static char kMoreKey, kMoreColourKey, kMoreWatchedKey;
+
+// The pages whose rows have drawn a ⋯, laid out again when what it is drawn in changes (the %ctor).
+static NSHashTable<UIView *> *morePages(void) {
+    static NSHashTable<UIView *> *pages;
+    if (!pages) pages = [NSHashTable weakObjectsHashTable];
+    return pages;
+}
+
+// A page's ⋯ tint, with the field colour and the contrast it was made for.
+@interface SGRMoreColour : NSObject
+@property (nonatomic, strong) UIColor *field, *tint;
+@property (nonatomic) BOOL contrast;
+@end
+
+@implementation SGRMoreColour
+@end
+
+static UIColor *moreColourOf(UIView *page) {
+    UIColor *field = SGRAlbumFieldColor(page);
+    BOOL contrast = SGRIncreaseContrast();
+    SGRMoreColour *kept = objc_getAssociatedObject(page, &kMoreColourKey);
+    if (kept && kept.contrast == contrast && [kept.field isEqual:field]) return kept.tint;
+    kept = [SGRMoreColour new];
+    kept.field = field;
+    kept.contrast = contrast;
+    CGFloat red, green, blue, alpha;
+    if ([field getRed:&red green:&green blue:&blue alpha:&alpha]) {
+        SGRLab lab = SGRLabFromRGB(red, green, blue);
+        CGFloat chroma = MIN(hypot(lab.a, lab.b), kMoreMaxChroma), hue = atan2(lab.b, lab.a);
+        // Brought into sRGB by its chroma alone: a light tint of a saturated page is past sRGB's edge, and clamping it
+        // there lightened it.
+        SGRLabToRGB(SGRLabInSRGB(contrast ? kMoreLightnessContrast : kMoreLightness, chroma, hue), &red, &green, &blue);
+        kept.tint = [UIColor colorWithRed:red green:green blue:blue alpha:1];
+    } else kept.tint = SGRSecondary();
+    objc_setAssociatedObject(page, &kMoreColourKey, kept, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return kept.tint;
+}
+
+// What a row's ⋯ was given, for the picture it was given it for: a template glyph's tint (and Spotify's before it), or
+// the colour over a baked one and the empty mask hiding the glyph's own paint.
+@interface SGRMoreTint : NSObject
+@property (nonatomic, weak) UIImageView *glyph;
+@property (nonatomic, strong) UIImage *image;
+// The tint set, and what the glyph read back right after (UIKit raises a tint itself for Increase Contrast).
+@property (nonatomic, strong) UIColor *tint, *shownTint, *spotifyTint;
+@property (nonatomic, strong) CALayer *overlay, *hider;
+@end
+
+@implementation SGRMoreTint
+@end
+
+static void restoreMore(UIView *cell) {
+    SGRMoreTint *kept = objc_getAssociatedObject(cell, &kMoreKey);
+    if (!kept) return;
+    objc_setAssociatedObject(cell, &kMoreKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    UIImageView *glyph = kept.glyph;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [kept.overlay removeFromSuperlayer];
+    if (kept.hider && glyph.layer.mask == kept.hider) glyph.layer.mask = nil;
+    if (kept.shownTint && [glyph.tintColor isEqual:kept.shownTint]) glyph.tintColor = kept.spotifyTint;
+    [CATransaction commit];
+}
+
+static UIImageView *glyphOf(UIView *menu) {
+    __block UIImageView *glyph = nil;
+    SGForEachView(menu, ^(UIView *v) {
+        if (!glyph && [v isKindOfClass:UIImageView.class]) glyph = (UIImageView *)v;
+    });
+    return glyph;
+}
+
+// A symbol picture left to the image view draws in its tint, as one made a template does.
+static BOOL isTemplate(UIImage *image) {
+    return image.renderingMode == UIImageRenderingModeAlwaysTemplate
+        || (image.renderingMode == UIImageRenderingModeAutomatic && image.isSymbolImage);
+}
+
+static void applyMore(UIView *cell, UIView *row, UIView *page) {
+    [morePages() addObject:page];
+    UIView *menu = SGRFindByIdentifier(row, @"Components.UI.ContextMenuButton*", &kMenuKey);
+    [menu layoutIfNeeded];
+    UIImageView *glyph = menu ? glyphOf(menu) : nil;
+    UIImage *image = glyph.image;
+    SGRMoreTint *kept = objc_getAssociatedObject(cell, &kMoreKey);
+    if (kept && (kept.glyph != glyph || kept.image != image)) {
+        restoreMore(cell);
+        kept = nil;
+    }
+    if (!glyph) return;
+    // A picture that lands, or replaces the one drawn over, without a pass of the row's.
+    if (objc_getAssociatedObject(cell, &kMoreWatchedKey) != glyph) {
+        objc_setAssociatedObject(cell, &kMoreWatchedKey, glyph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        __weak UIView *weakCell = cell;
+        SGRObserveImage(glyph, ^(UIImageView *view) { [weakCell setNeedsLayout]; });
+    }
+    BOOL template = isTemplate(image);
+    BOOL foreignMask = glyph.layer.mask && glyph.layer.mask != kept.hider;
+    if (!image || glyph.hidden || UIApplication.sharedApplication.applicationState != UIApplicationStateActive
+        || (!template && (!image.CGImage || foreignMask))) {
+        restoreMore(cell);
+        return;
+    }
+    if (!kept) {
+        kept = [SGRMoreTint new];
+        kept.glyph = glyph;
+        kept.image = image;
+        objc_setAssociatedObject(cell, &kMoreKey, kept, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    UIColor *tint = moreColourOf(page);
+    if (template) {
+        BOOL ours = kept.shownTint && [glyph.tintColor isEqual:kept.shownTint];
+        if (ours && [kept.tint isEqual:tint]) return;
+        // Spotify's own tint, kept to be put back; one it set since this file's is the one now.
+        if (!ours) kept.spotifyTint = glyph.tintColor;
+        kept.tint = tint;
+        glyph.tintColor = tint;
+        kept.shownTint = glyph.tintColor;
+        return;
+    }
+    CALayer *source = glyph.layer, *overlay = kept.overlay;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    if (!overlay) {
+        overlay = kept.overlay = [CALayer layer];
+        overlay.mask = [CALayer layer];
+        kept.hider = [CALayer layer];
+    }
+    CALayer *shape = overlay.mask;
+    if (shape.contents != (__bridge id)image.CGImage) shape.contents = (__bridge id)image.CGImage;
+    if (shape.contentsScale != image.scale) shape.contentsScale = image.scale;
+    if (![shape.contentsGravity isEqualToString:source.contentsGravity]) shape.contentsGravity = source.contentsGravity;
+    if (!CGRectEqualToRect(overlay.bounds, source.bounds)) overlay.bounds = shape.frame = source.bounds;
+    if (!CGPointEqualToPoint(overlay.anchorPoint, source.anchorPoint)) overlay.anchorPoint = source.anchorPoint;
+    if (!CGPointEqualToPoint(overlay.position, source.position)) overlay.position = source.position;
+    if (!CATransform3DEqualToTransform(overlay.transform, source.transform)) overlay.transform = source.transform;
+    if (overlay.opacity != source.opacity) overlay.opacity = source.opacity;
+    if (!CGColorEqualToColor(overlay.backgroundColor, tint.CGColor)) overlay.backgroundColor = tint.CGColor;
+    if (overlay.superlayer != source.superlayer) [source.superlayer insertSublayer:overlay above:source];
+    if (source.mask != kept.hider) source.mask = kept.hider;
+    [CATransaction commit];
+}
+
 #pragma mark - the rows
 
 static void applyRow(UIView *cell, UIView *page) {
     clearSurface(cell);
     UIView *row = SGRFindByIdentifier(cell, @"Components.UI.RetrievalRow*", &kRowKey);
-    if (!row) return;
+    if (!row) {
+        restoreMore(cell);
+        return;
+    }
     // The row, and every box the element framework wraps it in on the way back up to the cell.
     for (UIView *v = row; v; v = v.superview) {
         clearSurface(v);
@@ -541,6 +704,7 @@ static void applyRow(UIView *cell, UIView *page) {
     if (countsPlace() == SGRAlbumPlayCountsInRow) applyCount(cell, row, page);
     else if (countsPlace() == SGRAlbumPlayCountsInMenu) watchMenu(cell, row);
     if (hidesCredits()) applyCredit(cell, row, page);
+    applyMore(cell, row, page);
 }
 
 #pragma mark - the cells
@@ -556,6 +720,7 @@ static void applyRow(UIView *cell, UIView *page) {
     UICollectionViewCell *cell = (UICollectionViewCell *)self;
     UIView *page = SGRIsTrackContent(cell.contentView.subviews.firstObject) ? SGRAlbumPageOf(cell) : nil;
     if (page) applyRow(cell, page);
+    else restoreMore(cell);
     // A pass that draws no badge drops the picture the last one kept.
     if (!((SGRCreditChange *)objc_getAssociatedObject(cell, &kChangeKey)).drawnBadge) dropDrawnBadge(cell);
 }
@@ -580,6 +745,18 @@ static void applyRow(UIView *cell, UIView *page) {
         [NSNotificationCenter.defaultCenter addObserverForName:SGRAlbumPlayCountsDidChangeNotification object:nil
                                                          queue:nil usingBlock:^(NSNotification *note) {
             for (UIView *page in countedPages().allObjects) layOutRowsAgain(page);
+        }];
+    }
+    // What the ⋯ is drawn in: the page's colour, read after its rows have laid out, and Increase Contrast; and a pass
+    // while the app was not active, which drew Spotify's own. All three are posted on the main thread.
+    NSNotificationCenter *center = NSNotificationCenter.defaultCenter;
+    [center addObserverForName:SGRFieldColorDidChangeNotification object:nil queue:nil usingBlock:^(NSNotification *note) {
+        UIView *page = SGRAlbumPageOf(note.object);
+        if ([morePages() containsObject:page]) layOutRowsAgain(page);
+    }];
+    for (NSNotificationName name in @[UIAccessibilityDarkerSystemColorsStatusDidChangeNotification, UIApplicationDidBecomeActiveNotification]) {
+        [center addObserverForName:name object:nil queue:nil usingBlock:^(NSNotification *note) {
+            for (UIView *page in morePages().allObjects) layOutRowsAgain(page);
         }];
     }
     SGRequireClasses(@[@"_TtC12Element_List18CollectionViewCell"]);

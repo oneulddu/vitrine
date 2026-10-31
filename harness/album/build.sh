@@ -1,6 +1,7 @@
 #!/bin/sh
 set -e
-SRC=$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)
+# HARNESS_SRC builds another copy of the sources (faces-more-check.sh's mutants).
+SRC=${HARNESS_SRC:-$(cd "$(dirname "$0")/../../tweak/Sources" && pwd)}
 OUT=${HARNESS_BUILD_DIR:-$(dirname "$0")/build}
 rm -rf "$OUT"; mkdir -p "$OUT/gen" "$OUT/AlbumHarness.app"
 

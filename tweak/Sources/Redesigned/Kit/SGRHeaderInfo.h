@@ -51,6 +51,16 @@ BOOL SGRPageFullCover(NSString *key);
 // image view Spotify draws it in (SGRCreatorPicture), followed as Spotify fills it, so a picture that lands
 // after the page has laid out still shows. With no picture in it, or nil, the name stands alone.
 - (void)showCreatorPicture:(UIImageView *)source;
+// The faces of everyone on the creator line, the album's artists (Album/AlbumHeader.x), instead of one picture: `sources`
+// are the image views of Spotify's own line `parent` (SGRCreatorFaces), and the first three of them with a picture are
+// drawn as circles a line's height and a point across (at most 22pt), 8pt before the name, each next one 0.85 of that
+// on from the one before and cut 1.5pt clear around it, so they overlap as separate circles. They are followed as
+// Spotify fills them, coalesced and drawn anew only when the pictures are other ones, each view's visibility under
+// `parent` read again every time; while the views still shown have no picture at all the faces drawn for the same
+// parent and name stay, and another parent or name, or none of the views shown, drops them. nil or empty draws
+// the name alone, laid out as if there had never been a picture. Decorative: no element and no touch of their own, the
+// line keeps its link. -showCreatorPicture:'s callers (the playlist's) never get them.
+- (void)showCreatorFaces:(NSArray<UIImageView *> *)sources from:(UIView *)parent;
 // For a trailing control that shows its state only as a word (the artist's Follow): SGRMirrorButton's
 // readState and its two symbols. Set before the first -showShuffle:...; -trailingStateChanged redraws it.
 @property (nonatomic, copy) BOOL (^trailingState)(BOOL *on);
@@ -91,3 +101,8 @@ BOOL SGRPageFullCover(NSString *key);
 // square image view nearest the leading edge, so a badge after the name is not taken for it. nil when there is
 // none yet.
 UIImageView *SGRCreatorPicture(UIView *root);
+// The image views of every face on Spotify's creator line `root`, picture or not yet: square image views at least a face
+// wide whose leading edge is ahead of the line's name (so a badge after it is not one), none of them or of their
+// ancestors up to `root` hidden or transparent, in the order they read, leading first. Empty when there is none, and
+// when the line shows no name label to measure them against.
+NSArray<UIImageView *> *SGRCreatorFaces(UIView *root);

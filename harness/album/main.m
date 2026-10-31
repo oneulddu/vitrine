@@ -10,6 +10,9 @@
 #import "../harness-fail.h"
 #import "hero-veil-check.h"
 #import "cover-fixtures.h"
+#import "faces-check.h"
+#import "more-check.h"
+#import "Album.h"
 
 // Download and ⋯ as one glass capsule: adjacent, level, one 88x44 shape (radius 22) under both, carried by
 // download, ⋯ drawing none, its trailing edge 16pt in from the page's.
@@ -505,10 +508,14 @@ static NSString *trailingLabel(UIView *root) {
         }
         UIView *picture = nil, *name = nil;
         for (UIView *sub in info.subviews) {
-            if ([sub isKindOfClass:UIImageView.class] && !sub.hidden && ((UIImageView *)sub).image) picture = sub;
+            // The artists' faces sit in a plain view of their own.
+            NSArray<UIView *> *candidates = [sub isMemberOfClass:UIView.class] && !sub.hidden ? sub.subviews : @[sub];
+            for (UIView *v in candidates) {
+                if ([v isKindOfClass:UIImageView.class] && !v.hidden && ((UIImageView *)v).image) picture = v;
+            }
             if ([sub isKindOfClass:UILabel.class] && [((UILabel *)sub).text isEqualToString:@"The Weeknd"]) name = sub;
         }
-        NSLog(@"[harness] artist picture: %@, name at %@", picture ? NSStringFromCGRect(picture.frame) : @"none",
+        NSLog(@"[harness] artist picture: %@, name at %@", picture ? NSStringFromCGRect([picture convertRect:picture.bounds toView:info]) : @"none",
               NSStringFromCGRect(name.frame));
     });
     label(parentRow, CGRectMake(32, 4.33, 72, 15.33), @"The Weeknd", 11, UIColor.whiteColor, @"Encore.Label");
@@ -832,6 +839,11 @@ static NSString *trailingLabel(UIView *root) {
 
     [self.window makeKeyAndVisible];
     if (downloads) downloadScript();
+    // `faces` (faces-check.h): the artist line's faces, after the header has drawn the one the page opened with.
+    // `more` (more-check.h): the track rows' ⋯ in the page's colour, once the field has read the cover.
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"faces"]) at(2.5, ^{ facesRun(root.view, (UIControl *)parentRow); });
+    if ([NSProcessInfo.processInfo.arguments containsObject:@"more"])
+        at(3, ^{ moreRun(root.view, trackCells, ^UIColor *{ return SGRAlbumFieldColor(page); }); });
 
     if (shortTitle) {
         at(1, ^{

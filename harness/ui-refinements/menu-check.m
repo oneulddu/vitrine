@@ -10,6 +10,7 @@
 #import "Redesigned/Kit/SGRKit.h"
 #import "Redesigned/Album/Album.h"
 #import "Redesigned/Album/AlbumSpotifyCounts.h"
+#import "Redesigned/Kit/SGRCoverRead.h"
 #import "../harness-fail.h"
 
 #pragma mark - stubs for what the files call
@@ -77,6 +78,14 @@ UIView *SGRFindByIdentifier(UIView *root, NSString *identifier, const void *cach
 BOOL SGRCreditRepeatsAlbum(NSString *albumArtist, NSString *rowArtist, NSString *title) { return NO; }
 UIFont *SGCategoryCappedFont(UIFontTextStyle style, UIFontWeight weight, UIContentSizeCategory largest) { return [UIFont preferredFontForTextStyle:style]; }
 UIFont *SGMonospacedDigitsFont(UIFont *font) { return font; }
+// AlbumRows.x's ⋯ in the page's colour: the mock page has no field, and nothing watches its glyphs.
+UIColor *SGRAlbumFieldColor(UIView *view) { return nil; }
+NSNotificationName const SGRFieldColorDidChangeNotification = @"SGRFieldColorDidChange";
+BOOL SGRIncreaseContrast(void) { return NO; }
+SGRLab SGRLabFromRGB(CGFloat red, CGFloat green, CGFloat blue) { return (SGRLab){0, 0, 0}; }
+void SGRLabToRGB(SGRLab lab, CGFloat *red, CGFloat *green, CGFloat *blue) { *red = *green = *blue = 0; }
+SGRLab SGRLabInSRGB(CGFloat L, CGFloat chroma, CGFloat hue) { return (SGRLab){L, 0, 0}; }
+BOOL SGRObserveImage(UIImageView *view, void (^changed)(UIImageView *view)) { return NO; }
 
 #pragma mark - an album's track cell
 

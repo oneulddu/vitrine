@@ -67,8 +67,27 @@ row is prepared for reuse and has to come back as Spotify drew it, then be dropp
 the log also says the first card of each carousel, painted the base surface, was cleared and the gray one was not.
 
 The artist row's picture (an `Encore.ImageView`) gets its image at 1.5 s, after the header has laid out. At 2.2 s the
-log says where the redesign drew it: a round picture a line high just before the name, the two centered together
-(`{{139, 368}, {21, 21}}` and the name at `{{168, 368}, {96, 21}}` on an iPhone 17 Pro).
+log says where the redesign drew it: a round face a line and a point across just before the name, 8pt off it, the two
+centered together (`{{138, 370.33}, {22, 22}}` and the name at `{{168, 371}, {96, 21}}` on an iPhone 17 Pro).
+
+`faces-more-check.sh` (`python3 scripts/harness-plan.py run --names "Album faces and row more"`, after `build.sh`) runs
+two scenarios of this harness in a simulator of its own and asserts them. `faces` (`faces-check.h`) builds the artist
+row again for one to four artists, a hidden face, one under a hidden view and a square badge after the names, pictures
+that land late or are emptied, pictures landing in views hidden since the header's pass, a row whose name is only its
+accessibility label with a square badge after the faces (no faces), five layouts that change nothing (no cut-ring
+path made again), and the header reused for another album, and checks the Albums page's Artist picture
+(`spotifyglass.redesign.album.artistPicture`) against the spec: at most three faces in the row's order, each
+min(ceil(line height) + 1, 22) across, round(0.85 x that) apart, 8pt before the name, centred with it, a clear 1.5pt
+ring around each face cut out of the next (read off the drawn pixels), a tap on them the line's (Spotify's row fired
+once), not accessibility elements; switched off live, the name alone centred with no room kept. It runs left to right,
+right to left (`-AppleTextDirection YES -NSForceRightToLeftWritingDirection YES`) and at the largest text size, where the
+22pt cap holds. `more` (`more-check.h`, on `-coverFixture colourful`) gives track rows a baked white ⋯, Spotify's template
+symbol, one that lands late, one replaced by another picture, none, one under a mask of its own and one reused as no
+track row, and reads the drawn glyph in OKLab: lightness 0.80 (0.88 with Increase Contrast, set on the simulator), the
+page's hue, chroma at most min(page's, 0.08) and at least half that; white and unmasked where it is to be left alone; ⋯'s action and what VoiceOver
+reads unchanged. Two mutants built from a copy of the sources (`faces-more-mutation.py`) must fail at their assertion:
+four faces allowed, a picture in a view hidden since the pass drawn, and a baked ⋯ given only a tint. `SHOTS=<dir>` keeps `album-faces-two-on.png`,
+`album-faces-two-off.png` and `album-more.png` (and the variants, suffixed).
 
 The pinned download and ⋯ are watched from the first frame the page draws: after every Core Animation commit while the
 field's veil is up and a second past it, ⋯ must have glass behind it, its own or download's capsule with download

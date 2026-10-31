@@ -149,7 +149,7 @@ static CGFloat pageMaxL(BOOL contrast) {
 }
 
 // A page colour at lightness L (already held), `chroma` and `hue` (radians), brought into sRGB by its chroma alone.
-static SGRLab pageAt(CGFloat L, CGFloat chroma, CGFloat hue) {
+SGRLab SGRLabInSRGB(CGFloat L, CGFloat chroma, CGFloat hue) {
     SGRLab page = {L, chroma * cos(hue), chroma * sin(hue)};
     if (inGamut(page)) return page;
     // Out of sRGB: the most chroma at this lightness and hue that is in it. Gray at L <= 0.44 always is.
@@ -165,7 +165,7 @@ static SGRLab pageAt(CGFloat L, CGFloat chroma, CGFloat hue) {
 SGRLab SGRCoverPageLab(SGRLab colour, BOOL contrast) {
     CGFloat chroma = chromaOf(colour), hue = atan2(colour.b, colour.a);
     if (chroma >= kLiftFromChroma) chroma *= kChromaLift;
-    return pageAt(MIN(colour.L, pageMaxL(contrast)), chroma, hue);
+    return SGRLabInSRGB(MIN(colour.L, pageMaxL(contrast)), chroma, hue);
 }
 
 #pragma mark - the reading
@@ -233,7 +233,7 @@ SGRLab SGRPhotoPageLab(SGRPhotoReading *reading, SGRLab current, BOOL contrast) 
     BOOL skin = hue >= kSkinHueFromDegrees && hue <= kSkinHueToDegrees;
     if (footChroma >= chromaOf(current) + kPhotoChromaGain && footChroma >= kPhotoMinChroma && !skin) chosen = foot;
     if (reading.meanL < kPhotoDarkL && chosen.L > foot.L + kPhotoDarkMargin) chosen.L = foot.L;
-    return pageAt(MIN(chosen.L, pageMaxL(contrast)), chromaOf(chosen), atan2(chosen.b, chosen.a));
+    return SGRLabInSRGB(MIN(chosen.L, pageMaxL(contrast)), chromaOf(chosen), atan2(chosen.b, chosen.a));
 }
 
 UIColor *SGRPhotoPageColor(SGRPhotoReading *reading, UIColor *current) {

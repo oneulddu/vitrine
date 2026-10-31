@@ -31,6 +31,10 @@
 // (Kit/SGRCoverRead.h) and the cover stays sharp down through the title, then blurs into that color. Off until
 // switched on (AlbumSettings.m), read at launch.
 #define SGRKeyAlbumAdaptiveCover @"spotifyglass.redesign.album.adaptiveCover"
+// The artists' faces before their names under the album's title (AlbumHeader.x, Kit/SGRHeaderInfo.h's
+// -showCreatorFaces:from:), up to three of the pictures Spotify's own artist line has; on until switched off
+// (AlbumSettings.m), and a flip applies to the album pages open. Off, the line is the names alone.
+#define SGRKeyAlbumArtistPicture @"spotifyglass.redesign.album.artistPicture"
 UIViewController *SGRAlbumSettingsPage(void);
 
 // AlbumSections.x. The sections under the tracks, one switch each, all dropped until switched off; the last

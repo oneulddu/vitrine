@@ -66,6 +66,9 @@ BOOL SGRCoverKindIsSolid(SGRCoverKind kind);
 // The page colour of an OKLab colour, as -pageColor makes it, in OKLab; `contrast` for Increase Contrast.
 SGRLab SGRCoverPageLab(SGRLab colour, BOOL contrast);
 CGFloat SGRLabDistance(SGRLab one, SGRLab other);
+// The colour at lightness `L`, `chroma` and `hue` (radians), brought into sRGB by its chroma alone: as it is when sRGB
+// holds it, else the most chroma at that lightness and hue that it holds. Any thread.
+SGRLab SGRLabInSRGB(CGFloat L, CGFloat chroma, CGFloat hue);
 // An sRGB colour in OKLab and back (sRGB components 0-1; the way back clamps). The RGB8 pair is the same through
 // tables, for a bitmap's pixels: any thread.
 SGRLab SGRLabFromRGB(CGFloat red, CGFloat green, CGFloat blue);
